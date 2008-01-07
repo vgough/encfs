@@ -1,0 +1,71 @@
+
+Quick configuration advice
+==========================
+
+The configuration script will automatically find and make use of your installed
+'gettext' package.  If you do not have gettext installed, or do not want
+internationalization support included in the build, then you can disable native
+language support using
+    ./configu --disable-nls
+
+Using This Package
+==================
+
+As a user, if your language has been installed for this package, you
+only have to set the `LANG' environment variable to the appropriate
+`LL_CC' combination.  Here `LL' is an ISO 639 two-letter language code,
+and `CC' is an ISO 3166 two-letter country code.  For example, let's
+suppose that you speak German and live in Germany.  At the shell
+prompt, merely execute `setenv LANG de_DE' (in `csh'),
+`export LANG; LANG=de_DE' (in `sh') or `export LANG=de_DE' (in `bash').
+This can be done from your `.login' or `.profile' file, once and for
+all.
+
+   You might think that the country code specification is redundant.
+But in fact, some languages have dialects in different countries.  For
+example, `de_AT' is used for Austria, and `pt_BR' for Brazil.  The
+country code serves to distinguish the dialects.
+
+   The locale naming convention of `LL_CC', with `LL' denoting the
+language and `CC' denoting the country, is the one use on systems based
+on GNU libc.  On other systems, some variations of this scheme are
+used, such as `LL' or `LL_CC.ENCODING'.  You can get the list of
+locales supported by your system for your country by running the command
+`locale -a | grep '^LL''.
+
+   Not all programs have translations for all languages.  By default, an
+English message is shown in place of a nonexistent translation.  If you
+understand other languages, you can set up a priority list of languages.
+This is done through a different environment variable, called
+`LANGUAGE'.  GNU `gettext' gives preference to `LANGUAGE' over `LANG'
+for the purpose of message handling, but you still need to have `LANG'
+set to the primary language; this is required by other parts of the
+system libraries.  For example, some Swedish users who would rather
+read translations in German than English for when Swedish is not
+available, set `LANGUAGE' to `sv:de' while leaving `LANG' to `sv_SE'.
+
+   Special advice for Norwegian users: The language code for Norwegian
+bokma*l changed from `no' to `nb' recently (in 2003).  During the
+transition period, while some message catalogs for this language are
+installed under `nb' and some older ones under `no', it's recommended
+for Norwegian users to set `LANGUAGE' to `nb:no' so that both newer and
+older translations are used.
+
+   In the `LANGUAGE' environment variable, but not in the `LANG'
+environment variable, `LL_CC' combinations can be abbreviated as `LL'
+to denote the language's main dialect.  For example, `de' is equivalent
+to `de_DE' (German as spoken in Germany), and `pt' to `pt_PT'
+(Portuguese as spoken in Portugal) in this context.
+
+Translating
+===========
+
+EncFS is registered with Rosetta - an online interface for supplying
+translations.  See https://launchpad.ubuntu.com/rosetta/products/encfs
+
+If your language is not included in this distribution, you may want
+to check if translated text is already available online in Rosetta.
+If not, consider translating some of the strings, which will then be
+included in the next EncFS release.
+
+

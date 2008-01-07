@@ -1,0 +1,464 @@
+=cut
+Copyright (c) 2003-2004, Valient Gough <vgough@pobox.com>
+All rights reserved.
+
+EncFS is free software; you can distribute it and/or modify it under the terms
+of the GNU General Public License (GPL), as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+=pod
+
+=head1 NAME
+
+encfs - mounts or creates an encrypted virtual filesystem
+
+=head1 SYNOPSIS
+
+B<encfs> [B<--version>] [B<-s>] [B<-f>] [B<-v>|B<--verbose>] 
+[B<-i MINUTES>|B<--idle=MINUTES>] [B<--extpass=program>] 
+[B<-S>|B<--stdinpass>] [B<--anykey>] [B<--forcedecode>] 
+[B<-d>|B<--fuse-debug>] [B<--public>] [B<--no-default-flags>]
+I<rootdir> I<mountPoint> 
+[B<--> [I<Fuse Mount Options>]]
+
+=head1 DESCRIPTION
+
+B<encfs> creates a virtual encrypted filesystem which stores encrypted data in
+the I<rootdir> directory and makes the unencrypted data visible at the
+I<mountPoint> directory.  The user must supply a password which is used to
+(indirectly) encrypt both filenames and file contents.
+
+If B<encfs> is unable to find a supported filesystem at the specified
+I<rootdir>, then the user will be asked if they wish to create a new encrypted
+filesystem at the specified location.  Options will be presented to the user
+allowing some control over the algorithms to use.  As B<EncFS> matures, there
+may be an increasing number of choices.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-i>, B<--idle=MINUTES>
+
+Enable automatic unmount of the filesystem after a period of inactivity.  The
+period is specified in minutes, so the shortest timeout period that can be
+requested is one minute.  B<EncFS> will not automatically unmount if there are
+files open within the filesystem, even if they are open in read-only mode.
+However simply having files open does not count as activity.
+
+=item B<-f>
+
+The B<-f> (I<foreground>) option causes B<encfs> to run in the foreground.
+Normally B<encfs> spawns off as a daemon and runs in the background, returning
+control to the spawning shell.  With the B<-f> option, it will run in the
+foreground and any warning/debug log messages will be displayed on standard
+error.  In the default (background) mode, all log messages are logged via
+syslog.
+
+=item B<-v>, B<--verbose>
+
+Causes B<encfs> to enable logging of various debug channels within B<encfs>.
+Normally these logging messages are disabled and have no effect.  It is
+recommended that you run in foreground (B<-f>) mode when running with verbose
+enabled.
+
+=item B<-s>
+
+The B<-s> (I<single threaded>) option causes B<encfs> to run in single threaded
+mode.  By default, B<encfs> runs in multi-threaded mode.  This option is used
+during B<encfs> development in order to simplify debugging and allow it to run
+under memory checking tools..
+
+=item B<-d>, B<--fuse-debug>
+
+Enables debugging within the B<FUSE> library.  This should only be used if you
+suspect a problem within B<FUSE> itself (not B<encfs>), as it generates a lot
+of low-level data and is not likely to be very helpful in general problem
+tracking.  Try I<verbose> mode (B<-v>) first, which gives a higher level view
+of what is happening within B<encfs>.
+
+=item B<--forcedecode>
+
+This option only has an effect on filesystems which use MAC block headers.  By
+default, if a block is decoded and the stored MAC doesn't match what is
+calculated, then an IO error is returned to the application and the block is
+not returned.  However, by specifying B<--forcedecode>, only an error will be
+logged and the data will still be returned to the application.  This may be
+useful for attempting to read corrupted files.
+
+=item B<--public>
+
+Attempt to make encfs behave as a typical multi-user filesystem.  By default,
+all FUSE based filesystems are visible only to the user who mounted them.  No
+other users (including root) can view the filesystem contents.  The B<--public>
+option does two things.  It adds the FUSE flags "allow_other" and
+"default_permission" when mounting the filesystem, which tells FUSE to allow
+other users to access the filesystem, and to use the ownership permissions
+provided by the filesystem.  Secondly, the B<--public> flag changes how encfs's
+node creation functions work - as they will try and set ownership of new nodes
+based on the caller identification.
+
+B<Warning>: In order for this to work, encfs must be run as root -- otherwise
+it will not have the ability to change ownership of files.  I recommend that
+you instead investigate if the fuse allow_other option can be used to do what
+you want before considering the use of B<--public>.
+
+=item B<-->
+
+The B<--> option tells B<encfs> to send any remaining arguments directly to
+B<FUSE>.  In turn, B<FUSE> passes the arguments to B<fusermount>.  See
+the B<fusermount> help page for information on available commands.
+
+=item B<--no-default-flags>
+
+B<Encfs> adds the FUSE flags "use_ino" and "default_permissions" by default, as
+of version 1.2.2, because that improves compatibility with some programs..  If
+for some reason you need to disable one or both of these flags, use the option
+B<--no-default-flags>.
+
+The following command lines produce the same result:
+
+    encfs raw crypt
+    encfs --no-default-flags raw crypt -- -o use_ino,default_permissions
+
+=item B<--extpass=program>
+
+Specify an external program to use for getting the user password.  When the
+external program is spawned, the environment variable "RootDir" will be set to
+contain the path to the root directory.  The program should print the password
+to standard output.
+
+B<EncFS> takes everything returned from the program to be the password, except
+for a trailing newline (\n) which will be removed.
+
+For example, specifying B<--extpass>=I</usr/lib/ssh/ssh-askpass> will cause
+B<EncFS> to use ssh's password prompt program.  
+
+=item B<-S>, B<--stdinpass>
+
+Read password from standard input, without prompting.  This may be useful for
+scripting encfs mounts.
+
+Note that you should make sure the filesystem and mount points exist first.
+Otherwise encfs will prompt for the filesystem creation options, which may
+interfere with your script.
+
+=item B<--anykey>
+
+Turn off key validation checking.  This allows B<EncFS> to be used with
+secondary passwords.  This could be used to store a separate set of files in an
+encrypted filesystem.  B<EncFS> ignores files which do not decode properly, so
+files created with separate passwords will only be visible when the filesystem
+is mounted with their associated password.
+
+Note that if the primary password is changed (using B<encfsctl>), the other
+passwords will not be usable unless the primary password is set back to what it
+was, as the other passwords rely on an invalid decoding of the volume key,
+which will not remain the same if the primary password is changed.
+
+B<Warning>: Use this option at your own risk.
+
+=back
+
+=head1 EXAMPLES
+
+Create a new encrypted filesystem.  Store the raw (encrypted) data in
+"~/.crypt" , and make the unencrypted data visible in "~/crypt".  Both
+directories are in the home directory in this example.  This example shows the
+full output of encfs as it asks the user if they wish to create the filesystem:
+
+    % encfs ~/.crypt ~/crypt
+    Directory "/home/me/.crypt" does not exist, create (y,n)?y
+    Directory "/home/me/crypt" does not exist, create (y,n)?y
+    Creating new encrypted volume.
+    Please choose from one of the following options:
+     enter "x" for expert configuration mode,
+     enter "p" for pre-configured paranoia mode,
+     anything else, or an empty line will select standard mode.
+    ?> 
+
+    Standard configuration selected.
+    Using cipher Blowfish, key size 160, block size 512
+    New Password: <password entered here>
+    Verify: <password entered here>
+
+The filesystem is now mounted and visible in I<~/crypt>.  If files are created
+there, they can be seen in encrypted form in I<~/.crypt>.  To unmount the
+filesystem, use I<fusermount> with the B<-u> (unmount) option:
+
+    % fusermount -u ~/crypt
+
+Another example.  To mount the same filesystem, but have fusermount name the
+mount point '/dev/foo' (as shown in I<df> and other tools which read
+/etc/mtab), and also request kernel-level caching of file data (which are both
+special arguments to fusermount):
+
+    % encfs ~/.crypt ~/crypt -- -n /dev/foo -c
+
+Or, if you find strange behavior under some particular program when working in
+an encrypted filesystem, it may be helpful to run in verbose mode while
+reproducing the problem and send along the output with the problem report:
+
+    % encfs -v -f ~/.crypt ~/crypt 2> encfs-report.txt
+
+In order to avoid leaking sensitive information through the debugging channels,
+all warnings and debug messages (as output in verbose mode) contain only
+encrypted filenames.  You can use the I<encfsctl> program's I<decode> function
+to decode filenames if desired.
+
+=head1 CAVEATS
+
+B<EncFS> is not a true filesystem.  It does not deal with any of the actual
+storage or maintenance of files.  It simply translates requests (encrypting or
+decrypting as necessary) and passes the requests through to the underlying
+host filesystem.  Therefor any limitations of the host filesystem will likely
+be inherited by B<EncFS> (or possibly be further limited).
+
+One such limitation is filename length.  If your underlying filesystem limits
+you to N characters in a filename, then B<EncFS> will limit you to approximately
+3*(N-2)/4.  For example if the host filesystem limits to 256 characters, then
+B<EncFS> will be limited to 190 character filenames.  This is because encrypted
+filenames are always longer then plaintext filenames.
+
+=head1 FILESYSTEM OPTIONS
+
+When B<EncFS> is given a root directory which does not contain an existing
+B<EncFS> filesystem, it will give the option to create one.  Note that options
+can only be set at filesystem creation time.  There is no support for modifying
+a filesystem's options in-place.  
+
+If you want to upgrade a filesystem to use newer features, then you need to
+create a new filesystem and mount both the old filesystem and new filesystem at
+the same time and copy the old to the new.
+
+Multiple instances of encfs can be run at the same time, including different
+versions of encfs, as long as they are compatible with the current FUSE module
+on your system.
+
+A choice is provided for two pre-configured settings ('standard' and
+'paranoia'), along with an expert configuration mode.
+
+I<Standard> mode uses the following settings:
+    Cipher: Blowfish
+    Key Size: 160 bits
+    Filesystem Block Size: 512 bytes
+    Filename Encoding: Block encoding with IV chaining
+    Unique initialization vector file headers
+
+I<Paranoia> mode uses the following settings:
+    Cipher: AES
+    Key Size: 256 bits
+    Filesystem Block Size: 512 bytes
+    Filename Encoding: Block encoding with IV chaining
+    Unique initialization vector file headers
+    Message Authentication Code block headers
+    External IV Chaining
+
+In the expert / manual configuration mode, each of the above options is
+configurable.  Here is a list of current options with some notes about what
+they mean:
+
+=over 4
+
+=item I<Cipher>
+
+Which encryption algorithm to use.  The list is generated automatically based
+on what supported algorithms B<EncFS> found in the encryption libraries.
+When using a recent version of B<OpenSSL>, Blowfish and AES are the typical
+options.
+
+Blowfish is an 8 byte cipher - encoding 8 bytes at a time.  AES is a 16 byte
+cipher.
+
+=item I<Cipher Key Size>
+
+Many, if not all, of the supported ciphers support multiple key lengths.  There
+is not really much need to have enormous key lengths.  Even 160 bits (the
+default) is probably overkill.
+
+=item I<Filesystem Block Size>
+
+This is the size (in bytes) that B<EncFS> deals with at one time.  Each block
+gets its own initialization vector and is encoded in the cipher's
+cipher-block-chaining mode.  A partial block at the end of a file is encoded
+using a stream mode to avoid having to store the filesize somewhere.
+
+Having larger block sizes reduces the overhead of B<EncFS> a little, but it can
+also add overhead if your programs read small parts of files.  In order to read
+a single byte from a file, the entire block that contains that byte must be
+read and decoded, so a large block size adds overhead to small requests.  With
+write calls it is even worse, as a block must be read and decoded, the change
+applied and the block encoded and written back out.
+
+The default is 512 bytes as of version 1.0.  It was hard coded to 64 bytes in
+version 0.x, which was not as efficient as the current setting for general
+usage.
+
+=item I<Filename Encoding>
+
+B<New in 1.1>. A choice is given between stream encoding of filename and block
+encoding.  The advantage of stream encoding is that the encoded filenames will
+be as short as possible.  If you have a filename with a single letter, it will
+be very short in the encoded form, where as block encoded filenames are always
+rounded up to the block size of the encryption cipher (8 bytes for Blowfish and
+16 bytes for AES).
+
+The advantage of block encoding mode is that filename lenths all come out as a
+multiple of the cipher block size.  This means that someone looking at your
+encrypted data can't tell as much about the length of your filenames.  It is
+on by default, as it takes a similar amount of time to using the stream cipher.
+However stream cipher mode may be useful if you want shorter encrypted
+filenames for some reason.
+
+Prior to version 1.1, only stream encoding was supported.
+
+=item I<Filename Initialization Vector Chaining>
+
+B<New in 1.1>.  In previous versions of B<EncFS>, each filename element in
+a path was encoded separately.  So if "foo" encoded to "XXX", then it would
+always encode that way (given the same encryption key), no matter if the path
+was "a/b/foo", or "aa/foo/cc", etc.  That meant it was possible for someone
+looking at the encrypted data to see if two files in different directories had
+the same name, even though they wouldn't know what that name decoded to.
+
+With initialization vector chaining, each directory gets its own initialization
+vector.  So "a/foo" and "b/foo" will have completely different encoded names
+for "foo".  This features has almost no performance impact (for most
+operations), and so is the default in all modes.
+
+B<Note:> One significant exception is directory renames.  Since the
+initialization vector for filename encoding depends on the directory path, any
+rename requires re-encoding every filename in the tree of the directory being
+changed.  If there are thousands of files, then EncFS will have to do thousands
+of renames.  It may also be possible that EncFS will come across a file that it
+can't decode or doesn't have permission to move during the rename operation, in
+which case it will attempt to undo any changes it made up to that point and the
+rename will fail.
+
+=item I<Per-File Initialization Vectors>
+
+B<New in 1.1>.  In previous versions of B<EncFS>, each file was encoded in the
+same way.  Each block in a file has always had its own initialization vector,
+but in a deterministic way so that block N in one file is encoded in the same
+was as block N in another file.  That made it possible for someone to tell if
+two files were identical (or parts of the file were identical) by comparing the
+encoded data.
+
+With per-file initialization vectors, each file gets its own 64bit random
+initialization vector, so that each file is encrypted in a different way.
+
+This option is enabled by default.
+
+=item I<External IV Chaining>
+
+B<New in 1.1.3>.  This option is closely related to Per-File Initialization
+Vectors and Filename Initialization Vector Chaining.  Basically it extends the
+initialization vector chaining from filenames to the per-file initialization
+vector.
+
+When this option is enabled, the per-file initialization vector is encoded
+using the initialization vector derived from the filename initialization vector
+chaining code.  This means that the data in a file becomes tied to the
+filename.  If an encrypted file is renamed outside of encfs, it will no longer
+be decodable within encfs.  Note that unless Block MAC headers are enabled, the
+decoding error will not be detected and will result in reading random looking
+data.
+
+There is a cost associated with this.  When External IV Chaining is enabled,
+hard links will not be allowed within the filesystem, as there would be no way
+to properly decode two different filenames pointing to the same data.
+
+Also, renaming a file requires modifying the file header.  So renames will only
+be allowed when the user has write access to the file.
+
+Because of these limits, this option is disabled by default for standard mode
+(and enabled by default for paranoia mode).
+
+=item I<Block MAC headers>
+
+B<New to 1.1>.  If this is enabled, every block in every file is stored along
+with a cryptographic checksum (Message Authentication Code).  This makes it
+virtually impossible to modify a file without the change being detected by
+B<EncFS>.  B<EncFS> will refuse to read data which does not pass the checksum,
+and will log the error and return an IO error to the application.
+
+This adds substantial overhead (default being 8 bytes per filesystem block),
+plus computational overhead, and is not enabled by default except in paranoia
+mode.
+
+When this is not enabled and if B<EncFS> is asked to read modified or corrupted
+data, it will have no way to verify that the decoded data is what was
+originally encoded.
+
+=back
+
+=head1 Attacks
+
+The primary goal of B<EncFS> is to protect data off-line.  That is, provide a
+convenient way of storing files in a way that will frustrate any attempt to
+read them if the files are later intercepted.
+
+Some algorithms in B<EncFS> are also meant to frustrate on-line attacks where
+an attacker is assumed to be able to modify the files.
+
+The most intrusive attacks, where an attacker has complete control of the
+user's machine (and can therefor modify B<EncFS>, or B<FUSE>, or the kernel
+itself) are not guarded against.  Do not assume that encrypted files will
+protect your sensitive data if you enter your password into a compromised
+computer.  How you determine that the computer is safe to use is beyond the
+scope of this documentation.
+
+That said, here are some example attacks and data gathering techniques on the
+filesystem contents along with the algorithms B<EncFS> supports to thwart them:
+
+=over 4
+
+=item B<Attack>: modifying a few bytes of an encrypted file (without knowing
+what they will decode to).
+
+B<EncFS> does not use any form of XOR encryption which would allow
+single bytes to be modified without affecting others.  Most modifications
+would affect dozens or more bytes.  Additionally, MAC Block headers can be
+used to identify any changes to files.
+
+=item B<Attack>: copying a random block of one file to a random block of another file.
+
+Each block has its own [deterministic] initialization vector.
+
+=item B<Attack>: copying block N to block N of another file.
+
+When the Per-File Initialization Vector support is enabled (default
+in 1.1.x filesystems), a copied block will not decode properly when copied to
+another file.
+
+=item B<Attack>: copying an entire file to another file.
+
+Can be prevented by enabling External IV Chaining mode.
+
+=item B<Attack>: determine if two filenames are the same by looking at encrypted names.
+
+Filename Initialization Vector chaining prevents this by giving each file a
+64-bit initialization vector derived from its full path name.
+
+=item B<Attack>: compare if two files contain the same data.
+
+Per-File Initialization Vector support prevents this.
+
+=back
+
+=head1 DISCLAIMER
+
+This library is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  Please refer to the "COPYING" file distributed with
+B<encfs> for complete details.
+
+=head1 AUTHORS
+
+B<EncFS> was written by B<< Valient Gough <vgough@pobox.com> >>.
+
+=head1 SEE ALSO
+
+encfsctl(1)
+

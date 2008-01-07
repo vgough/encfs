@@ -1,0 +1,99 @@
+=cut
+Copyright (c) 2003-2004, Valient Gough <vgough@pobox.com>
+All rights reserved.
+
+EncFS is free software; you can distribute it and/or modify it under the terms
+of the GNU General Public License (GPL), as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+
+=pod
+
+=head1 NAME
+
+encfsctl - administrative tool for working with EncFS filesystems
+
+=head1 SYNOPSIS
+
+B<encfsctl> [I<command> I<command_args>]
+
+B<encfsctl> I<rootdir>
+
+B<encfsctl> info I<rootdir>
+
+B<encfsctl> passwd I<rootdir>
+
+B<encfsctl> showcruft I<rootdir>
+
+B<encfsctl> decode I<rootdir> [encoded name]
+
+=head1 DESCRIPTION
+
+B<encfsctl> is an administrative tool for working with EncFS filesystems.  It
+is capable of changing the user supplied password, displaying basic information
+about an encrypted volume, and other related operations.
+
+=head1 COMMANDS
+
+=over 4
+
+=item B<info>
+
+Display basic information about the filesystem.  Takes a single argument,
+I<rootdir>, which is the root directory of the encrypted filesystem.  The
+filesystem need not be mounted.  B<Info> is also the default command if only a
+root directory is provided on the command line.
+
+=item B<passwd>
+
+Allows changing the password of the encrypted filesystem.  The user will be
+prompted for the existing password and the new password.
+
+=item B<showcruft>
+
+Recursively search through the entire volume and display all files which are
+not decodable (only checks filename encoding, not block MAC headers).  This
+might be useful for cleanup in case you've made use of features which create
+files which are not decodable under the primary key.
+
+=item B<decode>
+
+Allows you to specify an encoded name on the command line, and displayed a
+decoded version.  This is mostly useful for debugging, as debug messages always
+display encrypted filenames (to avoid leaking sensitive data through the debug
+channels).  So this command provides a way to decode the filenames.
+
+If no name is specified on the command line, then a list of filenames will be
+read from stdin and decoded.
+
+=back
+
+=head1 EXAMPLES
+
+Show information about an encrypted filesystem:
+
+ % encfsctl info ~/.crypt
+
+ Version 5 configuration; created by EncFS 1.1 (revision 20040504)
+ Filesystem cipher: "ssl/aes" , version 2:1:1
+ Filename encoding: "nameio/block" , version 3:0:1
+ Key Size: 192 bits
+ Block Size: 512 bytes
+ Each file contains 8 byte header with unique IV data.
+ Filesname encoded using IV chaining mode.
+
+=head1 DISCLAIMER
+
+This library is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  Please refer to the "COPYING" file distributed with
+B<encfs> for complete details.
+
+=head1 AUTHORS
+
+EncFS was written by Valient Gough <vgough@pobox.com>.
+
+=head1 SEE ALSO
+
+encfs(1)
+

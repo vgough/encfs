@@ -1,0 +1,1190 @@
+Sun Jan  6 22:26:25 PST 2008  Valient Gough <vgough@pobox.com>
+	* fix SSL test to keep -lssl at end of compile line, 
+	  found by Kenny Simpson
+
+Sun Jan  6 22:16:02 PST 2008  Valient Gough <vgough@pobox.com>
+	* run extpass command via shell, to allow passing arguments 
+	  to program. Patch by Liraz
+
+Sun Jan  6 21:59:38 PST 2008  Valient Gough <vgough@pobox.com>
+	* enlarge max password length
+
+Sun Jan  6 21:27:33 PST 2008  Valient Gough <vgough@pobox.com>
+	* fix build/install scripts
+
+Sat Jan 5 2008 Valient Gough <vgough@pobox.com>
+	* update TRANSLATORS file
+	* tagged v1.4
+	* rename BER config methods to Int
+	* change license file to GPL3
+
+Thu Jan 3 2008 Valient Gough <vgough@pobox.com>
+	* include string.h in files using memset
+	* add mount-on-demand
+
+Wed Jan 2 2008 Valient Gough <vgough@pobox.com>
+	* change openssl engine config
+	* fix idle tracking by adding usage counter in Context
+	* move openssl support code to separate file
+
+Tue Jan 1 2008 Valient Gough <vgough@pobox.com>
+	* refuse to unlink open files, in case fuse is running in hard_remove
+	  mode 
+	* fix locking issues from last refactor
+	* remove global mutex for fsuid.  This wasn't synchronizing all cases
+	  anyway, and testing reveals that fsuid is per-thread not per-process
+	  so it wasn't necessary.
+	* add '-o' option which passes arg through to fuse
+	* add -h option, patch by Ryan Smith-Roberts
+
+
+
+
+
+Mon Dec 31 2007 Valient Gough <vgough@pobox.com>
+	* major changes to DirNode and FileNode.
+	  Move open file tracking into Context.
+	  breaks idle tracking...
+	* fix rename bug by tracking and applying undo in all error paths.
+	  https://bugs.launchpad.net/bugs/160214
+	* bump version 1o 1.4, make ulockmgr optional
+	* more refactoring of common code
+	* add ftruncate, fgetattr, lock, utimens functions. 
+	* link move fuse and ulockmgr link specification to configure
+
+Sun Dec 30 2007 Valient Gough <vgough@pobox.com>
+	* keep FileNode reference in fuse_file_info, to avoid path lookups in
+	  related ops move context struct to separate file
+	* move globals to filesystem-context scope
+	* fixes to get encfs to compile with libfuse 26 API
+
+Sat Dec 29 2007 Valient Gough <vgough@pobox.com>
+	* remove LinkedOwner, replace with shared_ptr
+
+Sun Dec 9 2007 Valient Gough <vgough@pobox.com>
+	* don't close stderr unless in daemon mode
+
+Tue Oct 9 2007 Valient Gough <vgough@pobox.com>
+	* add locking around calls which set fsuid
+	* replace custom smart ptr with boost smart ptr
+	  Drops backward compatibility files, to avoid porting/testing ancient
+	  code.  Add valgrind support for debugging.
+
+Mon Mar 19 2007 Valient Gough <vgough@pobox.com>
+	* reverse encryption support by Keary Griffin
+	  Adds --reverse option to encfs which causes encfs to produce encrypted
+	  filesystem on-demand, rather then unencrypted.
+
+Wed Mar 14 2007 Valient Gough <vgough@pobox.com>
+	* move buffer management to avoid memory leak in case ofdecoding error
+	* rename Config -> ConfigReader.  Should fix the build problem on
+	  systems with case insensitive filesystems (Mac).
+
+Mon Feb 12 2007 Valient Gough <vgough@pobox.com>
+	* bump library version number
+	* fix atomic function tests to build on gcc 4.2
+	  Report and testing from Miklos Szeredi
+	* bump version to 1.3.2
+
+Thu Jan 11 2007 Valient Gough <vgough@pobox.com>
+	* make sure cache is correctly cleared in case of failure
+	  Fixes bug reported by Liraz @ sourceforge.
+	  Bug: 1633662  Encfs failing to verify block HMAC
+
+Tue Jul 25 2006 Valient Gough <vgough@pobox.com>
+	* add workaround for group permission problem in 'public' mode
+	  based on patch by Dan Sheridan.  If node creation fails due to
+	  permission problems in 'public' filesystem mode, then try using gid
+	  from parent directory.
+	* add parentDirectory method to FileUtils and FileNode
+
+Sun Jul 16 2006 Valient Gough <vgough@pobox.com>
+	* support for static builds, patch by Marc Zonzon
+	* check for fuse_new instead of fuse_main
+	* don't let compiler optimize away references
+	  Functions for dynamically loaded modules are always referenced now so
+	  that the compiler can't optimize them away when doing a static build.
+	  This wasn't a problem until recent improvements in gcc.
+
+Sat Apr 1 2006 Valient Gough <vgough@pobox.com>
+	* track list of new FUSE callbacks which are not implemented in encfs
+	* bump version to 1.3.1
+
+Tue Mar 28 2006 Valient Gough <vgough@pobox.com>
+	* skip "." and ".." in recursive rename
+
+Wed Mar 8 2006 Valient Gough <vgough@pobox.com>
+	* tagged v1.3
+	* cleanup logging output and close stderr on successful startup of
+	  daemon.  Encfs was keeping open stderr after startup, so close it
+	  during encfs_init.
+	* fix visibility of .dot files when Null filename encryption selected.
+	  Reported by Andrew Schretter, and patched in January, but I forgot to
+	  commit fix.
+	* minor fixup to int64 cast after patch import
+
+Mon Mar 6 2006 Valient Gough <vgough@pobox.com>
+	* reorder encfs man page place more useful flags first in options list
+	* update version, check for fuse 2.5
+
+Mon Mar 6 2006 Csaba Henk <csaba.henk@creo.hu>
+	* port to FreeBSD
+	* update to FUSE 2.5 API (minimum provided by FUSE for FreeBSD)
+
+Wed Nov 9 2005 Valient Gough <vgough@pobox.com>
+	* add workaround for bogus warning message returned on unmount.
+	  fuse_main seems to be returning an error code even if it exits
+	  cleanly.  Only show an error if it returned with an error
+	  immediately.
+	* update lib version to 1:3:0
+	* bump version to 1.2.5
+	* fix compiler warnings about printf int sizes on 64bit machine
+	* update atomic add config check, disable threading if not found
+	  Fixes core dump due to race condition on dual-core system, reported
+	  by Chris of x.nu.
+	  Thanks to bock at blacknet.de for providing access to a system for
+	  testing.
+
+Mon Sep 12 2005 Valient Gough <vgough@pobox.com>
+	* have encfssh make the mountpoint only user readable
+
+Sun Sep 11 2005 Valient Gough <vgough@pobox.com>
+	* add encfssh script
+	  Script to mount, spawn shell in mount, and unmount when shell exits.
+	  Contributed by David Rosenstrauch
+
+Fri Aug 26 2005 Valient Gough <vgough@pobox.com>
+	* add 1.2.4 release notes to spec
+	* have configure generate po/Makefile
+	* add changelog entries
+
+Wed Aug 24 2005 Valient Gough <vgough@pobox.com>
+	* raw dir may not be a subdirectory of mount point
+	  Fixes issue reported by paulgfx - if raw directory was a subdirectory
+	  of the mount point, this would cause infinite recursion (because each
+	  request by encfs on the raw data would be translated into another
+	  encfs request by the kernel).
+	* moves the directory creation until the other tests have been made, to
+	  avoid creating directories unless all sanity checks pass.
+
+Tue Aug 23 2005 Valient Gough <vgough@pobox.com>
+	* avoid trying to decipher impossibly small filenames
+	  Bug reported by paulgfx - if a bogus file was placed in the encfs raw
+	  directory with a name that was too small to be a valid encrypted
+	  name, it could cause encfs to segfault.  Such files are now skipped.
+
+Sat Aug 20 2005 Valient Gough <vgough@pobox.com>
+	* add support for static build
+	  In static builds, the linker skips objects from the libencfs library
+	  which are never directly referenced.  This breaks all encoding and
+	  encryption modules, because they are dynamically registered.  The
+	  workaround is to explicitly add references in the library in the
+	  static build case.
+
+Wed Aug 17 2005 Valient Gough <vgough@pobox.com>
+	* bump version to 1.2.4
+	* refactor small amount of error code
+	* add environment override for config file location
+	  If the environment variable 'ENCFS5_CONFIG' is set, then it will be
+	  used as the location for the encfs configuration file.  Otherwise,
+	  the normal search will be done, by searching the specified root
+	  directory for an appropriate config file.
+
+Fri Aug 5 2005 jjhellst@gmail.com
+	* Remove duplicate initFS and checkDir calls
+	  Remove duplicated calls to initFS by refactoring call to initFS into
+	  initRootInfo function that calls checkDir and initFS.  This removes
+	  some of the redundancy in cmd_* handlers.
+	  The creation of destDir in cmd_export is also moved to a later stage,
+	  so that if encfs volume couldn't be initialized, the destination
+	  directory is not created.
+
+Fri Jul 29 2005 Valient Gough <vgough@pobox.com>
+	* replace reconfig.sh commands with simpler set
+	* try and simplify devel code build
+
+Wed Jul 27 2005 Valient Gough <vgough@pobox.com>
+	* fix up export patch and refactor output code
+
+Sun Jul 24 2005 Valient Gough <vgough@pobox.com>
+	* encfsctl export command patch from Janne Hellsten
+	  This command will export the entire filesystem.
+
+	* move userAllowCreate to userAllowMkdir and make public
+	* cleanup configure to get rid of warnings
+
+Wed Jul 13 2005 Valient Gough <vgough@pobox.com>
+	* add recent changelog entries
+	* bump shared object version to 1:2:0
+	  forgot to do this for the v1.2.3 release
+
+Mon Jul 11 2005 Valient Gough <vgough@pobox.com>
+	tagged v1.2.3
+	* bump version to 1.2.3
+	* remove lock removal comment
+	* add debugging output
+
+Thu Jul 7 2005 Valient Gough <vgough@pobox.com>
+	* add way to get filename in FileIO
+	wanted to know filename for displaying error message, but there was no
+	way to get it.
+	* minor cleanup with locking of DirNode & FileNode
+	doesn't change lock regions or behavior, but cleans it up a bit.
+	Locks added in constructors even though they aren't necessary in order
+	to try and get valgrind's helgrind to not report a race there.. but
+	didn't work
+	* always warn of MAC comparison failure
+	if warnonly mode is not turned enabled, then an error will also be
+	thrown
+
+Mon Jul 4 2005 Valient Gough <vgough@pobox.com>
+	* register nullname io
+	Once had a request for unencrypted filenames (only data encrypted).
+	Easy enough by having NullNameIO registered as an option.
+	* synchronize read path
+	After fixing the paranoia mode problem in the earlier patch, that seems
+	to introduce (or exacerbate?) a race condition in the read path.  Until
+	I have time to track it down, the safest action seems to be to
+	synchronize reads..
+	* add 'cat' command to encfsctl
+	Allows printing out the contents of a file without having to mount the
+	filesystem.
+
+Sun Jul 3 2005 Valient Gough <vgough@pobox.com>
+	* another fix to allow symbolic links to /
+	Bug report by neuron.
+	* allow symbolic link to root directory
+
+Sat Jul 2 2005 Valient Gough <vgough@pobox.com>
+	* don't call setIV on symbolic links
+	Only call setIV for regular file types and non-existant files.
+	This is a fix for a problem with symbolic links which was reported to
+	debian bug tracking system: bug #315624 Affects paranoia mode (IV
+	chaining + file headers + external IV chaining)
+
+Mon Jun 20 2005 Valient Gough <vgough@pobox.com>
+	* update libtool
+
+Thu Jun 16 2005 Valient Gough <vgough@pobox.com>
+	* initialize OpenSSL hardware engine support
+	Found out about these calls from LinuxJournal, May 2005 issue
+
+Sat May 21 2005 Valient Gough <vgough@pobox.com>
+	* disable idle monitoring option with fuse 2.2
+	* fix build error on rh7.3
+	* bump version to 1.2.2
+	* tagged v1.2.2
+
+Tue May 17 2005  Valient Gough <vgough@pobox.com>
+	* fix idle monitor thread
+	  Idle monitor wasn't working in encfs 1.2.x - reported by Patrick
+	  Skerrett on encfs-users mailing list.  Problem was that idle thread
+	  needs to be setup after daemon() is called by libfuse, otherwise
+	  thread was being killed.
+	* increment libencfs version number to 1:1:0
+
+Fri May 13 2005  Valient Gough <vgough@pobox.com>
+	* add use_ino by default, new flag --no-default-flags
+	  The fuse flags use_ino is now specified by default, since it
+	  shouldn't cost anything.  Encfs now has a documented flag
+	  --no-default-flags which can be used to turn off all default fuse
+	  flags.
+	* add big warning message for external IV chaining
+	  External IV chaining causes known problems with programs like mutt
+	  and procmail, so show a big warning message if it has been enabled,
+	  just so there isn't any surprise.
+
+Tue May 10 2005  Valient Gough <vgough@pobox.com>
+	* fix memory leak on MAC error
+	  When a block MAC error is detected, an exception is thrown, but a
+	  local memory-pool buffer is not released, leading to a leak of a
+	  block.
+
+Fri May  6 2005  Valient Gough <vgough@pobox.com>
+	* add last-block cache
+
+Sun May  1 2005  Valient Gough <vgough@pobox.com>
+	* make FUSE default_permissions flag on by default
+	* add an 'encode' command in encfsctl
+
+Wed Apr 20 2005  Valient Gough <vgough@pobox.com>
+	* bump version number to 1.2.1-4
+	* tagged v1.2.1
+	* make return code consistent
+
+Tue Apr 19 2005  Valient Gough <vgough@pobox.com>
+	* fix distribution build
+	* 2005-04-18/19 updates
+	* minor cleanup
+	* use ::open instead of mkstemp for mknod
+	* use lchown instead of chown after mkdir
+
+2005-04-19  Valient Gough <vgough@pobox.com>
+	* import latest rosetta translation updates
+
+2005-04-18  Valient Gough <vgough@pobox.com>
+	* add "--public" mount option when encfs is run as root, to act as a
+	  standard multi-user filesystem.  Based on patch by Sascha Demetrio.
+	* enable shared library build.  Encfs and encfsctl now link to libencfs
+	  shared library.
+
+2005-04-15  Valient Gough <vgough@pobox.com>
+	* provide more scriptable password mechanism, patch from Gerald Klix
+	* internal development moved to Darcs revision control (because
+	  Bitkeeper folks have shown why open source projects should not rely
+	  upon it).
+
+2005-04-08  Valient Gough <vgough@pobox.com>
+	* build libencfs shared library - 
+
+2005-04-01  Valient Gough <vgough@pobox.com>
+	* autosprintf fixes - patch from Andreas Jochens
+
+2005-03-24  Valient Gough <vgough@pobox.com>
+	* import languages files from rosetta
+
+2005-03-10  Valient Gough <vgough@pobox.com>
+	* add openssl license exception statement - requested by debian folks
+
+2005-02-21  Valient Gough <vgough@pobox.com>
+	* drop remainder of old fuse hide
+	* callback support
+
+2005-02-10  Valient Gough <vgough@pobox.com>
+	* add sample extpass program script
+
+	* eliminate fixed descriptor number when communicating with external
+	  password program.  Fixes problem of fixed descriptor number
+	  conflicting with password return socket in some circumstances. 
+	  Found by Olivier Dournaux.
+
+	* drop support for older libfuse versions of fuse_main which do not
+	  return an integer error code.
+
+2005-02-09  Valient Gough <vgough@pobox.com>
+	* log debug messages of error conditions to Info channel instead of
+	  Debug
+
+	* fix bug in MAC header code which caused corruption in files > 2GB
+	  Reported by Damian Frank.
+
+2005-02-05  Valient Gough <vgough@pobox.com>
+	* convert to fuse 2.2 api, dropping support for older versions
+
+	* change encfs version to 1.2
+
+	* add inode number pass-thru support, allowing inode numbers to be the
+	  same as the underlying filesystem.  This makes it so that hard links
+	  will have the same inode number (which some programs check)..
+
+2005-02-04  Valient Gough <vgough@pobox.com>
+	* import translations from rosetta, fix formatting
+
+2005-01-13  Valient Gough <vgough@pobox.com>
+	* let libfuse 2.x handle backgrounding itself
+
+2005-01-12  Valient Gough <vgough@pobox.com>
+	* prepare for 1.1.11 r4 release.
+	* TAG: v1.1.11-4
+
+	* fix up formatting
+	* modify Makefile to use 'bk edit' before modifying a .po file
+
+	* import from rosetta
+
+2005-01-07  Valient Gough <vgough@pobox.com>
+	* rosetta update
+
+2005-01-04  Valient Gough <vgough@pobox.com>
+	* configure.ac:
+	* remove hardcoded -lpthread in fuse check
+
+	* add pthread support code for autoconf from librlog
+
+	* misc updates releated to NLS
+	* TAG: v1.1.11-3
+
+	* update from rosetta
+
+2005-01-03  Valient Gough <vgough@pobox.com>
+	* sv.po, pl.po, fr.po, fi.po, es_ES.po, es.po, de_DE.po, de_CH.po:
+	* updated pot and po files
+	* fr.po, de_DE.po:
+	* merge from rosetta
+	* MACFileIOCompat.cpp:
+	* change to match same message in another file
+
+	* rosetta translation updates.
+	* add workaround to problem of fuse_main not returning an error code in
+	  fuse 1.x
+
+2004-12-29  Valient Gough <vgough@pobox.com>
+	* rosetta-download.pl:
+	* take project name argument
+
+	* import newest Rosetta files
+	* fix up .po problems.
+	* add rosetta-download.pl script
+	* add TRANSLATORS
+
+2004-12-28  Valient Gough <vgough@pobox.com>
+	* add README-NLS
+	* update fr.po from Rosetta
+
+	* add more po links
+	* minor changes after test build on RH7.3
+
+	* boldquot.sed, insert-header.sin, remove-potcdate.sin:
+	* new file
+
+	* replace various automake files with links
+
+	* import files from m4 directory, so they appear in an export..
+
+
+	* mkinstalldirs:
+	* new file
+	* TAG: v1.1.11
+
+	* add translation files from Rosetta
+
+	* more fixes for RH7.3 build
+
+	* remove dependency on external gettext files
+	* some fixes to build on RH7.3
+
+	* NLS updates
+	* add BUILD_NLS conditional to try and make encfs buildable without
+	  gettext
+
+2004-12-28  gettextize  <bug-gnu-gettext@gnu.org>
+
+	* Makefile.am (ACLOCAL_AMFLAGS): New variable.
+	* configure.ac (AM_GNU_GETTEXT_VERSION): Bump to 0.14.1.
+
+2004-12-25  Valient Gough <vgough@pobox.com>
+	* po-group:
+	    docs
+
+	* fix processing of last entry in .pot
+
+	* POTFILES.in:
+	    add files
+
+	* Makefile.in.in:
+	    use encfs.pot as the final (sorted) pot.
+	    encfs-raw.pot is the unsorted data
+
+	* sort translation strings by importance
+
+2004-12-13  Valient Gough <vgough@pobox.com>
+	* i18 support
+
+2004-12-12  Valient Gough <vgough@pobox.com>
+	* minor i18n changes
+
+	* initial i18n support
+
+2004-11-23  Valient Gough <vgough@pobox.com>
+	* add -H option to get fuse_mount usage message
+
+2004-11-08  Valient Gough <vgough@pobox.com>
+	* check if fuse_main returns integer.  Should allow encfs to build with
+	  older versions of fuse
+
+	* fix fuse argument separation for recent versions of fuse (fix
+	  reported by Bill Cox).
+
+	* fix problems with recursive rename undo (reported by Rorick Olson,
+	  and possibly others).
+
+2004-11-03  Valient Gough <vgough@pobox.com>
+	* lots of cleanup of configuration scripts, since they wouldn't work
+	  with the most recent autoconf tools.
+
+	* fixes for recursive rename which was failing because it expected
+	  directories to have IV headers.
+
+2004-10-29  Valient Gough <vgough@pobox.com>
+	* add flag to allow file holes in BlockFileIO
+
+	* fix for sourceforge bug 1056718 - wrong error code from getxattr
+
+2004-08-15  Valient Gough <vgough@pobox.com>
+	* configure.in:
+	    change version to 1.1.9
+	* TAG: v1.1.9
+
+	* fix for rename() bug in paranoia mode.
+
+2004-08-14  Valient Gough <vgough@pobox.com>
+	* 1.1.8 release
+	* TAG: v1.1.8
+
+2004-08-13  Valient Gough <vgough@pobox.com>
+	* Fix some problems with MAC block header processing.  Backward
+	  compatibility is maintained for people who were not experiencing
+	  problems.  The new code is much faster, and should be more reliable
+	  as well..
+
+2004-08-12  Valient Gough <vgough@pobox.com>
+	* minor fixes, test for known error conditions early in filename decode
+	  path
+	
+	* TAG: v1.1.7-2
+
+	* add support for forced decoding in the case of MAC checksum failure
+
+2004-08-11  Valient Gough <vgough@pobox.com>
+	* update version and notes for 1.1.7-2
+	* TAG: v1.1.7-2
+
+	* fix error in truncate() on unopened file
+
+	* version change to 1.1.7
+
+	* fixes to build on RedHat 7.3 (or system with old OpenSSL) fix race
+	  condition in CipherV3
+
+2004-08-09  Valient Gough <vgough@pobox.com>
+	* Fix bug which would allow multiple files to be created with the same
+	  file IV header.
+
+	* Add mlock calls in case user has permission to lock regions of memory.
+
+	* Add support for IV chaining to old 0.x filesystem support code.  This
+	  code is still useful when building on a system that doesn't have a
+	  recent version of OpenSSL (such as RedHat 7.x)
+
+	* TAG: v1.1.6
+
+2004-07-22  Valient Gough <vgough@pobox.com>
+	* bump version to 1.1.5
+	* TAG: v1.1.5
+
+	* fix incorrect test for completion status after recursive rename.
+	  some minor code cleanup.
+
+2004-07-10  Valient Gough <vgough@pobox.com>
+	* documentation updates
+
+	* changes for version 1.1.4 release
+	* TAG: v1.1.4
+
+2004-07-09  Valient Gough <vgough@pobox.com>
+	* add external password prompt support.
+
+	* remove explicit file hiding support, as hidefile operations changes
+	  were not integrated 
+
+	* into FUSE (but the libfuse internal handling changes were).
+
+2004-07-01  Valient Gough <vgough@pobox.com>
+	* fix rename warning to print entire path.
+	* disable libfuse V2's default background mode.
+
+2004-06-24  Valient Gough <vgough@pobox.com>
+	* cleanup for 1.1.3 release - notes in man page, RELEASE tag update..
+	* TAG: v1.1.3
+
+	* hard links cannot be supported with external IV chaining.  Return
+	  error if attempted.
+
+	* avoid uninitialized memory warnings
+
+	* add support for filename -> data IV chaining.
+
+2004-06-23  Valient Gough <vgough@pobox.com>
+	* Feature: 
+	    add support for fuse_operations.hidefile - which allows
+	    delete-on-open and rename-on-open operation support. This allows
+	    Evolution mail reader to work much better.
+
+	* Security: 
+	    don't log plaintext filename in fsync.
+
+	* Other: 
+	    use atomic operations if bits/atomicity.h found.  
+	    Add more sanity checks with rAssert.
+
+2004-06-19  Valient Gough <vgough@pobox.com>
+	* added atomic lookup/open api to DirNode to simplify logic.
+	* add ability to store symbolic links to fully qualified path names.
+	* add ring buffer cache for unopened FileNode entries.
+	* make locking logic more robust in case of exceptions.
+
+2004-06-16  Valient Gough <vgough@pobox.com>
+	* minor updates
+
+	* some minor updates
+
+2004-06-08  Valient Gough <vgough@pobox.com>
+	* merge RedHat 7.3 build fixes
+
+2004-06-07  Valient Gough <vgough@pobox.com>
+	* fix build problems on RedHat 7.3 system
+
+2004-05-28  Valient Gough <vgough@pobox.com>
+	* documentation updates for 1.1.x.
+	* add extra includes necessary for some platforms...
+
+	* updates for 1.1.2 release
+
+2004-05-26  Valient Gough <vgough@pobox.com>
+	* work around potential race condition with unlink.
+
+	* add undo to recursive renames to that a failed rename will undo
+	  changes.
+
+2004-05-24  Valient Gough <vgough@pobox.com>
+	* update version to 1.1.2
+
+	* Fix bug reported by Jens Arm -- change CipherFileIO and MACFileIO to
+	  only adjust size for regular files (not directories, etc).   This bug
+	  prevented EncFS from being used on top of an XFS filesystem..
+
+2004-05-23  Valient Gough <vgough@pobox.com>
+	* add support for decoding a list of names from stdin in encfsctl.
+
+2004-05-22  Valient Gough <vgough@pobox.com>
+	* fix up includes so that extra dependency path discovered in configure
+	  get included..
+
+2004-05-20  Valient Gough <vgough@pobox.com>
+	* change release to 1.1.1-2
+	* fix possible race condition in cipher by locking around use of cipher
+	  state variables.  
+
+	* make recursive rename more robust and also propogate changes to
+	  denormalized values.
+
+2004-05-19  Valient Gough <vgough@pobox.com>
+	* change release to 1.1.1-1
+	* add release number to tar builds
+
+	* add support for file rename while open, needed for Evolution to work
+	  properly.
+
+	* add variable size blockMAC headers (and random byte components), as
+	  random bytes are not needed when file IV headers are enabled.
+
+	* New V5 configuration subversion - 20040518.
+
+	* add try/catch blocks around most operations in encfs.cpp, as uncaught
+	  exceptions will cause fuse library to exit.
+
+	* add decode command to encfsctl to decode an encrypted path name.
+
+	* fix memory bounds error in MACFileIO
+
+2004-05-18  Valient Gough <vgough@pobox.com>
+	* bump release to 4
+	* TAG: v1.1-4
+
+	* add showcruft command to encfsctl which displays undecodable filenames
+
+	* make recursive rename two stages to avoid trying to rename files more
+	  then once.
+
+	* add recursive directory renaming if directory IV chaining is enabled,
+	  otherwise directory contents are not visible after a rename.
+
+2004-05-17  Valient Gough <vgough@pobox.com>
+	* change password prompt text.
+	* eliminate harmless uninitialized memory read warning from valgrind.
+	* TAG: v1.1
+
+2004-05-14  Valient Gough <vgough@pobox.com>
+	* add padding to conversion array to avoid possible array bounds read
+	  error with invalid filenames
+
+	* allow CipherV3 to be built even if newer SSL interfaces are not
+	  available.
+
+	* add full V3 support (filesystems created by EncFS 0.2 - 0.6)
+
+2004-05-13  Valient Gough <vgough@pobox.com>
+	* documentation updates
+
+	* minor documentation updates
+
+	* add documentation of filesystem options to man page
+
+2004-05-12  Valient Gough <vgough@pobox.com>
+	* add reference counting for open/release calls, since FUSE can have
+	  overlapping retain/release states on a file.
+
+	* fix multiple delete in main exit cleanup.
+
+	* lots of changes to DirNode and FileNode classes to make more thread
+	  safe.  The threading problems seemed to be mostly due to the way
+	  FileNodes were created and passed around.
+
+	* add xattr support (untested) since I noticed new calls in the FUSE
+	  library header from CVS.
+
+	* changed open file caching to be based on plaintext name rather then
+	  encrypted name.  FUSE passes the plaintext names to EncFS for
+	  processing, so rather then having to encrypt them each time, use the
+	  plaintext name for lookup in the cache.  This makes it more likely to
+	  have plaintext names sitting around in memory, so I've tried to have
+	  the names get cleared when they are no longer in use.
+
+2004-05-04  Valient Gough <vgough@pobox.com>
+	* merge FlatDirNode into DirNode.  There is no longer a need to have
+	  the base class separate since the purpose was in doing per-directory
+	  initialization vectors, which are no longer necessary now with
+	  filename IV chaining and per-file IV headers.
+
+	* add 64-bit IV chaining implementations to StreamNameIO and
+	  BlockNameIO.
+
+	* add means of finding out current interface of NameIO and Cipher
+	  instances.
+
+2004-05-03  Valient Gough <vgough@pobox.com>
+	* fix build error with current fuse CVS snapshot
+
+2004-05-01  Valient Gough <vgough@pobox.com>
+	* fix checksum decoding bug when IV chaining is not enabled.
+
+2004-04-30  Valient Gough <vgough@pobox.com>
+	* Add filename IV chaining mode.  Found an easy way to add per-file
+	  initialization vectors.  I thought I was going to have to store
+	  per-directory IV data somewhere (or like CVS, store IV data in
+	  strange parts of file headers), but I found I could do much better
+	  more simply by chaining the initialization vectors during a path
+	  encode/decode since EncFS always knows the full path of the file
+	  being accessed.  This adds 64 bits of path-dependent initialization
+	  vector data without any storage overhead.
+
+2004-04-28  Valient Gough <vgough@pobox.com>
+	* Thanks to Anthony Iano-Fletcher for helping test the 1.1 beta.  It
+	  was quickly discovered that there was a race condition, so the 1.1
+	  release is delayed pending fixes.
+
+	* Add support for initialization vector argument to NameIO name
+	  encoding methods.  
+
+	* Add mknod method to FileNode, remove blockSize().
+	* Fix warnings from valgrind regarding uninitialized memory access.
+
+2004-04-20  Valient Gough <vgough@pobox.com>
+	* TAG: v1.1
+	* fix problems found when running rsync, as suggested by Anthony Iano-Fletcher.
+
+2004-04-17  Valient Gough <vgough@pobox.com>
+	* fix assert failure from showFSInfo due to BlockNameIO being
+	  instanciated with null cipher.
+
+2004-04-16  Valient Gough <vgough@pobox.com>
+	* some minor updates - mostly comment additions in preparation for 1.1 release
+
+	* fix uninitialized memory read.
+
+	* change BlockNameIO implementation to include padding bytes in MAC.
+	* configuration selection and display changes.
+
+2004-04-15  Valient Gough <vgough@pobox.com>
+	* add per-file initialization vector support.  Stores 64-bit
+	  initialization vector modifier for each file.  The IV vector is
+	  stored encrypted as a transparent header on the file.
+
+	* add a prompt for MAC headers in setup, and show information about
+	  filesystem to user.
+
+	* add option to turn off key validation checking
+
+	* add support for per-block MAC headers which ensure data within a
+	  block cannot be modified without being detected.
+
+2004-04-14  Valient Gough <vgough@pobox.com>
+	* name encoding output for encfsctl and added creator tag to V5 config
+	  file.
+
+	* V5 configuration, now supports block mode filename encryption.
+
+2004-04-13  Valient Gough <vgough@pobox.com>
+	* botan updates.  The botan API is a complex beast.  I may drop it and
+	  instead focus on adding support for something more likely to be found
+	  on a system - like mcrypt or gcrypt.
+
+2004-04-12  Valient Gough <vgough@pobox.com>
+	* implement Block name encoding.  This hides the size of filenames to
+	  some extent.  
+
+	* renamed StdNameIO to StreamNameIO.
+
+	* Clean up Cipher API and eliminate special case name
+	  encoding/decoding, which is now part of NameIO logic.
+
+	* Move code from FileNode to FileIO layer to clean up layer separation.
+
+	* Support for version 3 filesystems (created by EncFS 0.x, supported by
+	  0.x and 1.0.x) has been dropped. 
+
+2004-04-11  Valient Gough <vgough@pobox.com>
+	* remove blockSize from static Cipher constructors.
+	* change name of stream encoding interfaces.
+
+2004-04-10  Valient Gough <vgough@pobox.com>
+	* change to using smart pointer types and OpaqueValue as CipherKey.
+	  memory ownership was starting to become too complex, so I imported a
+	  smart pointer class from 'rel' codebase (where Interface and
+	  LinkedOwner came from).
+
+	* port truncate fix from mainline.  Use Mutex::Lock helper class for
+	  locking
+
+2004-04-09  Valient Gough <vgough@pobox.com>
+	* Cipher interface no longer expects a unique short name.
+
+	* FileUtils contains functions for loading / creating filesystem
+	  configuration.
+
+	* First try implementation of an 'ls' command in encfsctl.
+
+2004-04-08  Valient Gough <vgough@pobox.com>
+	* add support for truncate call with new size > old size.
+
+	* trivial changes
+
+2004-04-08  Valient Gough <vgough@pobox.com>
+	* release version 1.0.5
+
+	* add support for truncate call with new size > old size.
+
+2004-03-26  Valient Gough <vgough@pobox.com>
+	* release version 1.0.4
+
+	* fix signalling to idle monitoring thread to avoid getting stuck
+	  waiting for it.
+
+2004-03-25  Valient Gough <vgough@pobox.com>
+	* Update comments in README and INSTALL
+
+	* Make RELEASE a config variable.  Sets release number in spec files so
+	  that it only needs to be set in once place.
+
+	* Found that 1.x series was slower then 0.x series due to EVP cipher
+	  context usage.  Large speed improvements in SSL_Cipher by optimizing
+	  EVP cipher context lifetime.
+
+	* Optimize read and write to go direct to buffer whenever possible.
+	  This is the fastest encfs ever.
+
+	* Don't remove files that are not automatically generated.  Caused a
+	  distribution build problem when the admin directory was updated.
+	  Workaround for make dist complaining about Makefile.am.wo
+
+	* configure.in: use standard "yes" instead of "ok" in result message
+
+2004-03-24  Valient Gough <vgough@pobox.com>
+	* Another block padding fix to ensure blocks are padded with '0's
+
+	* Check for a supported libfuse API at configure time.
+
+	* Add support for FUSE_MAJOR_VERSION 2 (the current CVS version of
+	  FUSE), which changes the statfs interface.
+
+	* Update admin code.
+
+2004-03-21  Valient Gough <vgough@pobox.com>
+	* encfsctl.pod: fix comment
+
+2004-03-19  Valient Gough <vgough@pobox.com>
+	* update README with better description of encryption details
+
+2004-03-18  Valient Gough <vgough@pobox.com>
+	* TAG: v1.0.3
+
+	* fix truncate bug - truncate was seriously broken, and could cause
+	  corruption of a truncated block!
+
+	* Tested filesystem using a perl script which tries to cause as many
+	  edge cases as possible w.r.t. partial blocks..  It showed up the
+	  problem with padding and truncation..
+
+2004-03-17  Valient Gough <vgough@pobox.com>
+	* main.cpp:
+	    remove old warning for extra args
+
+	* fix padding bug where some blocks were getting padded with random
+	  data instead of with zeros.
+
+	* Remove uncessary padding in the last block of a file, since it gets
+	  overwritten by the write call immediatly afterwards.  Should speed up
+	  partial block writes.
+
+	* switch to getopt for argument parsing, and support GNU style long arguments
+
+	* add inactivity timeout support (--idle option)
+
+2004-03-14  Valient Gough <vgough@pobox.com>
+	* TAG: v1.0.2
+	* fix compile problems on RedHat 7.3 system
+
+	* configure.in: fix rlog check when pkg-config isn't found
+
+	* makedist2.sh.in: remove suse9 tag
+	* minor fixes to dist creation and spec build
+
+	* add encfsctl man page
+
+	* manpage spelling fixes and install manpage to proper directory
+
+	* make release builds mostly automated
+
+	* add encfs.1 to distribution list so that it will be preprocessed and
+	  include in the distribution so that end-users don't need to have
+	  pod2man installed to get the man page.
+
+	* make man page build conditional on finding pod2man program
+
+	* add encfs man page, clean up encfs usage output
+
+2004-03-13  Valient Gough <vgough@pobox.com>
+	* bump version to 1.0.2
+
+	* use pkg-config to check for OpenSSL and RLog build settings
+
+	* add support for '--' argument to encfs to pass arbitrary options to
+	  FUSE / FuserMount.
+
+2004-03-02  Valient Gough <vgough@pobox.com>
+	* Bumped version to 1.0.1 for new release.
+	* TAG: v1.0.1
+
+	* Fix problem with key generation for Blowfish keys larger then 128
+	  bits, reported by Jarkko Haapalainen.
+
+	* Fix more configure script problems when --with-extra-includes is
+	  used, reported by Troy Folger.
+
+2004-02-29  Valient Gough <vgough@pobox.com>
+	* use user specified includes during compile tests in configure script
+
+	* update Makefile.am to fix a problem reported by Troy Folger using
+	  --with-extra-includes configure options
+
+2004-02-27  Valient Gough <vgough@pobox.com>
+	* TAG: v1.0
+	* yet more minor updates..
+	* minor config file fixes.
+	* update Botan support a little..
+	* make startup configuration a bit more user friendly for 1.0 release..
+
+2004-02-21  Valient Gough <vgough@pobox.com>
+	* fix broken algorithm include from last change
+	* more cleanup for 1.0 release.
+
+2004-02-20  Valient Gough <vgough@pobox.com>
+	* main.cpp:
+	    fix algorithm selection off-by-1 test
+	    show information when using cipher with fixed size
+	* test.cpp:
+	    minor change to error message
+	* main.cpp, FileUtils.cpp:
+	    include unistd.h
+	* encfsctl.cpp:
+	    fix initializer for struct array
+	* SSL_Cipher.cpp:
+	    make AES and blowfish support optional based
+	    on configure tests
+	* Makefile.am:
+	    define _XOPEN_SOURCE and _BSD_SOURCE.
+	    make SSL_Cipher optional based on configure tests
+	* FileNode.cpp:
+	    make O_LARGEFILE optional
+	* Config.cpp:
+	    include unistd.h to find read() and write() prototypes
+	* configure.in:
+	    check for various OpenSSL EVP_* functions
+	* change to use 32 bit checksum for key storage in SSL_Cipher.
+
+2004-02-19  Valient Gough <vgough@pobox.com>
+	* Remove libencfs shared library.  Simplifies installation.
+
+	* add "info" channel for logging of operations which can be activated
+	  with "-v" flag.
+
+	* drop remote changes - they are no longer valid on local branch
+
+	* update admin directory.
+	* build shared code as libencfs shared library.
+	* other minor cleanup.
+
+	* close substantial memory leak
+
+2004-02-18  Valient Gough <vgough@pobox.com>
+	* implement password change command in encfsctl.
+	* fix serious bug in SSL_Cipher::readKey
+
+	* fix test program fatal - needed encfs.h include to pick up fuse.h
+
+	* implement new .encfs4 version 4 control file for new filesystems.  It
+	  allows specification of different ciphers, key size and blocksize.
+
+	* Add encfsctl program which can display some information about the
+	  filesystem.
+
+2004-02-14  Valient Gough <vgough@pobox.com>
+	* some configuration cleanup.
+	* added means of getting list of available ciphers.
+
+2004-02-13  Valient Gough <vgough@pobox.com>
+	* add SSL_Cipher which implements AES, Blowfish, Twofish, and TripleDES
+	  ciphers using OpenSSL.
+
+2004-02-10  Valient Gough <vgough@pobox.com>
+	* cleanup and error checking
+
+2004-02-09  Valient Gough <vgough@pobox.com>
+	* allow user to disable use of Botan library (and SSL library) in
+	  configuration.
+
+	* fix 2GB limit (taken from stable branch).
+	* use Botan or SSL memory management for temporary buffers.
+	* change block numbers to 64bit.
+
+2004-02-07  Valient Gough <vgough@pobox.com>
+	* TAG: v0.6
+	* fix 2GB limit
+
+	* performance improvement eliminating bug that caused unecessary open()
+	  calls.
+
+2004-01-20  Valient Gough <vgough@pobox.com>
+	* remove dependencies on OpenSSL.  Make way for adding more ciphers
+	  from other libraries.
+
+2004-01-17  Valient Gough <vgough@pobox.com>
+	* switch logging to use external rlog library
+	* add syslog logging in daemon (background) mode
+
+2003-12-18  Valient Gough <vgough@pobox.com>
+	* build with Intel's ICC compiler (v8.0).  made some changes to avoid
+	  compiler warnings.
+
+	* Fix bug from last changeset due to refactoring nextName()
+
+	* refactor some code in the DirNode hierarchy
+	* moved mkdir() interface into DirNode
+
+2003-12-17  Valient Gough <vgough@pobox.com>
+	* fix error checking test on readBlock result.
+	* some minor cleanup.
+
+2003-12-14  Valient Gough <vgough@pobox.com>
+	* lots of bug fixes and improvements
+	* development branch nearly stable (more testing and memory leak
+	  checking needed)
+
+2003-12-13  Valient Gough <vgough@pobox.com>
+	* fixes to build after merge from stable branch
+
+	* remove derived files
+
+	* merge from stable to development branch
+
+	* bug fixes for readdir and decipher calls
+
+2003-12-12  Valient Gough <vgough@pobox.com>
+	* TAG: v0.5
+	* fixes to build - update to libtool 1.5
+	* change bootstrap to use admin/Makefile.common
+	* change default language for tests to C++
+	* add fsync support if support is detected in FUSE
+
+2003-12-11  Valient Gough <vgough@pobox.com>
+	* initial work in modularizing parts of encfs
+	* compiles, but doesn't work properly yet.
+
+	* Likely memory leak and or file descriptor leak in DirNode / FileNode
+	  handling
+
+2003-12-07  Valient Gough <vgough@pobox.com>
+	* Delete: configure
+	* Delete: aclocal.m4
+
+2003-12-03  Valient Gough <vgough@pobox.com>
+	* cleanup mounting when directories do not already exist.  Reported by
+	  Frank B.
+
+2003-11-30  Valient Gough <vgough@pobox.com>
+	* cleanup reported problems with 0.4:
+	    - check for absolute pathname problem, reported by Marcin K.
+	    - cleanup of build script problems reported by Duane D.
+
+2003-11-22  Valient Gough <vgough@pobox.com>
+	* change encfs/Makefile.am to not install the stupid test program
+
+2003-11-21  Valient Gough <vgough@pobox.com>
+	* TAG: v0.4
+	* remove derived files (Makefile.in , configure)
+	* add comments in README and in usage from program itself
+
+	* fix daemon mode by turning off all message output.  Without this the
+	  program was exiting when it tried to print out a message in daemon
+	  mode..
+
+2003-11-04  Valient Gough <vgough@pobox.com>
+	* new option parsing code checks all arguments
+	* added daemon mode where process forks and runs in background
+
+2003-11-03  Valient Gough <vgough@pobox.com>
+	* change license to GPL
+	* minor change to compile cleanly on SuSE 9.0
+
+2003-10-30  Valient Gough <vgough@pobox.com>
+	* bump version number to 0.3
+	* TAG: v0.3
+
+	* - add workaround to fix problem with tar creating read-only files
+	* - fix some error code return results to return the proper errno
+
+2003-10-22  Valient Gough <vgough@pobox.com>
+	* TAG: v0.2
+	* regenerated Makefile.in
+	* documentation updates
+	* change random key to use SHA1 instead of self-encypher
+
+2003-10-13  Valient Gough <vgough@pobox.com>
+	* add basic memory pooling to avoid repeated calls to malloc/free.
+
+	* bug fix - encfs_release was being treated as a 'close', fixed.
+	* feature - add mutex for threadsafe access to descriptor map
+	* cleanup - simplify changeBase2Inline in base64
+	* cleanup - remove unecessary headers from some modules
+
+2003-10-12  Valient Gough <vgough@pobox.com>
+	* add comments to give some rough idea of usage
+
+	* make blockSize global property, fix compiler warnings
+
+	* fix symbolic link handling and file reference counting
+
+2003-10-11  Valient Gough <vgough@pobox.com>
+	* implement basic file descriptor caching.  not thread safe
+
+2003-07-13  Valient Gough <vgough@pobox.com>
+	* TAG: v0.2
+	* fixes so that make dist creates correct file
+	* removed Qt dependency.  Now builds with just stl, openssl, pthread 
+	  libs.
+	* Switched volume key to .encfs3 as filenames are not compatible with
+	  previous version since CRC-16 filename checksum was replaced with a
+	  reduced SHA1 HMAC.
+
+2003-07-09  Valient Gough <vgough@pobox.com>
+	* add usage example to README
+	* TAG: v0.1
+
+	* copy over latest changes from local branch - removal of debug
+	  statments to make it less verbose..
+
+	* fix big memory leak
+	* add README
+
+	* Initial repository create
+

@@ -1,0 +1,23 @@
+
+
+Encfs uses the GNU autoconf / automake toolchain to create makefiles.
+
+The configure script is automatically generated, but is part of most EncFS
+distributions.  If you have a distribution that does not contain the configure
+script, then you can generate it by either running the "makeconf.sh" script, or
+running "make -f Makefile.dist".
+
+To build encfs, run:
+
+./configure
+make
+
+This creates two executables, encfs and encfsctl  in the encfs directory.  You
+can install to in a system directory via "make install".  If the default path
+(/usr/local) is not where you want things installed, then use the "--prefix"
+option to configure to specify the install prefix.
+
+Encfs and encfsctl can also be installed by hand.  They need no special
+permissions.  You may also want the man pages encfs.1 and encfsctl.1.
+
+
