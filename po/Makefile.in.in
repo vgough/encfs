@@ -1,0 +1,12 @@
+#
+# NOTE: This is just a placeholder for the real PO directory files.
+#
+# The reason is that the po directory is maintained separately because all the
+# translation files exist (and are edited) online using Rosetta.
+#
+# This file gets replaced by a real make file when an encfs distribution is
+# packaged.
+#
+
+all: 
+
