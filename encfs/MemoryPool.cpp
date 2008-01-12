@@ -34,41 +34,33 @@
 
 using namespace rlog;
 
-#if HAVE_SSL
-
 # include <openssl/buffer.h>
 #define BLOCKDATA( BLOCK ) (unsigned char*)BLOCK->data->data
-
-#endif
 
 
 struct BlockList
 {
     BlockList *next;
     int size;
-#ifdef HAVE_SSL
     BUF_MEM *data;
-#endif
 };
 
 static BlockList *allocBlock( int size )
 {
     BlockList *block = new BlockList;
     block->size = size;
-#ifdef HAVE_SSL
     block->data = BUF_MEM_new( );
     BUF_MEM_grow( block->data, size );
     VALGRIND_MAKE_MEM_NOACCESS( block->data->data, block->data->max );
-#endif
+
     return block;
 }
 
 static void freeBlock( BlockList *el )
 {
-#ifdef HAVE_SSL
     VALGRIND_MAKE_MEM_UNDEFINED( el->data->data, el->data->max );
     BUF_MEM_free( el->data );
-#endif
+    
     delete el;
 }
 

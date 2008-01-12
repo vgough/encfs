@@ -1,10 +1,10 @@
 =cut
-Copyright (c) 2003-2004, Valient Gough <vgough@pobox.com>
+Copyright (c) 2003-2008, Valient Gough <vgough@pobox.com>
 All rights reserved.
 
 EncFS is free software; you can distribute it and/or modify it under the terms
 of the GNU General Public License (GPL), as published by the Free Software
-Foundation; either version 2 of the License, or (at your option) any later
+Foundation; either version 3 of the License, or (at your option) any later
 version.
 
 =pod
@@ -19,17 +19,18 @@ B<encfs> [B<--version>] [B<-s>] [B<-f>] [B<-v>|B<--verbose>]
 [B<-i MINUTES>|B<--idle=MINUTES>] [B<--extpass=program>] 
 [B<-S>|B<--stdinpass>] [B<--anykey>] [B<--forcedecode>] 
 [B<-d>|B<--fuse-debug>] [B<--public>] [B<--no-default-flags>]
+[B<--ondemand>] [B<--reverse>] [B<-o FUSE_OPTION>]
 I<rootdir> I<mountPoint> 
 [B<--> [I<Fuse Mount Options>]]
 
 =head1 DESCRIPTION
 
-B<encfs> creates a virtual encrypted filesystem which stores encrypted data in
+B<EncFS> creates a virtual encrypted filesystem which stores encrypted data in
 the I<rootdir> directory and makes the unencrypted data visible at the
 I<mountPoint> directory.  The user must supply a password which is used to
 (indirectly) encrypt both filenames and file contents.
 
-If B<encfs> is unable to find a supported filesystem at the specified
+If B<EncFS> is unable to find a supported filesystem at the specified
 I<rootdir>, then the user will be asked if they wish to create a new encrypted
 filesystem at the specified location.  Options will be presented to the user
 allowing some control over the algorithms to use.  As B<EncFS> matures, there
@@ -49,8 +50,8 @@ However simply having files open does not count as activity.
 
 =item B<-f>
 
-The B<-f> (I<foreground>) option causes B<encfs> to run in the foreground.
-Normally B<encfs> spawns off as a daemon and runs in the background, returning
+The B<-f> (I<foreground>) option causes B<EncFS> to run in the foreground.
+Normally B<EncFS> spawns off as a daemon and runs in the background, returning
 control to the spawning shell.  With the B<-f> option, it will run in the
 foreground and any warning/debug log messages will be displayed on standard
 error.  In the default (background) mode, all log messages are logged via
@@ -58,25 +59,25 @@ syslog.
 
 =item B<-v>, B<--verbose>
 
-Causes B<encfs> to enable logging of various debug channels within B<encfs>.
+Causes B<EncFS> to enable logging of various debug channels within B<EncFS>.
 Normally these logging messages are disabled and have no effect.  It is
 recommended that you run in foreground (B<-f>) mode when running with verbose
 enabled.
 
 =item B<-s>
 
-The B<-s> (I<single threaded>) option causes B<encfs> to run in single threaded
-mode.  By default, B<encfs> runs in multi-threaded mode.  This option is used
-during B<encfs> development in order to simplify debugging and allow it to run
+The B<-s> (I<single threaded>) option causes B<EncFS> to run in single threaded
+mode.  By default, B<EncFS> runs in multi-threaded mode.  This option is used
+during B<EncFS> development in order to simplify debugging and allow it to run
 under memory checking tools..
 
 =item B<-d>, B<--fuse-debug>
 
 Enables debugging within the B<FUSE> library.  This should only be used if you
-suspect a problem within B<FUSE> itself (not B<encfs>), as it generates a lot
+suspect a problem within B<FUSE> itself (not B<EncFS>), as it generates a lot
 of low-level data and is not likely to be very helpful in general problem
 tracking.  Try I<verbose> mode (B<-v>) first, which gives a higher level view
-of what is happening within B<encfs>.
+of what is happening within B<EncFS>.
 
 =item B<--forcedecode>
 
@@ -104,9 +105,59 @@ it will not have the ability to change ownership of files.  I recommend that
 you instead investigate if the fuse allow_other option can be used to do what
 you want before considering the use of B<--public>.
 
+=item B<--ondemand>
+
+Mount the filesystem on-demand.  This currently only makes sense in combination
+with B<--idle> and B<--extpass> options.  When the filesystem becomes idle,
+instead of exiting, B<EncFS> stops allowing access to the filesystem by
+internally dropping it's reference to it.  If someone attempts to access the
+filesystem again, the extpass program is used to prompt the user for the
+password.  If this succeeds, then the filesystem becomes available again.
+
+=item B<--reverse>
+
+Normally B<EncFS> provides a plaintext view of data on demand.  Normally it
+stores enciphered data and displays plaintext data.  With B<--reverse> it takes
+as source plaintext data and produces enciphered data on-demand.  This can be
+useful for creating remote encrypted backups, where you do not wish to keep the
+local files unencrypted.
+
+For example, the following would create an encrypted view in /tmp/crypt-view.
+
+    encfs --reverse /home/me /tmp/crypt-view
+
+You could then copy the /tmp/crypt-view directory in order to have a copy of
+the encrypted data.  You must also keep a copy of the file /home/me/.encfs5
+which contains the filesystem information.  Together, the two can be used to
+reproduce the unencrypted data:
+
+    ENCFS5_CONFIG=/home/me/.encfs5 encfs /tmp/crypt-view /tmp/plain-view
+
+Now /tmp/plain-view contains the same data as /home/me
+
+Note that B<--reverse> mode only works with limited configuration options, so
+many settings may be disabled when used.
+
+=item B<-o FUSE_ARG>
+
+Pass through B<FUSE> args to the underlying library.  This makes it easy to
+pass FUSE options when mounting B<EncFS> via mount (and /etc/fstab).  Eg:
+
+    mount encfs#/home/me-crypt /home/me -t fuse -o kernel_cache
+
+Note that encfs arguments cannot be set this way.  If you need to set encfs
+arguments, create a wrapper, such as  encfs-reverse;
+
+    #!/bin/sh
+    encfs --reverse $*
+
+Then mount using the script path
+
+    mount encfs-reverse#/home/me /home/me-crypt -t fuse
+
 =item B<-->
 
-The B<--> option tells B<encfs> to send any remaining arguments directly to
+The B<--> option tells B<EncFS> to send any remaining arguments directly to
 B<FUSE>.  In turn, B<FUSE> passes the arguments to B<fusermount>.  See
 the B<fusermount> help page for information on available commands.
 
@@ -134,6 +185,10 @@ for a trailing newline (\n) which will be removed.
 
 For example, specifying B<--extpass>=I</usr/lib/ssh/ssh-askpass> will cause
 B<EncFS> to use ssh's password prompt program.  
+
+B<Note>: B<EncFS> reads at most 2k of data from the password program, and it
+removes any trailing newline.  Versions before 1.4.x accepted only 64 bytes of
+text.
 
 =item B<-S>, B<--stdinpass>
 
@@ -452,7 +507,7 @@ Per-File Initialization Vector support prevents this.
 This library is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.  Please refer to the "COPYING" file distributed with
-B<encfs> for complete details.
+B<EncFS> for complete details.
 
 =head1 AUTHORS
 

@@ -48,6 +48,7 @@ extern "C" {
 #include <map>
 
 #include <boost/tuple/tuple.hpp>
+#include <boost/scoped_array.hpp>
 
 #include "DirNode.h"
 #include "MemoryPool.h"
@@ -161,7 +162,28 @@ static int withFileNode( const char *opName,
 
 int _do_getattr(FileNode *fnode, struct stat *stbuf)
 {
-    return fnode->getAttr(stbuf);
+    int res = fnode->getAttr(stbuf);
+    if(res == ESUCCESS && S_ISLNK(stbuf->st_mode))
+    {
+	EncFS_Context *ctx = context();
+	shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
+	if(FSRoot)
+	{
+	    // determine plaintext link size..  Easiest to read and decrypt..
+	    scoped_array<char> buf(new char[stbuf->st_size+1]);
+
+	    res = ::readlink( fnode->cipherName(), buf.get(), stbuf->st_size );
+	    // other functions expect c-strings to be null-terminated, which
+	    // readlink doesn't provide
+	    buf[res] = '\0';
+
+	    stbuf->st_size = FSRoot->plainPath( buf.get() ).length();
+
+	    res = ESUCCESS;
+	}
+    }
+
+    return res;
 }
 
 int encfs_getattr(const char *path, struct stat *stbuf)
@@ -338,7 +360,6 @@ int encfs_rmdir(const char *path)
 {
     return withCipherPath( "rmdir", path, _do_rmdir, 0 );
 }
-
 
 int _do_readlink(EncFS_Context *ctx, const string &cyName,
 	tuple<char *, size_t> data )

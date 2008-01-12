@@ -63,6 +63,10 @@ using namespace std;
 using namespace gnu;
 
 static const int DefaultBlockSize = 512;
+// The maximum length of text passwords.  If longer are needed,
+// use the extpass option, as extpass can return arbitrary length binary data.
+static const int MaxPassBuf = 512;
+
 // environment variable names for values encfs stores in the environment when
 // calling an external password program.
 static const char ENCFS_ENV_ROOTDIR[] = "encfs_root";
@@ -1146,13 +1150,15 @@ void showFSInfo( const EncFSConfig &config )
     
 CipherKey getUserKey( const shared_ptr<Cipher> &cipher, bool useStdin )
 {
-    const int MaxPassBuf = 1024;
     char passBuf[MaxPassBuf];
     char *res;
 
     if( useStdin )
     {
 	res = fgets( passBuf, sizeof(passBuf), stdin );
+	// Kill the trailing newline.
+	if(passBuf[ strlen(passBuf)-1 ] == '\n')
+	    passBuf[ strlen(passBuf)-1 ] = '\0';
     } else
     {
 	// xgroup(common)
@@ -1173,7 +1179,7 @@ CipherKey getUserKey( const shared_ptr<Cipher> &cipher, bool useStdin )
 
 std::string readPassword( int FD )
 {
-    char buffer[2048];
+    char buffer[1024];
     string result;
 
     while(1)
@@ -1279,7 +1285,6 @@ CipherKey getUserKey( const std::string &passProg,
 
 CipherKey getNewUserKey( const shared_ptr<Cipher> &cipher )
 {
-    const int MaxPassBuf = 64;
     CipherKey userKey;
     char passBuf[MaxPassBuf];
     char passBuf2[MaxPassBuf];
