@@ -203,11 +203,6 @@ public:
 	}
     }
 
-    void reset()
-    {
-	renameList.reset();
-    }
-
     operator bool () const
     {
 	return renameList;
@@ -414,8 +409,8 @@ DirTraverse DirNode::openDir(const char *plaintextPath)
     }
 }
 
-bool DirNode::genRenameList( list<RenameEl> &renameList, const char *fromP,
-	const char *toP )
+bool DirNode::genRenameList( list<RenameEl> &renameList, 
+	const char *fromP, const char *toP )
 {
     uint64_t fromIV = 0, toIV = 0;
 
@@ -540,14 +535,12 @@ DirNode::newRenameOp( const char *fromP, const char *toP )
     // Do the rename in two stages to avoid chasing our tail
     // Undo everything if we encounter an error!
     shared_ptr< list<RenameEl> > renameList(new list<RenameEl>);
-    shared_ptr<RenameOp> op( new RenameOp(this, renameList) );
     if(!genRenameList( *renameList.get(), fromP, toP ))
     {
 	rWarning("Error during generation of recursive rename list");
-	op.reset();
-    }
-    
-    return op;
+	return shared_ptr<RenameOp>();
+    } else
+	return shared_ptr<RenameOp>( new RenameOp(this, renameList) );
 }
 
 
