@@ -1,7 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
 
 AC_INIT(encfs/encfs.h) dnl a source file from your sub dir
-AM_INIT_AUTOMAKE(encfs, 1.4.1) dnl searches for some needed programs
+AM_INIT_AUTOMAKE(encfs, 1.4.1.1) dnl searches for some needed programs
 
 dnl without this order in this file, automake will be confused!
 dnl
@@ -23,7 +23,7 @@ dnl make /usr/local the default for the installation
 AC_PREFIX_DEFAULT(/usr/local)
 
 AM_GNU_GETTEXT([external])
-AM_GNU_GETTEXT_VERSION(0.14.1)
+AM_GNU_GETTEXT_VERSION(0.16.1)
 AM_MKINSTALLDIRS
 dnl AC_LIB_LINKFLAGS([asprintf]) # use internal copy
 
