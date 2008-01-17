@@ -222,7 +222,7 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
 	{"public", 0, 0, 'P'}, // public mode
 	{"extpass", 1, 0, 'p'}, // external password program
 	// {"single-thread", 0, 0, 's'}, // single-threaded mode
-	{"stdinpass", 1, 0, 'S'}, // read password from stdin
+	{"stdinpass", 0, 0, 'S'}, // read password from stdin
 	{"verbose", 0, 0, 'v'}, // verbose mode
 	{"version", 0, 0, 'V'}, //version
 	{"reverse", 0, 0, 'r'}, // reverse encryption
