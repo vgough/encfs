@@ -413,9 +413,22 @@ static int copyContents(const shared_ptr<EncFS_Root> &rootInfo,
     return EXIT_SUCCESS;
 }
 
+static bool endsWith(const string &str, char ch)
+{
+    if(str.empty())
+	return false;
+    else
+	return str[str.length()-1] == ch;
+}
+
 static int traverseDirs(const shared_ptr<EncFS_Root> &rootInfo, 
 	string volumeDir, string destDir)
 {
+    if(!endsWith(volumeDir, '/'))
+	volumeDir.append("/");
+    if(!endsWith(destDir, '/'))
+	destDir.append("/");
+
     // Lookup directory node so we can create a destination directory
     // with the same permissions
     {
