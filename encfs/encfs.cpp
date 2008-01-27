@@ -756,6 +756,7 @@ int encfs_removexattr( const char *path, const char *name )
 }
 #endif // HAVE_XATTR
 
+#ifdef HAVE_ULOCKMGR_H
 int _do_lock(FileNode *fnode, 
 	tuple<int, struct flock *, struct fuse_file_info *> data)
 {
@@ -775,7 +776,6 @@ int _do_lock(FileNode *fnode,
     }
 }
 
-#ifdef HAVE_ULOCKMGR_H
 int encfs_lock( const char *path, struct fuse_file_info *fi, int cmd,
 	struct flock *lock)
 {
