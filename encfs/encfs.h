@@ -92,12 +92,6 @@ int encfs_listxattr( const char *path, char *list, size_t size );
 int encfs_removexattr( const char *path, const char *name );
 #endif
 
-#ifdef HAVE_ULOCKMGR_H
-struct flock;
-int encfs_lock( const char *path, struct fuse_file_info *fi, int cmd,
-	struct flock *lock );
-#endif
-
 int encfs_utimens( const char *path, const struct timespec ts[2] );
 
 #endif

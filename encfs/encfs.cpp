@@ -37,12 +37,6 @@
 #include <sys/xattr.h>
 #endif
 
-#ifdef HAVE_ULOCKMGR_H
-extern "C" {
-#include <ulockmgr.h>
-}
-#endif
-
 
 #include <string>
 #include <map>
@@ -755,32 +749,4 @@ int encfs_removexattr( const char *path, const char *name )
     return withCipherPath( "removexattr", path, _do_removexattr, name );
 }
 #endif // HAVE_XATTR
-
-#ifdef HAVE_ULOCKMGR_H
-int _do_lock(FileNode *fnode, 
-	tuple<int, struct flock *, struct fuse_file_info *> data)
-{
-    int cmd = data.get<0>();
-    struct flock *lock = data.get<1>();
-    struct fuse_file_info *fi = data.get<2>();
-
-    int fh  = fnode->open( O_RDONLY );
-    if(fh >= 0)
-    {
-	return ulockmgr_op(fh, cmd, lock, &fi->lock_owner,
-		sizeof(fi->lock_owner));
-    } else
-    {
-	rInfo("open failed in lock of %s", fnode->cipherName());
-	return fh;
-    }
-}
-
-int encfs_lock( const char *path, struct fuse_file_info *fi, int cmd,
-	struct flock *lock)
-{
-    return withFileNode( "lock", path, fi,
-	    _do_lock, make_tuple(cmd, lock, fi) );
-}
-#endif
 

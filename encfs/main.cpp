@@ -558,9 +558,6 @@ int main(int argc, char *argv[])
     //encfs_oper.create = encfs_create;
     encfs_oper.ftruncate = encfs_ftruncate;
     encfs_oper.fgetattr = encfs_fgetattr;
-#ifdef HAVE_ULOCKMGR_H
-    encfs_oper.lock = encfs_lock;
-#endif // HAVE_ULOCKMGR_H
     encfs_oper.utimens = encfs_utimens;
     //encfs_oper.bmap = encfs_bmap;
 

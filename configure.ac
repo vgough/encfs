@@ -66,8 +66,6 @@ AC_CHECK_LIB(fuse,fuse_new, [FUSE_LIBS="-lfuse"],
 	and rerun configure, eg:
 	export LDFLAGS=-L/usr/local/lib ])],)
 
-AC_CHECK_HEADERS([ulockmgr.h])
-AC_CHECK_LIB(ulockmgr,ulockmgr_op, [FUSE_LIBS="$FUSE_LIBS -lulockmgr"])
 AC_SUBST(FUSE_LIBS)
 
 # check for a supported FUSE_MAJOR_VERSION.
