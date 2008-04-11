@@ -176,9 +176,23 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid)
     int olduid = -1;
     int oldgid = -1;
     if(uid != 0)
+    {
 	olduid = setfsuid( uid );
+        if(olduid == -1)
+        {
+            rInfo("setfsuid error: %s", strerror(errno));
+            return -EPERM;
+        }
+    }
     if(gid != 0)
+    {
 	oldgid = setfsgid( gid );
+        if(oldgid == -1)
+        {
+            rInfo("setfsgid error: %s", strerror(errno));
+            return -EPERM;
+        }
+    }
 
     /*
      * cf. xmp_mknod() in fusexmp.c
