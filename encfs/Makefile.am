@@ -42,7 +42,7 @@ endif
 #       :     :   0       => no new interfaces, but breaks old apps
 #       :  +1 :           => internal changes, nothing breaks
 #
-libencfs_la_LDFLAGS = -version-info 3:1:0
+libencfs_la_LDFLAGS = -version-info 4:0:0
 libencfs_la_LIBADD = -lrlog
 
 EXTRASRC = ../intl/autosprintf.cpp

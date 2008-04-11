@@ -62,7 +62,7 @@ using namespace rlog;
 using namespace std;
 using namespace gnu;
 
-static const int DefaultBlockSize = 512;
+static const int DefaultBlockSize = 1024;
 // The maximum length of text passwords.  If longer are needed,
 // use the extpass option, as extpass can return arbitrary length binary data.
 static const int MaxPassBuf = 512;
@@ -76,7 +76,8 @@ static const char ENCFS_ENV_STDERR[] = "encfs_stderr";
 
 //static int V5SubVersion = 20040518;
 //static int V5SubVersion = 20040621; // add external IV chaining
-static int V5SubVersion = 20040813; // fix MACFileIO block size issues
+//static int V5SubVersion = 20040813; // fix MACFileIO block size issues
+static int V5SubVersion = 20080411; // add zero-block pass-through
 static int V5SubVersionDefault = 0;
 
 struct ConfigInfo
