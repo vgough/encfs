@@ -698,8 +698,15 @@ int encfs_statfs(const char *path, struct statvfs *st)
 int _do_setxattr(EncFS_Context *, const string &cyName, 
 	tuple<const char *, const char *, size_t, int> data)
 {
+#ifdef XATTR_ADD_OPT
+    int options = 0;
+    // flags argument is ignored..
+    int res = ::setxattr( cyName.c_str(), data.get<0>(), data.get<1>(), 
+	    data.get<2>(), 0, options );
+#else
     int res = ::setxattr( cyName.c_str(), data.get<0>(), data.get<1>(), 
 	    data.get<2>(), data.get<3>() );
+#endif
     return (res == -1) ? -errno : res;
 }
 
@@ -713,8 +720,14 @@ int encfs_setxattr( const char *path, const char *name,
 int _do_getxattr(EncFS_Context *, const string &cyName,
 	tuple<const char *, void *, size_t> data)
 {
+#ifdef XATTR_ADD_OPT
+    int options = 0;
+    int res = ::getxattr( cyName.c_str(), data.get<0>(), 
+	    data.get<1>(), data.get<2>(), 0, options);
+#else
     int res = ::getxattr( cyName.c_str(), data.get<0>(), 
 	    data.get<1>(), data.get<2>());
+#endif
     return (res == -1) ? -errno : res;
 }
 
@@ -728,7 +741,13 @@ int encfs_getxattr( const char *path, const char *name,
 int _do_listxattr(EncFS_Context *, const string &cyName,
 	tuple<char *, size_t> data)
 {
+#ifdef XATTR_ADD_OPT
+    int options = 0;
+    int res = ::listxattr( cyName.c_str(), data.get<0>(), data.get<1>(),
+            options );
+#else
     int res = ::listxattr( cyName.c_str(), data.get<0>(), data.get<1>() );
+#endif
     return (res == -1) ? -errno : res;
 }
 
@@ -740,7 +759,12 @@ int encfs_listxattr( const char *path, char *list, size_t size )
 
 int _do_removexattr(EncFS_Context *, const string &cyName, const char *name)
 {
+#ifdef XATTR_ADD_OPT
+    int options = 0;
+    int res = ::removexattr( cyName.c_str(), name, options );
+#else
     int res = ::removexattr( cyName.c_str(), name );
+#endif
     return (res == -1) ? -errno : res;
 }
 

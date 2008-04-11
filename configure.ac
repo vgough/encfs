@@ -92,6 +92,28 @@ dnl fuse_operations.setxattr was added 2004-03-31
 dnl only enable it if setxattr function is found..
 AC_CHECK_HEADERS([attr/xattr.h sys/xattr.h])
 
+# Do xattr functions take additional options like on Darwin?
+AC_CACHE_CHECK([whether xattr interface takes additional options], 
+        smb_attr_cv_xattr_add_opt, [
+            old_LIBS=$LIBS
+            LIBS="$LIBS $ACL_LIBS"
+            AC_TRY_COMPILE([
+                #include <sys/types.h>
+                #if HAVE_ATTR_XATTR_H
+                #include <attr/xattr.h>
+                #elif HAVE_SYS_XATTR_H
+                #include <sys/xattr.h>
+                #endif
+            ],[
+               getxattr(0, 0, 0, 0, 0, 0);
+               ],
+           [smb_attr_cv_xattr_add_opt=yes],
+           [smb_attr_cv_xattr_add_opt=no;LIBS=$old_LIBS])
+])
+if test x"$smb_attr_cv_xattr_add_opt" = x"yes"; then
+    AC_DEFINE(XATTR_ADD_OPT, 1, [xattr functions have additional options])
+fi
+
 dnl Check for valgrind headers..
 AC_CHECK_HEADERS([valgrind/valgrind.h valgrind/memcheck.h])
 
