@@ -101,6 +101,7 @@ public:
 	bool externalIVChaining;
 	bool forceDecode; // force decoding, even if errors are detected
 	bool reverseEncryption;  
+        bool allowHoles; // allow holes in files
 	Config()
 	    : fsSubVersion(0)
 	    , blockSize(1)
@@ -111,6 +112,7 @@ public:
 	    , externalIVChaining( false )
 	    , forceDecode( false )
 	    , reverseEncryption ( false )
+            , allowHoles( false )
 	    { }
     };
 

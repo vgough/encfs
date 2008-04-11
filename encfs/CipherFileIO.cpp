@@ -372,7 +372,18 @@ bool CipherFileIO::blockRead( unsigned char *buf, int size,
     if (reverseEncryption)
 	return cipher->blockEncode( buf, size, _iv64, key );
     else
-	return cipher->blockDecode( buf, size, _iv64, key );
+    {
+        if(_allowHoles)
+        {
+            // special case - leave all 0's alone
+            for(int i=0; i<size; ++i)
+                if(buf[i] != 0)
+                    return cipher->blockDecode( buf, size, _iv64, key );
+
+            return true;
+        } else
+            return cipher->blockDecode( buf, size, _iv64, key );
+    }
 } 
 
 bool CipherFileIO::streamRead( unsigned char *buf, int size, 

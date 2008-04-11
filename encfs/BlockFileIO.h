@@ -40,12 +40,12 @@ public:
 
     virtual int blockSize() const;
 
-protected:
-
     // default is false, but setting this to true will allow holes to be stored
     // in the file.  Only works if supported by the underlying FileIO
     // implementation..
-    void allowHoles( bool allow );
+    virtual void allowHoles( bool allow );
+
+protected:
 
     int truncate( off_t size, FileIO *base );
     void padFile( off_t oldSize, off_t newSize, bool forceWrite );

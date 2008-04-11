@@ -30,6 +30,8 @@
 using namespace rlog;
 using namespace rel;
 using namespace std;
+using boost::shared_ptr;
+using boost::dynamic_pointer_cast;
 
 static RLogChannel *Info = DEF_CHANNEL("info/MACFileIO", Log_Info);
 //
@@ -157,6 +159,14 @@ off_t MACFileIO::getSize() const
     return size;
 }
 
+void MACFileIO::allowHoles( bool allow )
+{
+    BlockFileIO::allowHoles( allow );
+    shared_ptr<BlockFileIO> bf = dynamic_pointer_cast<BlockFileIO>( base );
+    if(bf)
+        bf->allowHoles( allow );
+}
+
 ssize_t MACFileIO::readOneBlock( const IORequest &req ) const
 {
     int headerSize = macBytes + randBytes;
@@ -173,31 +183,49 @@ ssize_t MACFileIO::readOneBlock( const IORequest &req ) const
     // get the data from the base FileIO layer
     ssize_t readSize = base->read( tmp );
 
+    // don't store zeros if configured for zero-block pass-through
+    bool skipBlock;
+    if( _allowHoles )
+    {
+        skipBlock = true;
+        for(int i=0; i<readSize; ++i)
+            if(tmp.data[i] != 0)
+            {
+                skipBlock = false;
+                break;
+            }
+    } else
+       skipBlock = false; 
+
     if(readSize > headerSize)
     {
-	// At this point the data has been decoded.  So, compute the MAC of the
-	// block and check against the checksum stored in the header..
-	uint64_t mac = cipher->MAC_64( tmp.data + macBytes, 
-		                       readSize - macBytes, key );
+        if(!skipBlock)
+        {
+            // At this point the data has been decoded.  So, compute the MAC of
+            // the block and check against the checksum stored in the header..
+            uint64_t mac = cipher->MAC_64( tmp.data + macBytes, 
+                    readSize - macBytes, key );
 
-	for(int i=0; i<macBytes; ++i, mac >>= 8)
-	{
-	    int test = mac & 0xff;
-	    int stored = tmp.data[i];
-	    if(test != stored)
-	    {
-		// uh oh.. 
-		long blockNum = req.offset / bs;
-		rWarning(_("MAC comparison failure in block %li"), 
-			blockNum);
-		if( !warnOnly )
-		{
-		    MemoryPool::release( mb );
-		    throw ERROR(_("MAC comparison failure, refusing to read"));
-		}
-		break;
-	    }
-	}
+            for(int i=0; i<macBytes; ++i, mac >>= 8)
+            {
+                int test = mac & 0xff;
+                int stored = tmp.data[i];
+                if(test != stored)
+                {
+                    // uh oh.. 
+                    long blockNum = req.offset / bs;
+                    rWarning(_("MAC comparison failure in block %li"), 
+                            blockNum);
+                    if( !warnOnly )
+                    {
+                        MemoryPool::release( mb );
+                        throw ERROR(
+                                _("MAC comparison failure, refusing to read"));
+                    }
+                    break;
+                }
+            }
+        }
 
 	// now copy the data to the output buffer
 	readSize -= headerSize;

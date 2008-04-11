@@ -48,6 +48,7 @@
 using namespace std;
 using namespace rel;
 using namespace rlog;
+using boost::dynamic_pointer_cast;
 
 /*
    TODO: locking at the FileNode level is inefficient, since this precludes
@@ -65,7 +66,8 @@ FileNode::FileNode(DirNode *parent_,
 	const char *plaintextName_, const char *cipherName_, 
 	const shared_ptr<Cipher> &dataCipher, const CipherKey &key, 
 	int blockSize, int blockMACBytes, int blockMACRandBytes, bool uniqueIV,
-	bool externalIVChaining_, bool forceDecode, bool reverseEncryption_ )
+	bool externalIVChaining_, bool forceDecode, bool reverseEncryption_,
+        bool allowHoles )
 {
     pthread_mutex_init( &mutex, 0 );
     
@@ -88,6 +90,9 @@ FileNode::FileNode(DirNode *parent_,
 	io = shared_ptr<FileIO>(new MACFileIO(io, dataCipher, key, 
 		    blockSize,blockMACBytes,blockMACRandBytes,forceDecode));
     }
+
+    if(allowHoles)
+        dynamic_pointer_cast<BlockFileIO>(io)->allowHoles( allowHoles );
 }
 
 FileNode::~FileNode()

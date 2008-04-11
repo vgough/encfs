@@ -58,6 +58,7 @@ struct EncFSConfig
     bool externalIVChaining; // IV seeding by filename IV chaining
 
     bool chainedNameIV; // filename IV chaining
+    bool allowHoles; // allow holes in files (implicit zero blocks)
 };
 
 enum ConfigType

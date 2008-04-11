@@ -43,7 +43,8 @@ public:
 	    bool uniqueIV, // enable per-file initialization vectors
 	    bool externalIVChaining,
 	    bool forceDecode, // decode, even if decoding errors are detected
-	    bool reverseEncryption );
+	    bool reverseEncryption,
+            bool allowHoles );
     ~FileNode();
 
     const char *plaintextName() const;

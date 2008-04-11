@@ -726,7 +726,8 @@ shared_ptr<FileNode> DirNode::findOrCreate( const char *plainName)
 		config->uniqueIV,
 		config->externalIVChaining,
 		config->forceDecode,
-		config->reverseEncryption) );
+		config->reverseEncryption,
+                config->allowHoles) );
 		
 	if(config->externalIVChaining)
 	    node->setName(0, 0, iv);

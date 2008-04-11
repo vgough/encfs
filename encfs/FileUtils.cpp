@@ -271,7 +271,9 @@ bool readV5Config( const char *configFile, EncFSConfig *config,
 	    config->blockMACBytes = cfgRdr["blockMACBytes"].readInt(0);
 	    config->blockMACRandBytes = 
 		cfgRdr["blockMACRandBytes"].readInt(0);
-	    
+	   
+            config->allowHoles = cfgRdr["allowHoles"].readBool( false );
+
 	    ok = true;
 	} catch( rlog::Error &err)
 	{
@@ -411,6 +413,7 @@ bool writeV5Config( const char *configFile, EncFSConfig *config )
     cfg["uniqueIV"] << config->uniqueIV;
     cfg["chainedIV"] << config->chainedNameIV;
     cfg["externalIV"] << config->externalIVChaining;
+    cfg["allowHoles"] << config->allowHoles;
 
     return cfg.save( configFile );
 }
@@ -679,23 +682,35 @@ int selectBlockSize( const Cipher::CipherAlgorithm &alg )
     return blockSize;
 }
 
-static 
-void selectBlockMAC(int *macBytes, int *macRandBytes)
+static
+bool boolDefaultNo(const char *prompt)
 {
-    // xgroup(setup)
-    cout << _("Enable block authentication code headers\n"
-	"on every block in a file?  This adds about 12 bytes per block\n"
-	"to the storage requirements for a file, and significantly affects\n"
-	"performance but it also means [almost] any modifications or errors\n"
-	"within a block will be caught and will cause a read error.\n"
-	"The default here is No.  \n"
-	"Any response that does not begin with 'y' will mean No: ");
+    cout << prompt << "\n";
+    cout << _("The default here is No.\n"
+              "Any response that does not begin with 'y' will mean No: ");
 
     char answer[10];
     fgets( answer, sizeof(answer), stdin );
     cout << "\n";
 
-    if(tolower(answer[0]) == 'y')
+    if(tolower(answer[0]) == 'n')
+	return false;
+    else
+	return true;
+}
+
+static 
+void selectBlockMAC(int *macBytes, int *macRandBytes)
+{
+    // xgroup(setup)
+    bool addMAC = boolDefaultNo(
+            _("Enable block authentication code headers\n"
+	"on every block in a file?  This adds about 12 bytes per block\n"
+	"to the storage requirements for a file, and significantly affects\n"
+	"performance but it also means [almost] any modifications or errors\n"
+	"within a block will be caught and will cause a read error."));
+
+    if(addMAC)
     {
 	*macBytes = 8;
 
@@ -707,7 +722,8 @@ void selectBlockMAC(int *macBytes, int *macRandBytes)
 	    "vectors, which does not come with as great of performance\n"
 	    "penalty. \n"
 	    "Select a number of bytes, from 0 (no random bytes) to 8: ");
-    
+   
+        char answer[10];
 	int randSize = 0;
 	fgets( answer, sizeof(answer), stdin );
 	cout << "\n";
@@ -726,59 +742,12 @@ void selectBlockMAC(int *macBytes, int *macRandBytes)
     }
 }
 
-static 
-bool selectUniqueIV()
+static
+bool boolDefaultYes(const char *prompt)
 {
-    // xgroup(setup)
-    cout << _("Enable per-file initialization vectors?\n"
-	"This adds about 8 bytes per file to the storage requirements.\n"
-	"It should not affect performance except possibly with applications\n"
-	"which rely on block-aligned file io for performance.\n"
-	"The default here is Yes.  \n"
-	"Any response that does not begin with 'n' will mean Yes: ");
-
-    char answer[10];
-    fgets( answer, sizeof(answer), stdin );
-    cout << "\n";
-
-    if(tolower(answer[0]) == 'n')
-	return false;
-    else
-	return true;
-}
-
-static 
-bool selectChainedIV()
-{
-    // xgroup(setup)
-    cout << _("Enable filename initialization vector chaining?\n"
-	"This makes filename encoding dependent on the complete path, \n"
-	"rather then encoding each path element individually. \n"
-	"This is normally desireable, therefor the default is Yes. \n"
-	"Any response that does not begin with 'n' will mean Yes: ");
-
-    char answer[10];
-    fgets( answer, sizeof(answer), stdin );
-    cout << "\n";
-
-    if(tolower(answer[0]) == 'n')
-	return false;
-    else
-	return true;
-}
-
-static 
-bool selectExternalChainedIV()
-{
-    // xgroup(setup)
-    cout << _("Enable filename to IV header chaining?\n"
-	"This makes file data encoding dependent on the complete file path.\n"
-	"If a file is renamed, it will not decode sucessfully unless it\n"
-	"was renamed by encfs with the proper key.\n"
-	"If this option is enabled, then hard links will not be supported\n"
-	"in the filesystem.\n"
-	"The default is No. \n"
-	"Any response that does not begin with 'y' will mean No: ");
+    cout << prompt << "\n";
+    cout << _("The default here is Yes.\n"
+              "Any response that does not begin with 'n' will mean Yes: ");
 
     char answer[10];
     fgets( answer, sizeof(answer), stdin );
@@ -788,6 +757,49 @@ bool selectExternalChainedIV()
 	return true;
     else
 	return false;
+}
+
+static 
+bool selectUniqueIV()
+{
+    // xgroup(setup)
+    return boolDefaultYes(
+            _("Enable per-file initialization vectors?\n"
+	"This adds about 8 bytes per file to the storage requirements.\n"
+	"It should not affect performance except possibly with applications\n"
+	"which rely on block-aligned file io for performance."));
+}
+
+static 
+bool selectChainedIV()
+{
+    // xgroup(setup)
+    return boolDefaultYes(
+            _("Enable filename initialization vector chaining?\n"
+	"This makes filename encoding dependent on the complete path, \n"
+	"rather then encoding each path element individually."));
+}
+
+static 
+bool selectExternalChainedIV()
+{
+    // xgroup(setup)
+    return boolDefaultNo(
+            _("Enable filename to IV header chaining?\n"
+	"This makes file data encoding dependent on the complete file path.\n"
+	"If a file is renamed, it will not decode sucessfully unless it\n"
+	"was renamed by encfs with the proper key.\n"
+	"If this option is enabled, then hard links will not be supported\n"
+	"in the filesystem."));
+}
+
+static 
+bool selectZeroBlockPassThrough()
+{
+    // xgroup(setup)
+    return boolDefaultNo(
+            _("Enable file-hole pass-through?\n"
+	"This avoids writing encrypted blocks when file holes are created."));
 }
 
 RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir, 
@@ -822,6 +834,7 @@ RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir,
     bool uniqueIV = false;
     bool chainedIV = false;
     bool externalIV = false;
+    bool allowHoles = false;
     
     if (reverseEncryption)
     {
@@ -861,13 +874,11 @@ RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir,
     {
 	// xgroup(setup)
 	cout << _("Standard configuration selected.") << "\n";
-	// look for blowfish with 160 bit key..
-	// block name encoding is now standard as well..
-	// per-file initialization vectors are now standard, as they shouldn't
-	// have any significant performance penalty.
-	keySize = 160;
+	// AES w/ 192 bit key, block name encoding, per-file initialization
+        // vectors are all standard.
+	keySize = 192;
 	blockSize = DefaultBlockSize;
-	alg = findCipherAlgorithm("Blowfish", keySize);
+	alg = findCipherAlgorithm("AES", keySize);
 	blockMACBytes = 0;
 	externalIV = false;
 	nameIOIface = BlockNameIO::CurrentInterface();
@@ -917,10 +928,11 @@ RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir,
 		// xgroup(setup)
 		cout << _("External chained IV disabled, as both 'IV chaining'\n"
 		    "and 'unique IV' features are required for this option.") 
-		<< endl;
+                    << "\n";
 		externalIV = false;
 	    }
 	    selectBlockMAC(&blockMACBytes, &blockMACRandBytes);
+            allowHoles = selectZeroBlockPassThrough();
 	}
     }
 
@@ -949,6 +961,7 @@ RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir,
     config.uniqueIV = uniqueIV;
     config.chainedNameIV = chainedIV;
     config.externalIVChaining = externalIV;
+    config.allowHoles = allowHoles;
 
     cout << "\n";
     // xgroup(setup)
@@ -1035,6 +1048,7 @@ RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir,
     dirNodeConfig->externalIVChaining = config.externalIVChaining;
     dirNodeConfig->forceDecode = forceDecode;
     dirNodeConfig->reverseEncryption = reverseEncryption;
+    dirNodeConfig->allowHoles = config.allowHoles;
 
     rootInfo = RootPtr( new EncFS_Root );
     rootInfo->cipher = cipher;
@@ -1144,6 +1158,11 @@ void showFSInfo( const EncFSConfig &config )
     {
 	// xgroup(diag)
 	cout << _("File data IV is chained to filename IV.\n");
+    }
+    if(config.allowHoles)
+    {
+	// xgroup(diag)
+	cout << _("File holes passed through to ciphertext.\n");
     }
     cout << "\n";
 }

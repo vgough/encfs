@@ -189,7 +189,7 @@ bool BlockFileIO::write( const IORequest &req )
     if(lastBlockSize == 0)
 	--lastNonEmptyBlock;
 
-    if( (req.offset > fileSize) && !_allowHoles )
+    if( req.offset > fileSize )
     {
 	// extend file first to fill hole with 0's..
 	const bool forceWrite = false;
@@ -340,15 +340,18 @@ void BlockFileIO::padFile( off_t oldSize, off_t newSize, bool forceWrite )
 	    ++oldLastBlock;
 	}
 
-	// 2
-	for(; oldLastBlock != newLastBlock; ++oldLastBlock)
-	{
-	    rDebug("padding block %" PRIi64, oldLastBlock);
-	    req.offset = oldLastBlock * _blockSize;
-	    req.dataLen = _blockSize;
-	    memset( mb.data, 0, req.dataLen );
-	    cacheWriteOneBlock( req );
-	}
+	// 2, pad zero blocks unless holes are allowed
+        if(!_allowHoles)
+        {
+            for(; oldLastBlock != newLastBlock; ++oldLastBlock)
+            {
+                rDebug("padding block %" PRIi64, oldLastBlock);
+                req.offset = oldLastBlock * _blockSize;
+                req.dataLen = _blockSize;
+                memset( mb.data, 0, req.dataLen );
+                cacheWriteOneBlock( req );
+            }
+        }
 
 	// 3. only necessary if write is forced and block is non 0 length
 	if(forceWrite && newBlockSize)
