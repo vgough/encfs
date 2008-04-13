@@ -57,10 +57,16 @@
 
 #include "i18n.h"
 
+#include <boost/filesystem/fstream.hpp>
+#include <boost/archive/xml_iarchive.hpp>
+#include <boost/archive/xml_oarchive.hpp>
+#include <boost/serialization/split_free.hpp>
+
 using namespace rel;
 using namespace rlog;
 using namespace std;
 using namespace gnu;
+namespace fs = boost::filesystem;
 
 static const int DefaultBlockSize = 1024;
 // The maximum length of text passwords.  If longer are needed,
@@ -76,9 +82,10 @@ static const char ENCFS_ENV_STDERR[] = "encfs_stderr";
 
 //static int V5SubVersion = 20040518;
 //static int V5SubVersion = 20040621; // add external IV chaining
-//static int V5SubVersion = 20040813; // fix MACFileIO block size issues
-static int V5SubVersion = 20080411; // add zero-block pass-through
+static int V5SubVersion = 20040813; // fix MACFileIO block size issues
 static int V5SubVersionDefault = 0;
+
+const int V6SubVersion = 20080813; // switch to v6/XML, add allowHoles option
 
 struct ConfigInfo
 {
@@ -91,15 +98,90 @@ struct ConfigInfo
     int currentSubVersion;
     int defaultSubVersion;
 } ConfigFileMapping[] = {
+    {".encfs6.xml", Config_V6, "ENCFS6_CONFIG", readV6Config, writeV6Config, 
+	V6SubVersion, 0 },
+    // backward compatible support for older versions
     {".encfs5", Config_V5, "ENCFS5_CONFIG", readV5Config, writeV5Config, 
 	V5SubVersion, V5SubVersionDefault },
-    // backward compatible support for config versions 3 and 4
     {".encfs4", Config_V4, NULL, readV4Config, writeV4Config, 0, 0 },
-    {".encfs3", Config_V3, NULL, readV3Config, writeV3Config, 0, 0 },
-    // forget about version 2 and 1 - from before the first public release!
+    // no longer support earlier versions
+    {".encfs3", Config_V3, NULL, NULL, NULL, 0, 0 },
     {".encfs2", Config_Prehistoric, NULL, NULL, NULL, 0, 0 },
     {".encfs", Config_Prehistoric, NULL, NULL, NULL, 0, 0 },
     {NULL,Config_None, NULL, NULL, NULL, 0, 0}};
+
+
+// define serialization helpers
+namespace boost
+{
+    namespace serialization
+    {
+        template<class Archive>
+        void save(Archive &ar, const EncFSConfig &cfg, 
+                unsigned int version)
+        {
+            (void)version;
+            ar << make_nvp("creator", cfg.creator);
+            ar << make_nvp("cipherAlg", cfg.cipherIface);
+            ar << make_nvp("nameAlg", cfg.nameIface);
+            ar << make_nvp("keySize", cfg.keySize);
+            ar << make_nvp("blockSize", cfg.blockSize);
+            ar << make_nvp("uniqueIV", cfg.uniqueIV);
+            ar << make_nvp("chainedNameIV", cfg.chainedNameIV);
+            ar << make_nvp("externalIVChaining", cfg.externalIVChaining);
+            ar << make_nvp("blockMACBytes", cfg.blockMACBytes);
+            ar << make_nvp("blockMACRandBytes", cfg.blockMACRandBytes);
+            ar << make_nvp("allowHoles", cfg.allowHoles);
+
+            int keyLen = cfg.keyData.length();
+            ar << make_nvp("encodedKeySize", keyLen);
+            char key[keyLen];
+            memcpy(key, cfg.keyData.data(), keyLen);
+            ar << make_nvp("encodedKeyData", make_binary_object(key, keyLen));
+        }
+
+        template<class Archive>
+        void load(Archive &ar, EncFSConfig &cfg, unsigned int version)
+        {
+            (void)version;
+            cfg.subVersion = version;
+            ar >> make_nvp("creator", cfg.creator);
+            ar >> make_nvp("cipherAlg", cfg.cipherIface);
+            ar >> make_nvp("nameAlg", cfg.nameIface);
+            ar >> make_nvp("keySize", cfg.keySize);
+            ar >> make_nvp("blockSize", cfg.blockSize);
+            ar >> make_nvp("uniqueIV", cfg.uniqueIV);
+            ar >> make_nvp("chainedNameIV", cfg.chainedNameIV);
+            ar >> make_nvp("externalIVChaining", cfg.externalIVChaining);
+            ar >> make_nvp("blockMACBytes", cfg.blockMACBytes);
+            ar >> make_nvp("blockMACRandBytes", cfg.blockMACRandBytes);
+            ar >> make_nvp("allowHoles", cfg.allowHoles);
+       
+            int encodedKeySize;
+            ar >> make_nvp("encodedKeySize", encodedKeySize);
+            char key[encodedKeySize];
+            ar >> make_nvp("encodedKeyData", 
+                    make_binary_object(key, encodedKeySize));
+            cfg.keyData.assign( (char*)key, encodedKeySize );
+        }
+        
+        template<class Archive>
+        void serialize(Archive &ar, EncFSConfig &cfg, unsigned int version)
+        {
+            split_free(ar, cfg, version);
+        }
+
+        template<class Archive>
+        void serialize(Archive &ar, Interface &i, const unsigned int version)
+        {
+            (void)version;
+            ar & make_nvp("name", i.name());
+            ar & make_nvp("major", i.current());
+            ar & make_nvp("minor", i.revision());
+        }
+    }
+}
+BOOST_CLASS_VERSION(EncFSConfig, V6SubVersion)
 
 
 EncFS_Root::EncFS_Root()
@@ -231,6 +313,32 @@ ConfigType readConfig( const string &rootDir, EncFSConfig *config )
     return Config_None;
 }
 
+bool readV6Config( const char *configFile, EncFSConfig *config,
+	ConfigInfo *info)
+{
+    (void)info;
+
+    fs::ifstream st(configFile);
+    if(st.is_open())
+    {
+        try
+        {
+            boost::archive::xml_iarchive ia( st );
+            ia >> BOOST_SERIALIZATION_NVP( *config );
+        
+            return true;
+        } catch(boost::archive::archive_exception &e)
+        {
+            rError("Archive exception: %s", e.what());
+            return false;
+        }
+    } else
+    {
+        rInfo("Failed to load config file %s", configFile);
+        return false;
+    }
+}
+
 bool readV5Config( const char *configFile, EncFSConfig *config,
 	ConfigInfo *info)
 {
@@ -272,8 +380,6 @@ bool readV5Config( const char *configFile, EncFSConfig *config,
 	    config->blockMACBytes = cfgRdr["blockMACBytes"].readInt(0);
 	    config->blockMACRandBytes = 
 		cfgRdr["blockMACRandBytes"].readInt(0);
-	   
-            config->allowHoles = cfgRdr["allowHoles"].readBool( false );
 
 	    ok = true;
 	} catch( rlog::Error &err)
@@ -325,44 +431,6 @@ bool readV4Config( const char *configFile, EncFSConfig *config,
     return ok;
 }
 
-bool readV3Config( const char *configFile, EncFSConfig *config,
-	ConfigInfo *info)
-{
-    (void)configFile;
-    // use Config to parse the file and query it..
-    // fill in default for V3
-    config->creator = "EncFS 0.x";
-    config->subVersion = info->defaultSubVersion;
-    config->cipherIface = Interface("ssl/blowfish-v0.2", 1, 0, 0);
-    config->nameIface = Interface("nameio/stream", 0, 1, 0);
-    config->keySize = 160;
-    config->blockSize = 64;
-    config->blockMACBytes = 0;
-    config->blockMACRandBytes = 0;
-    config->uniqueIV = false;
-    config->externalIVChaining = false;
-    config->chainedNameIV = false;
-
-    bool ok = false;
-    int vkeyFD = open( configFile, O_RDONLY );
-    if( vkeyFD >= 0 )
-    {
-	const int headerSize = 22; // 160 bit (20 bytes) + 2 byte checksum
-	char keyBuf [ headerSize ];
-
-	read( vkeyFD, keyBuf, headerSize );
-	close( vkeyFD );
-
-	config->keyData.assign( keyBuf, headerSize );
-	ok = true;
-    } else
-    {
-	rDebug("Error opening config file %s", configFile );
-    }
-
-    return ok;
-}
-
 bool saveConfig( ConfigType type, const string &rootDir,
 	EncFSConfig *config )
 {
@@ -398,6 +466,18 @@ bool saveConfig( ConfigType type, const string &rootDir,
     return ok;
 }
 
+bool writeV6Config( const char *configFile, EncFSConfig *config )
+{
+    fs::ofstream st( configFile );
+    if(!st.is_open())
+        return false;
+
+    boost::archive::xml_oarchive oa(st);
+    oa << BOOST_SERIALIZATION_NVP( config );
+
+    return true;
+}
+
 bool writeV5Config( const char *configFile, EncFSConfig *config )
 {
     ConfigReader cfg;
@@ -414,7 +494,6 @@ bool writeV5Config( const char *configFile, EncFSConfig *config )
     cfg["uniqueIV"] << config->uniqueIV;
     cfg["chainedIV"] << config->chainedNameIV;
     cfg["externalIV"] << config->externalIVChaining;
-    cfg["allowHoles"] << config->allowHoles;
 
     return cfg.save( configFile );
 }
@@ -429,25 +508,6 @@ bool writeV4Config( const char *configFile, EncFSConfig *config )
     cfg["keyData"] << config->keyData;
 
     return cfg.save( configFile );
-}
-
-bool writeV3Config( const char *configFile, EncFSConfig *config )
-{
-    bool ok = true;
-
-    int fd = open( configFile, O_RDWR );
-    if(fd >= 0)
-    {
-	::pwrite(fd, config->keyData.data(), config->keyData.length(), 0);
-	close( fd );
-    }  else
-    {
-	rError(_("Error opening key file %s for write: %s"), configFile,
-		strerror( errno ));
-	ok = false;
-    }
-
-    return ok;
 }
 
 static
@@ -803,7 +863,7 @@ bool selectZeroBlockPassThrough()
 	"This avoids writing encrypted blocks when file holes are created."));
 }
 
-RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir, 
+RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir, 
 	bool enableIdleTracking, bool forceDecode,
 	const std::string &passwordProgram,
 	bool useStdin, bool reverseEncryption )
@@ -956,7 +1016,7 @@ RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir,
     config.blockSize = blockSize;
     config.nameIface = nameIOIface;
     config.creator = "EncFS " VERSION;
-    config.subVersion = V5SubVersion;
+    config.subVersion = V6SubVersion;
     config.blockMACBytes = blockMACBytes;
     config.blockMACRandBytes = blockMACRandBytes;
     config.uniqueIV = uniqueIV;
@@ -1019,7 +1079,7 @@ RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir,
 	return rootInfo;
     }
 
-    if(!saveConfig( Config_V5, rootDir, &config ))
+    if(!saveConfig( Config_V6, rootDir, &config ))
 	return rootInfo;
 
     // fill in config struct
@@ -1436,7 +1496,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 	if(opts->createIfNotFound)
 	{
 	    // creating a new encrypted filesystem
-	    rootInfo = createV5Config( ctx, opts->rootDir, opts->idleTracking,
+	    rootInfo = createV6Config( ctx, opts->rootDir, opts->idleTracking,
 		    opts->forceDecode, opts->passwordProgram, opts->useStdin,
 		    opts->reverseEncryption );
 	}

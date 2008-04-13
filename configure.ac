@@ -43,6 +43,9 @@ AC_PROG_LIBTOOL
 
 ACX_PTHREAD
 
+AX_BOOST_BASE([1.33])
+AX_BOOST_SERIALIZATION
+
 dnl Need to include any user specified flags in the tests below, as they might
 dnl specify required include directories..
 FUSEFLAGS="-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26"
@@ -51,7 +54,7 @@ CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS $USER_INCLUDES"
 LDFLAGS="$LDFLAGS $PTHREAD_LIBS $USER_LDFLAGS"
 
 if test "$GXX" = "yes"; then
-    CXXFLAGS="-W -Wall -Wshadow -Wpointer-arith -Wwrite-strings $CXXFLAGS"
+    CXXFLAGS="-W -Wall -Wpointer-arith -Wwrite-strings $CXXFLAGS"
     dnl CXXFLAGS="$CXXFLAGS -Wformat=2 -Wconversion"
 fi
 
@@ -180,12 +183,6 @@ PKG_CHECK_MODULES(RLOG, librlog >= 1.3,
 	AC_MSG_WARN([Checking for librlog the hard way])
 	AC_CHECK_LIB(rlog, RLogVersion, [RLOG_LIBS="-lrlog"],
 	    [AC_MSG_ERROR([EncFS depends on librlog, by the same author.])]) ])
-
-AC_CHECK_HEADER(boost/shared_ptr.hpp,,
-    [AC_MSG_ERROR([
-	Can't find boost/shared_.h - add the boost include dir to CPPFLAGS and
-	rerun configure, eg:
-	export CPPFLAGS=-I/usr/local/include ])])
 
 # look for pod2man program for building man pages
 AC_PATH_PROG(POD2MAN, pod2man, [no])

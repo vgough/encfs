@@ -197,6 +197,12 @@ static int showInfo( int argc, char **argv )
 	    "created by %s (revision %i)\n"), config.creator.c_str(),
 		config.subVersion);
 	break;
+    case Config_V6:
+	// xgroup(diag)
+	cout << "\n" << autosprintf(_("Version 6 configuration; "
+	    "created by %s (revision %i)\n"), config.creator.c_str(),
+		config.subVersion);
+	break;
     }
 
     showFSInfo( config );

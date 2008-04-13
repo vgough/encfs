@@ -59,6 +59,17 @@ struct EncFSConfig
 
     bool chainedNameIV; // filename IV chaining
     bool allowHoles; // allow holes in files (implicit zero blocks)
+
+    EncFSConfig()
+    {
+        subVersion = 0;
+        blockMACBytes = 0;
+        blockMACRandBytes = 0;
+        uniqueIV = false;
+        externalIVChaining = false;
+        chainedNameIV = false;
+        allowHoles = false;
+    }
 };
 
 enum ConfigType
@@ -67,7 +78,8 @@ enum ConfigType
     Config_Prehistoric,
     Config_V3,
     Config_V4,
-    Config_V5
+    Config_V5,
+    Config_V6
 };
 
 class Cipher;
@@ -130,18 +142,14 @@ class EncFS_Context;
 
 RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts );
 
-RootPtr createV5Config( EncFS_Context *ctx, const std::string &rootDir, 
+RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir, 
 	bool enableIdleTracking,
 	bool forceDecode,
-	const std::string &passwordProgram, bool reverseEncryption );
+	const std::string &passwordProgram, bool reverseEncryption,
+        bool allowHoles );
 
 
 void showFSInfo( const EncFSConfig &config );
-
-// Read specifically a version 4 configuration file. 
-bool readV3Config( const char *configFile, EncFSConfig *config,
-	struct ConfigInfo *);
-bool writeV3Config( const char *configFile, EncFSConfig *config);
 
 bool readV4Config( const char *configFile, EncFSConfig *config,
 	struct ConfigInfo *);
@@ -150,6 +158,10 @@ bool writeV4Config( const char *configFile, EncFSConfig *config);
 bool readV5Config( const char *configFile, EncFSConfig *config,
 	struct ConfigInfo *);
 bool writeV5Config( const char *configFile, EncFSConfig *config);
+
+bool readV6Config( const char *configFile, EncFSConfig *config,
+	struct ConfigInfo *);
+bool writeV6Config( const char *configFile, EncFSConfig *config);
 
 
 
