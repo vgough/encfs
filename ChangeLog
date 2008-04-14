@@ -1,3 +1,47 @@
+
+Sun Apr 13 2008 Valient Gough <vgough@pobox.com>
+	* switch to V6 XML config format using boost serialization module
+	* add better boost autoconf detection
+
+Fri Apr 11 2008 Valient Gough <vgough@pobox.com>
+	* bump version to 1.4.2
+	* add zero-block pass-through option, enabling allow-holes code
+	* add error checking to setfsuid/setfsgid calls
+
+Tue Mar 25 2008 Valient Gough <vgough@pobox.com>
+	* check for additional arguments to xattr functions
+
+Sat Mar 22 2008 Valient Gough <vgough@pobox.com>
+	* remove ulockmgr support, since it isn't needed
+
+Sun Jan 27 2008 Valient Gough <vgough@pobox.com>
+	* fix compile problem if ulockmgr isn't available
+
+Tue Jan 22 2008 Valient Gough <vgough@pobox.com>
+	* ensure paths end in '/'. fixes launchpad bug 184905
+
+Wed Jan 16 2008 Valient Gough <vgough@pobox.com>
+	* no arg required for stdinpass, reported by Scott Hendrickson
+
+Tue Jan 15 2008 Valient Gough <vgough@pobox.com>
+	* bump version to 1.4.1.1
+	* dump shared library version
+	* fix directory rename issue (launchpad bug #183358)
+
+Sat Jan 12 2008 Valient Gough <vgough@pobox.com>
+	* more minor changes to password lengths.  Accept up to 512 bytes for
+	  text password
+	* update man docs
+
+Fri Jan 11 2008 Valient Gough <vgough@pobox.com>
+	* bump version to 1.4.1
+	* make max-password lengths consistent.  Fix newline quashing, bug
+	  report by mpb
+
+Tue Jan 8 2008 Valient Gough <vgough@pobox.com>
+	* determine symbolic link size in getAttr call
+	* remove old HAVE_SSL wrappers on MemoryPool
+
 Sun Jan  6 22:26:25 PST 2008  Valient Gough <vgough@pobox.com>
 	* fix SSL test to keep -lssl at end of compile line, 
 	  found by Kenny Simpson

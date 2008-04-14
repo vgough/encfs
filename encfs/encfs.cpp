@@ -167,13 +167,17 @@ int _do_getattr(FileNode *fnode, struct stat *stbuf)
 	    scoped_array<char> buf(new char[stbuf->st_size+1]);
 
 	    res = ::readlink( fnode->cipherName(), buf.get(), stbuf->st_size );
-	    // other functions expect c-strings to be null-terminated, which
-	    // readlink doesn't provide
-	    buf[res] = '\0';
+            if(res >= 0)
+            {
+                // other functions expect c-strings to be null-terminated, which
+                // readlink doesn't provide
+                buf[res] = '\0';
 
-	    stbuf->st_size = FSRoot->plainPath( buf.get() ).length();
+                stbuf->st_size = FSRoot->plainPath( buf.get() ).length();
 
-	    res = ESUCCESS;
+                res = ESUCCESS;
+            } else
+                res = -errno;
 	}
     }
 

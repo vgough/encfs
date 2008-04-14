@@ -42,6 +42,8 @@
 
 #include "i18n.h"
 
+#include <boost/scoped_array.hpp>
+
 #ifdef HAVE_SSL
 #define NO_DES
 #include <openssl/ssl.h>
@@ -50,6 +52,7 @@
 using namespace rlog;
 using namespace std;
 using namespace gnu;
+using namespace boost;
 
 
 static int showInfo( int argc, char **argv );
@@ -333,7 +336,7 @@ int processContents( const shared_ptr<EncFS_Root> &rootInfo,
 	    O_RDONLY, &errCode );
     if(!node)
     {
-	cerr << "unable to open " << path << endl;
+	cerr << "unable to open " << path << "\n";
 	return errCode;
     } else
     {
@@ -379,6 +382,31 @@ static int cmd_cat( int argc, char **argv )
     return errCode;
 }
 
+static int copyLink(const struct stat &stBuf, 
+        const shared_ptr<EncFS_Root> &rootInfo,
+        const string &cpath, const string &destName )
+{
+    scoped_array<char> buf(new char[stBuf.st_size+1]);
+    int res = ::readlink( cpath.c_str(), buf.get(), stBuf.st_size );
+    if(res == -1)
+    {
+        cerr << "unable to readlink of " << cpath << "\n";
+        return EXIT_FAILURE;
+    }
+
+    buf[res] = '\0';
+    string decodedLink = rootInfo->root->plainPath(buf.get());
+
+    res = ::symlink( decodedLink.c_str(), destName.c_str() );
+    if(res == -1)
+    {
+        cerr << "unable to create symlink for " << cpath 
+            << " to " << decodedLink << "\n";
+    }
+
+    return EXIT_SUCCESS;
+}
+
 static int copyContents(const shared_ptr<EncFS_Root> &rootInfo, 
                         const char* encfsName, const char* targetName)
 {
@@ -387,7 +415,7 @@ static int copyContents(const shared_ptr<EncFS_Root> &rootInfo,
 
     if(!node)
     {
-        cerr << "unable to open " << encfsName << endl;
+        cerr << "unable to open " << encfsName << "\n";
         return EXIT_FAILURE;
     } else
     {
@@ -403,7 +431,7 @@ static int copyContents(const shared_ptr<EncFS_Root> &rootInfo,
 
             if(readlink (d.c_str(), linkContents, PATH_MAX + 1) <= 0)
             {
-                cerr << "unable to read link " << encfsName << endl;
+                cerr << "unable to read link " << encfsName << "\n";
                 return EXIT_FAILURE;
             }
             symlink(rootInfo->root->plainPath(linkContents).c_str(), 
@@ -461,17 +489,29 @@ static int traverseDirs(const shared_ptr<EncFS_Root> &rootInfo,
                 string cpath = rootInfo->root->cipherPath(plainPath.c_str());
                 string destName = destDir + name;
 
-                if(isDirectory(cpath.c_str()))
-                    traverseDirs(rootInfo, (plainPath + '/').c_str(), 
-                                 destName + '/');
-                else
+                int r = EXIT_SUCCESS;
+                struct stat stBuf;
+                if( !lstat( cpath.c_str(), &stBuf ))
                 {
-                    int r = copyContents(rootInfo, plainPath.c_str(), 
-                                         destName.c_str());
-
-                    if(r != EXIT_SUCCESS)
-                        return r;
+                    if( S_ISDIR( stBuf.st_mode ) )
+                    {
+                        traverseDirs(rootInfo, (plainPath + '/').c_str(), 
+                                destName + '/');
+                    } else if( S_ISLNK( stBuf.st_mode ))
+                    {
+                        r = copyLink( stBuf, rootInfo, cpath, destName );
+                    } else
+                    {
+                        r = copyContents(rootInfo, plainPath.c_str(), 
+                                destName.c_str());
+                    }
+                } else
+                {
+                    r = EXIT_FAILURE;
                 }
+                    
+                if(r != EXIT_SUCCESS)
+                    return r;
             }
         }
     }
@@ -707,7 +747,7 @@ int main(int argc, char **argv)
 
 	if(commands[offset].name == 0)
 	{
-	    cerr << autosprintf(_("invalid command: \"%s\""), argv[1]) << endl;
+	    cerr << autosprintf(_("invalid command: \"%s\""), argv[1]) << "\n";
 	} else
 	{
 	    if((argc-2 < commands[offset].minOptions) || 
@@ -715,7 +755,7 @@ int main(int argc, char **argv)
 	    {
 		cerr << autosprintf(
 			_("Incorrect number of arguments for command \"%s\""), 
-			argv[1]) << endl;
+			argv[1]) << "\n";
 	    } else
 		return (*commands[offset].func)( argc-1, argv+1 );
 	}
