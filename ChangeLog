@@ -1,6 +1,11 @@
 
+
 Sun Apr 13 2008 Valient Gough <vgough@pobox.com>
-	* switch to V6 XML config format using boost serialization module
+	* fix bug in export - wasn't able to export symlinks.  
+	  Launchpad bug #201974
+	* add error checking to readlink call
+	* add recent changelog entries
+	* switch to V6 XML config format
 	* add better boost autoconf detection
 
 Fri Apr 11 2008 Valient Gough <vgough@pobox.com>

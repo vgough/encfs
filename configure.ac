@@ -45,6 +45,7 @@ ACX_PTHREAD
 
 AX_BOOST_BASE([1.33])
 AX_BOOST_SERIALIZATION
+AX_BOOST_FILESYSTEM
 
 dnl Need to include any user specified flags in the tests below, as they might
 dnl specify required include directories..
