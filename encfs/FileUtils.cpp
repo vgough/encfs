@@ -318,7 +318,9 @@ bool readV6Config( const char *configFile, EncFSConfig *config,
 {
     (void)info;
 
-    fs::ifstream st(configFile);
+    fs::path fsPath( configFile, fs::native );
+    fs::ifstream st( fsPath );
+
     if(st.is_open())
     {
         try
@@ -468,7 +470,9 @@ bool saveConfig( ConfigType type, const string &rootDir,
 
 bool writeV6Config( const char *configFile, EncFSConfig *config )
 {
-    fs::ofstream st( configFile );
+    fs::path fsPath( configFile, fs::native );
+    fs::ofstream st( fsPath );
+
     if(!st.is_open())
         return false;
 
