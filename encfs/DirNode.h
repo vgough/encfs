@@ -135,6 +135,10 @@ public:
     shared_ptr<FileNode> openNode( const char *plaintextName, 
 	    const char *requestor, int flags, int *openResult );
 
+    /* For internal use - open a cipher file directly
+    */
+    shared_ptr<FileNode> directLookup( const char *realPath );
+
     std::string cipherPath( const char *plaintextPath );
     std::string plainPath( const char *cipherPath );
 

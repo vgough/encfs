@@ -334,6 +334,19 @@ int processContents( const shared_ptr<EncFS_Root> &rootInfo,
     int errCode = 0;
     shared_ptr<FileNode> node = rootInfo->root->openNode( path, "encfsctl",
 	    O_RDONLY, &errCode );
+
+    if(!node)
+    {
+        // try opening directly, so a cipher-path can be passed in
+        node = rootInfo->root->directLookup( path );
+        if(node)
+        {
+            errCode = node->open( O_RDONLY );
+            if(errCode < 0)
+                node.reset();
+        }
+    }
+
     if(!node)
     {
 	cerr << "unable to open " << path << "\n";
