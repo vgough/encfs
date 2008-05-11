@@ -18,6 +18,8 @@
 #include "ConfigVar.h"
 #include <rlog/rlog.h>
 
+#include <string.h>
+
 using namespace rlog;
 
 #ifndef MIN

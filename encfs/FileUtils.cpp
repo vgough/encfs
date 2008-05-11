@@ -67,6 +67,7 @@ using namespace rlog;
 using namespace std;
 using namespace gnu;
 namespace fs = boost::filesystem;
+namespace serial = boost::serialization;
 
 static const int DefaultBlockSize = 1024;
 // The maximum length of text passwords.  If longer are needed,
@@ -137,7 +138,8 @@ namespace boost
             ar << make_nvp("encodedKeySize", keyLen);
             char key[keyLen];
             memcpy(key, cfg.keyData.data(), keyLen);
-            ar << make_nvp("encodedKeyData", make_binary_object(key, keyLen));
+            ar << make_nvp("encodedKeyData", 
+                    serial::make_binary_object(key, keyLen));
         }
 
         template<class Archive>
@@ -161,7 +163,7 @@ namespace boost
             ar >> make_nvp("encodedKeySize", encodedKeySize);
             char key[encodedKeySize];
             ar >> make_nvp("encodedKeyData", 
-                    make_binary_object(key, encodedKeySize));
+                    serial::make_binary_object(key, encodedKeySize));
             cfg.keyData.assign( (char*)key, encodedKeySize );
         }
         
