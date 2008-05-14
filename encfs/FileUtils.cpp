@@ -61,6 +61,7 @@
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
 #include <boost/serialization/split_free.hpp>
+#include <boost/serialization/binary_object.hpp>
 
 using namespace rel;
 using namespace rlog;
