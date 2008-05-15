@@ -20,6 +20,8 @@
 #include "Cipher.h"
 #include "base64.h"
 
+#include <cstring>
+
 using namespace rel;
 using boost::shared_ptr;
 

@@ -22,6 +22,7 @@
 #include <rlog/Error.h>
 
 #include <map>
+#include <cstring>
 
 // for static build.  Need to reference the modules which are registered at
 // run-time, to ensure that the linker doesn't optimize them away.

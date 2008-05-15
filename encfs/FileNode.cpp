@@ -28,6 +28,8 @@
 #include <sys/fsuid.h>
 #endif
 
+#include <cstring>
+
 #include "config.h"
 
 #include "FileNode.h"

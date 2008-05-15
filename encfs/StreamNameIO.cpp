@@ -24,6 +24,7 @@
 #include <rlog/Error.h>
 
 #include "i18n.h"
+#include <cstring>
 
 using namespace rel;
 using namespace std;

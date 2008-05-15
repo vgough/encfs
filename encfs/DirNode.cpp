@@ -31,6 +31,8 @@
 #include <sys/fsuid.h>
 #endif
 
+#include <cstring>
+
 #include "Context.h"
 #include "Cipher.h"
 #include "Mutex.h"
