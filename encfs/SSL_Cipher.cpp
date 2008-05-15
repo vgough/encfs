@@ -404,7 +404,7 @@ CipherKey SSL_Cipher::newRandomKey()
     unsigned char tmpBuf[ bufLen ];
     // to avoid warnings of uninitialized data from valgrind
     memset(tmpBuf, 0, sizeof(tmpBuf)); 
-    if(RAND_bytes( tmpBuf, bufLen ) == 0)
+    if(RAND_bytes( tmpBuf, bufLen ) != 1)
     {
 	char errStr[120]; // specs require string at least 120 bytes long..
 	unsigned long errVal = 0;
