@@ -22,9 +22,9 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
 #include <pthread.h>
 #include <unistd.h>
 #ifdef linux

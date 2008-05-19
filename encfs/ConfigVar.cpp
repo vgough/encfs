@@ -18,7 +18,7 @@
 #include "ConfigVar.h"
 #include <rlog/rlog.h>
 
-#include <string.h>
+#include <cstring>
 
 using namespace rlog;
 

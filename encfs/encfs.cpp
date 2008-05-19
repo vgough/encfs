@@ -17,12 +17,12 @@
 
 #include "encfs.h"
 
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
-#include <errno.h>
+#include <cerrno>
 #include <sys/statvfs.h>
 #include <sys/time.h>
 

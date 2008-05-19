@@ -19,7 +19,7 @@
 
 #include "MemoryPool.h"
 
-#include <string.h>
+#include <cstring>
 #include <rlog/rlog.h>
 
 #include "i18n.h"

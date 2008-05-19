@@ -65,6 +65,7 @@ static int cmd_encode( int argc, char **argv );
 static int cmd_showcruft( int argc, char **argv );
 static int cmd_cat( int argc, char **argv );
 static int cmd_export( int argc, char **argv );
+static int cmd_showKey( int argc, char **argv );
 
 struct CommandOpts
 {
@@ -79,6 +80,9 @@ struct CommandOpts
     {"info", 1, 1, showInfo, "(root dir)", 
 	// xgroup(usage)
 	gettext_noop("  -- show information (Default command)")},
+    {"showKey", 1, 1, cmd_showKey, "(root dir)", 
+	// xgroup(usage)
+	gettext_noop("  -- show key")},
     {"passwd", 1, 1, chpasswd, "(root dir)",
 	// xgroup(usage)
 	gettext_noop("  -- change password for volume")},
@@ -231,6 +235,24 @@ static RootPtr initRootInfo(const char* crootDir)
         cerr << _("Unable to initialize encrypted filesystem - check path.\n");
 
     return result;
+}
+
+static int cmd_showKey( int argc, char **argv )
+{
+    RootPtr rootInfo = initRootInfo(argv[1]);
+    
+    if(!rootInfo)
+        return EXIT_FAILURE;
+    else
+    {
+        // encode with itself
+        string b64Key = rootInfo->cipher->encodeAsString(
+                rootInfo->volumeKey, rootInfo->volumeKey );
+
+        cout << b64Key << "\n";
+
+        return EXIT_SUCCESS;
+    }
 }
 
 static int cmd_decode( int argc, char **argv )

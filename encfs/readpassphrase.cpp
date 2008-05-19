@@ -35,16 +35,16 @@ static const char rcsid[] = "$OpenBSD: readpassphrase.c,v 1.12 2001/12/15 05:41:
 
 #ifndef HAVE_READPASSPHRASE
 
-#include <signal.h>
-#include <stdio.h>
-#include <errno.h>
+#include <csignal>
+#include <cstdio>
+#include <cerrno>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <paths.h>
-#include <string.h>
-#include <ctype.h>
+#include <cstring>
+#include <cctype>
 
 #include <termios.h>
 #include <readpassphrase.h>

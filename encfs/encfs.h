@@ -28,7 +28,7 @@
 #endif
 
 #ifndef linux
-#include <errno.h>
+#include <cerrno>
 
 static __inline int setfsuid(uid_t uid)
 {

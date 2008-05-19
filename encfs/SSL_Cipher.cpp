@@ -31,7 +31,7 @@
 #include "MemoryPool.h"
 #include "Mutex.h"
 
-#include <string.h>
+#include <cstring>
 
 #include <sys/mman.h>
 
@@ -296,7 +296,7 @@ void initKey(const shared_ptr<SSLKey> &key, const EVP_CIPHER *_blockCipher,
 
     EVP_EncryptInit_ex( &key->block_enc, NULL, NULL, KeyData(key), NULL);
     EVP_DecryptInit_ex( &key->block_dec, NULL, NULL, KeyData(key), NULL);
-    EVP_DecryptInit_ex( &key->stream_enc, NULL, NULL, KeyData(key), NULL);
+    EVP_EncryptInit_ex( &key->stream_enc, NULL, NULL, KeyData(key), NULL);
     EVP_DecryptInit_ex( &key->stream_dec, NULL, NULL, KeyData(key), NULL);
     
     HMAC_CTX_init( &key->mac_ctx );

@@ -23,7 +23,7 @@
 #include <rlog/Error.h>
 #include <rlog/RLogChannel.h>
 
-#include <string.h>
+#include <cstring>
 
 #include "i18n.h"
 

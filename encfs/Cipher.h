@@ -94,6 +94,10 @@ public:
 			      bool checkKey = true) =0;
     virtual void writeKey(const CipherKey &key, unsigned char *data, 
 	                  const CipherKey &encodingKey) =0; 
+
+    virtual std::string encodeAsString(const CipherKey &key,
+                                  const CipherKey &encodingKey );
+
     // for testing purposes
     virtual bool compareKey( const CipherKey &A, const CipherKey &B ) const =0;
 

@@ -23,7 +23,7 @@
 #include <boost/shared_ptr.hpp>
 #include <rlog/rlog.h>
 
-#include <string.h>
+#include <cstring>
 
 using namespace std;
 using namespace rel;

@@ -20,7 +20,7 @@
 #include "Cipher.h"
 #include "base64.h"
 
-#include <string.h>
+#include <cstring>
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
 #include <rlog/RLogChannel.h>

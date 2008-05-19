@@ -24,12 +24,12 @@
 #include <string>
 #include <sstream>
 
-#include <assert.h>
-#include <stdio.h>
+#include <cassert>
+#include <cstdio>
 #include <unistd.h>
 #include <sys/time.h>
-#include <errno.h>
-#include <string.h>
+#include <cerrno>
+#include <cstring>
 
 #include <getopt.h>
 

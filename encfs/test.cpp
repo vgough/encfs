@@ -22,7 +22,7 @@
 
 #include <iostream>
 
-#include <stdlib.h>
+#include <cstdlib>
 
 #include "Cipher.h"
 #include "DirNode.h"

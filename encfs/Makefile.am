@@ -20,21 +20,20 @@ endif
 lib_LTLIBRARIES = libencfs.la
 bin_PROGRAMS = encfs encfsctl
 dist_bin_SCRIPTS = encfssh
-noinst_PROGRAMS = test
+noinst_PROGRAMS = test makeKey
 
 all-local: encfs-man.html
 
-#encfs_LDADD   = libencfs.la -lfuse
-#encfsctl_LDADD = libencfs.la -lfuse
-#test_LDADD   = libencfs.la -lfuse
 encfs_LDADD   = libencfs.la $(ALL_LDFLAGS)
 encfsctl_LDADD = libencfs.la $(ALL_LDFLAGS)
 test_LDADD   = libencfs.la $(ALL_LDFLAGS)
+makeKey_LDADD   = libencfs.la $(ALL_LDFLAGS)
 
 if BUILD_STATIC
 encfs_LDFLAGS = -all-static
 encfsctl_LDFLAGS = -all-static
 test_LDFLAGS = -all-static
+makeKey_LDFLAGS = -all-static
 endif
 
 # CURRENT : REVISION : AGE
@@ -76,16 +75,19 @@ libencfs_la_SOURCES = \
     DirNode.cpp \
     FileNode.cpp \
     FileUtils.cpp \
+    openssl.cpp \
     ${EXTRASRC}
 
 
 encfs_SOURCES = \
     encfs.cpp \
-    openssl.cpp \
     main.cpp
 
 test_SOURCES = \
     test.cpp
+
+makeKey_SOURCES = \
+    makeKey.cpp
 
 encfsctl_SOURCES = \
     encfsctl.cpp

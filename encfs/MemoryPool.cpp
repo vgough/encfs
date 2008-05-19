@@ -19,8 +19,8 @@
 #include "MemoryPool.h"
 #include <rlog/rlog.h>
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 
 #include "config.h"
 #include <pthread.h>

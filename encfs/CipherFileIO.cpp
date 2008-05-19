@@ -23,7 +23,7 @@
 #include <rlog/rlog.h>
 
 #include <fcntl.h>
-#include <errno.h>
+#include <cerrno>
 
 using boost::shared_ptr;
 
