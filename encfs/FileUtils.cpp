@@ -757,10 +757,10 @@ bool boolDefaultNo(const char *prompt)
     fgets( answer, sizeof(answer), stdin );
     cout << "\n";
 
-    if(tolower(answer[0]) == 'n')
-	return false;
-    else
+    if(tolower(answer[0]) == 'y')
 	return true;
+    else
+	return false;
 }
 
 static 
@@ -817,10 +817,10 @@ bool boolDefaultYes(const char *prompt)
     fgets( answer, sizeof(answer), stdin );
     cout << "\n";
 
-    if(tolower(answer[0]) == 'y')
-	return true;
-    else
+    if(tolower(answer[0]) == 'n')
 	return false;
+    else
+	return true;
 }
 
 static 
