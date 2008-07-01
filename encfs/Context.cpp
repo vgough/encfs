@@ -110,13 +110,11 @@ shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path)
     FileMap::iterator it = openFiles.find( std::string(path) );
     if(it != openFiles.end())
     {
-	rInfo("found existing node for %s", path);
 	// all the items in the set point to the same node.. so just use the
 	// first
 	return (*it->second.begin())->node;
     } else
     {
-	rInfo("no node found for %s", path);
 	return shared_ptr<FileNode>();
     }
 }
@@ -147,8 +145,6 @@ void *EncFS_Context::putNode(const char *path,
     Placeholder *pl = new Placeholder( node );
     openFiles[ std::string(path) ].insert(pl);
 	
-    rInfo("added open node record for %s", path);
-
     return (void *)pl;
 }
 
@@ -165,11 +161,9 @@ void EncFS_Context::eraseNode(const char *path, void *pl)
 
     rAssert(rmCount == 1);
 
-    rInfo("released open node record for %s", path);
     // if no more references to this file, remove the record all together
     if(it->second.empty())
     {
-	rInfo("last open node closed for %s", path);
 	// attempts to make use of shallow copy to clear memory used to hold
 	// unencrypted filenames.. not sure this does any good..
 	std::string storedName = it->first;
