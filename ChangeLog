@@ -1,3 +1,6 @@
+Tue Jul 1 2008 Valient Gough <vgough@pobox.com>
+	* patch to fix compile errors in w/ gcc 4.3 from Anthony Shipman.
+
 2008-05-22  gettextize  <bug-gnu-gettext@gnu.org>
 
 	* m4/gettext.m4: Upgrade to gettext-0.17.
@@ -5,8 +8,6 @@
 	* m4/lib-link.m4: Upgrade to gettext-0.17.
 	* m4/po.m4: Upgrade to gettext-0.17.
 	* configure.ac (AM_GNU_GETTEXT_VERSION): Bump to 0.17.
-
-
 
 Sun Apr 13 2008 Valient Gough <vgough@pobox.com>
 	* fix bug in export - wasn't able to export symlinks.  
