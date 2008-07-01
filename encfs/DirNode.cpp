@@ -190,100 +190,105 @@ public:
     {
     }
 
-    ~RenameOp()
-    {
-	if(renameList)
-	{
-	    // got a bunch of decoded filenames sitting in memory..  do a little
-	    // cleanup before leaving..
-	    list<RenameEl>::iterator it;
-	    for(it = renameList->begin(); it != renameList->end(); ++it)
-	    {
-		it->oldPName.assign( it->oldPName.size(), ' ' );
-		it->newPName.assign( it->newPName.size(), ' ' );
-	    }
-	}
-    }
+    ~RenameOp();
 
     operator bool () const
     {
 	return renameList;
     }
 
-    bool apply()
-    {
-	try
-	{
-	    while(last != renameList->end())
-	    {
-		// backing store rename.
-		rDebug("renaming %s -> %s",
-			last->oldCName.c_str(), last->newCName.c_str());
-
-		// internal node rename..
-		dn->renameNode( last->oldPName.c_str(), 
-			        last->newPName.c_str() );
-
-		// rename on disk..
-		if(::rename( last->oldCName.c_str(), 
-			     last->newCName.c_str() ) == -1)
-		{
-		    rWarning("Error renaming %s: %s",
-			    last->oldCName.c_str(), strerror( errno ));
-		    dn->renameNode( last->newPName.c_str(), 
-			    last->oldPName.c_str(), false );
-		    return false;
-		}
-
-		++last;
-	    }
-
-	    return true;
-	} catch( rlog::Error &err )
-	{
-	    err.log( _RLWarningChannel );
-	    return false;
-	}
-    }
-
-    void undo()
-    {
-	rDebug("in undoRename");
-
-	if(last == renameList->begin())
-	{
-	    rDebug("nothing to undo");
-	    return; // nothing to undo
-	}
-
-	// list has to be processed backwards, otherwise we may rename
-	// directories and directory contents in the wrong order!
-	int undoCount = 0;
-	list<RenameEl>::const_iterator it = last;
-
-	while( it != renameList->begin() )
-	{
-	    --it;
-
-	    rDebug("undo: renaming %s -> %s", 
-		    it->newCName.c_str(), it->oldCName.c_str());
-
-	    ::rename( it->newCName.c_str(), it->oldCName.c_str() );
-	    try
-	    {
-		dn->renameNode( it->newPName.c_str(), 
-			        it->oldPName.c_str(), false );
-	    } catch( rlog::Error &err )
-	    {
-		err.log( _RLWarningChannel );
-		// continue on anyway...
-	    }
-	    ++undoCount;
-	};
-    
-	rWarning("Undo rename count: %i", undoCount);
-    }
+    bool apply();
+    void undo();
 };
+
+RenameOp::~RenameOp()
+{
+    if(renameList)
+    {
+        // got a bunch of decoded filenames sitting in memory..  do a little
+        // cleanup before leaving..
+        list<RenameEl>::iterator it;
+        for(it = renameList->begin(); it != renameList->end(); ++it)
+        {
+            it->oldPName.assign( it->oldPName.size(), ' ' );
+            it->newPName.assign( it->newPName.size(), ' ' );
+        }
+    }
+}
+
+bool RenameOp::apply()
+{
+    try
+    {
+        while(last != renameList->end())
+        {
+            // backing store rename.
+            rDebug("renaming %s -> %s",
+                    last->oldCName.c_str(), last->newCName.c_str());
+
+            // internal node rename..
+            dn->renameNode( last->oldPName.c_str(), 
+                            last->newPName.c_str() );
+
+            // rename on disk..
+            if(::rename( last->oldCName.c_str(), 
+                         last->newCName.c_str() ) == -1)
+            {
+                rWarning("Error renaming %s: %s",
+                        last->oldCName.c_str(), strerror( errno ));
+                dn->renameNode( last->newPName.c_str(), 
+                        last->oldPName.c_str(), false );
+                return false;
+            }
+
+            ++last;
+        }
+
+        return true;
+    } catch( rlog::Error &err )
+    {
+        err.log( _RLWarningChannel );
+        return false;
+    }
+}
+
+void RenameOp::undo()
+{
+    rDebug("in undoRename");
+
+    if(last == renameList->begin())
+    {
+        rDebug("nothing to undo");
+        return; // nothing to undo
+    }
+
+    // list has to be processed backwards, otherwise we may rename
+    // directories and directory contents in the wrong order!
+    int undoCount = 0;
+    list<RenameEl>::const_iterator it = last;
+
+    while( it != renameList->begin() )
+    {
+        --it;
+
+        rDebug("undo: renaming %s -> %s", 
+                it->newCName.c_str(), it->oldCName.c_str());
+
+        ::rename( it->newCName.c_str(), it->oldCName.c_str() );
+        try
+        {
+            dn->renameNode( it->newPName.c_str(), 
+                            it->oldPName.c_str(), false );
+        } catch( rlog::Error &err )
+        {
+            err.log( _RLWarningChannel );
+            // continue on anyway...
+        }
+        ++undoCount;
+    };
+
+    rWarning("Undo rename count: %i", undoCount);
+}
 
 DirNode::DirNode(EncFS_Context *_ctx,
 	const string &sourceDir, const shared_ptr<Config> &_config)
