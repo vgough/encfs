@@ -76,7 +76,8 @@ static EncFS_Context * context()
 // helper function -- apply a functor to a cipher path, given the plain path
 template<typename T>
 static int withCipherPath( const char *opName, const char *path,
-	int (*op)(EncFS_Context *, const string &name, T data ), T data )
+	int (*op)(EncFS_Context *, const string &name, T data ), T data,
+        bool passReturnCode = false )
 {
     EncFS_Context *ctx = context();
 
@@ -97,7 +98,7 @@ static int withCipherPath( const char *opName, const char *path,
 	    int eno = errno;
 	    rInfo("%s error: %s", opName, strerror(eno));
 	    res = -eno;
-	} else
+	} else if(!passReturnCode)
 	    res = ESUCCESS;
     } catch( rlog::Error &err )
     {
@@ -699,48 +700,68 @@ int encfs_statfs(const char *path, struct statvfs *st)
 }
 
 #ifdef HAVE_XATTR
+
+
+#ifdef XATTR_ADD_OPT
+int _do_setxattr(EncFS_Context *, const string &cyName, 
+	tuple<const char *, const char *, size_t, uint32_t> data)
+{
+    int options = 0;
+    return ::setxattr( cyName.c_str(), data.get<0>(), data.get<1>(), 
+	    data.get<2>(), data.get<3>(), options );
+}
+int encfs_setxattr( const char *path, const char *name,
+	const char *value, size_t size, int flags, uint32_t position )
+{
+    (void)flags;
+    return withCipherPath( "setxattr", path, _do_setxattr, 
+	    make_tuple(name, value, size, position) );
+}
+#else
 int _do_setxattr(EncFS_Context *, const string &cyName, 
 	tuple<const char *, const char *, size_t, int> data)
 {
-#ifdef XATTR_ADD_OPT
-    int options = 0;
-    // flags argument is ignored..
-    int res = ::setxattr( cyName.c_str(), data.get<0>(), data.get<1>(), 
-	    data.get<2>(), 0, options );
-#else
-    int res = ::setxattr( cyName.c_str(), data.get<0>(), data.get<1>(), 
+    return ::setxattr( cyName.c_str(), data.get<0>(), data.get<1>(), 
 	    data.get<2>(), data.get<3>() );
-#endif
-    return (res == -1) ? -errno : res;
 }
-
 int encfs_setxattr( const char *path, const char *name,
 	const char *value, size_t size, int flags )
 {
     return withCipherPath( "setxattr", path, _do_setxattr, 
 	    make_tuple(name, value, size, flags) );
 }
+#endif
 
+
+#ifdef XATTR_ADD_OPT
+int _do_getxattr(EncFS_Context *, const string &cyName,
+	tuple<const char *, void *, size_t, uint32_t> data)
+{
+    int options = 0;
+    return ::getxattr( cyName.c_str(), data.get<0>(), 
+	    data.get<1>(), data.get<2>(), data.get<3>(), options );
+}
+int encfs_getxattr( const char *path, const char *name,
+	char *value, size_t size, uint32_t position )
+{
+    return withCipherPath( "getxattr", path, _do_getxattr, 
+	    make_tuple(name, (void *)value, size, position), true );
+}
+#else
 int _do_getxattr(EncFS_Context *, const string &cyName,
 	tuple<const char *, void *, size_t> data)
 {
-#ifdef XATTR_ADD_OPT
-    int options = 0;
-    int res = ::getxattr( cyName.c_str(), data.get<0>(), 
-	    data.get<1>(), data.get<2>(), 0, options);
-#else
-    int res = ::getxattr( cyName.c_str(), data.get<0>(), 
+    return ::getxattr( cyName.c_str(), data.get<0>(), 
 	    data.get<1>(), data.get<2>());
-#endif
-    return (res == -1) ? -errno : res;
 }
-
 int encfs_getxattr( const char *path, const char *name,
 	char *value, size_t size )
 {
     return withCipherPath( "getxattr", path, _do_getxattr, 
-	    make_tuple(name, (void *)value, size) );
+	    make_tuple(name, (void *)value, size), true );
 }
+#endif
+
 
 int _do_listxattr(EncFS_Context *, const string &cyName,
 	tuple<char *, size_t> data)
@@ -758,7 +779,7 @@ int _do_listxattr(EncFS_Context *, const string &cyName,
 int encfs_listxattr( const char *path, char *list, size_t size )
 {
     return withCipherPath( "listxattr", path, _do_listxattr, 
-	    make_tuple(list, size) );
+	    make_tuple(list, size), true );
 }
 
 int _do_removexattr(EncFS_Context *, const string &cyName, const char *name)
@@ -776,5 +797,6 @@ int encfs_removexattr( const char *path, const char *name )
 {
     return withCipherPath( "removexattr", path, _do_removexattr, name );
 }
+
 #endif // HAVE_XATTR
 

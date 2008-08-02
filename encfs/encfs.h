@@ -84,10 +84,19 @@ int encfs_flush(const char *, struct fuse_file_info *info);
 int encfs_fsync(const char *path, int flags, struct fuse_file_info *info);
 
 #ifdef HAVE_XATTR
+
+#  ifdef XATTR_ADD_OPT
 int encfs_setxattr( const char *path, const char *name, const char *value, 
-	            size_t size, int flags );
+	            size_t size, int flags, uint32_t position);
+int encfs_getxattr( const char *path, const char *name, char *value, 
+	            size_t size, uint32_t position );
+#  else
+int encfs_setxattr( const char *path, const char *name, const char *value, 
+	            size_t size, int flags);
 int encfs_getxattr( const char *path, const char *name, char *value, 
 	            size_t size );
+#  endif
+
 int encfs_listxattr( const char *path, char *list, size_t size );
 int encfs_removexattr( const char *path, const char *name );
 #endif
