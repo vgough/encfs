@@ -692,6 +692,21 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
     // Now, get New user key..
     userKey.reset();
     cout << _("Enter new Encfs password\n");
+    // reinitialize salt and iteration count
+    config.kdfIterations = 0; // generate new
+    if(config.saltSize != 20)
+    {
+        if(config.saltData != NULL)
+            delete[] config.saltData;
+        config.saltSize = 20;
+        config.saltData = new unsigned char[config.saltSize];
+    }
+    if(!cipher->randomize(config.saltData, config.saltSize, 20))
+    {
+        cout << _("Error creating salt\n");
+        return EXIT_FAILURE;
+    }
+
     if( useStdin )
 	userKey = getUserKey( cipher, true,
                               config.saltData, config.saltSize,
@@ -724,6 +739,9 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
 	{
 	    cout << _("Error saving modified config file.\n");
 	}
+    } else
+    {
+        cout << _("Error creating key\n");
     }
 
     volumeKey.reset();
