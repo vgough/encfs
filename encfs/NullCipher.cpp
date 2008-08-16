@@ -83,7 +83,8 @@ Interface NullCipher::interface() const
     return iface;
 }
 
-CipherKey NullCipher::newKey(const char *, int )
+CipherKey NullCipher::newKey(const char *, int,
+        int &, const unsigned char *, int )
 {
     return gNullKey;
 }
@@ -93,9 +94,10 @@ CipherKey NullCipher::newRandomKey()
     return gNullKey;
 }
 
-void NullCipher::randomize( unsigned char *buf, int len ) const
+bool NullCipher::randomize( unsigned char *buf, int len, bool ) const
 {
     memset( buf, 0, len );
+    return true;
 }
 
 uint64_t NullCipher::MAC_64(const unsigned char *, int , 

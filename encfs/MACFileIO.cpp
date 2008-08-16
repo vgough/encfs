@@ -259,7 +259,10 @@ bool MACFileIO::writeOneBlock( const IORequest &req )
     memset( newReq.data, 0, headerSize );
     memcpy( newReq.data + headerSize, req.data, req.dataLen );
     if(randBytes)
-	cipher->randomize( newReq.data+macBytes, randBytes );
+    {
+	if(!cipher->randomize( newReq.data+macBytes, randBytes, false ))
+            return false;
+    }
 
     // compute the mac (which includes the random data) and fill it in
     uint64_t mac = cipher->MAC_64( newReq.data+macBytes, 

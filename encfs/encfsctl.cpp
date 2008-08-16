@@ -669,7 +669,9 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
 
     // ask for existing password
     cout << _("Enter current Encfs password\n");
-    CipherKey userKey = getUserKey( cipher, useStdin );
+    CipherKey userKey = getUserKey( cipher, useStdin,
+                                    config.saltData, config.saltSize,
+                                    config.kdfIterations );
     if(!userKey)
 	return EXIT_FAILURE;
 
@@ -691,9 +693,13 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
     userKey.reset();
     cout << _("Enter new Encfs password\n");
     if( useStdin )
-	userKey = getUserKey( cipher, true );
+	userKey = getUserKey( cipher, true,
+                              config.saltData, config.saltSize,
+                              config.kdfIterations );
     else
-	userKey = getNewUserKey( cipher );
+	userKey = getNewUserKey( cipher,
+                                 config.saltData, config.saltSize,
+                                 config.kdfIterations );
 
     // re-encode the volume key using the new user key and write it out..
     int result = EXIT_FAILURE;

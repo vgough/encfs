@@ -84,7 +84,10 @@ public:
     virtual rel::Interface interface() const =0;
 
     // create a new key based on a password
-    virtual CipherKey newKey(const char *password, int passwdLength) =0;
+    // if iterationCount == 0, then iteration count will be determined
+    // by newKey function and filled in.
+    virtual CipherKey newKey(const char *password, int passwdLength,
+            int &iterationCount, const unsigned char *salt, int saltLen) =0;
     // create a new random key
     virtual CipherKey newRandomKey() =0;
 
@@ -109,7 +112,9 @@ public:
     // fill the supplied buffer with random data
     // The data may be pseudo random and might not be suitable for key
     // generation.  For generating keys, uses newRandomKey() instead.
-    virtual void randomize( unsigned char *buf, int len ) const =0;
+    // Returns true on success, false on failure.
+    virtual bool randomize( unsigned char *buf, int len,
+            bool strongRandom ) const =0;
 
     // 64 bit MAC of the data with the given key
     virtual uint64_t MAC_64( const unsigned char *src, int len,

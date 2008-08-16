@@ -1,13 +1,65 @@
+
+Sat Aug 16 2008 Valient Gough <vgough@pobox.com>
+	* use PBKDF2 for new keys with salt and variable iteration count.
+	  When creating a new key, adjusts iteration count to take
+	  approximatly 1/2 a second of CPU time to test key.
+
+Tue Aug 5 2008 Valient Gough <vgough@pobox.com>
+	* bump version to 1.4.3
+
+Fri Aug 1 2008 Valient Gough <vgough@pobox.com>
+	* fix xattr support for Mac
+
+Tue Jul 1 2008 Valient Gough <vgough@pobox.com>
+	* add patch info to Changelog
+	* separate RenameOp definition from implementation to avoid gcc 4.3
+	  errors
+
+Sat Jun 28 2008 Valient Gough <vgough@pobox.com>
+	* remove logs in Context, which displayed plaintext names
+
+Mon Jun 2 2008 Valient Gough <vgough@pobox.com>
+	* fix defaultYes/defaultNo functions
+
 Tue Jul 1 2008 Valient Gough <vgough@pobox.com>
 	* patch to fix compile errors in w/ gcc 4.3 from Anthony Shipman.
 
-2008-05-22  gettextize  <bug-gnu-gettext@gnu.org>
+Thu May 22 2008 Valient Gough <vgough@pobox.com>
+	* use autoreconf in reconfig.sh
+	* update autoconf and gettext tools
+	* remove AM_MKINSTALLDIRS from configure.ac
 
-	* m4/gettext.m4: Upgrade to gettext-0.17.
-	* m4/iconv.m4: Upgrade to gettext-0.17.
-	* m4/lib-link.m4: Upgrade to gettext-0.17.
-	* m4/po.m4: Upgrade to gettext-0.17.
-	* configure.ac (AM_GNU_GETTEXT_VERSION): Bump to 0.17.
+Sun May 18 2008 Valient Gough <vgough@pobox.com>
+	* add makeKey program and showKey option to encfsctl
+	* replace C header includes with C++ versions
+
+Sat May 17 2008 Valient Gough <vgough@pobox.com>
+	* fix EVP initialization
+
+Thu May 15 2008 Valient Gough <vgough@pobox.com>
+	* include cstring in several files, patch by A.Klitzing
+	* improve return code check on RAND_bytes call
+
+Wed May 14 2008 Valient Gough <vgough@pobox.com>
+	* include binary_object header in FuseUtils
+
+Sat May 10 2008 Valient Gough <vgough@pobox.com>
+	* explicit namespace for make_binary_object calls
+
+Wed May 7 2008 Valient Gough <vgough@pobox.com>
+	* add string.h to ConfigVar
+
+Sun May 4 2008 Valient Gough <vgough@pobox.com>
+	* change boost requirement to 1.34+, to eliminate fs::native usage
+	  requirement
+	* ensure boost::filesystem::path is created with native option"
+
+Sat Apr 19 2008 Valient Gough <vgough@pobox.com>
+	* add direct-load method so that encfsctl cat can work with direct
+	  cipher paths
+
+Tue Apr 15 2008 Valient Gough <vgough@pobox.com>
+	* add boost filesystem lib check
 
 Sun Apr 13 2008 Valient Gough <vgough@pobox.com>
 	* fix bug in export - wasn't able to export symlinks.  

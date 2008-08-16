@@ -51,6 +51,10 @@ struct EncFSConfig
     int blockSize; // reported in bytes
     std::string keyData;
 
+    int saltSize; // in bytes
+    unsigned char *saltData;
+    int kdfIterations;
+
     int blockMACBytes; // MAC headers on blocks..
     int blockMACRandBytes; // number of random bytes in the block header
 
@@ -69,6 +73,16 @@ struct EncFSConfig
         externalIVChaining = false;
         chainedNameIV = false;
         allowHoles = false;
+
+        saltSize = 0;
+        saltData = NULL;
+        kdfIterations = 0;
+    }
+
+    ~EncFSConfig()
+    {
+        if(saltData != NULL)
+            delete[] saltData;
     }
 };
 
@@ -165,10 +179,13 @@ bool writeV6Config( const char *configFile, EncFSConfig *config);
 
 
 
-CipherKey getUserKey(const boost::shared_ptr<Cipher> &cipher, bool useStdin);
+CipherKey getUserKey(const boost::shared_ptr<Cipher> &cipher, bool useStdin,
+                     const unsigned char *salt, int saltLen, int &iterations);
 CipherKey getUserKey(const std::string &passwordProgram, 
 	             const boost::shared_ptr<Cipher> &cipher,
-		     const std::string &rootDir );
-CipherKey getNewUserKey(const boost::shared_ptr<Cipher> &cipher);
+		     const std::string &rootDir,
+                     const unsigned char *salt, int saltLen, int &iterations);
+CipherKey getNewUserKey(const boost::shared_ptr<Cipher> &cipher,
+                        const unsigned char *salt, int saltLen, int &iterations);
 
 #endif

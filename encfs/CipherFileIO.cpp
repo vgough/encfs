@@ -21,6 +21,7 @@
 #include "MemoryPool.h"
 
 #include <rlog/rlog.h>
+#include <rlog/Error.h>
 
 #include <fcntl.h>
 #include <cerrno>
@@ -206,7 +207,8 @@ void CipherFileIO::initHeader( )
 	unsigned char buf[8] = {0};
 	do
 	{
-	    cipher->randomize( buf, 8 );
+	    if(!cipher->randomize( buf, 8, false ))
+                throw ERROR("Unable to generate a random file IV");
 
 	    fileIV = 0;
 	    for(int i=0; i<8; ++i)

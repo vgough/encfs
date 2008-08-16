@@ -32,8 +32,10 @@
 #include "Mutex.h"
 
 #include <cstring>
+#include <ctime>
 
 #include <sys/mman.h>
+#include <sys/time.h>
 
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
@@ -50,6 +52,9 @@ using boost::dynamic_pointer_cast;
 const int MAX_KEYLENGTH = 32; // in bytes (256 bit)
 const int MAX_IVLENGTH = 16;
 const int KEY_CHECKSUM_BYTES = 4;
+
+// how long we'd like the PDF function to take, in micro seconds
+const long DesiredPDFTime = 500 * 1000;  // 1/2 second
 
 #ifndef MIN
 inline int MIN(int a, int b)
@@ -125,13 +130,57 @@ int BytesToKey( int keyLen, int ivLen, const EVP_MD *md,
     return keyLen;
 }
 
+long time_diff(const timeval &end, const timeval &start)
+{
+    return (end.tv_sec - start.tv_sec) * 1000 * 1000 +
+        (end.tv_usec - start.tv_usec);
+}
+
+int TimedPBKDF2(const char *pass, int passlen,
+        const unsigned char *salt, int saltlen,
+        int keylen, unsigned char *out,
+        int &numIterations)
+{
+    int iter = 1000;
+    timeval start, end;
+
+    for(;;)
+    {
+        gettimeofday( &start, 0 );
+        int res = PKCS5_PBKDF2_HMAC_SHA1(pass, passlen, salt, saltlen, 
+                                    iter, keylen, out);
+        if(res != 1)
+            return res;
+
+        gettimeofday( &end, 0 );
+
+        long delta = time_diff(end, start);
+        if(delta < DesiredPDFTime / 8)
+        {
+            iter *= 4;
+        } else if(delta < (5 * DesiredPDFTime / 6))
+        {   
+            // estimate number of iterations to get close to desired time
+            iter = (int)((double)iter * (double)DesiredPDFTime 
+                    / (double)delta);
+        } else
+        {
+            // done..
+            numIterations = iter;
+            return 1;
+        }
+    }
+}
+
+
 // - Version 1:0 used EVP_BytesToKey, which didn't do the right thing for
 // Blowfish key lengths > 128 bit.
 // - Version 2:0 uses BytesToKey. 
 // We support both 2:0 and 1:0, hence current:revision:age = 2:0:1
 // - Version 2:1 adds support for Message Digest function interface
-static Interface BlowfishInterface( "ssl/blowfish", 2, 1, 1 );
-static Interface AESInterface( "ssl/aes", 2, 1, 1 );
+// - Version 3:0 uses PBKDF2 for password derivation
+static Interface BlowfishInterface( "ssl/blowfish", 3, 0, 2 );
+static Interface AESInterface( "ssl/aes", 3, 0, 2 );
 
 #if defined(HAVE_EVP_BF)
 
@@ -210,8 +259,8 @@ public:
     unsigned int keySize; // in bytes
     unsigned int ivLength;
 
-    // key data is first _keySize bytes, followed by _ivLength length bytes for
-    // iv
+    // key data is first _keySize bytes, 
+    // followed by iv of _ivLength bytes,
     unsigned char *buffer; 
 
     EVP_CIPHER_CTX block_enc;
@@ -232,6 +281,7 @@ SSLKey::SSLKey(int keySize_, int ivLength_)
     pthread_mutex_init( &mutex, 0 );
     buffer = (unsigned char *)OPENSSL_malloc( keySize + ivLength );
     memset( buffer, 0, keySize + ivLength );
+
     // most likely fails unless we're running as root, or a user-page-lock
     // kernel patch is applied..
     mlock( buffer, keySize + ivLength );
@@ -351,7 +401,8 @@ Interface SSL_Cipher::interface() const
     This algorithm must remain constant for backward compatibility, as this key
     is used to encipher/decipher the master key.
 */
-CipherKey SSL_Cipher::newKey(const char *password, int passwdLength)
+CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
+        int &iterationCount, const unsigned char *salt, int saltLen)
 {
     const EVP_MD *md = EVP_sha1();
     if(!md)
@@ -363,7 +414,35 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength)
     shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
     
     int bytes = 0;
-    if( iface.current() > 1 )
+    if( iface.current() > 2 )
+    {
+        if(iterationCount == 0)
+        {
+            // timed run, fills in iteration count
+            if(TimedPBKDF2(password, passwdLength, 
+                        salt, saltLen,
+                        _keySize+_ivLength, KeyData(key),
+                        iterationCount) != 1)
+            {
+                rWarning("openssl error, PBKDF2 failed");
+                return CipherKey();
+            } else if(iterationCount == 0)
+            {
+                rWarning("TimedPBKDF2 failed to fill in iteration count");
+                return CipherKey();
+            }
+        } else
+        {
+            // known iteration length
+            if(PKCS5_PBKDF2_HMAC_SHA1(password, passwdLength, salt, saltLen, 
+                        iterationCount, _keySize + _ivLength, 
+                        KeyData(key)) != 1)
+            {
+                rWarning("openssl error, PBKDF2 failed");
+                return CipherKey();
+            }
+        }
+    } else if( iface.current() > 1 )
     {
 	// now we use BytesToKey, which can deal with Blowfish keys larger then
 	// 128 bits.
@@ -402,32 +481,25 @@ CipherKey SSL_Cipher::newRandomKey()
 {
     const int bufLen = MAX_KEYLENGTH;
     unsigned char tmpBuf[ bufLen ];
-    // to avoid warnings of uninitialized data from valgrind
-    memset(tmpBuf, 0, sizeof(tmpBuf)); 
-    if(RAND_bytes( tmpBuf, bufLen ) != 1)
-    {
-	char errStr[120]; // specs require string at least 120 bytes long..
-	unsigned long errVal = 0;
-	if((errVal = ERR_get_error()) != 0)
-	{
-	    rWarning("openssl error: %s", ERR_error_string( errVal, errStr ));
-	    return CipherKey();
-	}
-    }
+    int saltLen = 20;
+    unsigned char saltBuf[ saltLen ];
+
+    if(!randomize(tmpBuf, bufLen, true) ||
+       !randomize(saltBuf, saltLen, true))
+        return CipherKey();
 
     shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
 
     // doesn't need to be versioned, because a random key is a random key..
     // Doesn't need to be reproducable..
-    int bytes = BytesToKey( _keySize, _ivLength, EVP_sha1(), tmpBuf, 
-	    bufLen, 16, KeyData(key), IVData(key) );
-    if(bytes != (int)_keySize)
+    if(PKCS5_PBKDF2_HMAC_SHA1((char*)tmpBuf, bufLen, saltBuf, saltLen, 
+            1000, _keySize + _ivLength, KeyData(key)) != 1)
     {
-	rWarning("newKey: BytesToKey returned %i, expecting %i key bytes",
-		bytes, _keySize);
+        rWarning("openssl error, PBKDF2 failed");
+        return CipherKey();
     }
 
-    memset( tmpBuf, 0, bufLen );
+    OPENSSL_cleanse(tmpBuf, bufLen);
 
     initKey( key, _blockCipher, _streamCipher, _keySize );
 
@@ -478,11 +550,27 @@ static uint64_t _checksum_64( SSLKey *key,
     return value;
 }
 
-void SSL_Cipher::randomize( unsigned char *buf, int len ) const
+bool SSL_Cipher::randomize( unsigned char *buf, int len,
+        bool strongRandom ) const
 {
+    // to avoid warnings of uninitialized data from valgrind
     memset(buf, 0, len); 
-    int result = RAND_pseudo_bytes( buf, len );
-    rAssert( result >= 0 );
+    int result;
+    if(strongRandom)
+        result = RAND_bytes( buf, len );
+    else
+        result = RAND_pseudo_bytes( buf, len );
+        
+    if(result != 1)
+    {
+	char errStr[120]; // specs require string at least 120 bytes long..
+	unsigned long errVal = 0;
+	if((errVal = ERR_get_error()) != 0)
+	    rWarning("openssl error: %s", ERR_error_string( errVal, errStr ));
+
+        return false;
+    } else
+        return true;
 }
 
 uint64_t SSL_Cipher::MAC_64( const unsigned char *data, int len,

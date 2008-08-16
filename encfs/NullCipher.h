@@ -37,7 +37,8 @@ public:
     virtual rel::Interface interface() const;
 
     // create a new key based on a password
-    virtual CipherKey newKey(const char *password, int passwdLength);
+    virtual CipherKey newKey(const char *password, int passwdLength,
+            int &iterationCount, const unsigned char *salt, int saltLen);
     // create a new random key
     virtual CipherKey newRandomKey();
 
@@ -55,7 +56,8 @@ public:
     virtual int encodedKeySize() const;
     virtual int cipherBlockSize() const;
 
-    virtual void randomize( unsigned char *buf, int len ) const;
+    virtual bool randomize( unsigned char *buf, int len,
+            bool strongRandom ) const;
 
     virtual uint64_t MAC_64(const unsigned char *data, int len,
 	    const CipherKey &key, uint64_t *chainedIV) const;

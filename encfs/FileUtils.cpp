@@ -87,7 +87,9 @@ static const char ENCFS_ENV_STDERR[] = "encfs_stderr";
 static int V5SubVersion = 20040813; // fix MACFileIO block size issues
 static int V5SubVersionDefault = 0;
 
-const int V6SubVersion = 20080813; // switch to v6/XML, add allowHoles option
+// 20080813 was really made on 20080413 -- typo on date..
+//const int V6SubVersion = 20080813; // switch to v6/XML, add allowHoles option
+const int V6SubVersion = 20080816; // add salt and iteration count
 
 struct ConfigInfo
 {
@@ -119,6 +121,35 @@ namespace boost
     namespace serialization
     {
         template<class Archive>
+        void encodeBinary(Archive &ar,
+                const char *id, const std::string &in)
+        {
+            int encodedSize = in.length();
+            std::string name = std::string("encoded") + id + "Size";
+            ar << make_nvp(name.c_str(), encodedSize);
+
+            char data[encodedSize];
+            memcpy(data, in.data(), encodedSize);
+            name = std::string("encoded") + id + "Data";
+            ar << make_nvp(name.c_str(), 
+                    serial::make_binary_object(data, encodedSize));
+        }
+
+        template<class Archive>
+        void decodeBinary(Archive &ar, const char *id, std::string &out)
+        {
+            int encodedSize;
+            std::string name = std::string("encoded") + id + "Size";
+            ar >> make_nvp(name.c_str(), encodedSize);
+
+            char data[encodedSize];
+            name = std::string("encoded") + id + "Data";
+            ar >> make_nvp(name.c_str(), 
+                    serial::make_binary_object(data, encodedSize));
+            out.assign( (char*)data, encodedSize );
+        }
+
+        template<class Archive>
         void save(Archive &ar, const EncFSConfig &cfg, 
                 unsigned int version)
         {
@@ -135,18 +166,18 @@ namespace boost
             ar << make_nvp("blockMACRandBytes", cfg.blockMACRandBytes);
             ar << make_nvp("allowHoles", cfg.allowHoles);
 
-            int keyLen = cfg.keyData.length();
-            ar << make_nvp("encodedKeySize", keyLen);
-            char key[keyLen];
-            memcpy(key, cfg.keyData.data(), keyLen);
-            ar << make_nvp("encodedKeyData", 
-                    serial::make_binary_object(key, keyLen));
+            encodeBinary(ar, "Key", cfg.keyData);
+
+            // version 20080816
+            ar << make_nvp("saltSize", cfg.saltSize);
+            ar << make_nvp("saltData",
+                    serial::make_binary_object(cfg.saltData, cfg.saltSize));
+            ar << make_nvp("kdfIterations", cfg.kdfIterations);
         }
 
         template<class Archive>
         void load(Archive &ar, EncFSConfig &cfg, unsigned int version)
         {
-            (void)version;
             cfg.subVersion = version;
             ar >> make_nvp("creator", cfg.creator);
             ar >> make_nvp("cipherAlg", cfg.cipherIface);
@@ -159,13 +190,22 @@ namespace boost
             ar >> make_nvp("blockMACBytes", cfg.blockMACBytes);
             ar >> make_nvp("blockMACRandBytes", cfg.blockMACRandBytes);
             ar >> make_nvp("allowHoles", cfg.allowHoles);
-       
-            int encodedKeySize;
-            ar >> make_nvp("encodedKeySize", encodedKeySize);
-            char key[encodedKeySize];
-            ar >> make_nvp("encodedKeyData", 
-                    serial::make_binary_object(key, encodedKeySize));
-            cfg.keyData.assign( (char*)key, encodedKeySize );
+      
+            decodeBinary(ar, "Key", cfg.keyData);
+
+            if(version >= 20080816)
+            {
+                ar >> make_nvp("saltSize", cfg.saltSize);
+                cfg.saltData = new unsigned char[cfg.saltSize];
+                ar >> make_nvp("saltData",
+                        serial::make_binary_object(cfg.saltData, cfg.saltSize));
+                ar >> make_nvp("kdfIterations", cfg.kdfIterations);
+            } else
+            {
+                cfg.saltSize = 0;
+                cfg.saltData = NULL;
+                cfg.kdfIterations = 0;
+            }
         }
         
         template<class Archive>
@@ -1027,6 +1067,17 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     config.externalIVChaining = externalIV;
     config.allowHoles = allowHoles;
 
+    config.saltSize = 20;
+    config.saltData = new unsigned char[config.saltSize];
+    config.kdfIterations = 0; // filled in by keying function
+
+    if(!cipher->randomize(config.saltData, config.saltSize, true))
+    {
+        cout << _("Unable to generate random data for key derivation\n");
+        return rootInfo;
+    }
+
+
     cout << "\n";
     // xgroup(setup)
     cout << _("Configuration finished.  The filesystem to be created has\n"
@@ -1063,11 +1114,17 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     CipherKey userKey;
     rDebug( "useStdin: %i", useStdin );
     if(useStdin)
-	userKey = getUserKey( cipher, useStdin );
+	userKey = getUserKey( cipher, useStdin,
+                              config.saltData, config.saltSize,
+                              config.kdfIterations);
     else if(passwordProgram.empty())
-	userKey = getNewUserKey( cipher );
+	userKey = getNewUserKey( cipher,
+                                 config.saltData, config.saltSize,
+                                 config.kdfIterations );
     else
-	userKey = getUserKey( passwordProgram, cipher, rootDir );
+	userKey = getUserKey( passwordProgram, cipher, rootDir,
+                              config.saltData, config.saltSize,
+                              config.kdfIterations );
 
     cipher->writeKey( volumeKey, encodedKey, userKey );
     userKey.reset();
@@ -1231,7 +1288,8 @@ void showFSInfo( const EncFSConfig &config )
     cout << "\n";
 }
     
-CipherKey getUserKey( const shared_ptr<Cipher> &cipher, bool useStdin )
+CipherKey getUserKey( const shared_ptr<Cipher> &cipher, bool useStdin,
+        const unsigned char *salt, int saltSize, int &iterations)
 {
     char passBuf[MaxPassBuf];
     char *res;
@@ -1253,7 +1311,8 @@ CipherKey getUserKey( const shared_ptr<Cipher> &cipher, bool useStdin )
     if(!res)
 	cerr << _("Zero length password not allowed\n");
     else
-	userKey = cipher->newKey( passBuf, strlen(passBuf) );
+	userKey = cipher->newKey( passBuf, strlen(passBuf),
+                                  iterations, salt, saltSize);
 
     memset( passBuf, 0, sizeof(passBuf) );
 
@@ -1287,7 +1346,8 @@ std::string readPassword( int FD )
 }
 
 CipherKey getUserKey( const std::string &passProg, 
-	const shared_ptr<Cipher> &cipher, const std::string &rootDir )
+	const shared_ptr<Cipher> &cipher, const std::string &rootDir,
+        const unsigned char *salt, int saltSize, int &iterations)
 {
     // have a child process run the command and get the result back to us.
     int fds[2], pid;
@@ -1358,7 +1418,8 @@ CipherKey getUserKey( const std::string &passProg,
     waitpid(pid, NULL, 0);
 
     // convert to key..
-    result = cipher->newKey( password.c_str(), password.length() );
+    result = cipher->newKey( password.c_str(), password.length(),
+                             iterations, salt, saltSize );
 
     // clear buffer..
     password.assign( password.length(), '\0' );
@@ -1366,7 +1427,8 @@ CipherKey getUserKey( const std::string &passProg,
     return result;
 }
 
-CipherKey getNewUserKey( const shared_ptr<Cipher> &cipher )
+CipherKey getNewUserKey( const shared_ptr<Cipher> &cipher,
+        const unsigned char *salt, int saltSize, int &iterations )
 {
     CipherKey userKey;
     char passBuf[MaxPassBuf];
@@ -1382,7 +1444,8 @@ CipherKey getNewUserKey( const shared_ptr<Cipher> &cipher )
 		sizeof(passBuf2)-1, RPP_ECHO_OFF);
 
 	if(res1 && res2 && !strcmp(passBuf, passBuf2))
-	    userKey = cipher->newKey( passBuf, strlen(passBuf) );
+	    userKey = cipher->newKey( passBuf, strlen(passBuf),
+                                      iterations, salt, saltSize );
 	else
 	{
 	    // xgroup(common) -- probably not common, but group with the others
@@ -1433,10 +1496,12 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 	CipherKey userKey;
 	rDebug( "useStdin: %i", opts->useStdin );
 	if(opts->passwordProgram.empty())
-	    userKey = getUserKey( cipher, opts->useStdin );
+	    userKey = getUserKey( cipher, opts->useStdin,
+                    config.saltData, config.saltSize, config.kdfIterations);
 	else
 	    userKey = getUserKey( opts->passwordProgram, 
-		    cipher, opts->rootDir );
+		    cipher, opts->rootDir,
+                    config.saltData, config.saltSize, config.kdfIterations);
 
 	if(!userKey)
 	    return rootInfo;
