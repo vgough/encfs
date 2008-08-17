@@ -53,9 +53,6 @@ const int MAX_KEYLENGTH = 32; // in bytes (256 bit)
 const int MAX_IVLENGTH = 16;
 const int KEY_CHECKSUM_BYTES = 4;
 
-// how long we'd like the PDF function to take, in micro seconds
-const long DesiredPDFTime = 500 * 1000;  // 1/2 second
-
 #ifndef MIN
 inline int MIN(int a, int b)
 {
@@ -139,7 +136,7 @@ long time_diff(const timeval &end, const timeval &start)
 int TimedPBKDF2(const char *pass, int passlen,
         const unsigned char *salt, int saltlen,
         int keylen, unsigned char *out,
-        int &numIterations)
+        long desiredPDFTime)
 {
     int iter = 1000;
     timeval start, end;
@@ -150,25 +147,21 @@ int TimedPBKDF2(const char *pass, int passlen,
         int res = PKCS5_PBKDF2_HMAC_SHA1(pass, passlen, salt, saltlen, 
                                     iter, keylen, out);
         if(res != 1)
-            return res;
+            return -1;
 
         gettimeofday( &end, 0 );
 
         long delta = time_diff(end, start);
-        if(delta < DesiredPDFTime / 8)
+        if(delta < desiredPDFTime / 8)
         {
             iter *= 4;
-        } else if(delta < (5 * DesiredPDFTime / 6))
+        } else if(delta < (5 * desiredPDFTime / 6))
         {   
             // estimate number of iterations to get close to desired time
-            iter = (int)((double)iter * (double)DesiredPDFTime 
+            iter = (int)((double)iter * (double)desiredPDFTime 
                     / (double)delta);
         } else
-        {
-            // done..
-            numIterations = iter;
-            return 1;
-        }
+            return iter;
     }
 }
 
@@ -178,9 +171,9 @@ int TimedPBKDF2(const char *pass, int passlen,
 // - Version 2:0 uses BytesToKey. 
 // We support both 2:0 and 1:0, hence current:revision:age = 2:0:1
 // - Version 2:1 adds support for Message Digest function interface
-// - Version 3:0 uses PBKDF2 for password derivation
-static Interface BlowfishInterface( "ssl/blowfish", 3, 0, 2 );
-static Interface AESInterface( "ssl/aes", 3, 0, 2 );
+// - Version 2:2 adds PBKDF2 for password derivation
+static Interface BlowfishInterface( "ssl/blowfish", 2, 2, 1 );
+static Interface AESInterface( "ssl/aes", 2, 2, 1 );
 
 #if defined(HAVE_EVP_BF)
 
@@ -402,7 +395,8 @@ Interface SSL_Cipher::interface() const
     is used to encipher/decipher the master key.
 */
 CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
-        int &iterationCount, const unsigned char *salt, int saltLen)
+        int &iterationCount, long desiredDuration,
+        const unsigned char *salt, int saltLen)
 {
     const EVP_MD *md = EVP_sha1();
     if(!md)
@@ -414,35 +408,49 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
     shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
     
     int bytes = 0;
-    if( iface.current() > 2 )
+    if(iterationCount == 0)
     {
-        if(iterationCount == 0)
+        // timed run, fills in iteration count
+        int res = TimedPBKDF2(password, passwdLength, 
+                    salt, saltLen,
+                    _keySize+_ivLength, KeyData(key),
+                    1000 * desiredDuration);
+        if(res <= 0)
         {
-            // timed run, fills in iteration count
-            if(TimedPBKDF2(password, passwdLength, 
-                        salt, saltLen,
-                        _keySize+_ivLength, KeyData(key),
-                        iterationCount) != 1)
-            {
-                rWarning("openssl error, PBKDF2 failed");
-                return CipherKey();
-            } else if(iterationCount == 0)
-            {
-                rWarning("TimedPBKDF2 failed to fill in iteration count");
-                return CipherKey();
-            }
+            rWarning("openssl error, PBKDF2 failed");
+            return CipherKey();
         } else
+            iterationCount = res;
+    } else
+    {
+        // known iteration length
+        if(PKCS5_PBKDF2_HMAC_SHA1(password, passwdLength, salt, saltLen, 
+                    iterationCount, _keySize + _ivLength, 
+                    KeyData(key)) != 1)
         {
-            // known iteration length
-            if(PKCS5_PBKDF2_HMAC_SHA1(password, passwdLength, salt, saltLen, 
-                        iterationCount, _keySize + _ivLength, 
-                        KeyData(key)) != 1)
-            {
-                rWarning("openssl error, PBKDF2 failed");
-                return CipherKey();
-            }
+            rWarning("openssl error, PBKDF2 failed");
+            return CipherKey();
         }
-    } else if( iface.current() > 1 )
+    }
+  
+    initKey( key, _blockCipher, _streamCipher, _keySize );
+
+    return key;
+}
+
+CipherKey SSL_Cipher::newKey(const char *password, int passwdLength)
+{
+    const EVP_MD *md = EVP_sha1();
+    if(!md)
+    {
+	rError("Unknown digest SHA1");
+	return CipherKey();
+    }
+   
+    shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
+    
+    int bytes = 0;
+    if( iface.current() > 1 )
     {
 	// now we use BytesToKey, which can deal with Blowfish keys larger then
 	// 128 bits.

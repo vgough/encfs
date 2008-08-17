@@ -86,8 +86,13 @@ public:
     // create a new key based on a password
     // if iterationCount == 0, then iteration count will be determined
     // by newKey function and filled in.
+    // If iterationCount == 0, then desiredFunctionDuration is how many
+    // milliseconds the password derivation function should take to run.
     virtual CipherKey newKey(const char *password, int passwdLength,
-            int &iterationCount, const unsigned char *salt, int saltLen) =0;
+            int &iterationCount, long desiredFunctionDuration,
+            const unsigned char *salt, int saltLen) =0;
+    // deprecated - for backward compatibility
+    virtual CipherKey newKey(const char *password, int passwdLength ) =0;
     // create a new random key
     virtual CipherKey newRandomKey() =0;
 

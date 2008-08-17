@@ -84,7 +84,12 @@ Interface NullCipher::interface() const
 }
 
 CipherKey NullCipher::newKey(const char *, int,
-        int &, const unsigned char *, int )
+        int &, long, const unsigned char *, int )
+{
+    return gNullKey;
+}
+
+CipherKey NullCipher::newKey(const char *, int)
 {
     return gNullKey;
 }

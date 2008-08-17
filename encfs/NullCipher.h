@@ -38,7 +38,9 @@ public:
 
     // create a new key based on a password
     virtual CipherKey newKey(const char *password, int passwdLength,
-            int &iterationCount, const unsigned char *salt, int saltLen);
+            int &iterationCount, long desiredDuration,
+            const unsigned char *salt, int saltLen);
+    virtual CipherKey newKey(const char *password, int passwdLength);
     // create a new random key
     virtual CipherKey newRandomKey();
 

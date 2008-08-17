@@ -295,16 +295,18 @@ A choice is provided for two pre-configured settings ('standard' and
 'paranoia'), along with an expert configuration mode.
 
 I<Standard> mode uses the following settings:
-    Cipher: Blowfish
-    Key Size: 160 bits
-    Filesystem Block Size: 512 bytes
+    Cipher: AES
+    Key Size: 192 bits
+    PBKDF2 with 1/2 second runtime, 160 bit salt
+    Filesystem Block Size: 1024 bytes
     Filename Encoding: Block encoding with IV chaining
     Unique initialization vector file headers
 
 I<Paranoia> mode uses the following settings:
     Cipher: AES
     Key Size: 256 bits
-    Filesystem Block Size: 512 bytes
+    PBKDF2 with 3 second runtime, 160 bit salt
+    Filesystem Block Size: 1024 bytes
     Filename Encoding: Block encoding with IV chaining
     Unique initialization vector file headers
     Message Authentication Code block headers
@@ -313,6 +315,23 @@ I<Paranoia> mode uses the following settings:
 In the expert / manual configuration mode, each of the above options is
 configurable.  Here is a list of current options with some notes about what
 they mean:
+
+=head1 Key Derivation Function
+
+As of version 1.5, B<EncFS> now uses PBKDF2 as the default key derivation
+function.  The number of iterations in the keying function is selected based on
+wall clock time to generate the key.  In standard mode, a target time of 0.5
+seconds is used, and in paranoia mode a target of 3.0 seconds is used.
+
+On a 1.6Ghz AMD 64 system, it rougly 64k iterations of the key derivation
+function can be handled in half a second.  The exact number of iterations to
+use is stored in the configuration file, as it is needed to remount the
+filesystem.
+
+If an B<EncFS> filesystem configuration from 1.4.x is modified with version 1.5
+(such as when using encfsctl to change the password), then the new PBKDF2
+function will be used and the filesystem will no longer be readable by older
+versions.
 
 =over 4
 
@@ -382,7 +401,7 @@ vector.  So "a/foo" and "b/foo" will have completely different encoded names
 for "foo".  This features has almost no performance impact (for most
 operations), and so is the default in all modes.
 
-B<Note:> One significant exception is directory renames.  Since the
+B<Note:> One significant performance exception is directory renames.  Since the
 initialization vector for filename encoding depends on the directory path, any
 rename requires re-encoding every filename in the tree of the directory being
 changed.  If there are thousands of files, then EncFS will have to do thousands

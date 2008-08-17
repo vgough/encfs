@@ -38,8 +38,20 @@ std::string parentDirectory( const std::string &path );
 // do it and return true.
 bool userAllowMkdir( const char *dirPath, mode_t mode );
 
+enum ConfigType
+{
+    Config_None = 0,
+    Config_Prehistoric,
+    Config_V3,
+    Config_V4,
+    Config_V5,
+    Config_V6
+};
+
 struct EncFSConfig
 {
+    ConfigType cfgType;
+
     std::string creator;
     int subVersion;
 
@@ -54,6 +66,7 @@ struct EncFSConfig
     int saltSize; // in bytes
     unsigned char *saltData;
     int kdfIterations;
+    long desiredKDFDuration;
 
     int blockMACBytes; // MAC headers on blocks..
     int blockMACRandBytes; // number of random bytes in the block header
@@ -66,6 +79,7 @@ struct EncFSConfig
 
     EncFSConfig()
     {
+        cfgType = Config_None;
         subVersion = 0;
         blockMACBytes = 0;
         blockMACRandBytes = 0;
@@ -77,6 +91,7 @@ struct EncFSConfig
         saltSize = 0;
         saltData = NULL;
         kdfIterations = 0;
+        desiredKDFDuration = 500;
     }
 
     ~EncFSConfig()
@@ -84,16 +99,15 @@ struct EncFSConfig
         if(saltData != NULL)
             delete[] saltData;
     }
-};
 
-enum ConfigType
-{
-    Config_None = 0,
-    Config_Prehistoric,
-    Config_V3,
-    Config_V4,
-    Config_V5,
-    Config_V6
+    CipherKey getUserKey(bool useStdin);
+    CipherKey getUserKey(const std::string &passwordProgram,
+                         const std::string &rootDir);
+    CipherKey getNewUserKey();
+    
+    shared_ptr<Cipher> getCipher();
+private:
+    CipherKey makeKey(const char *password, int passwdLen);
 };
 
 class Cipher;
@@ -177,15 +191,5 @@ bool readV6Config( const char *configFile, EncFSConfig *config,
 	struct ConfigInfo *);
 bool writeV6Config( const char *configFile, EncFSConfig *config);
 
-
-
-CipherKey getUserKey(const boost::shared_ptr<Cipher> &cipher, bool useStdin,
-                     const unsigned char *salt, int saltLen, int &iterations);
-CipherKey getUserKey(const std::string &passwordProgram, 
-	             const boost::shared_ptr<Cipher> &cipher,
-		     const std::string &rootDir,
-                     const unsigned char *salt, int saltLen, int &iterations);
-CipherKey getNewUserKey(const boost::shared_ptr<Cipher> &cipher,
-                        const unsigned char *salt, int saltLen, int &iterations);
 
 #endif

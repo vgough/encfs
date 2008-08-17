@@ -75,6 +75,9 @@ static const int DefaultBlockSize = 1024;
 // use the extpass option, as extpass can return arbitrary length binary data.
 static const int MaxPassBuf = 512;
 
+static const int NormalKDFDuration = 500; // 1/2 a second
+static const int ParanoiaKDFDuration = 3000; // 3 seconds
+
 // environment variable names for values encfs stores in the environment when
 // calling an external password program.
 static const char ENCFS_ENV_ROOTDIR[] = "encfs_root";
@@ -173,6 +176,7 @@ namespace boost
             ar << make_nvp("saltData",
                     serial::make_binary_object(cfg.saltData, cfg.saltSize));
             ar << make_nvp("kdfIterations", cfg.kdfIterations);
+            ar << make_nvp("desiredKDFDuration", cfg.desiredKDFDuration);
         }
 
         template<class Archive>
@@ -200,11 +204,13 @@ namespace boost
                 ar >> make_nvp("saltData",
                         serial::make_binary_object(cfg.saltData, cfg.saltSize));
                 ar >> make_nvp("kdfIterations", cfg.kdfIterations);
+                ar >> make_nvp("desiredKDFDuration", cfg.desiredKDFDuration);
             } else
             {
                 cfg.saltSize = 0;
                 cfg.saltData = NULL;
-                cfg.kdfIterations = 0;
+                cfg.kdfIterations = 16;
+                cfg.desiredKDFDuration = NormalKDFDuration;
             }
         }
         
@@ -318,7 +324,10 @@ ConfigType readConfig_load( ConfigInfo *nm, const char *path,
 	try
 	{
 	    if( (*nm->loadFunc)( path, config, nm ))
+            {
+                config->cfgType = nm->type;
 		return nm->type;
+            }
 	} catch( rlog::Error & err )
 	{
 	    err.log( _RLWarningChannel );
@@ -329,6 +338,7 @@ ConfigType readConfig_load( ConfigInfo *nm, const char *path,
     } else
     {
 	// No load function - must be an unsupported type..
+        config->cfgType = nm->type;
 	return nm->type;
     }
 }
@@ -901,7 +911,7 @@ static
 bool selectZeroBlockPassThrough()
 {
     // xgroup(setup)
-    return boolDefaultNo(
+    return boolDefaultYes(
             _("Enable file-hole pass-through?\n"
 	"This avoids writing encrypted blocks when file holes are created."));
 }
@@ -938,7 +948,8 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     bool uniqueIV = false;
     bool chainedIV = false;
     bool externalIV = false;
-    bool allowHoles = false;
+    bool allowHoles = true;
+    long desiredKDFDuration = NormalKDFDuration;
     
     if (reverseEncryption)
     {
@@ -973,6 +984,7 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
 	uniqueIV = true;
 	chainedIV = true;
 	externalIV = true;
+        desiredKDFDuration = ParanoiaKDFDuration;
     } else
     if(answer[0] != 'x')
     {
@@ -1054,6 +1066,7 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     
     EncFSConfig config;
 
+    config.cfgType = Config_V6;
     config.cipherIface = cipher->interface();
     config.keySize = keySize;
     config.blockSize = blockSize;
@@ -1067,16 +1080,10 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     config.externalIVChaining = externalIV;
     config.allowHoles = allowHoles;
 
-    config.saltSize = 20;
-    config.saltData = new unsigned char[config.saltSize];
+    config.saltSize = 0;
+    config.saltData = NULL;
     config.kdfIterations = 0; // filled in by keying function
-
-    if(!cipher->randomize(config.saltData, config.saltSize, true))
-    {
-        cout << _("Unable to generate random data for key derivation\n");
-        return rootInfo;
-    }
-
+    config.desiredKDFDuration = desiredKDFDuration;
 
     cout << "\n";
     // xgroup(setup)
@@ -1114,17 +1121,11 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     CipherKey userKey;
     rDebug( "useStdin: %i", useStdin );
     if(useStdin)
-	userKey = getUserKey( cipher, useStdin,
-                              config.saltData, config.saltSize,
-                              config.kdfIterations);
-    else if(passwordProgram.empty())
-	userKey = getNewUserKey( cipher,
-                                 config.saltData, config.saltSize,
-                                 config.kdfIterations );
+	userKey = config.getUserKey( useStdin );
+    else if(!passwordProgram.empty())
+	userKey = config.getUserKey( passwordProgram, rootDir );
     else
-	userKey = getUserKey( passwordProgram, cipher, rootDir,
-                              config.saltData, config.saltSize,
-                              config.kdfIterations );
+	userKey = config.getNewUserKey();
 
     cipher->writeKey( volumeKey, encodedKey, userKey );
     userKey.reset();
@@ -1232,13 +1233,20 @@ void showFSInfo( const EncFSConfig &config )
     }
     {
 	cout << autosprintf(_("Key Size: %i bits"), config.keySize);
-	cipher = Cipher::New( config.cipherIface, config.keySize );
+	cipher = config.getCipher();
 	if(!cipher)
 	{
 	    // xgroup(diag)
 	    cout << _(" (NOT supported)\n");
 	} else
 	    cout << "\n";
+    }
+    if(config.kdfIterations > 0 && config.saltSize > 0)
+    {
+	cout << autosprintf(_("Using PBKDF2, with %i iterations"), 
+                              config.kdfIterations) << "\n";
+	cout << autosprintf(_("Salt Size: %i bits"), 8*config.saltSize)
+            << "\n";
     }
     if(config.blockMACBytes)
     {
@@ -1287,9 +1295,48 @@ void showFSInfo( const EncFSConfig &config )
     }
     cout << "\n";
 }
-    
-CipherKey getUserKey( const shared_ptr<Cipher> &cipher, bool useStdin,
-        const unsigned char *salt, int saltSize, int &iterations)
+   
+shared_ptr<Cipher> EncFSConfig::getCipher()
+{
+    return Cipher::New( cipherIface, keySize );
+}
+
+CipherKey EncFSConfig::makeKey(const char *password, int passwdLen)
+{
+    CipherKey userKey;
+    shared_ptr<Cipher> cipher = getCipher();
+
+    // if no salt is set and we're creating a new password for a new
+    // FS type, then initialize salt..
+    if(saltSize == 0 && kdfIterations == 0 && cfgType >= Config_V6)
+    {
+        // upgrade to using salt
+        saltSize = 20;
+        saltData = new unsigned char[saltSize];
+    }
+
+    if(saltSize > 0)
+    {
+        // if iterations isn't known, then we're creating a new key, so
+        // randomize the salt..
+        if(kdfIterations == 0 && !cipher->randomize( saltData, saltSize, true))
+        {
+            cout << _("Error creating salt\n");
+            return userKey;
+        }
+
+        userKey = cipher->newKey( password, passwdLen,
+                kdfIterations, desiredKDFDuration, 
+                saltData, saltSize);
+    } else
+    {
+        userKey = cipher->newKey( password, passwdLen );
+    }
+
+    return userKey;
+}
+
+CipherKey EncFSConfig::getUserKey(bool useStdin)
 {
     char passBuf[MaxPassBuf];
     char *res;
@@ -1311,8 +1358,7 @@ CipherKey getUserKey( const shared_ptr<Cipher> &cipher, bool useStdin,
     if(!res)
 	cerr << _("Zero length password not allowed\n");
     else
-	userKey = cipher->newKey( passBuf, strlen(passBuf),
-                                  iterations, salt, saltSize);
+        userKey = makeKey(passBuf, strlen(passBuf));
 
     memset( passBuf, 0, sizeof(passBuf) );
 
@@ -1345,9 +1391,8 @@ std::string readPassword( int FD )
     return result;
 }
 
-CipherKey getUserKey( const std::string &passProg, 
-	const shared_ptr<Cipher> &cipher, const std::string &rootDir,
-        const unsigned char *salt, int saltSize, int &iterations)
+CipherKey EncFSConfig::getUserKey( const std::string &passProg,
+        const std::string &rootDir )
 {
     // have a child process run the command and get the result back to us.
     int fds[2], pid;
@@ -1418,8 +1463,7 @@ CipherKey getUserKey( const std::string &passProg,
     waitpid(pid, NULL, 0);
 
     // convert to key..
-    result = cipher->newKey( password.c_str(), password.length(),
-                             iterations, salt, saltSize );
+    result = makeKey(password.c_str(), password.length());
 
     // clear buffer..
     password.assign( password.length(), '\0' );
@@ -1427,8 +1471,7 @@ CipherKey getUserKey( const std::string &passProg,
     return result;
 }
 
-CipherKey getNewUserKey( const shared_ptr<Cipher> &cipher,
-        const unsigned char *salt, int saltSize, int &iterations )
+CipherKey EncFSConfig::getNewUserKey()
 {
     CipherKey userKey;
     char passBuf[MaxPassBuf];
@@ -1444,9 +1487,9 @@ CipherKey getNewUserKey( const shared_ptr<Cipher> &cipher,
 		sizeof(passBuf2)-1, RPP_ECHO_OFF);
 
 	if(res1 && res2 && !strcmp(passBuf, passBuf2))
-	    userKey = cipher->newKey( passBuf, strlen(passBuf),
-                                      iterations, salt, saltSize );
-	else
+        {
+            userKey = makeKey(passBuf, strlen(passBuf));
+        } else
 	{
 	    // xgroup(common) -- probably not common, but group with the others
 	    cerr << _("Passwords did not match, please try again\n");
@@ -1478,8 +1521,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 	}
 
 // first, instanciate the cipher.
-	shared_ptr<Cipher> cipher = 
-	    Cipher::New( config.cipherIface, config.keySize );
+	shared_ptr<Cipher> cipher = config.getCipher();
 	if(!cipher)
 	{
 	    rError(_("Unable to find cipher %s, version %i:%i:%i"),
@@ -1494,14 +1536,13 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 
 	// get user key
 	CipherKey userKey;
-	rDebug( "useStdin: %i", opts->useStdin );
-	if(opts->passwordProgram.empty())
-	    userKey = getUserKey( cipher, opts->useStdin,
-                    config.saltData, config.saltSize, config.kdfIterations);
-	else
-	    userKey = getUserKey( opts->passwordProgram, 
-		    cipher, opts->rootDir,
-                    config.saltData, config.saltSize, config.kdfIterations);
+
+        if(opts->passwordProgram.empty())
+        {
+            rDebug( "useStdin: %i", opts->useStdin );
+            userKey = config.getUserKey( opts->useStdin );
+        } else
+            userKey = config.getUserKey( opts->passwordProgram, opts->rootDir );
 
 	if(!userKey)
 	    return rootInfo;
