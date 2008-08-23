@@ -61,10 +61,10 @@ struct EncFSConfig
     rel::Interface nameIface;
     int keySize; // reported in bits
     int blockSize; // reported in bytes
-    std::string keyData;
 
-    int saltSize; // in bytes
-    unsigned char *saltData;
+    std::vector<unsigned char> keyData;
+
+    std::vector<unsigned char> salt;
     int kdfIterations;
     long desiredKDFDuration;
 
@@ -78,6 +78,8 @@ struct EncFSConfig
     bool allowHoles; // allow holes in files (implicit zero blocks)
 
     EncFSConfig()
+        : keyData()
+        , salt()
     {
         cfgType = Config_None;
         subVersion = 0;
@@ -88,16 +90,8 @@ struct EncFSConfig
         chainedNameIV = false;
         allowHoles = false;
 
-        saltSize = 0;
-        saltData = NULL;
         kdfIterations = 0;
         desiredKDFDuration = 500;
-    }
-
-    ~EncFSConfig()
-    {
-        if(saltData != NULL)
-            delete[] saltData;
     }
 
     CipherKey getUserKey(bool useStdin);
@@ -105,10 +99,22 @@ struct EncFSConfig
                          const std::string &rootDir);
     CipherKey getNewUserKey();
     
-    shared_ptr<Cipher> getCipher();
+    shared_ptr<Cipher> getCipher() const;
+
+    // deprecated
+    void assignKeyData(const std::string &in);
+    void assignKeyData(unsigned char *data, int length);
+    void assignSaltData(unsigned char *data, int length);
+
+    unsigned char *getKeyData() const;
+    unsigned char *getSaltData() const;
+
 private:
     CipherKey makeKey(const char *password, int passwdLen);
 };
+    
+std::ostream &operator << (std::ostream &os, const EncFSConfig &cfg);
+std::istream &operator >> (std::istream &os, EncFSConfig &cfg);
 
 class Cipher;
 
@@ -190,6 +196,5 @@ bool writeV5Config( const char *configFile, EncFSConfig *config);
 bool readV6Config( const char *configFile, EncFSConfig *config,
 	struct ConfigInfo *);
 bool writeV6Config( const char *configFile, EncFSConfig *config);
-
 
 #endif

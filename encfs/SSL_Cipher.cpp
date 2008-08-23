@@ -407,7 +407,6 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
    
     shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
     
-    int bytes = 0;
     if(iterationCount == 0)
     {
         // timed run, fills in iteration count

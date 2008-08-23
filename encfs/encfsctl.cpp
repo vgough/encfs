@@ -673,13 +673,9 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
     if(!userKey)
 	return EXIT_FAILURE;
 
-    rAssert( (int)config.keyData.length() == cipher->encodedKeySize() );
-
-
     // decode volume key using user key -- at this point we detect an incorrect
     // password if the key checksum does not match (causing readKey to fail).
-    CipherKey volumeKey = cipher->readKey(
-	    (unsigned char*)config.keyData.data(), userKey );
+    CipherKey volumeKey = cipher->readKey( config.getKeyData(), userKey );
 
     if(!volumeKey)
     {
@@ -709,8 +705,8 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
 	cipher->writeKey( volumeKey, keyBuf, userKey );
 	userKey.reset();
 
-	config.keyData.assign( (char*)keyBuf, encodedKeySize );
-	delete[] keyBuf;
+        config.assignKeyData( keyBuf, encodedKeySize );
+        delete[] keyBuf;
 
 	if(saveConfig( cfgType, rootDir, &config ))
 	{

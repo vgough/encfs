@@ -23,13 +23,13 @@
 #include <iostream>
 
 #include <cstdlib>
+#include <sstream>
 
 #include "Cipher.h"
 #include "DirNode.h"
 #include "MemoryPool.h"
 #include "Interface.h"
 #include "FileUtils.h"
-#include "ConfigReader.h"
 #include "StreamNameIO.h"
 #include "BlockNameIO.h"
 #include "NullNameIO.h"
@@ -197,8 +197,6 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 		cerr << "   FAILED\n";
 	    return false;
 	}
-
-	delete[] keyBuf;
     }
     
     if(verbose)
@@ -213,40 +211,33 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 	// store in config struct..
 	EncFSConfig cfg;
 	cfg.cipherIface = cipher->interface();
-	cfg.keySize = cipher->keySize();
+	cfg.keySize = 8 * cipher->keySize();
 	cfg.blockSize = FSBlockSize;
-	cfg.keyData.assign( (char*)keyBuf, encodedKeySize );
+	cfg.assignKeyData( keyBuf, encodedKeySize );
 
 	// save config
-	ConfigReader cfgRdrOut;
-	cfgRdrOut["cipher"] << cfg.cipherIface;
-	cfgRdrOut["keySize"] << cfg.keySize;
-	cfgRdrOut["blockSize"] << cfg.blockSize;
-	cfgRdrOut["keyData"] << cfg.keyData;
-
-	// save to string data..
-	ConfigVar storage = cfgRdrOut.toVar();
+        string data;
+        {
+            ostringstream st;
+            st << cfg;
+            data = st.str();
+        }
 
 	// read back in and check everything..
-	ConfigReader cfgRdrIn;
-	cfgRdrIn.loadFromVar( storage );
-
-	EncFSConfig cfg2;
-	cfgRdrIn["cipher"] >> cfg2.cipherIface;
-	cfgRdrIn["keySize"] >> cfg2.keySize;
-	cfgRdrIn["blockSize"] >> cfg2.blockSize;
-	cfgRdrIn["keyData"] >> cfg2.keyData;
+        EncFSConfig cfg2;
+        {
+            istringstream st(data);
+            st >> cfg2;
+        }
 
 	// check..
 	rAssert( cfg.cipherIface.implements(cfg2.cipherIface) );
 	rAssert( cfg.keySize == cfg2.keySize );
 	rAssert( cfg.blockSize == cfg2.blockSize );
-	rAssert( cfg.keyData == cfg2.keyData );
 
 	// try decoding key..
 
-	CipherKey key2 = cipher->readKey( (unsigned char*)cfg2.keyData.data(), 
-		encodingKey );
+	CipherKey key2 = cipher->readKey( cfg2.getKeyData(), encodingKey );
 	if(!key2)
 	{
 	    if(verbose)
@@ -264,8 +255,6 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 		cerr << "   FAILED\n";
 	    return false;
 	}
-
-	delete[] keyBuf;
     }
 
     shared_ptr<DirNode::Config> dnConfig( new DirNode::Config );

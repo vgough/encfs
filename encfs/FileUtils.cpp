@@ -124,35 +124,6 @@ namespace boost
     namespace serialization
     {
         template<class Archive>
-        void encodeBinary(Archive &ar,
-                const char *id, const std::string &in)
-        {
-            int encodedSize = in.length();
-            std::string name = std::string("encoded") + id + "Size";
-            ar << make_nvp(name.c_str(), encodedSize);
-
-            char data[encodedSize];
-            memcpy(data, in.data(), encodedSize);
-            name = std::string("encoded") + id + "Data";
-            ar << make_nvp(name.c_str(), 
-                    serial::make_binary_object(data, encodedSize));
-        }
-
-        template<class Archive>
-        void decodeBinary(Archive &ar, const char *id, std::string &out)
-        {
-            int encodedSize;
-            std::string name = std::string("encoded") + id + "Size";
-            ar >> make_nvp(name.c_str(), encodedSize);
-
-            char data[encodedSize];
-            name = std::string("encoded") + id + "Data";
-            ar >> make_nvp(name.c_str(), 
-                    serial::make_binary_object(data, encodedSize));
-            out.assign( (char*)data, encodedSize );
-        }
-
-        template<class Archive>
         void save(Archive &ar, const EncFSConfig &cfg, 
                 unsigned int version)
         {
@@ -169,12 +140,16 @@ namespace boost
             ar << make_nvp("blockMACRandBytes", cfg.blockMACRandBytes);
             ar << make_nvp("allowHoles", cfg.allowHoles);
 
-            encodeBinary(ar, "Key", cfg.keyData);
+            int encodedSize = cfg.keyData.size();
+            ar << make_nvp("encodedKeySize", encodedSize);
+            ar << make_nvp("encodedKeyData",
+                    serial::make_binary_object(cfg.getKeyData(), encodedSize));
 
             // version 20080816
-            ar << make_nvp("saltSize", cfg.saltSize);
+            int size = cfg.salt.size();
+            ar << make_nvp("saltLen", size);
             ar << make_nvp("saltData",
-                    serial::make_binary_object(cfg.saltData, cfg.saltSize));
+                    serial::make_binary_object(cfg.getSaltData(), size));
             ar << make_nvp("kdfIterations", cfg.kdfIterations);
             ar << make_nvp("desiredKDFDuration", cfg.desiredKDFDuration);
         }
@@ -195,20 +170,31 @@ namespace boost
             ar >> make_nvp("blockMACRandBytes", cfg.blockMACRandBytes);
             ar >> make_nvp("allowHoles", cfg.allowHoles);
       
-            decodeBinary(ar, "Key", cfg.keyData);
+            int encodedSize;
+            ar >> make_nvp("encodedKeySize", encodedSize);
+            rAssert(encodedSize == cfg.getCipher()->encodedKeySize());
+
+            unsigned char *key = new unsigned char[encodedSize];
+            ar >> make_nvp("encodedKeyData",
+                    serial::make_binary_object(key, encodedSize));
+            cfg.assignKeyData(key, encodedSize);
+            delete[] key;
 
             if(version >= 20080816)
             {
-                ar >> make_nvp("saltSize", cfg.saltSize);
-                cfg.saltData = new unsigned char[cfg.saltSize];
+                int saltLen;
+                ar >> make_nvp("saltLen", saltLen);
+                unsigned char *salt = new unsigned char[saltLen];
                 ar >> make_nvp("saltData",
-                        serial::make_binary_object(cfg.saltData, cfg.saltSize));
+                        serial::make_binary_object(salt, saltLen));
+                cfg.assignSaltData(salt, saltLen);
+                delete[] salt;
+
                 ar >> make_nvp("kdfIterations", cfg.kdfIterations);
                 ar >> make_nvp("desiredKDFDuration", cfg.desiredKDFDuration);
             } else
             {
-                cfg.saltSize = 0;
-                cfg.saltData = NULL;
+                cfg.salt.clear();
                 cfg.kdfIterations = 16;
                 cfg.desiredKDFDuration = NormalKDFDuration;
             }
@@ -426,7 +412,10 @@ bool readV5Config( const char *configFile, EncFSConfig *config,
 	    cfgRdr["naming"] >> config->nameIface;
 	    cfgRdr["keySize"] >> config->keySize;
 	    cfgRdr["blockSize"] >> config->blockSize;
-	    cfgRdr["keyData"] >> config->keyData;
+
+            string data;
+	    cfgRdr["keyData"] >> data;
+            config->assignKeyData(data);
 	    config->uniqueIV = cfgRdr["uniqueIV"].readBool( false );
 	    config->chainedNameIV = cfgRdr["chainedIV"].readBool( false );
 	    config->externalIVChaining = cfgRdr["externalIV"].readBool( false );
@@ -460,7 +449,9 @@ bool readV4Config( const char *configFile, EncFSConfig *config,
 	    cfgRdr["cipher"] >> config->cipherIface;
 	    cfgRdr["keySize"] >> config->keySize;
 	    cfgRdr["blockSize"] >> config->blockSize;
-	    cfgRdr["keyData"] >> config->keyData;
+            string data;
+	    cfgRdr["keyData"] >> data;
+            config->assignKeyData(data);
 
 	    // fill in default for V4
 	    config->nameIface = Interface("nameio/stream", 1, 0, 0);
@@ -531,6 +522,22 @@ bool writeV6Config( const char *configFile, EncFSConfig *config )
     return true;
 }
 
+std::ostream &operator << (std::ostream &st, const EncFSConfig &cfg)
+{
+    boost::archive::xml_oarchive oa(st);
+    oa << BOOST_SERIALIZATION_NVP( cfg );
+
+    return st;
+}
+
+std::istream &operator >> (std::istream &st, EncFSConfig &cfg)
+{
+    boost::archive::xml_iarchive ia(st);
+    ia >> BOOST_SERIALIZATION_NVP( cfg );
+
+    return st;
+}
+
 bool writeV5Config( const char *configFile, EncFSConfig *config )
 {
     ConfigReader cfg;
@@ -541,7 +548,9 @@ bool writeV5Config( const char *configFile, EncFSConfig *config )
     cfg["naming"] << config->nameIface;
     cfg["keySize"] << config->keySize;
     cfg["blockSize"] << config->blockSize;
-    cfg["keyData"] << config->keyData;
+    string key;
+    key.assign((char *)config->getKeyData(), config->keyData.size());
+    cfg["keyData"] << key;
     cfg["blockMACBytes"] << config->blockMACBytes;
     cfg["blockMACRandBytes"] << config->blockMACRandBytes;
     cfg["uniqueIV"] << config->uniqueIV;
@@ -558,7 +567,9 @@ bool writeV4Config( const char *configFile, EncFSConfig *config )
     cfg["cipher"] << config->cipherIface;
     cfg["keySize"] << config->keySize;
     cfg["blockSize"] << config->blockSize;
-    cfg["keyData"] << config->keyData;
+    string key;
+    key.assign((char *)config->getKeyData(), config->keyData.size());
+    cfg["keyData"] << key;
 
     return cfg.save( configFile );
 }
@@ -1080,8 +1091,7 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     config.externalIVChaining = externalIV;
     config.allowHoles = allowHoles;
 
-    config.saltSize = 0;
-    config.saltData = NULL;
+    config.salt.clear();
     config.kdfIterations = 0; // filled in by keying function
     config.desiredKDFDuration = desiredKDFDuration;
 
@@ -1130,7 +1140,7 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     cipher->writeKey( volumeKey, encodedKey, userKey );
     userKey.reset();
 
-    config.keyData.assign( (char*)encodedKey, encodedKeySize );
+    config.assignKeyData(encodedKey, encodedKeySize);
     delete[] encodedKey;
 
     if(!volumeKey)
@@ -1241,12 +1251,12 @@ void showFSInfo( const EncFSConfig &config )
 	} else
 	    cout << "\n";
     }
-    if(config.kdfIterations > 0 && config.saltSize > 0)
+    if(config.kdfIterations > 0 && config.salt.size() > 0)
     {
 	cout << autosprintf(_("Using PBKDF2, with %i iterations"), 
                               config.kdfIterations) << "\n";
-	cout << autosprintf(_("Salt Size: %i bits"), 8*config.saltSize)
-            << "\n";
+	cout << autosprintf(_("Salt Size: %i bits"), 
+                8*(int)config.salt.size()) << "\n";
     }
     if(config.blockMACBytes)
     {
@@ -1296,9 +1306,40 @@ void showFSInfo( const EncFSConfig &config )
     cout << "\n";
 }
    
-shared_ptr<Cipher> EncFSConfig::getCipher()
+shared_ptr<Cipher> EncFSConfig::getCipher() const
 {
     return Cipher::New( cipherIface, keySize );
+}
+
+void EncFSConfig::assignKeyData(const std::string &in)
+{
+    keyData.resize(in.length());
+    for(unsigned int i=0; i<in.length(); ++i)
+        keyData[i] = in.data()[i];
+}
+
+void EncFSConfig::assignKeyData(unsigned char *data, int len)
+{
+    keyData.resize(len);
+    for(int i=0; i<len; ++i)
+        keyData[i] = data[i];
+}
+
+void EncFSConfig::assignSaltData(unsigned char *data, int len)
+{
+    salt.resize(len);
+    for(int i=0; i<len; ++i)
+        salt[i] = data[i];
+}
+
+unsigned char *EncFSConfig::getKeyData() const
+{
+    return const_cast<unsigned char *>(&keyData.front());
+}
+
+unsigned char *EncFSConfig::getSaltData() const
+{
+    return const_cast<unsigned char *>(&salt.front());
 }
 
 CipherKey EncFSConfig::makeKey(const char *password, int passwdLen)
@@ -1308,18 +1349,18 @@ CipherKey EncFSConfig::makeKey(const char *password, int passwdLen)
 
     // if no salt is set and we're creating a new password for a new
     // FS type, then initialize salt..
-    if(saltSize == 0 && kdfIterations == 0 && cfgType >= Config_V6)
+    if(salt.size() == 0 && kdfIterations == 0 && cfgType >= Config_V6)
     {
         // upgrade to using salt
-        saltSize = 20;
-        saltData = new unsigned char[saltSize];
+        salt.resize(20);
     }
 
-    if(saltSize > 0)
+    if(salt.size() > 0)
     {
         // if iterations isn't known, then we're creating a new key, so
         // randomize the salt..
-        if(kdfIterations == 0 && !cipher->randomize( saltData, saltSize, true))
+        if(kdfIterations == 0 && !cipher->randomize( 
+                    getSaltData(), salt.size(), true))
         {
             cout << _("Error creating salt\n");
             return userKey;
@@ -1327,7 +1368,7 @@ CipherKey EncFSConfig::makeKey(const char *password, int passwdLen)
 
         userKey = cipher->newKey( password, passwdLen,
                 kdfIterations, desiredKDFDuration, 
-                saltData, saltSize);
+                getSaltData(), salt.size());
     } else
     {
         userKey = cipher->newKey( password, passwdLen );
@@ -1547,13 +1588,10 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 	if(!userKey)
 	    return rootInfo;
 
-	// no funny stuff
-	rDebug("configuration key size = %i", (int)config.keyData.length());
 	rDebug("cipher key size = %i", cipher->encodedKeySize());
-	rAssert( (int)config.keyData.length() == cipher->encodedKeySize() ); 
 	// decode volume key..
-	CipherKey volumeKey = cipher->readKey( 
-		(unsigned char*)config.keyData.data(), userKey, opts->checkKey);
+	CipherKey volumeKey = cipher->readKey(
+                config.getKeyData(), userKey, opts->checkKey);
 	userKey.reset();
 
 	if(!volumeKey)
