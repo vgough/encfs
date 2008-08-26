@@ -393,13 +393,15 @@ DirTraverse DirNode::openDir(const char *plaintextPath)
     string cyName = rootDir + naming->encodePath( plaintextPath );
     //rDebug("openDir on %s", cyName.c_str() );
 
-    shared_ptr<DIR> dp( ::opendir( cyName.c_str() ), DirDeleter() );
-    if(!dp)
+    DIR *dir = ::opendir( cyName.c_str() );
+    if(dir == NULL)
     {
 	rDebug("opendir error %s", strerror(errno));
-	return DirTraverse( dp, 0, shared_ptr<NameIO>() );
+	return DirTraverse( shared_ptr<DIR>(), 0, shared_ptr<NameIO>() );
     } else
     {
+        shared_ptr<DIR> dp( dir, DirDeleter() );
+
 	uint64_t iv = 0;
 	// if we're using chained IV mode, then compute the IV at this
 	// directory level..
