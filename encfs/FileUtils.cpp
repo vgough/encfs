@@ -63,6 +63,10 @@
 #include <boost/serialization/split_free.hpp>
 #include <boost/serialization/binary_object.hpp>
 
+// disable rlog section grouping for this file.. seems to cause problems
+#undef RLOG_SECTION
+#define RLOG_SECTION
+
 using namespace rel;
 using namespace rlog;
 using namespace std;

@@ -1,5 +1,27 @@
 
+Tue Sep 9 2008 Valient Gough <vgough@pobox.com>
+	* work around problem with RLog section inlining
+
+Mon Aug 25 2008 Valient Gough <vgough@pobox.com>
+	* fix potential null pointer exception in opendir handler,
+	  affects MacOS systems but not Linux.
+
+Sat Aug 23 2008 Valient Gough <vgough@pobox.com>
+	* bump library version
+	* add BOOST_SYSTEM check
+
+Fri Aug 22 2008 Valient Gough <vgough@pobox.com>
+	* replace raw pointers with vector in EncFSConfig
+
+Sun Aug 17 2008 Valient Gough <vgough@pobox.com>
+	* bump version to 1.5
+	* minor improvement to showFSInfo output
+	* make KDF function run longer in paranoia mode
+
 Sat Aug 16 2008 Valient Gough <vgough@pobox.com>
+	* enable file hole support by default
+	* allow for automatic upgrade to PBKDF2 when changing passwords
+	* reset salt and iteration count when creating new password
 	* use PBKDF2 for new keys with salt and variable iteration count.
 	  When creating a new key, adjusts iteration count to take
 	  approximatly 1/2 a second of CPU time to test key.
