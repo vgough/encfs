@@ -144,8 +144,9 @@ int TimedPBKDF2(const char *pass, int passlen,
     for(;;)
     {
         gettimeofday( &start, 0 );
-        int res = PKCS5_PBKDF2_HMAC_SHA1(pass, passlen, salt, saltlen, 
-                                    iter, keylen, out);
+        int res = PKCS5_PBKDF2_HMAC_SHA1(
+                pass, passlen, const_cast<unsigned char*>(salt), saltlen, 
+                iter, keylen, out);
         if(res != 1)
             return -1;
 
@@ -423,9 +424,10 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
     } else
     {
         // known iteration length
-        if(PKCS5_PBKDF2_HMAC_SHA1(password, passwdLength, salt, saltLen, 
-                    iterationCount, _keySize + _ivLength, 
-                    KeyData(key)) != 1)
+        if(PKCS5_PBKDF2_HMAC_SHA1(
+                    password, passwdLength, 
+                    const_cast<unsigned char*>(salt), saltLen, 
+                    iterationCount, _keySize + _ivLength, KeyData(key)) != 1)
         {
             rWarning("openssl error, PBKDF2 failed");
             return CipherKey();
