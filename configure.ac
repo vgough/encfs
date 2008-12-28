@@ -1,7 +1,10 @@
 dnl Process this file with autoconf to produce a configure script.
 
 AC_INIT(encfs/encfs.h) dnl a source file from your sub dir
-AM_INIT_AUTOMAKE(encfs, 1.5) dnl searches for some needed programs
+AM_INIT_AUTOMAKE(encfs, 1.5.1) dnl searches for some needed programs
+
+RELEASE=1
+AC_SUBST(RELEASE)
 
 dnl without this order in this file, automake will be confused!
 dnl
@@ -13,9 +16,6 @@ unset CDPATH
 AC_LANG_CPLUSPLUS
 AC_PROG_CXX
     
-RELEASE=1
-AC_SUBST(RELEASE)
-
 dnl almost the same like KDE_SET_PEFIX but the path is /usr/local
 dnl
 unset CDPATH
@@ -178,12 +178,14 @@ if test "x$with_openssl" != "xyes"; then
 fi
 
 # check for RLOG
-PKG_CHECK_MODULES(RLOG, librlog >= 1.3,
-	with_rlog="yes", 
-	[ # do old-style test instead..
-	AC_MSG_WARN([Checking for librlog the hard way])
-	AC_CHECK_LIB(rlog, RLogVersion, [RLOG_LIBS="-lrlog"],
-	    [AC_MSG_ERROR([EncFS depends on librlog, by the same author.])]) ])
+PKG_CHECK_MODULES(RLOG, librlog >= 1.3, with_rlog="yes", with_rlog="test")
+
+# manual check for rlog, unless environment variable already set
+if test "$with_rlog" = "test" && test "x$RLOG_LIBS" = "x"; then
+    AC_MSG_WARN([Checking for librlog the hard way])
+    AC_CHECK_LIB(rlog, RLogVersion, [RLOG_LIBS="-lrlog"],
+        [AC_MSG_ERROR([EncFS depends on librlog])]) 
+fi
 
 # look for pod2man program for building man pages
 AC_PATH_PROG(POD2MAN, pod2man, [no])
