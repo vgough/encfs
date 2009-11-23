@@ -226,6 +226,9 @@ bool RenameOp::apply()
             rDebug("renaming %s -> %s",
                     last->oldCName.c_str(), last->newCName.c_str());
 
+            struct stat st;
+            bool preserve_mtime = ::stat(last->oldCName.c_str(), &st) == 0;
+
             // internal node rename..
             dn->renameNode( last->oldPName.c_str(), 
                             last->newPName.c_str() );
@@ -239,6 +242,14 @@ bool RenameOp::apply()
                 dn->renameNode( last->newPName.c_str(), 
                         last->oldPName.c_str(), false );
                 return false;
+            }
+
+            if(preserve_mtime)
+            {
+                struct utimbuf ut;
+                ut.actime = st.st_atime;
+                ut.modtime = st.st_mtime;
+                ::utime(last->newCName.c_str(), &ut);
             }
 
             ++last;
@@ -622,6 +633,9 @@ DirNode::rename( const char *fromPlaintext, const char *toPlaintext )
     int res = 0;
     try
     {
+        struct stat st;
+        bool preserve_mtime = ::stat(fromCName.c_str(), &st) == 0;
+
 	renameNode( fromPlaintext, toPlaintext );
 	res = ::rename( fromCName.c_str(), toCName.c_str() );
 
@@ -633,7 +647,13 @@ DirNode::rename( const char *fromPlaintext, const char *toPlaintext )
 
 	    if(renameOp)
 		renameOp->undo();
-	}
+	} else if(preserve_mtime)
+        {
+            struct utimbuf ut;
+            ut.actime = st.st_atime;
+            ut.modtime = st.st_mtime;
+            ::utime(toCName.c_str(), &ut);
+        }
     } catch( rlog::Error &err )
     {
 	// exception from renameNode, just show the error and continue..
