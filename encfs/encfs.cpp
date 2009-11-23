@@ -544,7 +544,7 @@ int _do_utimens(EncFS_Context *, const string &cyName,
     tv[1].tv_sec = ts[1].tv_sec;
     tv[1].tv_usec = ts[1].tv_nsec / 1000;
 
-    int res = utimes( cyName.c_str(), tv);
+    int res = lutimes( cyName.c_str(), tv);
     return (res == -1) ? -errno : ESUCCESS;
 }
 
