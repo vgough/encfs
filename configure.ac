@@ -6,6 +6,12 @@ AM_INIT_AUTOMAKE(encfs, 1.5.1) dnl searches for some needed programs
 RELEASE=1
 AC_SUBST(RELEASE)
 
+AC_CANONICAL_HOST
+AM_CONDITIONAL([DARWIN],
+               [case $host_os in darwin*) true;; *) false;; esac])
+
+AC_CONFIG_MACRO_DIR([m4])
+
 dnl without this order in this file, automake will be confused!
 dnl
 AM_CONFIG_HEADER(config.h)
@@ -54,6 +60,11 @@ CPPFLAGS="$CPPFLAGS $USER_INCLUDES $FUSEFLAGS -D__STDC_FORMAT_MACROS"
 CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS $USER_INCLUDES"
 LDFLAGS="$LDFLAGS $PTHREAD_LIBS $USER_LDFLAGS"
 
+# default install path on Darwin of Macports, which is where rlog may be
+if test -z "${DARWIN_TRUE}"; then
+    LDFLAGS="$LDFLAGS -L/opt/local/lib"
+fi
+
 if test "$GXX" = "yes"; then
     CXXFLAGS="-W -Wall -Wpointer-arith -Wwrite-strings $CXXFLAGS"
     dnl CXXFLAGS="$CXXFLAGS -Wformat=2 -Wconversion"
@@ -64,11 +75,13 @@ AC_CHECK_HEADER(fuse.h,,
 	Can't find fuse.h - add the search path to CPPFLAGS and
 	rerun configure, eg:
 	export CPPFLAGS=-I/usr/local/include ])])
-AC_CHECK_LIB(fuse,fuse_new, [FUSE_LIBS="-lfuse"],
-    [AC_MSG_ERROR([
-	Can't find libfuse.a - add the search path to LDFLAGS
-	and rerun configure, eg:
-	export LDFLAGS=-L/usr/local/lib ])],)
+AC_CHECK_LIB(fuse_ino64,fuse_new, [FUSE_LIBS="-lfuse_ino64"],
+    [ AC_CHECK_LIB(fuse,fuse_new, [FUSE_LIBS="-lfuse"],
+        [AC_MSG_ERROR([
+	    Can't find libfuse.a - add the search path to LDFLAGS
+	    and rerun configure, eg:
+	    export LDFLAGS=-L/usr/local/lib ])],) 
+    ],)
 
 AC_SUBST(FUSE_LIBS)
 

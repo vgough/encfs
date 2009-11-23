@@ -190,7 +190,7 @@ std::string NameIO::recodePath( const char *path,
 	} else
 	{
 	    bool isDotFile = (*path == '.');
-	    char *next = strchr( path, '/' );
+	    const char *next = strchr( path, '/' );
 	    int len = next ? next - path : strlen( path );
 
 	    // at this point we know that len > 0

@@ -9,6 +9,11 @@ INCLUDES = $(all_includes) -I../intl
 
 AM_CXXFLAGS = -DRLOG_COMPONENT="encfs" $(ALL_INCLUDES) 
 
+if DARWIN
+# needed to select correct API in fuse.h
+AM_CXXFLAGS += -D__FreeBSD__=10
+endif
+
 if BUILD_NLS
 # define a C macro LOCALEDIR indicating where catalogs will be installed
 #localedir = $(datadir)/locale
