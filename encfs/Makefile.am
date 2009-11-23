@@ -2,7 +2,7 @@
 include $(top_srcdir)/Makefile.common
 
 ALL_INCLUDES = @RLOG_CFLAGS@ @OPENSSL_CFLAGS@ @BOOST_CPPFLAGS@
-ALL_LDFLAGS = @RLOG_LIBS@ @OPENSSL_LIBS@ @FUSE_LIBS@ 
+ALL_LDFLAGS = @RLOG_LIBS@ @OPENSSL_LIBS@ @FUSE_LIBS@ @BOOST_LDFLAGS@
 ALL_LDFLAGS += @BOOST_SERIALIZATION_LIB@ @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
 
 INCLUDES = $(all_includes) -I../intl
@@ -48,7 +48,7 @@ endif
 #       :  +1 :           => internal changes, nothing breaks
 #
 libencfs_la_LDFLAGS = -version-info 5:0:1
-libencfs_la_LIBADD = -lrlog
+libencfs_la_LIBADD = @RLOG_LIBS@
 
 EXTRASRC = ../intl/autosprintf.cpp
 if BUILD_OPENSSL
