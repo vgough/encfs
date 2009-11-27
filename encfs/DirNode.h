@@ -140,6 +140,7 @@ public:
     shared_ptr<FileNode> directLookup( const char *realPath );
 
     std::string cipherPath( const char *plaintextPath );
+    std::string cipherPathWithoutRoot( const char *plaintextPath );
     std::string plainPath( const char *cipherPath );
 
     // relative cipherPath is the same as cipherPath except that it doesn't
@@ -213,4 +214,3 @@ private:
 };
 
 #endif
-

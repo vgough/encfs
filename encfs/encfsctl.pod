@@ -25,7 +25,9 @@ B<encfsctl> passwd I<rootdir>
 
 B<encfsctl> showcruft I<rootdir>
 
-B<encfsctl> decode I<rootdir> [encoded name]
+B<encfsctl> decode [--extpass=prog] I<rootdir> [encoded name ...]
+
+B<encfsctl> encode [--extpass=prog] I<rootdir> [plaintext name ...]
 
 =head1 DESCRIPTION
 
@@ -58,13 +60,28 @@ files which are not decodable under the primary key.
 
 =item B<decode>
 
-Allows you to specify an encoded name on the command line, and displayed a
+Allows you to specify an encoded name on the command line, and displays
 decoded version.  This is mostly useful for debugging, as debug messages always
 display encrypted filenames (to avoid leaking sensitive data through the debug
 channels).  So this command provides a way to decode the filenames.
 
-If no name is specified on the command line, then a list of filenames will be
+The B<--extpass> option can be used to specify the program which returns the
+password - just like with encfs.
+
+If no names are specified on the command line, then a list of filenames will be
 read from stdin and decoded.
+
+=item B<encode>
+
+Allows you to specify a filename on the command line, and displays its
+encoded version. This is useful if e.g. you are taking a backup of an
+encrypted directory and would like to exclude some files.
+
+The B<--extpass> option can be used to specify the program which returns the
+password - just like with encfs.
+
+If no names are specified on the command line, then a list of filenames
+will be read from stdin and encoded.
 
 =back
 
@@ -96,4 +113,3 @@ EncFS was written by Valient Gough <vgough@pobox.com>.
 =head1 SEE ALSO
 
 encfs(1)
-

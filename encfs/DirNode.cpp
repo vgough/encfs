@@ -346,6 +346,12 @@ DirNode::cipherPath( const char *plaintextPath )
 }
 
 string
+DirNode::cipherPathWithoutRoot( const char *plaintextPath )
+{
+    return naming->encodePath( plaintextPath );
+}
+
+string
 DirNode::plainPath( const char *cipherPath_ )
 {
     try
@@ -844,4 +850,3 @@ int DirNode::unlink( const char *plaintextName )
 	
     return res;
 }
-
