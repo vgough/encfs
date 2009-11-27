@@ -4,8 +4,8 @@ Encfs uses the GNU autoconf / automake toolchain to create makefiles.
 
 The configure script is automatically generated, but is part of most EncFS
 distributions.  If you have a distribution that does not contain the configure
-script, then you can generate it by either running the "makeconf.sh" script, or
-running "make -f Makefile.dist".
+script, then you can generate it by running "autoreconf -if" or by running
+"make -f Makefile.dist".
 
 To build encfs, run:
 

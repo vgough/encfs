@@ -4,6 +4,7 @@ Thu Nov 26 2009 Valient Gough <vgough@pobox.com>
 	  commands.  Based on patch by Nikratio.  Closes issue 33.
 	* don't enable valgrind support unless explicitly requested.
 	  Fix for issue 35.
+	* fix INSTALL instructions.  issue 47
 
 Sun Nov 22 2009 Valient Gough <vgough@pobox.com>
 	* use lutimes instead of utimes, so that symlinks can have time modified
