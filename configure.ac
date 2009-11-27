@@ -132,7 +132,11 @@ if test x"$smb_attr_cv_xattr_add_opt" = x"yes"; then
 fi
 
 dnl Check for valgrind headers..
-AC_CHECK_HEADERS([valgrind/valgrind.h valgrind/memcheck.h])
+AC_ARG_ENABLE(valgrind,
+    AC_HELP_STRING([--enable-valgrind],
+                   [build with valgrind support.]),
+       AC_CHECK_HEADERS([valgrind/valgrind.h valgrind/memcheck.h])
+       )
 
 # allow user option of not using ssl..
 AC_ARG_ENABLE(openssl,

@@ -1,4 +1,27 @@
 
+Thu Nov 26 2009 Valient Gough <vgough@pobox.com>
+	* add extpass option and multi-argument support to encode and decode
+	  commands.  Based on patch by Nikratio.  Closes issue 33.
+	* don't enable valgrind support unless explicitly requested.
+	  Fix for issue 35.
+
+Sun Nov 22 2009 Valient Gough <vgough@pobox.com>
+	* use lutimes instead of utimes, so that symlinks can have time modified
+	* try to maintain modtime during rename, patch by p.kosseff
+	* set proper build paths for rlog and boost. patch from ejb (issue 51
+	  in tracker) fix compiler error from gcc 4.4
+	* automatically add /opt/local/lib to search path on Darwin
+	* improve build on Darwin
+	* minor updates from svn
+
+Sat Dec 27 2008 Valient Gough <vgough@pobox.com>
+	* improve RLOG test to use RLOG_LIBS if available and pkg-check fails
+	* bump version to 1.5.1
+	* change casts to use C++ style const_cast
+
+Tue Oct 7 2008 Valient Gough <vgough@pobox.com>
+	* add BOOST_SYSTEM_LIB to link line
+
 Tue Sep 9 2008 Valient Gough <vgough@pobox.com>
 	* work around problem with RLog section inlining
 
