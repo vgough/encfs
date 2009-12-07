@@ -934,7 +934,8 @@ bool selectZeroBlockPassThrough()
 RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir, 
 	bool enableIdleTracking, bool forceDecode,
 	const std::string &passwordProgram,
-	bool useStdin, bool reverseEncryption )
+	bool useStdin, bool reverseEncryption,
+        ConfigMode configMode)
 {
     RootPtr rootInfo;
 
@@ -943,16 +944,19 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     // xgroup(setup)
     cout << _("Creating new encrypted volume.") << endl;
 
-    // xgroup(setup)
-    cout << _("Please choose from one of the following options:\n"
-              " enter \"x\" for expert configuration mode,\n"
-              " enter \"p\" for pre-configured paranoia mode,\n"
-              " anything else, or an empty line will select standard mode.\n"
-              "?> ");
-    
     char answer[10] = {0};
-    fgets( answer, sizeof(answer), stdin );
-    cout << "\n";
+    if(configMode == Config_Prompt)
+    {
+        // xgroup(setup)
+        cout << _("Please choose from one of the following options:\n"
+                " enter \"x\" for expert configuration mode,\n"
+                " enter \"p\" for pre-configured paranoia mode,\n"
+                " anything else, or an empty line will select standard mode.\n"
+                "?> ");
+    
+        fgets( answer, sizeof(answer), stdin );
+        cout << "\n";
+    }
 
     int keySize = 0;
     int blockSize = 0;
@@ -975,7 +979,7 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
 	blockMACRandBytes = 0;
     }
 
-    if(answer[0] == 'p')
+    if(configMode == Config_Paranoia || answer[0] == 'p')
     {
 	if (reverseEncryption)
 	{
@@ -1000,8 +1004,7 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
 	chainedIV = true;
 	externalIV = true;
         desiredKDFDuration = ParanoiaKDFDuration;
-    } else
-    if(answer[0] != 'x')
+    } else if(configMode == Config_Standard || answer[0] != 'x')
     {
 	// xgroup(setup)
 	cout << _("Standard configuration selected.") << "\n";
@@ -1565,7 +1568,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 	    }
 	}
 
-// first, instanciate the cipher.
+        // first, instanciate the cipher.
 	shared_ptr<Cipher> cipher = config.getCipher();
 	if(!cipher)
 	{
@@ -1649,7 +1652,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 	    // creating a new encrypted filesystem
 	    rootInfo = createV6Config( ctx, opts->rootDir, opts->idleTracking,
 		    opts->forceDecode, opts->passwordProgram, opts->useStdin,
-		    opts->reverseEncryption );
+		    opts->reverseEncryption, opts->configMode );
 	}
     }
 	

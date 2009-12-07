@@ -19,7 +19,8 @@ B<encfs> [B<--version>] [B<-s>] [B<-f>] [B<-v>|B<--verbose>]
 [B<-i MINUTES>|B<--idle=MINUTES>] [B<--extpass=program>] 
 [B<-S>|B<--stdinpass>] [B<--anykey>] [B<--forcedecode>] 
 [B<-d>|B<--fuse-debug>] [B<--public>] [B<--no-default-flags>]
-[B<--ondemand>] [B<--reverse>] [B<-o FUSE_OPTION>]
+[B<--ondemand>] [B<--reverse>] [B<--standard>] 
+[B<-o FUSE_OPTION>]
 I<rootdir> I<mountPoint> 
 [B<--> [I<Fuse Mount Options>]]
 
@@ -137,6 +138,15 @@ Now /tmp/plain-view contains the same data as /home/me
 
 Note that B<--reverse> mode only works with limited configuration options, so
 many settings may be disabled when used.
+
+=item B<--standard>
+
+If creating a new filesystem, this automatically selects standard configuration
+options, to help with automatic filesystem creation.  This is the set of
+options that should be used unless you know what you're doing and have read the
+documentation.
+
+When not creating a filesystem, this flag does nothing.
 
 =item B<-o FUSE_ARG>
 

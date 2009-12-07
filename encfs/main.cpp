@@ -226,6 +226,8 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
 	{"verbose", 0, 0, 'v'}, // verbose mode
 	{"version", 0, 0, 'V'}, //version
 	{"reverse", 0, 0, 'r'}, // reverse encryption
+        {"standard", 0, 0, '1'},  // standard configuration
+        {"paranoia", 0, 0, '2'},  // standard configuration
 	{0,0,0,0}
     };
 
@@ -249,6 +251,12 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
 
 	switch( res )
 	{
+        case '1':
+            out->opts->configMode = Config_Standard;
+            break;
+        case '2':
+            out->opts->configMode = Config_Paranoia;
+            break;
 	case 's':
 	    out->isThreaded = false;
 	    break;
@@ -523,7 +531,7 @@ int main(int argc, char *argv[])
 
     encfs_oper.getattr = encfs_getattr;
     encfs_oper.readlink = encfs_readlink;
-    encfs_oper.getdir = encfs_getdir;
+    encfs_oper.getdir = encfs_getdir; // deprecated for readdir
     encfs_oper.mknod = encfs_mknod;
     encfs_oper.mkdir = encfs_mkdir;
     encfs_oper.unlink = encfs_unlink;
@@ -534,7 +542,7 @@ int main(int argc, char *argv[])
     encfs_oper.chmod = encfs_chmod;
     encfs_oper.chown = encfs_chown;
     encfs_oper.truncate = encfs_truncate;
-    encfs_oper.utime = encfs_utime;
+    encfs_oper.utime = encfs_utime; // deprecated for utimens
     encfs_oper.open = encfs_open;
     encfs_oper.read = encfs_read;
     encfs_oper.write = encfs_write;
@@ -558,8 +566,21 @@ int main(int argc, char *argv[])
     //encfs_oper.create = encfs_create;
     encfs_oper.ftruncate = encfs_ftruncate;
     encfs_oper.fgetattr = encfs_fgetattr;
+    //encfs_oper.lock = encfs_lock;
     encfs_oper.utimens = encfs_utimens;
     //encfs_oper.bmap = encfs_bmap;
+
+#if (__FreeBSD__ >= 10)
+    // encfs_oper.setvolname
+    // encfs_oper.exchange
+    // encfs_oper.getxtimes
+    // encfs_oper.setbkuptime
+    // encfs_oper.setchgtime
+    // encfs_oper.setcrtime
+    // encfs_oper.chflags
+    // encfs_oper.setattr_x
+    // encfs_oper.fsetattr_x
+#endif
 
     openssl_init( encfsArgs->isThreaded );
 

@@ -144,3 +144,9 @@ encfs-man.html: encfs.pod
 	@POD2HTML@ encfs.pod > $@
 endif
 
+tests:
+	perl -MTest::Harness -e '$$Test::Harness::verbose=0; runtests @ARGV;' *.t
+
+tests-verbose:
+	perl -MTest::Harness -e '$$Test::Harness::verbose=1; runtests @ARGV;' *.t
+

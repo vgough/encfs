@@ -5,6 +5,7 @@ Thu Nov 26 2009 Valient Gough <vgough@pobox.com>
 	* don't enable valgrind support unless explicitly requested.
 	  Fix for issue 35.
 	* fix INSTALL instructions.  issue 47
+	* add --standard and --paranoia options to automate creation
 
 Sun Nov 22 2009 Valient Gough <vgough@pobox.com>
 	* use lutimes instead of utimes, so that symlinks can have time modified

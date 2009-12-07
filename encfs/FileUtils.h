@@ -142,6 +142,12 @@ ConfigType readConfig( const std::string &rootDir, EncFSConfig *config );
 bool saveConfig( ConfigType type, const std::string &rootdir, 
 	EncFSConfig *config );
 
+enum ConfigMode
+{
+    Config_Prompt,
+    Config_Standard,
+    Config_Paranoia
+};
 
 struct EncFS_Opts
 {
@@ -159,6 +165,9 @@ struct EncFS_Opts
     bool ownerCreate; // set owner of new files to caller
 
     bool reverseEncryption; // Reverse encryption
+
+    ConfigMode configMode;
+
     EncFS_Opts()
     {
 	createIfNotFound = true;
@@ -169,6 +178,7 @@ struct EncFS_Opts
 	useStdin = false;
 	ownerCreate = false;
 	reverseEncryption = false;
+        configMode = Config_Prompt;
     }
 };
 
@@ -180,7 +190,7 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
 	bool enableIdleTracking,
 	bool forceDecode,
 	const std::string &passwordProgram, bool reverseEncryption,
-        bool allowHoles );
+        bool allowHoles, ConfigMode mode );
 
 
 void showFSInfo( const EncFSConfig &config );
