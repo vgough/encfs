@@ -315,9 +315,9 @@ bool userAllowMkdir( const char *path, mode_t mode )
     // xgroup(setup)
     cerr << autosprintf( _("The directory \"%s\" does not exist. Should it be created? (y,n) "), path );
     char answer[10];
-    fgets( answer, sizeof(answer), stdin );
+    char *res = fgets( answer, sizeof(answer), stdin );
 
-    if(toupper(answer[0]) == 'Y')
+    if(res != 0 && toupper(answer[0]) == 'Y')
     {
 	int result = mkdir( path, mode );
 	if(result < 0)
@@ -675,8 +675,8 @@ Cipher::CipherAlgorithm selectCipherAlgorithm()
 	// xgroup(setup)
 	cout << "\n" << _("Enter the number corresponding to your choice: ");
 	char answer[10];
-	fgets( answer, sizeof(answer), stdin );
-	int cipherNum = atoi( answer );
+	char *res = fgets( answer, sizeof(answer), stdin );
+	int cipherNum = (res == 0 ? 0 : atoi( answer ));
 	cout << "\n";
 
 	if( cipherNum < 1 || cipherNum > (int)algorithms.size() )
@@ -720,8 +720,8 @@ Interface selectNameCoding()
 	// xgroup(setup)
 	cout << "\n" << _("Enter the number corresponding to your choice: ");
 	char answer[10];
-	fgets( answer, sizeof(answer), stdin );
-	int algNum = atoi( answer );
+	char *res = fgets( answer, sizeof(answer), stdin );
+	int algNum = (res == 0 ? 0 : atoi( answer ));
 	cout << "\n";
 
 	if( algNum < 1 || algNum > (int)algorithms.size() )
@@ -787,8 +787,8 @@ int selectKeySize( const Cipher::CipherAlgorithm &alg )
     cout << "\n" << _("Selected key size: ");
 
     char answer[10];
-    fgets( answer, sizeof(answer), stdin );
-    int keySize = atoi( answer );
+    char *res = fgets( answer, sizeof(answer), stdin );
+    int keySize = (res == 0 ? 0 : atoi( answer ));
     cout << "\n";
 
     keySize = alg.keyLength.closest( keySize );
@@ -824,10 +824,10 @@ int selectBlockSize( const Cipher::CipherAlgorithm &alg )
 	
     int blockSize = DefaultBlockSize;
     char answer[10];
-    fgets( answer, sizeof(answer), stdin );
+    char *res = fgets( answer, sizeof(answer), stdin );
     cout << "\n";
 
-    if( atoi( answer )  >= alg.blockSize.min() )
+    if( res != 0 && atoi( answer )  >= alg.blockSize.min() )
 	blockSize = atoi( answer );
 
     blockSize = alg.blockSize.closest( blockSize );
@@ -847,10 +847,10 @@ bool boolDefaultNo(const char *prompt)
               "Any response that does not begin with 'y' will mean No: ");
 
     char answer[10];
-    fgets( answer, sizeof(answer), stdin );
+    char *res = fgets( answer, sizeof(answer), stdin );
     cout << "\n";
 
-    if(tolower(answer[0]) == 'y')
+    if(res != 0 && tolower(answer[0]) == 'y')
 	return true;
     else
 	return false;
@@ -882,10 +882,10 @@ void selectBlockMAC(int *macBytes, int *macRandBytes)
    
         char answer[10];
 	int randSize = 0;
-	fgets( answer, sizeof(answer), stdin );
+	char *res = fgets( answer, sizeof(answer), stdin );
 	cout << "\n";
 
-	randSize = atoi( answer );
+	randSize = (res == 0 ? 0 : atoi( answer ));
 	if(randSize < 0)
 	    randSize = 0;
 	if(randSize > 8)
@@ -907,10 +907,10 @@ bool boolDefaultYes(const char *prompt)
               "Any response that does not begin with 'n' will mean Yes: ");
 
     char answer[10];
-    fgets( answer, sizeof(answer), stdin );
+    char *res = fgets( answer, sizeof(answer), stdin );
     cout << "\n";
 
-    if(tolower(answer[0]) == 'n')
+    if(res != 0 && tolower(answer[0]) == 'n')
 	return false;
     else
 	return true;
@@ -982,7 +982,8 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
                 " anything else, or an empty line will select standard mode.\n"
                 "?> ");
     
-        fgets( answer, sizeof(answer), stdin );
+        char *res = fgets( answer, sizeof(answer), stdin );
+	(void)res;
         cout << "\n";
     }
 
