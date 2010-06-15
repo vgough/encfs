@@ -57,6 +57,7 @@
 
 #include "i18n.h"
 
+#include <boost/version.hpp>
 #include <boost/filesystem/fstream.hpp>
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
@@ -96,7 +97,8 @@ static int V5SubVersionDefault = 0;
 
 // 20080813 was really made on 20080413 -- typo on date..
 //const int V6SubVersion = 20080813; // switch to v6/XML, add allowHoles option
-const int V6SubVersion = 20080816; // add salt and iteration count
+//const int V6SubVersion = 20080816; // add salt and iteration count
+const int V6SubVersion = 20100713; // add version field for boost 1.42+
 
 struct ConfigInfo
 {
@@ -122,6 +124,8 @@ struct ConfigInfo
     {NULL,Config_None, NULL, NULL, NULL, 0, 0}};
 
 
+#include "boost-versioning.h"
+
 // define serialization helpers
 namespace boost
 {
@@ -132,6 +136,9 @@ namespace boost
                 unsigned int version)
         {
             (void)version;
+            // version 20 (aka 20100613)
+            ar << make_nvp("version", cfg.subVersion);
+
             ar << make_nvp("creator", cfg.creator);
             ar << make_nvp("cipherAlg", cfg.cipherIface);
             ar << make_nvp("nameAlg", cfg.nameIface);
@@ -161,7 +168,30 @@ namespace boost
         template<class Archive>
         void load(Archive &ar, EncFSConfig &cfg, unsigned int version)
         {
-            cfg.subVersion = version;
+            rInfo("version = %i", version);
+	    // TODO: figure out how to deprecate all but the first case..
+            if (version == 20 || version >= 20100713)
+            {
+		rInfo("found new serialization format");
+                ar >> make_nvp("version", cfg.subVersion);
+	    } else if (version == 26800)
+	    {
+		rInfo("found 20080816 version");
+                cfg.subVersion = 20080816;
+	    } else if (version == 26797)
+	    {
+		rInfo("found 20080813");
+                cfg.subVersion = 20080813;
+	    } else if (version < (unsigned int)V5SubVersion)
+	    {
+		rError("Invalid version - please fix config file");
+            } else
+            {
+                rInfo("Boost <= 1.41 compatibility mode");
+                cfg.subVersion = version;
+            }
+            rInfo("subVersion = %i", cfg.subVersion);
+
             ar >> make_nvp("creator", cfg.creator);
             ar >> make_nvp("cipherAlg", cfg.cipherIface);
             ar >> make_nvp("nameAlg", cfg.nameIface);
@@ -184,7 +214,7 @@ namespace boost
             cfg.assignKeyData(key, encodedSize);
             delete[] key;
 
-            if(version >= 20080816)
+            if(cfg.subVersion >= 20080816)
             {
                 int saltLen;
                 ar >> make_nvp("saltLen", saltLen);
@@ -220,8 +250,6 @@ namespace boost
         }
     }
 }
-BOOST_CLASS_VERSION(EncFSConfig, V6SubVersion)
-
 
 EncFS_Root::EncFS_Root()
 {
