@@ -1,3 +1,20 @@
+Mon Jun 14 2010 Valient Gough <vgough@pobox.com>
+        * fix compile error for boost < 1.41 and change rWarning to rInfo
+        * fix compiler warnings about unused result from fgets
+        * add boost 1.42+ support
+        * incorporate patch from Arch linux, bump version
+        * add support for version field within serialized config
+
+Sat Nov 28 2009 Valient Gough <vgough@pobox.com>
+        * more tests
+        * add more tests and makefile target, test standard and paranoia mode
+        * fix tests on Linux
+        * add softlink tests
+
+Fri Nov 27 2009 Valient Gough <vgough@pobox.com>
+        * add beginning of automated test script
+        * add options to help automate filesystem creation
+        * fix install instructions, issue 47
 
 Thu Nov 26 2009 Valient Gough <vgough@pobox.com>
 	* add extpass option and multi-argument support to encode and decode

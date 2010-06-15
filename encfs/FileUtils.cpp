@@ -137,7 +137,10 @@ namespace boost
         {
             (void)version;
             // version 20 (aka 20100613)
-            ar << make_nvp("version", cfg.subVersion);
+            if (cfg.subVersion == 0)
+                ar << make_nvp("version", V6SubVersion);
+            else
+                ar << make_nvp("version", cfg.subVersion);
 
             ar << make_nvp("creator", cfg.creator);
             ar << make_nvp("cipherAlg", cfg.cipherIface);
