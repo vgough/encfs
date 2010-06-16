@@ -187,7 +187,7 @@ namespace boost
                 cfg.subVersion = 20080813;
 	    } else if (version < (unsigned int)V5SubVersion)
 	    {
-		rError("Invalid version - please fix config file");
+		rError("Invalid version %i - please fix config file", version);
             } else
             {
                 rInfo("Boost <= 1.41 compatibility mode");
