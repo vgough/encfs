@@ -36,9 +36,9 @@ static void clearCache( IORequest &req, int blockSize )
     req.dataLen = 0;
 }
 
-BlockFileIO::BlockFileIO( int dataSize )
-    : _blockSize( dataSize )
-    , _allowHoles( false )
+BlockFileIO::BlockFileIO( int blockSize, const FSConfigPtr &cfg )
+    : _blockSize( blockSize )
+    , _allowHoles( cfg->config->allowHoles )
 {
     rAssert( _blockSize > 1 );
     _cache.data = new unsigned char [ _blockSize ];
@@ -96,11 +96,6 @@ bool BlockFileIO::cacheWriteOneBlock( const IORequest &req )
     if(!ok)
 	clearCache( _cache, _blockSize );
     return ok;
-}
-
-void BlockFileIO::allowHoles( bool allow )
-{
-    _allowHoles = allow;
 }
 
 ssize_t BlockFileIO::read( const IORequest &req ) const

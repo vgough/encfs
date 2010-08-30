@@ -137,8 +137,12 @@ public:
     // hack to help with static builds
     static bool Enabled();
 private:
-    void setIVec( unsigned char *ivec, unsigned int seed, 
+    void setIVec( unsigned char *ivec, uint64_t seed,
 	    const shared_ptr<SSLKey> &key ) const;
+
+    // deprecated - for backward compatibility
+    void setIVec_old( unsigned char *ivec, unsigned int seed,
+            const shared_ptr<SSLKey> &key ) const;
 };
 
 

@@ -19,6 +19,7 @@
 #define _BlockFileIO_incl_
 
 #include "FileIO.h"
+#include "FSConfig.h"
 
 /*
     Implements block scatter / gather interface.  Requires derived classes to
@@ -31,7 +32,7 @@
 class BlockFileIO : public FileIO
 {
 public:
-    BlockFileIO(int blockDataSize);
+    BlockFileIO( int blockSize, const FSConfigPtr &cfg );
     virtual ~BlockFileIO();
 
     // implemented in terms of blocks.
@@ -39,11 +40,6 @@ public:
     virtual bool write( const IORequest &req );
 
     virtual int blockSize() const;
-
-    // default is false, but setting this to true will allow holes to be stored
-    // in the file.  Only works if supported by the underlying FileIO
-    // implementation..
-    virtual void allowHoles( bool allow );
 
 protected:
 

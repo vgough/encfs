@@ -173,8 +173,9 @@ int TimedPBKDF2(const char *pass, int passlen,
 // We support both 2:0 and 1:0, hence current:revision:age = 2:0:1
 // - Version 2:1 adds support for Message Digest function interface
 // - Version 2:2 adds PBKDF2 for password derivation
-static Interface BlowfishInterface( "ssl/blowfish", 2, 2, 1 );
-static Interface AESInterface( "ssl/aes", 2, 2, 1 );
+// - Version 3:0 adds a new IV mechanism
+static Interface BlowfishInterface( "ssl/blowfish", 3, 0, 2 );
+static Interface AESInterface( "ssl/aes", 3, 0, 2 );
 
 #if defined(HAVE_EVP_BF)
 
@@ -399,13 +400,6 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
         int &iterationCount, long desiredDuration,
         const unsigned char *salt, int saltLen)
 {
-    const EVP_MD *md = EVP_sha1();
-    if(!md)
-    {
-	rError("Unknown digest SHA1");
-	return CipherKey();
-    }
-   
     shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
     
     if(iterationCount == 0)
@@ -441,13 +435,6 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
 
 CipherKey SSL_Cipher::newKey(const char *password, int passwdLength)
 {
-    const EVP_MD *md = EVP_sha1();
-    if(!md)
-    {
-	rError("Unknown digest SHA1");
-	return CipherKey();
-    }
-   
     shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
     
     int bytes = 0;
@@ -545,7 +532,7 @@ static uint64_t _checksum_64( SSLKey *key,
 
     HMAC_Final( &key->mac_ctx, md, &mdLen );
 
-    rAssert(mdLen != 0);
+    rAssert(mdLen >= 8);
 
     // chop this down to a 64bit value..
     unsigned char h[8] = {0,0,0,0,0,0,0,0};
@@ -690,8 +677,45 @@ int SSL_Cipher::cipherBlockSize() const
     return EVP_CIPHER_block_size( _blockCipher );
 }
 
-void SSL_Cipher::setIVec( unsigned char *ivec, unsigned int seed,
+void SSL_Cipher::setIVec( unsigned char *ivec, uint64_t seed,
 	const shared_ptr<SSLKey> &key) const
+{
+    if (iface.current() >= 3)
+    {
+        memcpy( ivec, IVData(key), _ivLength );
+
+        unsigned char md[EVP_MAX_MD_SIZE];
+        unsigned int mdLen = EVP_MAX_MD_SIZE;
+       
+        for(int i=0; i<8; ++i)
+        {
+            md[i] = (unsigned char)(seed & 0xff);
+            seed >>= 8;
+        }
+
+        // combine ivec and seed with HMAC
+        HMAC_Init_ex( &key->mac_ctx, 0, 0, 0, 0 );
+        HMAC_Update( &key->mac_ctx, ivec, _ivLength );
+        HMAC_Update( &key->mac_ctx, md, 8 );
+        HMAC_Final( &key->mac_ctx, md, &mdLen );
+        rAssert(mdLen >= _ivLength);
+
+        memcpy( ivec, md, _ivLength );
+    } else
+    {
+        setIVec_old(ivec, seed, key);
+    }
+}
+
+/** For backward compatibility.
+    A watermark attack was discovered against this IV setup.  If an attacker
+    could get a victim to store a carefully crafted file, they could later
+    determine if the victim had the file in encrypted storage (without
+    decrypting the file).
+  */
+void SSL_Cipher::setIVec_old(unsigned char *ivec,
+                             unsigned int seed,
+                             const shared_ptr<SSLKey> &key) const
 {
     /* These multiplication constants chosen as they represent (non optimal)
        Golumb rulers, the idea being to spread around the information in the

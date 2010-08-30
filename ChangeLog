@@ -1,3 +1,13 @@
+Sun Aug 29 2010 Valient Gough <vgough@pobox.com>
+	* new IV initialization
+	* tag version 1.7
+
+Sat Aug 28 2010 Valient Gough <vgough@pobox.com>
+	* fix component configuration to ease adding flags or config
+
+Thu Jun 17 2010 Valient Gough <vgough@pobox.com>
+	* bump version to 1.6
+
 Mon Jun 14 2010 Valient Gough <vgough@pobox.com>
         * fix compile error for boost < 1.41 and change rWarning to rInfo
         * fix compiler warnings about unused result from fgets

@@ -302,7 +302,8 @@ void RenameOp::undo()
 }
 
 DirNode::DirNode(EncFS_Context *_ctx,
-	const string &sourceDir, const shared_ptr<Config> &_config)
+        const string &sourceDir,
+        const FSConfigPtr &_config)
 {
     pthread_mutex_init( &mutex, 0 );
     
@@ -310,14 +311,14 @@ DirNode::DirNode(EncFS_Context *_ctx,
 
     ctx = _ctx;
     rootDir = sourceDir;
-    config = _config;
+    fsConfig = _config;
 
     // make sure rootDir ends in '/', so that we can form a path by appending
     // the rest..
     if( rootDir[ rootDir.length()-1 ] != '/' )
 	rootDir.append( 1, '/');
 
-    naming = config->nameCoding;
+    naming = fsConfig->nameCoding;
 }
 
 DirNode::~DirNode()
@@ -689,7 +690,7 @@ int DirNode::link( const char *from, const char *to )
     rLog(Info, "link %s -> %s", fromCName.c_str(), toCName.c_str());
 
     int res = -EPERM;
-    if( config->externalIVChaining )
+    if( fsConfig->config->externalIVChaining )
     {
 	rLog(Info, "hard links not supported with external IV chaining!");
     } else
@@ -745,16 +746,8 @@ shared_ptr<FileNode> DirNode::directLookup( const char *path )
 {
     return shared_ptr<FileNode>( 
             new FileNode( this, 
-                config->fsSubVersion,
-                "unknown", path, 
-                config->cipher, config->key,
-                config->blockSize, config->blockMACBytes,
-                config->blockMACRandBytes, 
-                config->uniqueIV,
-                config->externalIVChaining,
-                config->forceDecode,
-                config->reverseEncryption,
-                config->allowHoles) );
+                fsConfig,
+                "unknown", path ));
 }
 
 shared_ptr<FileNode> DirNode::findOrCreate( const char *plainName)
@@ -767,20 +760,11 @@ shared_ptr<FileNode> DirNode::findOrCreate( const char *plainName)
     {
 	uint64_t iv = 0;
 	string cipherName = naming->encodePath( plainName, &iv );
-	node.reset( new FileNode( this, 
-		config->fsSubVersion,
+        node.reset( new FileNode( this, fsConfig,
 		plainName, 
-		(rootDir + cipherName).c_str(), 
-		config->cipher, config->key,
-		config->blockSize, config->blockMACBytes,
-		config->blockMACRandBytes, 
-		config->uniqueIV,
-		config->externalIVChaining,
-		config->forceDecode,
-		config->reverseEncryption,
-                config->allowHoles) );
+                (rootDir + cipherName).c_str()));
 		
-	if(config->externalIVChaining)
+	if(fsConfig->config->externalIVChaining)
 	    node->setName(0, 0, iv);
 
 	rLog(Info, "created FileNode for %s", node->cipherName());

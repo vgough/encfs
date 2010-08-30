@@ -4,7 +4,7 @@
 make dist
 
 # create tar archive and signature
-tarArchive=@PACKAGE@-@VERSION@-@RELEASE@.tgz
+tarArchive=@PACKAGE@-@VERSION@.tgz
 mv @PACKAGE@-@VERSION@.tar.gz $tarArchive
 # let the user know why they're being asked for a passpharse
 echo "Signing tar archive - enter GPG password";

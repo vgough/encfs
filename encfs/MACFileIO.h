@@ -32,10 +32,7 @@ public:
 	be made available..
     */
     MACFileIO( const shared_ptr<FileIO> &base,
-	    const shared_ptr<Cipher> &cipher,
-	    const CipherKey &key, int blockSize,
-	    int macBytes, int randBytes,
-	    bool warnOnlyMode );
+               const FSConfigPtr &cfg );
     MACFileIO();
     virtual ~MACFileIO();
 
@@ -52,8 +49,6 @@ public:
     virtual int truncate( off_t size );
 
     virtual bool isWritable() const;
-
-    virtual void allowHoles( bool allow );
 
 private:
     virtual ssize_t readOneBlock( const IORequest &req ) const;

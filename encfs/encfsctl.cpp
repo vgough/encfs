@@ -25,6 +25,8 @@
 #include "Cipher.h"
 
 #include "Context.h"
+#include "FileNode.h"
+#include "DirNode.h"
 
 #include <rlog/rlog.h>
 #include <rlog/StdioNode.h>
@@ -174,8 +176,8 @@ static int showInfo( int argc, char **argv )
     if( !checkDir( rootDir ))
 	return EXIT_FAILURE;
 
-    EncFSConfig config;
-    ConfigType type = readConfig( rootDir, &config );
+    boost::shared_ptr<EncFSConfig> config(new EncFSConfig);
+    ConfigType type = readConfig( rootDir, config );
 
     // show information stored in config..
     switch(type)
@@ -192,24 +194,24 @@ static int showInfo( int argc, char **argv )
     case Config_V3:
 	// xgroup(diag)
 	cout << "\n" << autosprintf(_("Version 3 configuration; "
-	    "created by %s\n"), config.creator.c_str());
+            "created by %s\n"), config->creator.c_str());
 	break;
     case Config_V4:
 	// xgroup(diag)
 	cout << "\n" << autosprintf(_("Version 4 configuration; "
-	    "created by %s\n"), config.creator.c_str());
+            "created by %s\n"), config->creator.c_str());
 	break;
     case Config_V5:
 	// xgroup(diag)
 	cout << "\n" << autosprintf(_("Version 5 configuration; "
-	    "created by %s (revision %i)\n"), config.creator.c_str(),
-		config.subVersion);
+            "created by %s (revision %i)\n"), config->creator.c_str(),
+                config->subVersion);
 	break;
     case Config_V6:
 	// xgroup(diag)
 	cout << "\n" << autosprintf(_("Version 6 configuration; "
-	    "created by %s (revision %i)\n"), config.creator.c_str(),
-		config.subVersion);
+            "created by %s (revision %i)\n"), config->creator.c_str(),
+                config->subVersion);
 	break;
     }
 
@@ -698,8 +700,8 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
     if( !checkDir( rootDir ))
 	return EXIT_FAILURE;
 
-    EncFSConfig config;
-    ConfigType cfgType = readConfig( rootDir, &config );
+    boost::shared_ptr<EncFSConfig> config(new EncFSConfig);
+    ConfigType cfgType = readConfig( rootDir, config );
 
     if(cfgType == Config_None)
     {
@@ -709,23 +711,23 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
 
     // instanciate proper cipher
     shared_ptr<Cipher> cipher = Cipher::New( 
-	    config.cipherIface, config.keySize );
+            config->cipherIface, config->keySize );
     if(!cipher)
     {
 	cout << autosprintf(_("Unable to find specified cipher \"%s\"\n"),
-		config.cipherIface.name().c_str());
+                config->cipherIface.name().c_str());
 	return EXIT_FAILURE;
     }
 
     // ask for existing password
     cout << _("Enter current Encfs password\n");
-    CipherKey userKey = config.getUserKey( useStdin );
+    CipherKey userKey = config->getUserKey( useStdin );
     if(!userKey)
 	return EXIT_FAILURE;
 
     // decode volume key using user key -- at this point we detect an incorrect
     // password if the key checksum does not match (causing readKey to fail).
-    CipherKey volumeKey = cipher->readKey( config.getKeyData(), userKey );
+    CipherKey volumeKey = cipher->readKey( config->getKeyData(), userKey );
 
     if(!volumeKey)
     {
@@ -737,12 +739,12 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
     userKey.reset();
     cout << _("Enter new Encfs password\n");
     // reinitialize salt and iteration count
-    config.kdfIterations = 0; // generate new
+    config->kdfIterations = 0; // generate new
 
     if( useStdin )
-	userKey = config.getUserKey( true );
+        userKey = config->getUserKey( true );
     else
-	userKey = config.getNewUserKey();
+        userKey = config->getNewUserKey();
 
     // re-encode the volume key using the new user key and write it out..
     int result = EXIT_FAILURE;
@@ -755,10 +757,10 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
 	cipher->writeKey( volumeKey, keyBuf, userKey );
 	userKey.reset();
 
-        config.assignKeyData( keyBuf, encodedKeySize );
+        config->assignKeyData( keyBuf, encodedKeySize );
         delete[] keyBuf;
 
-	if(saveConfig( cfgType, rootDir, &config ))
+        if(saveConfig( cfgType, rootDir, config ))
 	{
 	    // password modified -- changes volume key of filesystem..
 	    cout << _("Volume Key successfully updated.\n");

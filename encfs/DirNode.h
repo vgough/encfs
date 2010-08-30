@@ -30,6 +30,7 @@
 #include "FileNode.h"
 #include "NameIO.h"
 #include "CipherKey.h"
+#include "FSConfig.h"
 
 using boost::shared_ptr;
 
@@ -87,38 +88,10 @@ namespace __gnu_cxx
 class DirNode
 {
 public:
-    struct Config
-    {
-	shared_ptr<Cipher> cipher; // cipher to use
-	CipherKey key; // cipher key to use
-	shared_ptr<NameIO> nameCoding; // filename encoding implementation
-	int fsSubVersion; // filesystem version number at creation
-	int blockSize; // file data block size
-	bool inactivityTimer; // enables inactivity tracking
-	int blockMACBytes; // >0 enables per-file-block MAC headers
-	int blockMACRandBytes; // random bytes in MAC headers
-	bool uniqueIV; // enable per-file initialization vectors
-	bool externalIVChaining;
-	bool forceDecode; // force decoding, even if errors are detected
-	bool reverseEncryption;  
-        bool allowHoles; // allow holes in files
-	Config()
-	    : fsSubVersion(0)
-	    , blockSize(1)
-	    , inactivityTimer( false )
-	    , blockMACBytes( 0 )
-	    , blockMACRandBytes( 0 )
-	    , uniqueIV( false )
-	    , externalIVChaining( false )
-	    , forceDecode( false )
-	    , reverseEncryption ( false )
-            , allowHoles( false )
-	    { }
-    };
-
     // sourceDir points to where raw files are stored
-    DirNode( EncFS_Context *ctx,
-	    const std::string &sourceDir,  const shared_ptr<Config> &config );
+    DirNode(EncFS_Context *ctx,
+            const std::string &sourceDir,
+            const FSConfigPtr &config );
     ~DirNode();
 
     // return the path to the root directory
@@ -207,9 +180,8 @@ private:
 
     // passed in as configuration
     std::string rootDir;
-    shared_ptr<Config> config;
+    FSConfigPtr fsConfig;
 
-    // stored here to reduce access through config var..
     shared_ptr<NameIO> naming;
 };
 

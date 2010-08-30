@@ -18,6 +18,7 @@
 #include "MACFileIO.h"
 
 #include "MemoryPool.h"
+#include "FileUtils.h"
 
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
@@ -48,23 +49,29 @@ static RLogChannel *Info = DEF_CHANNEL("info/MACFileIO", Log_Info);
 //
 static rel::Interface MACFileIO_iface("FileIO/MAC", 2, 0, 0);
 
+int dataBlockSize(const FSConfigPtr &cfg)
+{
+    return cfg->config->blockSize
+            - cfg->config->blockMACBytes
+            - cfg->config->blockMACRandBytes;
+}
+
 MACFileIO::MACFileIO( const shared_ptr<FileIO> &_base,
-	const shared_ptr<Cipher> &_cipher,
-	const CipherKey &_key, int fsBlockSize,
-	int _macBytes, int _randBytes,
-	bool warnOnlyMode )
-   : BlockFileIO( fsBlockSize - _macBytes - _randBytes )
+                      const FSConfigPtr &cfg )
+   : BlockFileIO( dataBlockSize( cfg ), cfg )
    , base( _base )
-   , cipher( _cipher )
-   , key( _key )
-   , macBytes( _macBytes )
-   , randBytes( _randBytes )
-   , warnOnly( warnOnlyMode )
+   , cipher( cfg->cipher )
+   , key( cfg->key )
+   , macBytes( cfg->config->blockMACBytes )
+   , randBytes( cfg->config->blockMACRandBytes )
+   , warnOnly( cfg->opts->forceDecode )
 {
     rAssert( macBytes > 0 && macBytes <= 8 );
     rAssert( randBytes >= 0 );
     rLog(Info, "fs block size = %i, macBytes = %i, randBytes = %i",
-	    fsBlockSize, macBytes, randBytes);
+	    cfg->config->blockSize, 
+            cfg->config->blockMACBytes, 
+            cfg->config->blockMACRandBytes);
 }
 
 MACFileIO::~MACFileIO()
@@ -157,14 +164,6 @@ off_t MACFileIO::getSize() const
 	size = locWithoutHeader( size, bs, headerSize );
 
     return size;
-}
-
-void MACFileIO::allowHoles( bool allow )
-{
-    BlockFileIO::allowHoles( allow );
-    shared_ptr<BlockFileIO> bf = dynamic_pointer_cast<BlockFileIO>( base );
-    if(bf)
-        bf->allowHoles( allow );
 }
 
 ssize_t MACFileIO::readOneBlock( const IORequest &req ) const

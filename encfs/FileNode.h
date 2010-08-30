@@ -20,6 +20,7 @@
 
 #include "encfs.h"
 #include "CipherKey.h"
+#include "FileUtils.h"
 
 #include <inttypes.h>
 #include <sys/types.h>
@@ -33,18 +34,10 @@ using boost::shared_ptr;
 class FileNode
 {
 public:
-    FileNode(DirNode *parent, 
-	    int fsSubVersion,  // version number for the filesystem
-	    const char *plaintextName,
-	    const char *cipherName, 
-	    const shared_ptr<Cipher> &cipher, const CipherKey &key, int blockSize,
-	    int blockMACBytes, // per-block random bytes in header
-	    int blockMACRandBytes, // per-block random bytes in header
-	    bool uniqueIV, // enable per-file initialization vectors
-	    bool externalIVChaining,
-	    bool forceDecode, // decode, even if decoding errors are detected
-	    bool reverseEncryption,
-            bool allowHoles );
+    FileNode(DirNode *parent,
+             const FSConfigPtr &cfg,
+             const char *plaintextName,
+             const char *cipherName);
     ~FileNode();
 
     const char *plaintextName() const;
@@ -86,8 +79,8 @@ private:
     // truncate() which may result in multiple calls down to the FileIO
     // level.
     mutable pthread_mutex_t mutex;
-    bool externalIVChaining;
-    bool reverseEncryption;
+
+    FSConfigPtr fsConfig;
 
     shared_ptr<FileIO> io;
     std::string _pname; // plaintext name

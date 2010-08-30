@@ -20,6 +20,7 @@
 
 #include "BlockFileIO.h"
 #include "CipherKey.h"
+#include "FileUtils.h"
 
 #include <inttypes.h>
 
@@ -34,9 +35,7 @@ class CipherFileIO : public BlockFileIO
 {
 public:
     CipherFileIO( const boost::shared_ptr<FileIO> &base, 
-	    const boost::shared_ptr<Cipher> &cipher, 
-	    const CipherKey &key, int blockSize,
-	    bool uniqueIV, bool reverseEncryption );
+                  const FSConfigPtr &cfg);
     virtual ~CipherFileIO();
 
     virtual rel::Interface interface() const;
@@ -70,8 +69,9 @@ private:
 	             uint64_t iv64 ) const;
 
     boost::shared_ptr<FileIO> base;
-    boost::shared_ptr<Cipher> cipher;
-    CipherKey key;
+
+    FSConfigPtr fsConfig;
+
     // if haveHeader is true, then we have a transparent file header which
     // contains a 64 bit initialization vector.
     bool haveHeader;
@@ -79,7 +79,9 @@ private:
     uint64_t externalIV;
     uint64_t fileIV;
     int lastFlags;
-    bool reverseEncryption;
+
+    boost::shared_ptr<Cipher> cipher;
+    CipherKey key;
 };
 
 #endif

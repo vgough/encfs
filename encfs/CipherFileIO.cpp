@@ -50,23 +50,23 @@ static bool checkSize( int fsBlockSize, int cipherBlockSize )
 }
 
 CipherFileIO::CipherFileIO( const shared_ptr<FileIO> &_base, 
-	const shared_ptr<Cipher> &_cipher,
-	const CipherKey &_key, int fsBlockSize,
-	bool uniqueIV, bool _reverseEncryption )
-    : BlockFileIO( fsBlockSize )
+                            const FSConfigPtr &cfg)
+    : BlockFileIO( cfg->config->blockSize, cfg )
     , base( _base )
-    , cipher( _cipher )
-    , key( _key )
-    , haveHeader( uniqueIV )
+    , haveHeader( cfg->config->uniqueIV )
     , externalIV( 0 )
     , fileIV( 0 )
     , lastFlags( 0 )
-    , reverseEncryption( _reverseEncryption )
 {
+    fsConfig = cfg;
+    cipher = cfg->cipher;
+    key = cfg->key;
+
     static bool warnOnce = false;
 
     if(!warnOnce)
-	warnOnce = checkSize( fsBlockSize, cipher->cipherBlockSize() );
+        warnOnce = checkSize( fsConfig->config->blockSize,
+                              fsConfig->cipher->cipherBlockSize() );
 }
 
 CipherFileIO::~CipherFileIO()
@@ -193,7 +193,8 @@ void CipherFileIO::initHeader( )
 	req.dataLen = 8;
 	base->read( req );
 
-	cipher->streamDecode( buf, sizeof(buf), externalIV, key );
+        cipher->streamDecode( buf, sizeof(buf),
+                              externalIV, key );
 
 	fileIV = 0;
 	for(int i=0; i<8; ++i)
@@ -277,13 +278,11 @@ ssize_t CipherFileIO::readOneBlock( const IORequest &req ) const
     off_t blockNum = req.offset / bs;
     
     ssize_t readSize = 0;
+    IORequest tmpReq = req;
+
     if(haveHeader)
-    {
-	IORequest tmpReq = req;
 	tmpReq.offset += HEADER_SIZE;
-	readSize = base->read( tmpReq );
-    } else
-	readSize = base->read( req );
+    readSize = base->read( tmpReq );
 
     bool ok;
     if(readSize > 0)
@@ -293,10 +292,10 @@ ssize_t CipherFileIO::readOneBlock( const IORequest &req ) const
 
 	if(readSize != bs)
 	{
-	    ok = streamRead( req.data, (int)readSize, blockNum ^ fileIV); 
+            ok = streamRead( tmpReq.data, (int)readSize, blockNum ^ fileIV);
 	} else
 	{
-	    ok = blockRead( req.data, (int)readSize, blockNum ^ fileIV); 
+            ok = blockRead( tmpReq.data, (int)readSize, blockNum ^ fileIV);
 	}
 
 	if(!ok)
@@ -352,7 +351,7 @@ bool CipherFileIO::writeOneBlock( const IORequest &req )
 bool CipherFileIO::blockWrite( unsigned char *buf, int size, 
 	             uint64_t _iv64 ) const
 {
-    if (!reverseEncryption)
+    if (!fsConfig->reverseEncryption)
 	return cipher->blockEncode( buf, size, _iv64, key );
     else
 	return cipher->blockDecode( buf, size, _iv64, key );
@@ -361,7 +360,7 @@ bool CipherFileIO::blockWrite( unsigned char *buf, int size,
 bool CipherFileIO::streamWrite( unsigned char *buf, int size, 
 	             uint64_t _iv64 ) const
 {
-    if (!reverseEncryption)
+    if (!fsConfig->reverseEncryption)
 	return cipher->streamEncode( buf, size, _iv64, key );
     else
 	return cipher->streamDecode( buf, size, _iv64, key );
@@ -371,7 +370,7 @@ bool CipherFileIO::streamWrite( unsigned char *buf, int size,
 bool CipherFileIO::blockRead( unsigned char *buf, int size, 
 	             uint64_t _iv64 ) const
 {
-    if (reverseEncryption)
+    if (fsConfig->reverseEncryption)
 	return cipher->blockEncode( buf, size, _iv64, key );
     else
     {
@@ -391,7 +390,7 @@ bool CipherFileIO::blockRead( unsigned char *buf, int size,
 bool CipherFileIO::streamRead( unsigned char *buf, int size, 
 	             uint64_t _iv64 ) const
 {
-    if (reverseEncryption)
+    if (fsConfig->reverseEncryption)
 	return cipher->streamEncode( buf, size, _iv64, key );
     else
 	return cipher->streamDecode( buf, size, _iv64, key );

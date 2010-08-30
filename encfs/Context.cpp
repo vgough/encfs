@@ -22,6 +22,7 @@
 #include "Context.h"
 #include "Mutex.h"
 #include "FileUtils.h"
+#include "DirNode.h"
 
 #include <rlog/rlog.h>
 

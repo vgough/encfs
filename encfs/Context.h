@@ -31,6 +31,8 @@
 using boost::shared_ptr;
 struct EncFS_Args;
 struct EncFS_Opts;
+class FileNode;
+class DirNode;
 
 class EncFS_Context
 {

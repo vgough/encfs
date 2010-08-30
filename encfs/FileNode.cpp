@@ -63,13 +63,8 @@ using boost::dynamic_pointer_cast;
 
 static RLogChannel *Info = DEF_CHANNEL("info/FileNode", Log_Info);
 
-FileNode::FileNode(DirNode *parent_, 
-	int fsSubVersion,
-	const char *plaintextName_, const char *cipherName_, 
-	const shared_ptr<Cipher> &dataCipher, const CipherKey &key, 
-	int blockSize, int blockMACBytes, int blockMACRandBytes, bool uniqueIV,
-	bool externalIVChaining_, bool forceDecode, bool reverseEncryption_,
-        bool allowHoles )
+FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
+        const char *plaintextName_, const char *cipherName_)
 {
     pthread_mutex_init( &mutex, 0 );
     
@@ -78,23 +73,15 @@ FileNode::FileNode(DirNode *parent_,
     this->_pname = plaintextName_;
     this->_cname = cipherName_;
     this->parent = parent_;
-    this->externalIVChaining = externalIVChaining_;
-    this->reverseEncryption = reverseEncryption_;
+
+    this->fsConfig = cfg;
 
     // chain RawFileIO & CipherFileIO
     shared_ptr<FileIO> rawIO( new RawFileIO( _cname ) );
-    io = shared_ptr<FileIO>( 
-	    new CipherFileIO( rawIO, dataCipher, key, blockSize, 
-		    uniqueIV, reverseEncryption ));
+    io = shared_ptr<FileIO>( new CipherFileIO( rawIO, fsConfig ));
 
-    if(blockMACBytes)
-    {
-	io = shared_ptr<FileIO>(new MACFileIO(io, dataCipher, key, 
-		    blockSize,blockMACBytes,blockMACRandBytes,forceDecode));
-    }
-
-    if(allowHoles)
-        dynamic_pointer_cast<BlockFileIO>(io)->allowHoles( allowHoles );
+    if(cfg->config->blockMACBytes)
+        io = shared_ptr<FileIO>(new MACFileIO(io, fsConfig));
 }
 
 FileNode::~FileNode()
@@ -140,7 +127,7 @@ bool FileNode::setName( const char *plaintextName_, const char *cipherName_,
     rDebug("calling setIV on %s", cipherName_);
     if(setIVFirst)
     {
-	if(externalIVChaining && !setIV(io, iv))
+        if(fsConfig->config->externalIVChaining && !setIV(io, iv))
 	    return false;
 
 	// now change the name..
@@ -164,7 +151,7 @@ bool FileNode::setName( const char *plaintextName_, const char *cipherName_,
 	    io->setFileName( cipherName_ );
 	}
 
-	if(externalIVChaining && !setIV(io, iv))
+        if(fsConfig->config->externalIVChaining && !setIV(io, iv))
 	{
 	    _pname = oldPName;
 	    _cname = oldCName;
