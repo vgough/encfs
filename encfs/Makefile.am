@@ -115,6 +115,7 @@ noinst_HEADERS = \
     FileIO.h \
     FileNode.h \
     FileUtils.h \
+    FSConfig.h \
     Interface.h \
     i18n.h \
     MACFileIO.h \
