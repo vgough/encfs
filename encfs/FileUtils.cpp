@@ -970,12 +970,17 @@ bool selectZeroBlockPassThrough()
 	"This avoids writing encrypted blocks when file holes are created."));
 }
 
-RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir, 
-	bool enableIdleTracking, bool forceDecode,
-	const std::string &passwordProgram,
-	bool useStdin, bool reverseEncryption,
-        ConfigMode configMode)
+RootPtr createV6Config( EncFS_Context *ctx,
+        const shared_ptr<EncFS_Opts> &opts )
 {
+    const std::string rootDir = opts->rootDir;
+    bool enableIdleTracking = opts->idleTracking;
+    bool forceDecode = opts->forceDecode;
+    const std::string passwordProgram = opts->passwordProgram;
+    bool useStdin = opts->useStdin;
+    bool reverseEncryption = opts->reverseEncryption;
+    ConfigMode configMode = opts->configMode;
+    
     RootPtr rootInfo;
 
     // creating new volume key.. should check that is what the user is
@@ -1222,6 +1227,7 @@ RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir,
     fsConfig->forceDecode = forceDecode;
     fsConfig->reverseEncryption = reverseEncryption;
     fsConfig->idleTracking = enableIdleTracking;
+    fsConfig->opts = opts;
 
     rootInfo = RootPtr( new EncFS_Root );
     rootInfo->cipher = cipher;
@@ -1663,6 +1669,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
         fsConfig->config = config;
         fsConfig->forceDecode = opts->forceDecode;
         fsConfig->reverseEncryption = opts->forceDecode;
+        fsConfig->opts = opts;
 
 	rootInfo = RootPtr( new EncFS_Root );
 	rootInfo->cipher = cipher;
@@ -1674,9 +1681,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 	if(opts->createIfNotFound)
 	{
 	    // creating a new encrypted filesystem
-	    rootInfo = createV6Config( ctx, opts->rootDir, opts->idleTracking,
-		    opts->forceDecode, opts->passwordProgram, opts->useStdin,
-		    opts->reverseEncryption, opts->configMode );
+	    rootInfo = createV6Config( ctx, opts );
 	}
     }
 	

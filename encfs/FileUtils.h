@@ -110,12 +110,8 @@ class EncFS_Context;
 
 RootPtr initFS( EncFS_Context *ctx, const boost::shared_ptr<EncFS_Opts> &opts );
 
-RootPtr createV6Config( EncFS_Context *ctx, const std::string &rootDir, 
-	bool enableIdleTracking,
-	bool forceDecode,
-	const std::string &passwordProgram, bool reverseEncryption,
-        bool allowHoles, ConfigMode mode );
-
+RootPtr createV6Config( EncFS_Context *ctx, 
+                        const boost::shared_ptr<EncFS_Opts> &opts );
 
 void showFSInfo( const boost::shared_ptr<EncFSConfig> &config );
 
