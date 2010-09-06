@@ -66,7 +66,7 @@ MACFileIO::MACFileIO( const shared_ptr<FileIO> &_base,
    , randBytes( cfg->config->blockMACRandBytes )
    , warnOnly( cfg->opts->forceDecode )
 {
-    rAssert( macBytes > 0 && macBytes <= 8 );
+    rAssert( macBytes >= 0 && macBytes <= 8 );
     rAssert( randBytes >= 0 );
     rLog(Info, "fs block size = %i, macBytes = %i, randBytes = %i",
 	    cfg->config->blockSize, 
@@ -183,17 +183,16 @@ ssize_t MACFileIO::readOneBlock( const IORequest &req ) const
     ssize_t readSize = base->read( tmp );
 
     // don't store zeros if configured for zero-block pass-through
-    bool skipBlock;
+    bool skipBlock = true;
     if( _allowHoles )
     {
-        skipBlock = true;
         for(int i=0; i<readSize; ++i)
             if(tmp.data[i] != 0)
             {
                 skipBlock = false;
                 break;
             }
-    } else
+    } else if(macBytes > 0)
        skipBlock = false; 
 
     if(readSize > headerSize)
@@ -257,20 +256,23 @@ bool MACFileIO::writeOneBlock( const IORequest &req )
 
     memset( newReq.data, 0, headerSize );
     memcpy( newReq.data + headerSize, req.data, req.dataLen );
-    if(randBytes)
+    if(randBytes > 0)
     {
 	if(!cipher->randomize( newReq.data+macBytes, randBytes, false ))
             return false;
     }
 
-    // compute the mac (which includes the random data) and fill it in
-    uint64_t mac = cipher->MAC_64( newReq.data+macBytes, 
-	                           req.dataLen + randBytes, key );
-
-    for(int i=0; i<macBytes; ++i)
+    if(macBytes > 0)
     {
-	newReq.data[i] = mac & 0xff;
-	mac >>= 8;
+        // compute the mac (which includes the random data) and fill it in
+        uint64_t mac = cipher->MAC_64( newReq.data+macBytes, 
+                req.dataLen + randBytes, key );
+
+        for(int i=0; i<macBytes; ++i)
+        {
+            newReq.data[i] = mac & 0xff;
+            mac >>= 8;
+        }
     }
 
     // now, we can let the next level have it..

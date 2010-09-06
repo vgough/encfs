@@ -80,7 +80,7 @@ FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
     shared_ptr<FileIO> rawIO( new RawFileIO( _cname ) );
     io = shared_ptr<FileIO>( new CipherFileIO( rawIO, fsConfig ));
 
-    if(cfg->config->blockMACBytes)
+    if(cfg->config->blockMACBytes || cfg->config->blockMACRandBytes)
         io = shared_ptr<FileIO>(new MACFileIO(io, fsConfig));
 }
 
