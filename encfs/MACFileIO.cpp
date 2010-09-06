@@ -41,13 +41,14 @@ static RLogChannel *Info = DEF_CHANNEL("info/MACFileIO", Log_Info);
 // Version 2.0 takes [blockSize - headerSize] worth of user data and writes
 //   [blockSize] bytes.  That way the size going into the crypto engine is
 //   valid from what was selected based on the crypto module allowed ranges!
+// Version 2.1 allows per-block rand bytes to be used without enabling MAC.
 //
 // The information about MACFileIO currently does not make its way into the
 // configuration file, so there is no easy way to make this backward
 // compatible, except at a high level by checking a revision number for the
 // filesystem...
 //
-static rel::Interface MACFileIO_iface("FileIO/MAC", 2, 0, 0);
+static rel::Interface MACFileIO_iface("FileIO/MAC", 2, 1, 0);
 
 int dataBlockSize(const FSConfigPtr &cfg)
 {

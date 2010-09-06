@@ -1,3 +1,10 @@
+Sun Sep 5 2010 Valient Gough <vgough@pobox.com>
+	* fix mount failures when using certain options, due to changes in
+	  option passing mechanism in 1.7
+	* allow per-block random bytes to be configured independently of
+	  per-block MAC.
+	* bundle as version 1.7.2
+
 Sun Aug 29 2010 Valient Gough <vgough@pobox.com>
 	* new IV initialization
 	* tag version 1.7
