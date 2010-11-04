@@ -47,7 +47,7 @@ endif
 #       :     :   0       => no new interfaces, but breaks old apps
 #       :  +1 :           => internal changes, nothing breaks
 #
-libencfs_la_LDFLAGS = -version-info 6:0:0
+libencfs_la_LDFLAGS = -version-info 6:1:0
 libencfs_la_LIBADD = @RLOG_LIBS@ \
 	@OPENSSL_LIBS@ \
 	@BOOST_SERIALIZATION_LIB@ @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@

@@ -1,7 +1,7 @@
 dnl Process this file with autoconf to produce a configure script.
 
 AC_INIT(encfs/encfs.h) dnl a source file from your sub dir
-AM_INIT_AUTOMAKE(encfs, 1.7.2) dnl searches for some needed programs
+AM_INIT_AUTOMAKE(encfs, 1.7.3) dnl searches for some needed programs
 
 AC_CANONICAL_HOST
 AM_CONDITIONAL([DARWIN],
