@@ -1664,7 +1664,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
         fsConfig->nameCoding = nameCoder;
         fsConfig->config = config;
         fsConfig->forceDecode = opts->forceDecode;
-        fsConfig->reverseEncryption = opts->forceDecode;
+        fsConfig->reverseEncryption = opts->reverseEncryption;
         fsConfig->opts = opts;
 
 	rootInfo = RootPtr( new EncFS_Root );
