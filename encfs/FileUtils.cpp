@@ -1356,9 +1356,7 @@ shared_ptr<Cipher> EncFSConfig::getCipher() const
 
 void EncFSConfig::assignKeyData(const std::string &in)
 {
-    keyData.resize(in.length());
-    for(unsigned int i=0; i<in.length(); ++i)
-        keyData[i] = in.data()[i];
+    keyData.assign(in.data(), in.data()+in.length());
 }
 
 void EncFSConfig::assignKeyData(unsigned char *data, int len)
