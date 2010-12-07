@@ -314,14 +314,32 @@ std::string parentDirectory( const std::string &path )
 	return path.substr(0, last);
 }
 
-bool userAllowMkdir( const char *path, mode_t mode )
+bool userAllowMkdir(const char *path, mode_t mode )
+{
+    return userAllowMkdir(0, path, mode);
+}
+
+bool userAllowMkdir(int promptno, const char *path, mode_t mode )
 {
     // TODO: can we internationalize the y/n names?  Seems strange to prompt in
     // their own language but then have to respond 'y' or 'n'.
     // xgroup(setup)
     cerr << autosprintf( _("The directory \"%s\" does not exist. Should it be created? (y,n) "), path );
     char answer[10];
-    char *res = fgets( answer, sizeof(answer), stdin );
+    char *res;
+
+    switch (promptno)
+    {
+      case 1:
+        cerr << endl << "$PROMPT$ create_root_dir" << endl;
+        break;
+      case 2:
+        cerr << endl << "$PROMPT$ create_mount_point" << endl;
+        break;
+      default:
+        break;
+    }
+    res = fgets( answer, sizeof(answer), stdin );
 
     if(res != 0 && toupper(answer[0]) == 'Y')
     {
@@ -976,6 +994,7 @@ RootPtr createV6Config( EncFS_Context *ctx,
     bool useStdin = opts->useStdin;
     bool reverseEncryption = opts->reverseEncryption;
     ConfigMode configMode = opts->configMode;
+    bool annotate = opts->annotate;
     
     RootPtr rootInfo;
 
@@ -994,6 +1013,9 @@ RootPtr createV6Config( EncFS_Context *ctx,
                 " anything else, or an empty line will select standard mode.\n"
                 "?> ");
     
+        if (annotate)
+            cerr << "$PROMPT$ config_option" << endl;
+
         char *res = fgets( answer, sizeof(answer), stdin );
 	(void)res;
         cout << "\n";
@@ -1179,7 +1201,11 @@ RootPtr createV6Config( EncFS_Context *ctx,
     CipherKey userKey;
     rDebug( "useStdin: %i", useStdin );
     if(useStdin)
+    {
+        if (annotate)
+            cerr << "$PROMPT$ new_passwd" << endl;
         userKey = config->getUserKey( useStdin );
+    }
     else if(!passwordProgram.empty())
         userKey = config->getUserKey( passwordProgram, rootDir );
     else
@@ -1618,6 +1644,8 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
         if(opts->passwordProgram.empty())
         {
             rDebug( "useStdin: %i", opts->useStdin );
+            if (opts->annotate)
+                cerr << "$PROMPT$ passwd" << endl;
             userKey = config->getUserKey( opts->useStdin );
         } else
             userKey = config->getUserKey( opts->passwordProgram, opts->rootDir );

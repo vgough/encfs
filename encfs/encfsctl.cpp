@@ -693,7 +693,7 @@ static int cmd_showcruft( int argc, char **argv )
     return EXIT_SUCCESS;
 }
 
-static int do_chpasswd( bool useStdin, int argc, char **argv )
+static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
 {
     (void)argc;
     string rootDir = argv[1];
@@ -721,6 +721,8 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
 
     // ask for existing password
     cout << _("Enter current Encfs password\n");
+    if (annotate)
+        cerr << "$PROMPT$ passwd" << endl;
     CipherKey userKey = config->getUserKey( useStdin );
     if(!userKey)
 	return EXIT_FAILURE;
@@ -742,7 +744,11 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
     config->kdfIterations = 0; // generate new
 
     if( useStdin )
+    {
+        if (annotate)
+            cerr << "$PROMPT$ new_passwd" << endl;
         userKey = config->getUserKey( true );
+    }
     else
         userKey = config->getNewUserKey();
 
@@ -781,12 +787,12 @@ static int do_chpasswd( bool useStdin, int argc, char **argv )
 
 static int chpasswd( int argc, char **argv )
 {
-    return do_chpasswd( false, argc, argv );
+    return do_chpasswd( false, false, argc, argv );
 }
 
 static int chpasswdAutomaticly( int argc, char **argv )
 {
-    return do_chpasswd( true, argc, argv );
+    return do_chpasswd( true, false, argc, argv );
 }
 
 

@@ -104,6 +104,7 @@ struct EncFS_Args
 	if(opts->forceDecode) ss << "(forceDecode) ";
 	if(opts->ownerCreate) ss << "(ownerCreate) ";
 	if(opts->useStdin) ss << "(useStdin) ";
+	if(opts->annotate) ss << "(annotate) ";
 	if(opts->reverseEncryption) ss << "(reverseEncryption) ";
 	if(opts->mountOnDemand) ss << "(mountOnDemand) ";
 	for(int i=0; i<fuseArgc; ++i)
@@ -196,6 +197,7 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
     out->opts->forceDecode = false;
     out->opts->ownerCreate = false;
     out->opts->useStdin = false;
+    out->opts->annotate = false;
     out->opts->reverseEncryption = false;
  
     bool useDefaultFlags = true;
@@ -223,6 +225,7 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
 	{"extpass", 1, 0, 'p'}, // external password program
 	// {"single-thread", 0, 0, 's'}, // single-threaded mode
 	{"stdinpass", 0, 0, 'S'}, // read password from stdin
+	{"annotate", 0, 0, 513}, // Print annotation lines to stderr
 	{"verbose", 0, 0, 'v'}, // verbose mode
 	{"version", 0, 0, 'V'}, //version
 	{"reverse", 0, 0, 'r'}, // reverse encryption
@@ -263,6 +266,9 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
 	case 'S':
 	    out->opts->useStdin = true;
 	    break;
+        case 513:
+            out->opts->annotate = true;
+            break;
 	case 'f':
 	    out->isDaemon = false;
 	    // this option was added in fuse 2.x
@@ -411,13 +417,15 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
 
     // check that the directories exist, or that we can create them..
     if(!isDirectory( out->opts->rootDir.c_str() ) && 
-	    !userAllowMkdir( out->opts->rootDir.c_str() ,0700))
+	    !userAllowMkdir( out->opts->annotate? 1:0,
+                             out->opts->rootDir.c_str() ,0700))
     {
 	rWarning(_("Unable to locate root directory, aborting."));
 	return false;
     }
     if(!isDirectory( out->mountPoint.c_str() ) && 
-	    !userAllowMkdir( out->mountPoint.c_str(),0700))
+	    !userAllowMkdir( out->opts->annotate? 2:0,
+                             out->mountPoint.c_str(),0700))
     {
 	rWarning(_("Unable to locate mount point, aborting."));
 	return false;
@@ -630,7 +638,10 @@ int main(int argc, char *argv[])
 	try
 	{
 	    time_t startTime, endTime;
-	   
+	  
+            if (encfsArgs->opts->annotate)
+                cerr << "$STATUS$ fuse_main_start" << endl;
+
 	    // FIXME: workaround for fuse_main returning an error on normal
 	    // exit.  Only print information if fuse_main returned
 	    // immediately..
@@ -642,6 +653,9 @@ int main(int argc, char *argv[])
 		    &encfs_oper, (void*)ctx);
 	    
 	    time( &endTime );
+            
+            if (encfsArgs->opts->annotate)
+                cerr << "$STATUS$ fuse_main_end" << endl;
 
 	    if(res == 0)
 		returnCode = EXIT_SUCCESS;

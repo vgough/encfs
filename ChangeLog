@@ -1,3 +1,7 @@
+
+Tue Dec 7 2010 Valient Gough <vgough@pobox.com>
+	* add annotation option, patch by Werner Koch.
+
 Sun Sep 5 2010 Valient Gough <vgough@pobox.com>
 	* fix mount failures when using certain options, due to changes in
 	  option passing mechanism in 1.7

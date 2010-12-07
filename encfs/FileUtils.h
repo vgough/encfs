@@ -36,7 +36,8 @@ std::string parentDirectory( const std::string &path );
 
 // ask the user for permission to create the directory.  If they say ok, then
 // do it and return true.
-bool userAllowMkdir( const char *dirPath, mode_t mode );
+bool userAllowMkdir(const char *dirPath, mode_t mode );
+bool userAllowMkdir(int promptno, const char *dirPath, mode_t mode );
 
 class Cipher;
 class DirNode;
@@ -72,6 +73,7 @@ struct EncFS_Opts
 
     std::string passwordProgram; // path to password program (or empty)
     bool useStdin; // read password from stdin rather then prompting
+    bool annotate; // print annotation line prompt to stderr.
 
     bool ownerCreate; // set owner of new files to caller
 
@@ -87,6 +89,7 @@ struct EncFS_Opts
         checkKey = true;
         forceDecode = false;
         useStdin = false;
+        annotate = false;
         ownerCreate = false;
         reverseEncryption = false;
         configMode = Config_Prompt;
