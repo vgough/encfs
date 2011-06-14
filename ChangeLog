@@ -1,3 +1,5 @@
+Mon Jun 13 2011 Valient Gough <vgough@pobox.com>
+	* fix for non-b64 conversions, issue 102 patch by gebart.
 
 Tue Dec 7 2010 Valient Gough <vgough@pobox.com>
 	* add annotation option, patch by Werner Koch.
