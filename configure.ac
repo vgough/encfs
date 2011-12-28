@@ -1,13 +1,13 @@
 dnl Process this file with autoconf to produce a configure script.
 
 AC_INIT(encfs/encfs.h) dnl a source file from your sub dir
+AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE(encfs, 1.7.4) dnl searches for some needed programs
+AC_CONFIG_MACRO_DIR([m4])
 
 AC_CANONICAL_HOST
 AM_CONDITIONAL([DARWIN],
                [case $host_os in darwin*) true;; *) false;; esac])
-
-AC_CONFIG_MACRO_DIR([m4])
 
 dnl without this order in this file, automake will be confused!
 dnl
@@ -28,6 +28,7 @@ AC_PREFIX_DEFAULT(/usr/local)
 AM_GNU_GETTEXT([external])
 AM_GNU_GETTEXT_VERSION([0.17])
 dnl AC_LIB_LINKFLAGS([asprintf]) # use internal copy
+LIBINTL=-lgettextlib
 
 dnl create only shared libtool-libraries
 dnl These can be overridden by command line arguments
@@ -43,7 +44,7 @@ fi
 
 AC_PROG_LIBTOOL
 
-ACX_PTHREAD
+AX_PTHREAD
 
 AX_BOOST_BASE([1.34])
 AX_BOOST_SYSTEM
@@ -52,35 +53,36 @@ AX_BOOST_FILESYSTEM
 
 dnl Need to include any user specified flags in the tests below, as they might
 dnl specify required include directories..
-FUSEFLAGS="-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26"
-CPPFLAGS="$CPPFLAGS $USER_INCLUDES $FUSEFLAGS -D__STDC_FORMAT_MACROS"
+FUSE_FLAGS="-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26"
+CPPFLAGS="$CPPFLAGS $USER_INCLUDES $FUSE_FLAGS -D__STDC_FORMAT_MACROS"
 CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS $USER_INCLUDES"
-LDFLAGS="$LDFLAGS $PTHREAD_LIBS $USER_LDFLAGS"
+LDFLAGS="$LDFLAGS $PTHREAD_LIBS $USER_LDFLAGS $FUSE_LIBS"
 
-# default install path on Darwin of Macports, which is where rlog may be
-if test -z "${DARWIN_TRUE}"; then
-    LDFLAGS="$LDFLAGS -L/opt/local/lib"
-fi
+dnl Look for fuse headers.
+AX_EXT_HAVE_HEADER(fuse.h, /usr/include/fuse /usr/local/include/fuse \
+                   /opt/include/fuse /opt/local/include/fuse \
+                   /usr/include/osxfuse /usr/local/include/osxfuse)
+
+dnl Ensure the necessary paths are added to LDPATH
+AX_EXT_HAVE_LIB(/usr/lib /usr/local/lib /opt/lib /opt/local/lib, fuse,
+                fuse_new, [])
+AX_EXT_HAVE_LIB(/usr/lib /usr/local/lib /opt/lib /opt/local/lib, osxfuse,
+                fuse_new, [])
 
 if test "$GXX" = "yes"; then
     CXXFLAGS="-W -Wall -Wpointer-arith -Wwrite-strings $CXXFLAGS"
     dnl CXXFLAGS="$CXXFLAGS -Wformat=2 -Wconversion"
 fi
 
-AC_CHECK_HEADER(fuse.h,,
-    [AC_MSG_ERROR([
-	Can't find fuse.h - add the search path to CPPFLAGS and
-	rerun configure, eg:
-	export CPPFLAGS=-I/usr/local/include ])])
-AC_CHECK_LIB(fuse_ino64,fuse_new, [FUSE_LIBS="-lfuse_ino64"],
-    [ AC_CHECK_LIB(fuse,fuse_new, [FUSE_LIBS="-lfuse"],
-        [AC_MSG_ERROR([
-	    Can't find libfuse.a - add the search path to LDFLAGS
-	    and rerun configure, eg:
-	    export LDFLAGS=-L/usr/local/lib ])],) 
-    ],)
-
-AC_SUBST(FUSE_LIBS)
+if test -z "${DARWIN_TRUE}"; then
+    dnl Prefer OSXFuse, but fall back to libfuse.
+    AC_CHECK_LIB(osxfuse, fuse_new, [FUSE_LIBS="$FUSE_LIBS -losxfuse"],
+        AC_CHECK_LIB(fuse, fuse_new, [FUSE_LIBS="$FUSE_LIBS -lfuse"],
+                    AC_MSG_ERROR([Unable to find libfuse or libosxfuse.])))
+else
+    AC_CHECK_LIB(fuse, fuse_new, [FUSE_LIBS="$FUSE_LIBS -lfuse"],
+                 AC_MSG_ERROR([Unable to find libfuse.]))
+fi
 
 # check for a supported FUSE_MAJOR_VERSION.
 AC_MSG_CHECKING([For supported FUSE API version])
@@ -106,7 +108,7 @@ dnl fuse_operations.setxattr was added 2004-03-31
 dnl only enable it if setxattr function is found..
 AC_CHECK_HEADERS([attr/xattr.h sys/xattr.h])
 
-# Do xattr functions take additional options like on Darwin?
+dnl xattr functions take additional arguments on some systems (eg Darwin).
 AC_CACHE_CHECK([whether xattr interface takes additional options], 
         smb_attr_cv_xattr_add_opt, [
             old_LIBS=$LIBS
