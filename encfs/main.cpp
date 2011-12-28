@@ -170,9 +170,9 @@ void FuseUsage()
     fuse_main( argc, const_cast<char**>(argv), (fuse_operations*)NULL, NULL);
 }
 
-#define PUSHARG(ARG) \
+#define PUSHARG(ARG) do { \
 rAssert(out->fuseArgc < MaxFuseArgs); \
-out->fuseArgv[out->fuseArgc++] = ARG
+out->fuseArgv[out->fuseArgc++] = (ARG); } while(0)
 
 static
 string slashTerminate( const string &src )
