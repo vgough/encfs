@@ -1,6 +1,22 @@
 Mon Jun 13 2011 Valient Gough <vgough@pobox.com>
 	* fix for non-b64 conversions, issue 102 patch by gebart.
 
+Wed Dec 28 2011 Valient Gough <vgough@pobox.com>
+	* remove m4-local
+	* bump version to 1.7.5
+
+Tue Dec 27 2011 Valient Gough <vgough@pobox.com>
+	* remove auto-generated libtool, add new m4 macros
+	* improve OSX setup
+	* wrap PUSHARG macro for correctness. Issue reported by Pedro Rocha.
+
+Sun Oct 2 2011 Valient Gough <vgough@pobox.com>
+	* build on osx with osxfuse
+	* update boost m4 macros
+
+Mon Jun 13 2011 Valient Gough <vgough@pobox.com>
+	* fix for non-b64 conversions, issue 102 patch by gebart.
+
 Tue Dec 7 2010 Valient Gough <vgough@pobox.com>
 	* add annotation option, patch by Werner Koch.
 
