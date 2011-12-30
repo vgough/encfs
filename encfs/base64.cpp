@@ -18,6 +18,8 @@
 
 #include "base64.h"
 
+#include <ctype.h>
+
 // change between two powers of two, stored as the low bits of the bytes in the
 // arrays.
 // It is the caller's responsibility to make sure the output array is large
@@ -166,6 +168,41 @@ void AsciiToB64(unsigned char *out, const unsigned char *in, int length)
 	    ch = Ascii2B64Table[ ch ] - '0';
 
 	*out++ = ch;
+    }
+}
+
+
+void B32ToAscii(unsigned char *buf, int len)
+{
+    for(int offset=0; offset<len; ++offset)
+    {
+	int ch = buf[offset];
+        if (ch >= 0 && ch < 26)
+            ch += 'A';
+        else
+            ch += '2' - 26;
+	
+	buf[offset] = ch;
+    }
+}
+
+void AsciiToB32(unsigned char *in, int length)
+{
+    return AsciiToB32(in, in, length);
+}
+
+void AsciiToB32(unsigned char *out, const unsigned char *in, int length)
+{
+    while(length--)
+    {
+	unsigned char ch = *in++;
+        int lch = toupper(ch);
+        if (lch >= 'A')
+            lch -= 'A';
+        else
+            lch += 26 - '2';
+
+	*out++ = (unsigned char)lch;
     }
 }
 

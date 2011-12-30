@@ -33,11 +33,12 @@ class Cipher;
 class BlockNameIO : public NameIO
 {
 public:
-    static rel::Interface CurrentInterface();
+    static rel::Interface CurrentInterface(bool caseSensitive = false);
 
     BlockNameIO( const rel::Interface &iface,
 	         const boost::shared_ptr<Cipher> &cipher, 
-	         const CipherKey &key, int blockSize );
+	         const CipherKey &key, int blockSize,
+           bool caseSensitiveEncoding = false );
     virtual ~BlockNameIO();
 
     virtual rel::Interface interface() const;
@@ -58,6 +59,7 @@ private:
     int _bs;
     boost::shared_ptr<Cipher> _cipher;
     CipherKey _key;
+    bool _caseSensitive;
 };
 
 

@@ -295,6 +295,22 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 	if(!testNameCoding( dirNode, verbose ))
 	    return false;
     }
+    
+    if(verbose)
+	cerr << "Testing name encode/decode (block coding w/ IV chaining, base32)\n";
+    {
+        fsCfg->opts->idleTracking = false;
+        fsCfg->config->uniqueIV = false;
+        fsCfg->nameCoding.reset( new BlockNameIO(
+		    BlockNameIO::CurrentInterface(), cipher, key,
+		    cipher->cipherBlockSize(), true ) );
+        fsCfg->nameCoding->setChainedNameIV( true );
+	
+        DirNode dirNode( NULL, TEST_ROOTDIR, fsCfg );
+
+	if(!testNameCoding( dirNode, verbose ))
+	    return false;
+    }
    
     if(!verbose)
     {
