@@ -411,8 +411,9 @@ int processContents( const shared_ptr<EncFS_Root> &rootInfo,
 
     if(!node)
     {
-        // try opening directly, so a cipher-path can be passed in
-        node = rootInfo->root->directLookup( path );
+        // try treating filename as an enciphered path
+        string plainName = rootInfo->root->plainPath( path );
+        node = rootInfo->root->lookupNode( plainName.c_str(), "encfsctl" );
         if(node)
         {
             errCode = node->open( O_RDONLY );

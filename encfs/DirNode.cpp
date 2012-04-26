@@ -742,14 +742,6 @@ shared_ptr<FileNode> DirNode::renameNode( const char *from, const char *to,
     return node;
 }
 
-shared_ptr<FileNode> DirNode::directLookup( const char *path )
-{
-    return shared_ptr<FileNode>( 
-            new FileNode( this, 
-                fsConfig,
-                "unknown", path ));
-}
-
 shared_ptr<FileNode> DirNode::findOrCreate( const char *plainName)
 {
     shared_ptr<FileNode> node;
