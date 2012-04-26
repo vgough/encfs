@@ -47,6 +47,8 @@
 #endif
 #endif
 
+#include <tr1/unordered_set>
+
 
 using namespace std;
 using namespace rel;
@@ -106,7 +108,8 @@ int checkErrorPropogation( const shared_ptr<Cipher> &cipher,
 const char TEST_ROOTDIR[] = "/foo";
 
 static
-bool testNameCoding( DirNode &dirNode, bool verbose )
+bool testNameCoding( DirNode &dirNode, bool verbose, 
+                     bool collisionTest = false )
 {
     // encrypt a name
     const char *name[] = {
@@ -159,6 +162,29 @@ bool testNameCoding( DirNode &dirNode, bool verbose )
 	}
 
 	orig++;
+    }
+
+    if (collisionTest)
+    {
+        if (verbose)
+            cerr << "Checking for name collections, this will take a while..\n";
+        // check for collision rate
+        char buf[64];
+        tr1::unordered_set<string> encryptedNames;
+        for (long i=0; i < 10000000; i++) 
+        {
+            snprintf(buf, sizeof(buf), "%li", i);
+            string encName = dirNode.relativeCipherPath( buf );
+            // simulate a case-insisitive filesystem..
+            std::transform(encName.begin(), encName.end(), encName.begin(),
+                ::toupper);
+
+            if (encryptedNames.insert(encName).second == false) {
+                cerr << "collision detected after " << i << " iterations";
+                break;
+            }
+        }
+        cerr << "NO collisions detected";
     }
 
     return true;
