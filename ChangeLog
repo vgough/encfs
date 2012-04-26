@@ -1,3 +1,6 @@
+Wed Apr 25 2012 Valient Gough <vgough@pobox.com>
+	* fix encfsctl cat when iv chaining is enabled. Fixes issue #132
+
 Thu Mar 22 2012 Valient Gough <vgough@pobox.com>
 	* skip name collision test
 	* bump version to 1.8.0
@@ -12,7 +15,7 @@ Fri Mar 2 2012 Valient Gough <vgough@pobox.com>
 
 Wed Feb 29 2012 Valient Gough <vgough@pobox.com>
 	* switch to OpenSSL B64 decode to be comptible with boost serialization
-	* implement v6 config reader using XML reader based on tinyxml
+	* implement v6 config reader using XML reader based on libxml2
 
 Mon Jan 2 2012 Valient Gough <vgough@pobox.com>
 	* test for name case collisions in b64 coding
