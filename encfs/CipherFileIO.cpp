@@ -19,6 +19,7 @@
 
 #include "Cipher.h"
 #include "MemoryPool.h"
+#include "config.pb.h"
 
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
@@ -34,7 +35,7 @@ using boost::shared_ptr;
       filesystem at the filesystem configuration level.
       When headers are disabled, 2:0 is compatible with version 1:0.
 */
-static rel::Interface CipherFileIO_iface("FileIO/Cipher", 2, 0, 1);
+static Interface CipherFileIO_iface = makeInterface("FileIO/Cipher", 2, 0, 1);
 
 const int HEADER_SIZE = 8; // 64 bit initialization vector..
 
@@ -51,9 +52,9 @@ static bool checkSize( int fsBlockSize, int cipherBlockSize )
 
 CipherFileIO::CipherFileIO( const shared_ptr<FileIO> &_base, 
                             const FSConfigPtr &cfg)
-    : BlockFileIO( cfg->config->blockSize, cfg )
+    : BlockFileIO( cfg->config->block_size(), cfg )
     , base( _base )
-    , haveHeader( cfg->config->uniqueIV )
+    , haveHeader( cfg->config->unique_iv() )
     , externalIV( 0 )
     , fileIV( 0 )
     , lastFlags( 0 )
@@ -65,7 +66,7 @@ CipherFileIO::CipherFileIO( const shared_ptr<FileIO> &_base,
     static bool warnOnce = false;
 
     if(!warnOnce)
-        warnOnce = checkSize( fsConfig->config->blockSize,
+        warnOnce = checkSize( fsConfig->config->block_size(),
                               fsConfig->cipher->cipherBlockSize() );
 }
 
@@ -73,7 +74,7 @@ CipherFileIO::~CipherFileIO()
 {
 }
 
-rel::Interface CipherFileIO::interface() const
+Interface CipherFileIO::interface() const
 {
     return CipherFileIO_iface;
 }

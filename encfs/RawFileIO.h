@@ -29,7 +29,7 @@ public:
     RawFileIO( const std::string &fileName );
     virtual ~RawFileIO();
 
-    virtual rel::Interface interface() const;
+    virtual Interface interface() const;
 
     virtual void setFileName( const char *fileName );
     virtual const char *getFileName() const;

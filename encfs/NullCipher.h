@@ -28,13 +28,13 @@
 */
 class NullCipher : public Cipher
 {
-    rel::Interface iface;
+    Interface iface;
 
 public:
-    NullCipher(const rel::Interface &iface);
+    NullCipher(const Interface &iface);
     virtual ~NullCipher();
 
-    virtual rel::Interface interface() const;
+    virtual Interface interface() const;
 
     // create a new key based on a password
     virtual CipherKey newKey(const char *password, int passwdLength,

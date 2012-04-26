@@ -70,21 +70,21 @@ using boost::shared_ptr;
 */
 class SSL_Cipher : public Cipher
 {
-    rel::Interface iface;
-    rel::Interface realIface;
+    Interface iface;
+    Interface realIface;
     const EVP_CIPHER *_blockCipher;
     const EVP_CIPHER *_streamCipher;
     unsigned int _keySize; // in bytes
     unsigned int _ivLength;
 
 public:
-    SSL_Cipher(const rel::Interface &iface, const rel::Interface &realIface,
+    SSL_Cipher(const Interface &iface, const Interface &realIface,
 	    const EVP_CIPHER *blockCipher, const EVP_CIPHER *streamCipher,
 	    int keyLength);
     virtual ~SSL_Cipher();
 
     // returns the real interface, not the one we're emulating (if any)..
-    virtual rel::Interface interface() const;
+    virtual Interface interface() const;
 
     // create a new key based on a password
     virtual CipherKey newKey(const char *password, int passwdLength,

@@ -33,9 +33,9 @@
 
 using namespace std;
 
-static rel::Interface RawFileIO_iface("FileIO/Raw", 1, 0, 0);
+static Interface RawFileIO_iface = makeInterface("FileIO/Raw", 1, 0, 0);
 
-FileIO *NewRawFileIO( const rel::Interface &iface )
+FileIO *NewRawFileIO( const Interface &iface )
 {
     (void)iface;
     return new RawFileIO();
@@ -82,7 +82,7 @@ RawFileIO::~RawFileIO()
 	close( _fd );
 }
 
-rel::Interface RawFileIO::interface() const
+Interface RawFileIO::interface() const
 {
     return RawFileIO_iface;
 }

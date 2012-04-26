@@ -80,7 +80,7 @@ FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
     shared_ptr<FileIO> rawIO( new RawFileIO( _cname ) );
     io = shared_ptr<FileIO>( new CipherFileIO( rawIO, fsConfig ));
 
-    if(cfg->config->blockMACBytes || cfg->config->blockMACRandBytes)
+    if(cfg->config->block_mac_bytes() || cfg->config->block_mac_rand_bytes())
         io = shared_ptr<FileIO>(new MACFileIO(io, fsConfig));
 }
 
@@ -127,7 +127,7 @@ bool FileNode::setName( const char *plaintextName_, const char *cipherName_,
     rDebug("calling setIV on %s", cipherName_);
     if(setIVFirst)
     {
-        if(fsConfig->config->externalIVChaining && !setIV(io, iv))
+        if(fsConfig->config->external_iv() && !setIV(io, iv))
 	    return false;
 
 	// now change the name..
@@ -151,7 +151,7 @@ bool FileNode::setName( const char *plaintextName_, const char *cipherName_,
 	    io->setFileName( cipherName_ );
 	}
 
-        if(fsConfig->config->externalIVChaining && !setIV(io, iv))
+        if(fsConfig->config->external_iv() && !setIV(io, iv))
 	{
 	    _pname = oldPName;
 	    _cname = oldCName;

@@ -22,7 +22,6 @@
 
 #include <cstring>
 
-using namespace rel;
 using boost::shared_ptr;
 
 static shared_ptr<NameIO> NewNNIO( const Interface &, 
@@ -31,7 +30,7 @@ static shared_ptr<NameIO> NewNNIO( const Interface &,
     return shared_ptr<NameIO>( new NullNameIO() );
 }
 
-static Interface NNIOIface("nameio/null", 1, 0, 0);
+static Interface NNIOIface = makeInterface("nameio/null", 1, 0, 0);
 static bool NullNameIO_registered = NameIO::Register("Null",
 	"No encryption of filenames", NNIOIface, NewNNIO);
 

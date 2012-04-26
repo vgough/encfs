@@ -2,8 +2,10 @@
 include $(top_srcdir)/Makefile.common
 
 ALL_INCLUDES = @RLOG_CFLAGS@ @OPENSSL_CFLAGS@ @BOOST_CPPFLAGS@
+ALL_INCLUDES += @PROTOBUF_CFLAGS@
 ALL_LDFLAGS = @RLOG_LIBS@ @OPENSSL_LIBS@ @BOOST_LDFLAGS@
-ALL_LDFLAGS += @BOOST_SERIALIZATION_LIB@ @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
+ALL_LDFLAGS += @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
+ALL_LDFLAGS += @PROTOBUF_LIBS@
 
 INCLUDES = $(all_includes) -I../intl
 
@@ -47,10 +49,10 @@ endif
 #       :     :   0       => no new interfaces, but breaks old apps
 #       :  +1 :           => internal changes, nothing breaks
 #
-libencfs_la_LDFLAGS = -version-info 6:2:0
+libencfs_la_LDFLAGS = -version-info 7:0:0
 libencfs_la_LIBADD = @RLOG_LIBS@ \
 	@OPENSSL_LIBS@ \
-	@BOOST_SERIALIZATION_LIB@ @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
+	@BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
 
 EXTRASRC = ../intl/autosprintf.cpp
 if BUILD_OPENSSL
@@ -62,6 +64,7 @@ endif
 libencfs_la_SOURCES = \
     readpassphrase.cpp \
     base64.cpp \
+    config.pb.cc \
     ConfigReader.cpp \
     ConfigVar.cpp \
     Context.cpp \
@@ -83,6 +86,7 @@ libencfs_la_SOURCES = \
     FileNode.cpp \
     FileUtils.cpp \
     openssl.cpp \
+    XmlReader.cpp \
     ${EXTRASRC}
 
 
@@ -109,6 +113,7 @@ noinst_HEADERS = \
     CipherKey.h \
     ConfigReader.h \
     ConfigVar.h \
+    config.pb.h \
     Context.h \
     DirNode.h \
     encfs.h \
@@ -134,8 +139,14 @@ noinst_HEADERS = \
 man_MANS=encfs.1 encfsctl.1
 EXTRA_DIST = encfs.pod encfsctl.pod encfs.1 encfsctl.1 encfs-man.html
 
+SUFFIXES = .1 .pod .proto
+
+config.pb.cc: config.pb.h
+
+config.pb.h: config.proto
+	@PROTOC@ --cpp_out=. config.proto
+
 if BUILD_MAN
-SUFFIXES = .1 .pod
 # since we have POD2MAN, we can specify how to rebuild encfs.1 if necessary
 .pod.1:
 	@POD2MAN@ --section=1 --release=@VERSION@ --center="Encrypted Filesystem" $< $@

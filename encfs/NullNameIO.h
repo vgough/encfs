@@ -23,13 +23,13 @@
 class NullNameIO : public NameIO
 {
 public:
-    static rel::Interface CurrentInterface();
+    static Interface CurrentInterface();
 
     NullNameIO( );
 
     virtual ~NullNameIO();
 
-    virtual rel::Interface interface() const;
+    virtual Interface interface() const;
 
     virtual int maxEncodedNameLen( int plaintextNameLen ) const;
     virtual int maxDecodedNameLen( int encodedNameLen ) const;

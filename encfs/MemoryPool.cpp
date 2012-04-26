@@ -25,6 +25,8 @@
 #include "config.h"
 #include <pthread.h>
 
+#include <sys/mman.h>
+
 #ifdef HAVE_VALGRIND_MEMCHECK_H
 #include <valgrind/memcheck.h>
 #else
@@ -34,6 +36,7 @@
 
 using namespace rlog;
 
+# include <openssl/crypto.h>
 # include <openssl/buffer.h>
 #define BLOCKDATA( BLOCK ) (unsigned char*)BLOCK->data->data
 
@@ -140,4 +143,34 @@ void MemoryPool::destroyAll()
     }
 }
 
+SecureMem::SecureMem(int len)
+{
+  data = (char *)OPENSSL_malloc(len);
+  if (data)
+  {
+    size = len;
+    mlock(data, size);
+    memset(data, '\0', size);
+    VALGRIND_MAKE_MEM_UNDEFINED( data, size );
+  } else
+  {
+    size = 0;
+  }
+} 
+          
+SecureMem::~SecureMem()
+{
+  if (size)
+  {
+    memset(data, '\0', size);
+    munlock(data, size);
+
+    OPENSSL_free(data);
+    VALGRIND_MAKE_MEM_NOACCESS( data, size );
+
+    data = NULL;
+    size = 0;
+  }
+}         
+          
 

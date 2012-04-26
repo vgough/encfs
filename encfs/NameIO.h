@@ -32,33 +32,33 @@ class Cipher;
 class NameIO
 {
 public:
-    typedef shared_ptr<NameIO> (*Constructor)( const rel::Interface &iface,
+    typedef shared_ptr<NameIO> (*Constructor)( const Interface &iface,
 	    const shared_ptr<Cipher> &cipher, const CipherKey &key);
 
     struct Algorithm
     {
 	std::string name;
 	std::string description;
-	rel::Interface iface;
+	Interface iface;
     };
 
     typedef std::list<Algorithm> AlgorithmList;
     static AlgorithmList GetAlgorithmList( bool includeHidden = false );
 
-    static shared_ptr<NameIO> New( const rel::Interface &iface,
+    static shared_ptr<NameIO> New( const Interface &iface,
 	    const shared_ptr<Cipher> &cipher, const CipherKey &key);
     static shared_ptr<NameIO> New( const std::string &name,
 	    const shared_ptr<Cipher> &cipher, const CipherKey &key);
 
     static bool Register( const char *name, const char *description,
-	    const rel::Interface &iface, Constructor constructor, 
+	    const Interface &iface, Constructor constructor, 
 	    bool hidden = false);
 
 
     NameIO();
     virtual ~NameIO();
 
-    virtual rel::Interface interface() const =0;
+    virtual Interface interface() const =0;
 
     void setChainedNameIV( bool enable );
     bool getChainedNameIV() const;

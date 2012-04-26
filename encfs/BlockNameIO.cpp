@@ -31,7 +31,6 @@
 #include "i18n.h"
 
 using namespace rlog;
-using namespace rel;
 using namespace boost;
 
 static RLogChannel * Info = DEF_CHANNEL( "info/nameio", Log_Info );
@@ -94,16 +93,16 @@ Interface BlockNameIO::CurrentInterface(bool caseSensitive)
 {
     // implement major version 4 plus support for two prior versions
     if (caseSensitive)
-        return Interface("nameio/block32", 4, 0, 2);
+        return makeInterface("nameio/block32", 4, 0, 2);
     else
-        return Interface("nameio/block", 4, 0, 2);
+        return makeInterface("nameio/block", 4, 0, 2);
 }
 
-BlockNameIO::BlockNameIO( const rel::Interface &iface,
+BlockNameIO::BlockNameIO( const Interface &iface,
 	const shared_ptr<Cipher> &cipher, 
 	const CipherKey &key, int blockSize,
         bool caseSensitiveEncoding )
-    : _interface( iface.current() )
+    : _interface( iface.major() )
     , _bs( blockSize )
     , _cipher( cipher )
     , _key( key )

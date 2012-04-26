@@ -26,13 +26,12 @@
 #include <cstring>
 
 using namespace std;
-using namespace rel;
 using namespace rlog;
 using boost::shared_ptr;
 using boost::dynamic_pointer_cast;
 
 
-static Interface NullInterface( "nullCipher", 1, 0, 0 );
+static Interface NullInterface = makeInterface( "nullCipher", 1, 0, 0 );
 static Range NullKeyRange(0);
 static Range NullBlockRange(1,4096,1);
 

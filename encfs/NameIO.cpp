@@ -32,7 +32,6 @@
 #include "NullNameIO.h"
 
 using namespace std;
-using namespace rel;
 using namespace rlog;
 
 #define REF_MODULE(TYPE) \
@@ -130,7 +129,7 @@ shared_ptr<NameIO> NameIO::New( const Interface &iface,
 	NameIOMap_t::const_iterator end = gNameIOMap->end();
 	for(it = gNameIOMap->begin(); it != end; ++it)
 	{
-	    if( it->second.iface.implements( iface ))
+	    if( implements(it->second.iface, iface ))
 	    {
 		Constructor fn = it->second.constructor;
 		result = (*fn)( iface, cipher, key );

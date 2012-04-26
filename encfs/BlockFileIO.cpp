@@ -18,6 +18,7 @@
 #include "BlockFileIO.h"
 
 #include "MemoryPool.h"
+#include "config.pb.h"
 
 #include <cstring>
 #include <rlog/rlog.h>
@@ -38,7 +39,7 @@ static void clearCache( IORequest &req, int blockSize )
 
 BlockFileIO::BlockFileIO( int blockSize, const FSConfigPtr &cfg )
     : _blockSize( blockSize )
-    , _allowHoles( cfg->config->allowHoles )
+    , _allowHoles( cfg->config->allow_holes() )
 {
     rAssert( _blockSize > 1 );
     _cache.data = new unsigned char [ _blockSize ];

@@ -176,7 +176,7 @@ static int showInfo( int argc, char **argv )
     if( !checkDir( rootDir ))
 	return EXIT_FAILURE;
 
-    boost::shared_ptr<EncFSConfig> config(new EncFSConfig);
+    EncfsConfig config;
     ConfigType type = readConfig( rootDir, config );
 
     // show information stored in config..
@@ -194,24 +194,22 @@ static int showInfo( int argc, char **argv )
     case Config_V3:
 	// xgroup(diag)
 	cout << "\n" << autosprintf(_("Version 3 configuration; "
-            "created by %s\n"), config->creator.c_str());
+            "created by %s\n"), config.creator().c_str());
 	break;
     case Config_V4:
 	// xgroup(diag)
 	cout << "\n" << autosprintf(_("Version 4 configuration; "
-            "created by %s\n"), config->creator.c_str());
+            "created by %s\n"), config.creator().c_str());
 	break;
     case Config_V5:
-	// xgroup(diag)
-	cout << "\n" << autosprintf(_("Version 5 configuration; "
-            "created by %s (revision %i)\n"), config->creator.c_str(),
-                config->subVersion);
-	break;
     case Config_V6:
+    case Config_V7:
 	// xgroup(diag)
-	cout << "\n" << autosprintf(_("Version 6 configuration; "
-            "created by %s (revision %i)\n"), config->creator.c_str(),
-                config->subVersion);
+	cout << "\n" << autosprintf(_("Version %i configuration; "
+            "created by %s (revision %i)\n"), 
+                type,
+                config.creator().c_str(),
+                config.revision());
 	break;
     }
 
@@ -687,9 +685,7 @@ static int cmd_showcruft( int argc, char **argv )
 
     int filesFound = showcruft( rootInfo, "/" );
 
-    cerr << autosprintf(
-	    ngettext("Found %i invalid file.", "Found %i invalid files.", 
-		filesFound), filesFound) << "\n";
+    cerr << autosprintf("Found %i invalid file(s).", filesFound) << "\n";
 
     return EXIT_SUCCESS;
 }
@@ -701,7 +697,7 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
     if( !checkDir( rootDir ))
 	return EXIT_FAILURE;
 
-    boost::shared_ptr<EncFSConfig> config(new EncFSConfig);
+    EncfsConfig config;
     ConfigType cfgType = readConfig( rootDir, config );
 
     if(cfgType == Config_None)
@@ -711,12 +707,11 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
     }
 
     // instanciate proper cipher
-    shared_ptr<Cipher> cipher = Cipher::New( 
-            config->cipherIface, config->keySize );
+    shared_ptr<Cipher> cipher = getCipher(config);
     if(!cipher)
     {
 	cout << autosprintf(_("Unable to find specified cipher \"%s\"\n"),
-                config->cipherIface.name().c_str());
+                config.cipher().name().c_str());
 	return EXIT_FAILURE;
     }
 
@@ -724,13 +719,14 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
     cout << _("Enter current Encfs password\n");
     if (annotate)
         cerr << "$PROMPT$ passwd" << endl;
-    CipherKey userKey = config->getUserKey( useStdin );
+    CipherKey userKey = getUserKey( config, useStdin );
     if(!userKey)
 	return EXIT_FAILURE;
 
     // decode volume key using user key -- at this point we detect an incorrect
     // password if the key checksum does not match (causing readKey to fail).
-    CipherKey volumeKey = cipher->readKey( config->getKeyData(), userKey );
+    CipherKey volumeKey = cipher->readKey( 
+        (const unsigned char *)config.key().data(), userKey );
 
     if(!volumeKey)
     {
@@ -741,17 +737,15 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
     // Now, get New user key..
     userKey.reset();
     cout << _("Enter new Encfs password\n");
-    // reinitialize salt and iteration count
-    config->kdfIterations = 0; // generate new
 
+    // create new key
     if( useStdin )
     {
         if (annotate)
             cerr << "$PROMPT$ new_passwd" << endl;
-        userKey = config->getUserKey( true );
     }
-    else
-        userKey = config->getNewUserKey();
+
+    userKey = getNewUserKey( config, useStdin, string(), string() );
 
     // re-encode the volume key using the new user key and write it out..
     int result = EXIT_FAILURE;
@@ -764,10 +758,10 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
 	cipher->writeKey( volumeKey, keyBuf, userKey );
 	userKey.reset();
 
-        config->assignKeyData( keyBuf, encodedKeySize );
+        config.set_key( keyBuf, encodedKeySize );
         delete[] keyBuf;
 
-        if(saveConfig( cfgType, rootDir, config ))
+        if(saveConfig( rootDir, config ))
 	{
 	    // password modified -- changes volume key of filesystem..
 	    cout << _("Volume Key successfully updated.\n");
@@ -816,7 +810,7 @@ int main(int argc, char **argv)
     slog->subscribeTo( GetGlobalChannel("error") );
     slog->subscribeTo( GetGlobalChannel("warning") );
 #ifndef NO_DEBUG
-    //slog->subscribeTo( GetGlobalChannel("debug") );
+    slog->subscribeTo( GetGlobalChannel("debug") );
 #endif
 
     if(argc < 2)

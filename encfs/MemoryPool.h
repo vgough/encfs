@@ -50,5 +50,14 @@ namespace MemoryPool
     void destroyAll();
 }
 
+struct SecureMem
+{
+  int size;
+  char *data;
+
+  SecureMem(int len);
+  ~SecureMem();
+};
+
 #endif
 

@@ -19,6 +19,7 @@
 
 #include "MemoryPool.h"
 #include "FileUtils.h"
+#include "config.pb.h"
 
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
@@ -29,7 +30,6 @@
 #include "i18n.h"
 
 using namespace rlog;
-using namespace rel;
 using namespace std;
 using boost::shared_ptr;
 using boost::dynamic_pointer_cast;
@@ -48,13 +48,13 @@ static RLogChannel *Info = DEF_CHANNEL("info/MACFileIO", Log_Info);
 // compatible, except at a high level by checking a revision number for the
 // filesystem...
 //
-static rel::Interface MACFileIO_iface("FileIO/MAC", 2, 1, 0);
+static Interface MACFileIO_iface = makeInterface("FileIO/MAC", 2, 1, 0);
 
 int dataBlockSize(const FSConfigPtr &cfg)
 {
-    return cfg->config->blockSize
-            - cfg->config->blockMACBytes
-            - cfg->config->blockMACRandBytes;
+    return cfg->config->block_size()
+            - cfg->config->block_mac_bytes()
+            - cfg->config->block_mac_rand_bytes();
 }
 
 MACFileIO::MACFileIO( const shared_ptr<FileIO> &_base,
@@ -63,23 +63,23 @@ MACFileIO::MACFileIO( const shared_ptr<FileIO> &_base,
    , base( _base )
    , cipher( cfg->cipher )
    , key( cfg->key )
-   , macBytes( cfg->config->blockMACBytes )
-   , randBytes( cfg->config->blockMACRandBytes )
+   , macBytes( cfg->config->block_mac_bytes() )
+   , randBytes( cfg->config->block_mac_rand_bytes() )
    , warnOnly( cfg->opts->forceDecode )
 {
     rAssert( macBytes >= 0 && macBytes <= 8 );
     rAssert( randBytes >= 0 );
     rLog(Info, "fs block size = %i, macBytes = %i, randBytes = %i",
-	    cfg->config->blockSize, 
-            cfg->config->blockMACBytes, 
-            cfg->config->blockMACRandBytes);
+	    cfg->config->block_size(), 
+            cfg->config->block_mac_bytes(), 
+            cfg->config->block_mac_rand_bytes());
 }
 
 MACFileIO::~MACFileIO()
 {
 }
 
-rel::Interface MACFileIO::interface() const
+Interface MACFileIO::interface() const
 {
     return MACFileIO_iface;
 }

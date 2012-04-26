@@ -33,15 +33,15 @@ class Cipher;
 class BlockNameIO : public NameIO
 {
 public:
-    static rel::Interface CurrentInterface(bool caseSensitive = false);
+    static Interface CurrentInterface(bool caseSensitive = false);
 
-    BlockNameIO( const rel::Interface &iface,
+    BlockNameIO( const Interface &iface,
 	         const boost::shared_ptr<Cipher> &cipher, 
 	         const CipherKey &key, int blockSize,
            bool caseSensitiveEncoding = false );
     virtual ~BlockNameIO();
 
-    virtual rel::Interface interface() const;
+    virtual Interface interface() const;
 
     virtual int maxEncodedNameLen( int plaintextNameLen ) const;
     virtual int maxDecodedNameLen( int encodedNameLen ) const;

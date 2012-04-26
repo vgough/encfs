@@ -69,7 +69,6 @@ inline static int MAX(int a, int b)
 
 using namespace std;
 using namespace rlog;
-using namespace rel;
 using namespace gnu;
 using boost::shared_ptr;
 using boost::scoped_ptr;

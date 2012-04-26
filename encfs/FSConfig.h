@@ -32,88 +32,37 @@ enum ConfigType
 {
     Config_None = 0,
     Config_Prehistoric,
-    Config_V3,
-    Config_V4,
-    Config_V5,
-    Config_V6
+    Config_V3 = 3,
+    Config_V4 = 4,
+    Config_V5 = 5,
+    Config_V6 = 6,
+    Config_V7 = 7
 };
 
 class EncFS_Opts;
 class Cipher;
 class NameIO;
+class EncfsConfig;
 
-struct EncFSConfig
-{
-    ConfigType cfgType;
+CipherKey getUserKey(const EncfsConfig &config, bool useStdin);
+CipherKey getUserKey(const EncfsConfig &config,
+                     const std::string &passwordProgram,
+                     const std::string &rootDir);
 
-    std::string creator;
-    int subVersion;
-
-    // interface of cipher
-    rel::Interface cipherIface;
-    // interface used for file name coding
-    rel::Interface nameIface;
-    int keySize; // reported in bits
-    int blockSize; // reported in bytes
-
-    std::vector<unsigned char> keyData;
-
-    std::vector<unsigned char> salt;
-    int kdfIterations;
-    long desiredKDFDuration;
-
-    int blockMACBytes; // MAC headers on blocks..
-    int blockMACRandBytes; // number of random bytes in the block header
-
-    bool uniqueIV; // per-file Initialization Vector
-    bool externalIVChaining; // IV seeding by filename IV chaining
-
-    bool chainedNameIV; // filename IV chaining
-    bool allowHoles; // allow holes in files (implicit zero blocks)
-
-    EncFSConfig()
-        : keyData()
-        , salt()
-    {
-        cfgType = Config_None;
-        subVersion = 0;
-        blockMACBytes = 0;
-        blockMACRandBytes = 0;
-        uniqueIV = false;
-        externalIVChaining = false;
-        chainedNameIV = false;
-        allowHoles = false;
-
-        kdfIterations = 0;
-        desiredKDFDuration = 500;
-    }
-
-    CipherKey getUserKey(bool useStdin);
-    CipherKey getUserKey(const std::string &passwordProgram,
-                         const std::string &rootDir);
-    CipherKey getNewUserKey();
+CipherKey getNewUserKey(EncfsConfig &config, bool useStdin, 
+    const std::string &program, const std::string &rootDir);
     
-    boost::shared_ptr<Cipher> getCipher() const;
+boost::shared_ptr<Cipher> getCipher(const EncfsConfig &cfg);
+boost::shared_ptr<Cipher> getCipher(const Interface &iface, int keySize);
 
-    // deprecated
-    void assignKeyData(const std::string &in);
-    void assignKeyData(unsigned char *data, int length);
-    void assignSaltData(unsigned char *data, int length);
-
-    unsigned char *getKeyData() const;
-    unsigned char *getSaltData() const;
-
-private:
-    CipherKey makeKey(const char *password, int passwdLen);
-};
-   
 // helpers for serializing to/from a stream
-std::ostream &operator << (std::ostream &os, const EncFSConfig &cfg);
-std::istream &operator >> (std::istream &os, EncFSConfig &cfg);
+std::ostream &operator << (std::ostream &os, const EncfsConfig &cfg);
+std::istream &operator >> (std::istream &os, EncfsConfig &cfg);
 
+// Filesystem state
 struct FSConfig
 {
-    boost::shared_ptr<EncFSConfig> config;
+    boost::shared_ptr<EncfsConfig> config;
     boost::shared_ptr<EncFS_Opts> opts;
 
     boost::shared_ptr<Cipher> cipher;

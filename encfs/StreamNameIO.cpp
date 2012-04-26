@@ -26,7 +26,6 @@
 #include "i18n.h"
 #include <cstring>
 
-using namespace rel;
 using namespace std;
 
 static shared_ptr<NameIO> NewStreamNameIO( const Interface &iface,
@@ -65,13 +64,13 @@ static bool StreamIO_registered = NameIO::Register("Stream",
 Interface StreamNameIO::CurrentInterface()
 {
     // implement major version 2, 1, and 0
-    return Interface("nameio/stream", 2, 1, 2);
+    return makeInterface("nameio/stream", 2, 1, 2);
 }
 
-StreamNameIO::StreamNameIO( const rel::Interface &iface,
+StreamNameIO::StreamNameIO( const Interface &iface,
 	const shared_ptr<Cipher> &cipher, 
 	const CipherKey &key )
-    : _interface( iface.current() )
+    : _interface( iface.major() )
     , _cipher( cipher )
     , _key( key )
 {

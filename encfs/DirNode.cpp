@@ -690,7 +690,7 @@ int DirNode::link( const char *from, const char *to )
     rLog(Info, "link %s -> %s", fromCName.c_str(), toCName.c_str());
 
     int res = -EPERM;
-    if( fsConfig->config->externalIVChaining )
+    if( fsConfig->config->external_iv() )
     {
 	rLog(Info, "hard links not supported with external IV chaining!");
     } else
@@ -756,7 +756,7 @@ shared_ptr<FileNode> DirNode::findOrCreate( const char *plainName)
 		plainName, 
                 (rootDir + cipherName).c_str()));
 		
-	if(fsConfig->config->externalIVChaining)
+	if(fsConfig->config->external_iv())
 	    node->setName(0, 0, iv);
 
 	rLog(Info, "created FileNode for %s", node->cipherName());

@@ -2,7 +2,7 @@ dnl Process this file with autoconf to produce a configure script.
 
 AC_INIT(encfs/encfs.h) dnl a source file from your sub dir
 AC_CONFIG_AUX_DIR([build-aux])
-AM_INIT_AUTOMAKE(encfs, 1.7.5) dnl searches for some needed programs
+AM_INIT_AUTOMAKE(encfs, 1.8.0) dnl searches for some needed programs
 AC_CONFIG_MACRO_DIR([m4])
 
 AC_CANONICAL_HOST
@@ -48,7 +48,6 @@ AX_PTHREAD
 
 AX_BOOST_BASE([1.34])
 AX_BOOST_SYSTEM
-AX_BOOST_SERIALIZATION
 AX_BOOST_FILESYSTEM
 
 dnl Need to include any user specified flags in the tests below, as they might
@@ -202,6 +201,21 @@ if test "$with_rlog" = "test" && test "x$RLOG_LIBS" = "x"; then
     AC_CHECK_LIB(rlog, RLogVersion, [RLOG_LIBS="-lrlog"],
         [AC_MSG_ERROR([EncFS depends on librlog])]) 
 fi
+
+# find Protocol Buffers
+PKG_CHECK_MODULES(PROTOBUF, protobuf >= 2.0)
+AC_PATH_PROG(PROTOC, protoc, [no])
+if test "$PROTOC" == "no"; then
+    AC_MSG_FAILURE([Protocol Buffers compiler 'protoc' is required to build.])
+fi
+
+# find TinyXML
+AC_LANG_PUSH([C++])
+CPPFLAGS="$CPPFLAGS -DTIXML_USE_STL"
+AC_CHECK_HEADER([tinyxml.h],,[AC_MSG_ERROR([tinyxml.h not found])])
+AC_CHECK_LIB([tinyxml],[main],,
+             [AC_MSG_ERROR([you must install libtinyxml dev])])
+AC_LANG_POP([C++])
 
 # look for pod2man program for building man pages
 AC_PATH_PROG(POD2MAN, pod2man, [no])

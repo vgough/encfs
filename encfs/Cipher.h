@@ -42,14 +42,14 @@ class Cipher
 public:
     // if no key length was indicated when cipher was registered, then keyLen
     // <= 0 will be used.
-    typedef boost::shared_ptr<Cipher> (*CipherConstructor)( const rel::Interface &iface,
+    typedef boost::shared_ptr<Cipher> (*CipherConstructor)( const Interface &iface,
 	                                      int keyLenBits );
 
     struct CipherAlgorithm
     {
 	std::string name;
 	std::string description;
-	rel::Interface iface;
+  Interface iface;
 	Range keyLength;
 	Range blockSize;
     };
@@ -59,7 +59,7 @@ public:
     static AlgorithmList GetAlgorithmList( bool includeHidden = false );
 
 
-    static boost::shared_ptr<Cipher> New( const rel::Interface &iface, 
+    static boost::shared_ptr<Cipher> New( const Interface &iface, 
 	                                  int keyLen = -1);
     static boost::shared_ptr<Cipher> New( const std::string &cipherName, 
 	                                  int keyLen = -1 );
@@ -67,12 +67,12 @@ public:
 
     static bool Register(const char *cipherName, 
 	    const char *description, 
-	    const rel::Interface &iface,
+	    const Interface &iface,
 	    CipherConstructor constructor,
 	    bool hidden = false);
     static bool Register(const char *cipherName, 
 	    const char *description, 
-	    const rel::Interface &iface,
+	    const Interface &iface,
 	    const Range &keyLength, const Range &blockSize,
 	    CipherConstructor constructor,
 	    bool hidden = false);
@@ -81,7 +81,7 @@ public:
     Cipher();
     virtual ~Cipher();
 
-    virtual rel::Interface interface() const =0;
+    virtual Interface interface() const =0;
 
     // create a new key based on a password
     // if iterationCount == 0, then iteration count will be determined

@@ -1,0 +1,36 @@
+
+message EncfsConfig
+{
+    optional string creator = 1;
+    optional int32 revision = 2 [default=0];
+
+    required Interface cipher = 3;
+    required bytes key = 4;
+    optional bytes salt = 41;
+    required int32 key_size = 42;            // in bits
+    optional int32 kdf_iterations = 43 [default=0];
+    optional int32 kdf_duration = 44 [default=500];
+    
+    optional Interface naming = 5;
+    optional bool unique_iv = 51 [default=false];
+    optional bool chained_iv = 52 [default=false];
+    optional bool external_iv = 53 [default=false];
+
+    required int32 block_size = 6;
+    optional int32 block_mac_bytes = 61 [default=0];
+    optional int32 block_mac_rand_bytes = 611 [default=0];
+    optional bool allow_holes = 62 [default = false];
+}
+
+message Interface
+{
+    required string name = 1;
+    required uint32 major = 2; // major version number
+    required uint32 minor = 3; // minor version number
+
+    // Age indicates number of major versions supported. 0 means no backward
+    // compatibility.  See libtool "updating version information" for more
+    // details on how major/minor/age are used for versioning libraries.
+    optional uint32 age = 4; 
+}
+

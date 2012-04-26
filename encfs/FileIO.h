@@ -48,7 +48,7 @@ public:
     FileIO();
     virtual ~FileIO();
 
-    virtual rel::Interface interface() const =0;
+    virtual Interface interface() const =0;
 
     // default implementation returns 1, meaning this is not block oriented.
     virtual int blockSize() const; 

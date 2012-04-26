@@ -22,205 +22,69 @@
 #include <rlog/rlog.h>
 #include <rlog/RLogChannel.h>
 
-using namespace rel;
 using namespace rlog;
 
 static RLogChannel * Info = DEF_CHANNEL( "info/iface", Log_Info );
 
-Interface::Interface(const char *name_, int Current, int Revision, int Age)
-    : _name( name_ )
-    , _current( Current )
-    , _revision( Revision )
-    , _age( Age )
+bool implements(const Interface &A, const Interface &B) 
 {
+  rLog(Info, "checking if %s(%i:%i:%i) implements %s(%i:%i:%i)",
+      A.name().c_str(), A.major(), A.minor(), A.age(),
+      B.name().c_str(), B.major(), B.minor(), B.age());
+
+  if( A.name() != B.name() )
+    return false;
+
+  int currentDiff = A.major() - B.major();
+  return ( currentDiff >= 0 && currentDiff <= (int)A.age() );
 }
 
-Interface::Interface(const std::string &name_, int Current, 
-	int Revision, int Age)
-    : _name( name_ )
-    , _current( Current )
-    , _revision( Revision )
-    , _age( Age )
+Interface makeInterface(const char *name, int major, int minor, int age)
 {
+  Interface iface;
+  iface.set_name(name);
+  iface.set_major(major);
+  iface.set_minor(minor);
+  iface.set_age(age);
+  return iface;
 }
 
-Interface::Interface(const Interface &src)
-    : _name( src._name )
-    , _current( src._current )
-    , _revision( src._revision )
-    , _age( src._age )
+ConfigVar & operator << (ConfigVar &dst, const Interface &iface)
 {
-}
-
-Interface::Interface()
-    : _current( 0 )
-    , _revision( 0 )
-    , _age( 0 )
-{
-}
-
-Interface &Interface::operator = (const Interface &src)
-{
-    _name = src._name;
-    _current = src._current;
-    _revision = src._revision;
-    _age = src._age;
-    return *this;
-}
-
-const std::string & Interface::name() const
-{
-    return _name;
-}
-
-std::string & Interface::name()
-{
-    return _name;
-}
-
-int Interface::current() const
-{
-    return _current;
-}
-
-int &Interface::current()
-{
-    return _current;
-}
-
-int Interface::revision() const
-{
-    return _revision;
-}
-
-int &Interface::revision()
-{
-    return _revision;
-}
-
-int Interface::age() const
-{
-    return _age;
-}
-
-int &Interface::age()
-{
-    return _age;
-}
-
-bool operator == (const Interface &A, const Interface &B)
-{
-    return ( A.name() == B.name() 
-	    && A.current() == B.current() 
-	    && A.revision() == B.revision()
-	    && A.age() == B.age() );
-}
-
-bool operator != (const Interface &A, const Interface &B)
-{
-    return ( A.name() != B.name() 
-	    || A.current() != B.current() 
-	    || A.revision() != B.revision()
-	    || A.age() != B.age() );
-}
-
-// zero branch method of getting comparison sign.. 
-// tricky.. makes assumptions
-#if 0
-static int sign( int a, int b )
-{
-    unsigned int ab = ((unsigned int)(a - b)) >> 31;
-    unsigned int ba = ((unsigned int)(b - a)) >> 31;
-
-    return 1 + ba - ab;
-}
-#else
-// simple, easy to check, unlikely to break due to unforseen events..
-static int sign( int a, int b )
-{
-    if(a < b)
-	return 0;
-    else if(a == b)
-	return 1;
-    else
-	return 2;
-}
-#endif
-
-static int diffSum( const Interface &A, const Interface &B )
-{
-    int cS = sign( A.current() , B.current() );
-    int aS = sign( A.age(), B.age() );
-    int rS = sign( A.revision(), B.revision() );
-
-    return (cS * 3 + aS) * 3 + rS;
-}
-
-const int EqualVersion = (1 * 3 + 1) * 3 + 1;
-
-bool Interface::implements(const Interface &B) const
-{
-    rLog(Info, "checking if %s(%i:%i:%i) implements %s(%i:%i:%i)",
-	    name().c_str(), current(), revision(), age(),
-	    B.name().c_str(), B.current(), B.revision(), B.age());
-
-    if( name() != B.name() )
-	return false;
-
-    int currentDiff = current() - B.current();
-    return ( currentDiff >= 0 && currentDiff <= age() );
-}
-
-
-bool operator < (const Interface &A, const Interface &B)
-{
-    if( A.name() == B.name() )
-    {
-	return ( diffSum(A,B) < EqualVersion );
-    } else
-	return A.name() < B.name();
-}
-
-bool operator > (const Interface &A, const Interface &B)
-{
-    if( A.name() == B.name() )
-    {
-	return ( diffSum(A,B) > EqualVersion );
-    } else
-	return A.name() < B.name();
-}
-
-bool operator <= (const Interface &A, const Interface &B)
-{
-    if( A.name() == B.name() )
-    {
-	return ( diffSum(A,B) <= EqualVersion );
-    } else
-	return A.name() < B.name();
-}
-
-bool operator >= (const Interface &A, const Interface &B)
-{
-    if( A.name() == B.name() )
-    {
-	return ( diffSum(A,B) >= EqualVersion );
-    } else
-	return A.name() < B.name();
-}
-
-
-ConfigVar & operator << (ConfigVar &dst, const rel::Interface &iface)
-{
-    dst << iface.name() << iface.current() << iface.revision() << iface.age();
-    return dst;
+  dst << iface.name() << (int)iface.major() << (int)iface.minor() << (int)iface.age();
+  return dst;
 }
 
 const ConfigVar & operator >> (const ConfigVar &src, Interface &iface)
 {
-    src >> iface.name();
-    src >> iface.current();
-    src >> iface.revision();
-    src >> iface.age();
+  src >> *iface.mutable_name();
+  int major, minor, age;
+  src >> major >> minor >> age;
+  iface.set_major(major);
+  iface.set_minor(minor);
+  iface.set_age(age);
+  return src;
+}
+
+const XmlValuePtr & operator >> (const XmlValuePtr &src, Interface &iface)
+{
+    (*src)["name"] >> *iface.mutable_name();
+    int major, minor;
+    (*src)["major"] >> major;
+    (*src)["minor"] >> minor;
+    iface.set_major(major);
+    iface.set_minor(minor);
     return src;
+}
+
+bool operator != (const Interface &a, const Interface &b)
+{
+  if (a.major() != b.major())
+    return true;
+
+  if (a.minor() != b.minor())
+    return true;
+
+  return false;
 }
 

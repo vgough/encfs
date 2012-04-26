@@ -66,10 +66,7 @@ inline int MIN(int a, int b)
     the state of EVP_CIPHER struct.  EVP_BytesToKey will only produce 128 bit
     keys for the EVP Blowfish interface, which is not what we want.
 
-    Eliminated the salt code, since we don't use it..  Reason is that we're
-    using the derived key to encode random data.  Since there is no known
-    plaintext, there is no ability for an attacker to pre-compute known
-    password->data mappings, which is what the salt is meant to frustrate.
+    DEPRECATED: this is here for backward compatibilty only.  Use PBKDF
 */
 int BytesToKey( int keyLen, int ivLen, const EVP_MD *md,
 	const unsigned char *data, int dataLen, 
@@ -103,7 +100,7 @@ int BytesToKey( int keyLen, int ivLen, const EVP_MD *md,
 	}
 
 	int offset = 0;
-	int toCopy = MIN( nkey, mds - offset );
+	int toCopy = MIN( nkey, (int)mds - offset );
 	if( toCopy )
 	{
 	    memcpy( key, mdBuf+offset, toCopy );
@@ -111,7 +108,7 @@ int BytesToKey( int keyLen, int ivLen, const EVP_MD *md,
 	    nkey -= toCopy;
 	    offset += toCopy;
 	}
-	toCopy = MIN( niv, mds - offset );
+	toCopy = MIN( niv, (int)mds - offset );
 	if( toCopy )
 	{
 	    memcpy( iv, mdBuf+offset, toCopy );
@@ -174,8 +171,8 @@ int TimedPBKDF2(const char *pass, int passlen,
 // - Version 2:1 adds support for Message Digest function interface
 // - Version 2:2 adds PBKDF2 for password derivation
 // - Version 3:0 adds a new IV mechanism
-static Interface BlowfishInterface( "ssl/blowfish", 3, 0, 2 );
-static Interface AESInterface( "ssl/aes", 3, 0, 2 );
+static Interface BlowfishInterface = makeInterface( "ssl/blowfish", 3, 0, 2 );
+static Interface AESInterface = makeInterface( "ssl/aes", 3, 0, 2 );
 
 #if defined(HAVE_EVP_BF)
 
@@ -275,19 +272,20 @@ SSLKey::SSLKey(int keySize_, int ivLength_)
     this->ivLength = ivLength_;
     pthread_mutex_init( &mutex, 0 );
     buffer = (unsigned char *)OPENSSL_malloc( keySize + ivLength );
-    memset( buffer, 0, keySize + ivLength );
 
     // most likely fails unless we're running as root, or a user-page-lock
     // kernel patch is applied..
     mlock( buffer, keySize + ivLength );
+
+    memset( buffer, 0, keySize + ivLength );
 }
 
 SSLKey::~SSLKey()
 {
     memset( buffer, 0, keySize + ivLength );
 
-    OPENSSL_free( buffer );
     munlock( buffer, keySize + ivLength );
+    OPENSSL_free( buffer );
 
     keySize = 0;
     ivLength = 0;
@@ -370,7 +368,7 @@ SSL_Cipher::SSL_Cipher(const Interface &iface_,
 	    iface.name().c_str(), _keySize, _ivLength);
 	
     if( (EVP_CIPHER_key_length( _blockCipher ) != (int )_keySize) 
-	    && iface.current() == 1)
+	    && iface.major() == 1)
     {
 	rWarning("Running in backward compatibilty mode for 1.0 - \n"
 		"key is really %i bits, not %i.\n"
@@ -438,7 +436,7 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength)
     shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
     
     int bytes = 0;
-    if( iface.current() > 1 )
+    if( iface.major() > 1 )
     {
 	// now we use BytesToKey, which can deal with Blowfish keys larger then
 	// 128 bits.
@@ -680,7 +678,7 @@ int SSL_Cipher::cipherBlockSize() const
 void SSL_Cipher::setIVec( unsigned char *ivec, uint64_t seed,
 	const shared_ptr<SSLKey> &key) const
 {
-    if (iface.current() >= 3)
+    if (iface.major() >= 3)
     {
         memcpy( ivec, IVData(key), _ivLength );
 
@@ -707,7 +705,7 @@ void SSL_Cipher::setIVec( unsigned char *ivec, uint64_t seed,
     }
 }
 
-/** For backward compatibility.
+/** Deprecated: For backward compatibility only.
     A watermark attack was discovered against this IV setup.  If an attacker
     could get a victim to store a carefully crafted file, they could later
     determine if the victim had the file in encrypted storage (without
@@ -717,13 +715,6 @@ void SSL_Cipher::setIVec_old(unsigned char *ivec,
                              unsigned int seed,
                              const shared_ptr<SSLKey> &key) const
 {
-    /* These multiplication constants chosen as they represent (non optimal)
-       Golumb rulers, the idea being to spread around the information in the
-       seed.
-    
-       0x060a4011 : ruler length 26, 7 marks, 21 measurable lengths
-       0x0221040d : ruler length 25, 7 marks, 21 measurable lengths
-    */
     unsigned int var1 = 0x060a4011 * seed; 
     unsigned int var2 = 0x0221040d * (seed ^ 0xD3FEA11C);
     

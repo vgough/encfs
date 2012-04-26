@@ -34,7 +34,6 @@
 #include "SSL_Cipher.h"
 
 using namespace std;
-using namespace rel;
 using boost::shared_ptr;
 
 #define REF_MODULE(TYPE)  \
@@ -150,7 +149,7 @@ shared_ptr<Cipher> Cipher::New( const Interface &iface, int keyLen )
 	for(it = gCipherMap->begin(); it != mapEnd; ++it)
 	{
 	    // TODO: we should look for the newest implementation..
-	    if( it->second.iface.implements( iface ) )
+	    if( implements(it->second.iface, iface) )
 	    {
 		CipherConstructor fn = it->second.constructor;
 		// pass in requested interface..

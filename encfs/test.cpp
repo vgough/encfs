@@ -47,11 +47,12 @@
 #endif
 #endif
 
+#include <google/protobuf/text_format.h>
+
 #include <tr1/unordered_set>
 
 
 using namespace std;
-using namespace rel;
 using namespace rlog;
 
 using boost::shared_ptr;
@@ -235,35 +236,28 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 	cipher->writeKey( key, keyBuf, encodingKey );
 
 	// store in config struct..
-	EncFSConfig cfg;
-	cfg.cipherIface = cipher->interface();
-	cfg.keySize = 8 * cipher->keySize();
-	cfg.blockSize = FSBlockSize;
-	cfg.assignKeyData( keyBuf, encodedKeySize );
+	EncfsConfig cfg;
+	cfg.mutable_cipher()->MergeFrom(cipher->interface());
+	cfg.set_key_size(8 * cipher->keySize());
+	cfg.set_block_size(FSBlockSize);
+	cfg.set_key( keyBuf, encodedKeySize );
 
 	// save config
         string data;
-        {
-            ostringstream st;
-            st << cfg;
-            data = st.str();
-        }
+        google::protobuf::TextFormat::PrintToString(cfg, &data);
 
 	// read back in and check everything..
-        EncFSConfig cfg2;
-        {
-            istringstream st(data);
-            st >> cfg2;
-        }
+        EncfsConfig cfg2;
+        google::protobuf::TextFormat::ParseFromString(data, &cfg2);
 
 	// check..
-	rAssert( cfg.cipherIface.implements(cfg2.cipherIface) );
-	rAssert( cfg.keySize == cfg2.keySize );
-	rAssert( cfg.blockSize == cfg2.blockSize );
+	rAssert( implements(cfg.cipher(),cfg2.cipher()) );
+	rAssert( cfg.key_size() == cfg2.key_size() );
+	rAssert( cfg.block_size() == cfg2.block_size() );
 
 	// try decoding key..
 
-	CipherKey key2 = cipher->readKey( cfg2.getKeyData(), encodingKey );
+	CipherKey key2 = cipher->readKey( (unsigned char *)cfg2.key().data(), encodingKey );
 	if(!key2)
 	{
 	    if(verbose)
@@ -286,15 +280,15 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     FSConfigPtr fsCfg = FSConfigPtr(new FSConfig);
     fsCfg->cipher = cipher;
     fsCfg->key = key;
-    fsCfg->config.reset(new EncFSConfig);
-    fsCfg->config->blockSize = FSBlockSize;
+    fsCfg->config.reset(new EncfsConfig);
+    fsCfg->config->set_block_size(FSBlockSize);
 
     if(verbose)
 	cerr << "Testing name encode/decode (stream coding w/ IV chaining)\n";
     {
         fsCfg->opts.reset(new EncFS_Opts);
         fsCfg->opts->idleTracking = false;
-        fsCfg->config->uniqueIV = false;
+        fsCfg->config->set_unique_iv(false);
 
         fsCfg->nameCoding.reset( new StreamNameIO(
 		    StreamNameIO::CurrentInterface(), cipher, key ) );
@@ -310,7 +304,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 	cerr << "Testing name encode/decode (block coding w/ IV chaining)\n";
     {
         fsCfg->opts->idleTracking = false;
-        fsCfg->config->uniqueIV = false;
+        fsCfg->config->set_unique_iv(false);
         fsCfg->nameCoding.reset( new BlockNameIO(
 		    BlockNameIO::CurrentInterface(), cipher, key,
 		    cipher->cipherBlockSize() ) );
@@ -326,7 +320,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 	cerr << "Testing name encode/decode (block coding w/ IV chaining, base32)\n";
     {
         fsCfg->opts->idleTracking = false;
-        fsCfg->config->uniqueIV = false;
+        fsCfg->config->set_unique_iv(false);
         fsCfg->nameCoding.reset( new BlockNameIO(
 		    BlockNameIO::CurrentInterface(), cipher, key,
 		    cipher->cipherBlockSize(), true ) );
@@ -503,8 +497,8 @@ int main(int argc, char *argv[])
     {
 	cerr << it->name 
 	    << " ( " << it->iface.name() << " " 
-	    << it->iface.current() << ":" 
-	    << it->iface.revision() << ":"
+	    << it->iface.major() << ":" 
+	    << it->iface.minor() << ":"
 	    << it->iface.age() << " ) : " << it->description << "\n";
 	cerr << " - key length " << it->keyLength.min() << " to "
 	    << it->keyLength.max() << " , block size " << it->blockSize.min()

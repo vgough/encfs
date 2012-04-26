@@ -27,14 +27,14 @@ using boost::shared_ptr;
 class StreamNameIO : public NameIO
 {
 public:
-    static rel::Interface CurrentInterface();
+    static Interface CurrentInterface();
 
-    StreamNameIO( const rel::Interface &iface,
+    StreamNameIO( const Interface &iface,
 	          const shared_ptr<Cipher> &cipher, 
 		  const CipherKey &key );
     virtual ~StreamNameIO();
 
-    virtual rel::Interface interface() const;
+    virtual Interface interface() const;
 
     virtual int maxEncodedNameLen( int plaintextNameLen ) const;
     virtual int maxDecodedNameLen( int encodedNameLen ) const;

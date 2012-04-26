@@ -1,3 +1,31 @@
+Thu Mar 22 2012 Valient Gough <vgough@pobox.com>
+	* skip name collision test
+	* bump version to 1.8.0
+	* drop boost serialization from requirements
+
+Sun Mar 4 2012 Valient Gough <vgough@pobox.com>
+	* bump ld version
+	* replace EncFSConfig with protocol buffer
+
+Fri Mar 2 2012 Valient Gough <vgough@pobox.com>
+	* replace boost serialization with protocol buffer support
+
+Wed Feb 29 2012 Valient Gough <vgough@pobox.com>
+	* switch to OpenSSL B64 decode to be comptible with boost serialization
+	* implement v6 config reader using XML reader based on tinyxml
+
+Mon Jan 2 2012 Valient Gough <vgough@pobox.com>
+	* test for name case collisions in b64 coding
+
+Thu Dec 29 2011 Valient Gough <vgough@pobox.com>
+	* add base32 support for name encoding
+
+Thu Mar 3 2011 Valient Gough <vgough@pobox.com>
+	* update copyright on BlockNameIO
+
+Thu Dec 29 2011 Valient Gough <vgough@pobox.com>
+	* revert fuse_unmount change, wasn't working
+
 Wed Dec 28 2011 Valient Gough <vgough@pobox.com>
 	* remove m4-local
 	* bump version to 1.7.5

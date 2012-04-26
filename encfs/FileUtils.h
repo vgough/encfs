@@ -99,41 +99,33 @@ struct EncFS_Opts
 /*
     Read existing config file.  Looks for any supported configuration version.
  */
-ConfigType readConfig( const std::string &rootDir, 
-    const boost::shared_ptr<EncFSConfig> &config ); 
+ConfigType readConfig( const std::string &rootDir, EncfsConfig &config ); 
 
 /*
     Save the configuration.  Saves back as the same configuration type as was
     read from.
  */
-bool saveConfig( ConfigType type, const std::string &rootdir, 
-    const boost::shared_ptr<EncFSConfig> &config );
+bool saveConfig( const std::string &rootdir, const EncfsConfig &config );
 
 class EncFS_Context;
 
 RootPtr initFS( EncFS_Context *ctx, const boost::shared_ptr<EncFS_Opts> &opts );
 
-RootPtr createV6Config( EncFS_Context *ctx, 
+RootPtr createConfig( EncFS_Context *ctx, 
     const boost::shared_ptr<EncFS_Opts> &opts );
 
-void showFSInfo( const boost::shared_ptr<EncFSConfig> &config );
+void showFSInfo( const EncfsConfig &config );
 
-bool readV4Config( const char *configFile, 
-    const boost::shared_ptr<EncFSConfig> &config,
+bool readV4Config( const char *configFile, EncfsConfig &config, 
     struct ConfigInfo *);
-bool writeV4Config( const char *configFile, 
-    const boost::shared_ptr<EncFSConfig> &config);
 
-bool readV5Config( const char *configFile, 
-    const boost::shared_ptr<EncFSConfig> &config,
+bool readV5Config( const char *configFile, EncfsConfig &config, 
     struct ConfigInfo *);
-bool writeV5Config( const char *configFile, 
-    const boost::shared_ptr<EncFSConfig> &config);
 
-bool readV6Config( const char *configFile, 
-    const boost::shared_ptr<EncFSConfig> &config,
+bool readV6Config( const char *configFile, EncfsConfig &config,
     struct ConfigInfo *);
-bool writeV6Config( const char *configFile, 
-    const boost::shared_ptr<EncFSConfig> &config);
+
+bool readProtoConfig( const char *configFile, EncfsConfig &config,
+    struct ConfigInfo *);
 
 #endif
