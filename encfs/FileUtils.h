@@ -44,96 +44,96 @@ class DirNode;
 
 struct EncFS_Root
 {
-    boost::shared_ptr<Cipher> cipher;
-    CipherKey volumeKey;
-    boost::shared_ptr<DirNode> root;
+  boost::shared_ptr<Cipher> cipher;
+  CipherKey volumeKey;
+  boost::shared_ptr<DirNode> root;
 
-    EncFS_Root();
-    ~EncFS_Root();
+  EncFS_Root();
+  ~EncFS_Root();
 };
 
 typedef boost::shared_ptr<EncFS_Root> RootPtr;
 
 enum ConfigMode
 {
-    Config_Prompt,
-    Config_Standard,
-    Config_Paranoia
+  Config_Prompt,
+  Config_Standard,
+  Config_Paranoia
 };
 
 struct EncFS_Opts
 {
-    std::string rootDir;
-    bool createIfNotFound;  // create filesystem if not found
-    bool idleTracking; // turn on idle monitoring of filesystem
-    bool mountOnDemand; // mounting on-demand
+  std::string rootDir;
+  bool createIfNotFound;  // create filesystem if not found
+  bool idleTracking; // turn on idle monitoring of filesystem
+  bool mountOnDemand; // mounting on-demand
 
-    bool checkKey;  // check crypto key decoding
-    bool forceDecode; // force decode on MAC block failures
+  bool checkKey;  // check crypto key decoding
+  bool forceDecode; // force decode on MAC block failures
 
-    std::string passwordProgram; // path to password program (or empty)
-    bool useStdin; // read password from stdin rather then prompting
-    bool annotate; // print annotation line prompt to stderr.
+  std::string passwordProgram; // path to password program (or empty)
+  bool useStdin; // read password from stdin rather then prompting
+  bool annotate; // print annotation line prompt to stderr.
 
-    bool ownerCreate; // set owner of new files to caller
+  bool ownerCreate; // set owner of new files to caller
 
-    bool reverseEncryption; // Reverse encryption
+  bool reverseEncryption; // Reverse encryption
 
-    ConfigMode configMode;
+  ConfigMode configMode;
 
-    EncFS_Opts()
-    {
-        createIfNotFound = true;
-        idleTracking = false;
-        mountOnDemand = false;
-        checkKey = true;
-        forceDecode = false;
-        useStdin = false;
-        annotate = false;
-        ownerCreate = false;
-        reverseEncryption = false;
-        configMode = Config_Prompt;
-    }
+  EncFS_Opts()
+  {
+    createIfNotFound = true;
+    idleTracking = false;
+    mountOnDemand = false;
+    checkKey = true;
+    forceDecode = false;
+    useStdin = false;
+    annotate = false;
+    ownerCreate = false;
+    reverseEncryption = false;
+    configMode = Config_Prompt;
+  }
 };
 
 /*
     Read existing config file.  Looks for any supported configuration version.
-*/
+ */
 ConfigType readConfig( const std::string &rootDir, 
-        const boost::shared_ptr<EncFSConfig> &config ); 
+    const boost::shared_ptr<EncFSConfig> &config ); 
 
 /*
     Save the configuration.  Saves back as the same configuration type as was
     read from.
-*/
+ */
 bool saveConfig( ConfigType type, const std::string &rootdir, 
-	const boost::shared_ptr<EncFSConfig> &config );
+    const boost::shared_ptr<EncFSConfig> &config );
 
 class EncFS_Context;
 
 RootPtr initFS( EncFS_Context *ctx, const boost::shared_ptr<EncFS_Opts> &opts );
 
 RootPtr createV6Config( EncFS_Context *ctx, 
-                        const boost::shared_ptr<EncFS_Opts> &opts );
+    const boost::shared_ptr<EncFS_Opts> &opts );
 
 void showFSInfo( const boost::shared_ptr<EncFSConfig> &config );
 
 bool readV4Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
-	struct ConfigInfo *);
+    const boost::shared_ptr<EncFSConfig> &config,
+    struct ConfigInfo *);
 bool writeV4Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config);
+    const boost::shared_ptr<EncFSConfig> &config);
 
 bool readV5Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
-	struct ConfigInfo *);
+    const boost::shared_ptr<EncFSConfig> &config,
+    struct ConfigInfo *);
 bool writeV5Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config);
+    const boost::shared_ptr<EncFSConfig> &config);
 
 bool readV6Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
-	struct ConfigInfo *);
+    const boost::shared_ptr<EncFSConfig> &config,
+    struct ConfigInfo *);
 bool writeV6Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config);
+    const boost::shared_ptr<EncFSConfig> &config);
 
 #endif
