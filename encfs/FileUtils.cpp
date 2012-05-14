@@ -285,6 +285,14 @@ bool readV6Config( const char *configFile,
 
   XmlValuePtr serialization = rdr["boost_serialization"];
   XmlValuePtr config = (*serialization)["cfg"];
+  if (!config) {
+    config = (*serialization)["config"];
+  }
+  if (!config) {
+    rError("Unable to find XML configuration in file %s", configFile);
+    return false;
+  }
+
   int version = 0;
   (*config)["@version"] >> version;
 
