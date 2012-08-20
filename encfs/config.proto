@@ -5,11 +5,7 @@ message EncfsConfig
     optional int32 revision = 2 [default=0];
 
     required Interface cipher = 3;
-    required bytes key = 4;
-    optional bytes salt = 41;
-    required int32 key_size = 42;            // in bits
-    optional int32 kdf_iterations = 43 [default=0];
-    optional int32 kdf_duration = 44 [default=500];
+    required EncryptedKey key = 4;
     
     optional Interface naming = 5;
     optional bool unique_iv = 51 [default=false];
@@ -20,6 +16,17 @@ message EncfsConfig
     optional int32 block_mac_bytes = 61 [default=0];
     optional int32 block_mac_rand_bytes = 611 [default=0];
     optional bool allow_holes = 62 [default = false];
+}
+
+message EncryptedKey
+{
+    required bytes ciphertext = 1;
+    required int32 size = 2;    // Size of data in bytes
+
+    optional bytes salt = 6;
+
+    optional int32 kdf_iterations = 10;
+    optional int32 kdf_duration = 11 [default=500];
 }
 
 message Interface

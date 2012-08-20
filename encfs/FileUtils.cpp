@@ -344,16 +344,17 @@ bool readV6Config( const char *configFile,
   cfg.set_block_mac_rand_bytes(blockMacRandBytes);
   cfg.set_allow_holes(allowHoles);
 
+  EncryptedKey *encryptedKey = cfg.mutable_key();
   int encodedSize;
   (*config)["encodedKeySize"] >> encodedSize;
   unsigned char *key = new unsigned char[encodedSize];
   (*config)["encodedKeyData"]->readB64Data(key, encodedSize);
-  cfg.set_key(key, encodedSize);
+  encryptedKey->set_ciphertext(key, encodedSize);
   delete[] key;
   
   int keySize;
   (*config)["keySize"] >> keySize;
-  cfg.set_key_size(keySize);
+  encryptedKey->set_size(keySize / 8); // save as size in bytes
 
   if(cfg.revision() >= 20080816)
   {
@@ -361,19 +362,19 @@ bool readV6Config( const char *configFile,
     (*config)["saltLen"] >> saltLen;
     unsigned char *salt = new unsigned char[saltLen];
     (*config)["saltData"]->readB64Data(salt, saltLen);
-    cfg.set_salt(salt, saltLen);
+    encryptedKey->set_salt(salt, saltLen);
     delete[] salt;
 
     int kdfIterations, desiredKDFDuration;
     (*config)["kdfIterations"] >> kdfIterations;
     (*config)["desiredKDFDuration"] >> desiredKDFDuration;
-    cfg.set_kdf_iterations(kdfIterations);
-    cfg.set_kdf_duration(desiredKDFDuration);
+    encryptedKey->set_kdf_iterations(kdfIterations);
+    encryptedKey->set_kdf_duration(desiredKDFDuration);
   } else
   {
-    cfg.clear_salt();
-    cfg.set_kdf_iterations(16);
-    cfg.set_kdf_duration(NormalKDFDuration);
+    encryptedKey->clear_salt();
+    encryptedKey->set_kdf_iterations(16);
+    encryptedKey->clear_kdf_duration();
   }
 
   return true;
@@ -416,10 +417,11 @@ bool readV5Config( const char *configFile,
       cfgRdr["blockSize"] >> blockSize;
       config.set_block_size(blockSize);
 
+      EncryptedKey *encryptedKey = config.mutable_key();
       int keySize;
       cfgRdr["keySize"] >> keySize;
-      config.set_key_size(keySize);
-      cfgRdr["keyData"] >> (*config.mutable_key());
+      encryptedKey->set_size(keySize / 8);
+      cfgRdr["keyData"] >> (*encryptedKey->mutable_ciphertext());
 
       config.set_unique_iv( cfgRdr["uniqueIV"].readBool( false ) );
       config.set_chained_iv( cfgRdr["chainedIV"].readBool( false ) );
@@ -455,7 +457,8 @@ bool readV4Config( const char *configFile,
       cfgRdr["blockSize"] >> blockSize;
       config.set_block_size(blockSize);
 
-      cfgRdr["keyData"] >> (*config.mutable_key());
+      EncryptedKey *key = config.mutable_key();
+      cfgRdr["keyData"] >> (*key->mutable_ciphertext());
 
       // fill in default for V4
       config.mutable_naming()->MergeFrom( makeInterface("nameio/stream", 1, 0, 0) );
@@ -1058,9 +1061,10 @@ RootPtr createConfig( EncFS_Context *ctx,
   config.set_external_iv( externalIV );
   config.set_allow_holes( allowHoles );
 
-  config.clear_salt();
-  config.clear_kdf_iterations(); // filled in by keying function
-  config.set_kdf_duration( desiredKDFDuration );
+  EncryptedKey *key = config.mutable_key();
+  key->clear_salt();
+  key->clear_kdf_iterations(); // filled in by keying function
+  key->set_kdf_duration( desiredKDFDuration );
 
   cout << "\n";
   // xgroup(setup)
@@ -1107,7 +1111,7 @@ RootPtr createConfig( EncFS_Context *ctx,
   cipher->writeKey( volumeKey, encodedKey, userKey );
   userKey.reset();
 
-  config.set_key(encodedKey, encodedKeySize);
+  key->set_ciphertext(encodedKey, encodedKeySize);
   delete[] encodedKey;
 
   if(!volumeKey)
@@ -1203,8 +1207,9 @@ void showFSInfo( const EncfsConfig &config )
         cout << "\n";
     }
   }
+  const EncryptedKey &key = config.key();
   {
-    cout << autosprintf(_("Key Size: %i bits"), config.key_size());
+    cout << autosprintf(_("Key Size: %i bits"), 8 * key.size());
     cipher = getCipher(config);
     if(!cipher)
     {
@@ -1213,12 +1218,12 @@ void showFSInfo( const EncfsConfig &config )
     } else
       cout << "\n";
   }
-  if(config.kdf_iterations() > 0 && config.salt().size() > 0)
+  if(key.kdf_iterations() > 0 && key.salt().size() > 0)
   {
     cout << autosprintf(_("Using PBKDF2, with %i iterations"), 
-        config.kdf_iterations()) << "\n";
+        key.kdf_iterations()) << "\n";
     cout << autosprintf(_("Salt Size: %i bits"), 
-        8*(int)config.salt().size()) << "\n";
+        8*(int)key.salt().size()) << "\n";
   }
   if(config.block_mac_bytes() || config.block_mac_rand_bytes())
   {
@@ -1270,7 +1275,7 @@ void showFSInfo( const EncfsConfig &config )
 
 shared_ptr<Cipher> getCipher(const EncfsConfig &config)
 {
-  return getCipher(config.cipher(), config.key_size());
+  return getCipher(config.cipher(), 8 * config.key().size());
 }
 
 shared_ptr<Cipher> getCipher(const Interface &iface, int keySize)
@@ -1289,30 +1294,32 @@ CipherKey makeNewKey(EncfsConfig &config, const char *password, int passwdLen)
     cout << _("Error creating salt\n");
     return userKey;
   }
-  config.set_salt(salt, sizeof(salt));
+  EncryptedKey *key = config.mutable_key();
+  key->set_salt(salt, sizeof(salt));
 
-  int iterations = config.kdf_iterations();
+  int iterations = key->kdf_iterations();
   userKey = cipher->newKey( password, passwdLen,
-      iterations, config.kdf_duration(), 
+      iterations, key->kdf_duration(), 
       salt, sizeof(salt));
-  config.set_kdf_iterations(iterations);
+  key->set_kdf_iterations(iterations);
 
   return userKey;
 }
 
 CipherKey decryptKey(const EncfsConfig &config, const char *password, int passwdLen)
 {
+  const EncryptedKey &key = config.key();
   CipherKey userKey;
-  shared_ptr<Cipher> cipher = getCipher(config.cipher(), config.key_size());
+  shared_ptr<Cipher> cipher = getCipher(config.cipher(), 8 * key.size());
 
-  if(!config.salt().empty())
+  if(!key.salt().empty())
   {
-    int iterations = config.kdf_iterations();
+    int iterations = key.kdf_iterations();
     userKey = cipher->newKey( password, passwdLen,
-        iterations, config.kdf_duration(), 
-        (const unsigned char *)config.salt().data(), config.salt().size());
+        iterations, key.kdf_duration(), 
+        (const unsigned char *)key.salt().data(), key.salt().size());
 
-    if (iterations != config.kdf_iterations()) {
+    if (iterations != key.kdf_iterations()) {
       rError("Error in KDF, iteration mismatch");
       return userKey;
     }
@@ -1597,7 +1604,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
     rDebug("cipher key size = %i", cipher->encodedKeySize());
     // decode volume key..
     CipherKey volumeKey = cipher->readKey(
-        (const unsigned char *)config.key().data(), userKey, opts->checkKey);
+        (const unsigned char *)config.key().ciphertext().data(), userKey, opts->checkKey);
     userKey.reset();
 
     if(!volumeKey)

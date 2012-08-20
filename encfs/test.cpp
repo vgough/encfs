@@ -238,9 +238,10 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 	// store in config struct..
 	EncfsConfig cfg;
 	cfg.mutable_cipher()->MergeFrom(cipher->interface());
-	cfg.set_key_size(8 * cipher->keySize());
+  EncryptedKey *encryptedKey = cfg.mutable_key();
+	encryptedKey->set_size(8 * cipher->keySize());
+	encryptedKey->set_ciphertext( keyBuf, encodedKeySize );
 	cfg.set_block_size(FSBlockSize);
-	cfg.set_key( keyBuf, encodedKeySize );
 
 	// save config
         string data;
@@ -252,12 +253,12 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 
 	// check..
 	rAssert( implements(cfg.cipher(),cfg2.cipher()) );
-	rAssert( cfg.key_size() == cfg2.key_size() );
+	rAssert( cfg.key().size() == cfg2.key().size() );
 	rAssert( cfg.block_size() == cfg2.block_size() );
 
 	// try decoding key..
 
-	CipherKey key2 = cipher->readKey( (unsigned char *)cfg2.key().data(), encodingKey );
+	CipherKey key2 = cipher->readKey( (unsigned char *)cfg2.key().ciphertext().data(), encodingKey );
 	if(!key2)
 	{
 	    if(verbose)

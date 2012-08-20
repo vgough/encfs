@@ -726,7 +726,7 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
     // decode volume key using user key -- at this point we detect an incorrect
     // password if the key checksum does not match (causing readKey to fail).
     CipherKey volumeKey = cipher->readKey( 
-        (const unsigned char *)config.key().data(), userKey );
+        (const unsigned char *)config.key().ciphertext().data(), userKey );
 
     if(!volumeKey)
     {
@@ -758,7 +758,8 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
 	cipher->writeKey( volumeKey, keyBuf, userKey );
 	userKey.reset();
 
-        config.set_key( keyBuf, encodedKeySize );
+        EncryptedKey *key = config.mutable_key();
+        key->set_ciphertext( keyBuf, encodedKeySize );
         delete[] keyBuf;
 
         if(saveConfig( rootDir, config ))
