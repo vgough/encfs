@@ -245,7 +245,7 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
 	// 'm' : mount-on-demand
 	// 'S' : password from stdin
 	// 'o' : arguments meant for fuse
-	int res = getopt_long( argc, argv, "HsSfvdmi:o:",
+	int res = getopt_long( argc, argv, "HsSfvVdmi:o:",
 		long_options, &option_index);
 
 	if(res == -1)

@@ -1585,7 +1585,6 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 
     if(opts->passwordProgram.empty())
     {
-      rDebug( "useStdin: %i", opts->useStdin );
       if (opts->annotate)
         cerr << "$PROMPT$ passwd" << endl;
       userKey = getUserKey( config, opts->useStdin );
