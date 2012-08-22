@@ -20,8 +20,8 @@
 
 #include "config.h"
 
+#include <algorithm>
 #include <iostream>
-
 #include <cstdlib>
 #include <sstream>
 
@@ -49,14 +49,17 @@
 
 #include <google/protobuf/text_format.h>
 
+#if HAVE_TR1_UNORDERED_SET
 #include <tr1/unordered_set>
-
+using std::tr1::unordered_set;
+#else
+#include <unordered_set>
+using std::unordered_set;
+#endif
 
 using namespace std;
 using namespace rlog;
 
-using boost::shared_ptr;
-    
 const int FSBlockSize = 256;
 
 static
@@ -171,7 +174,7 @@ bool testNameCoding( DirNode &dirNode, bool verbose,
             cerr << "Checking for name collections, this will take a while..\n";
         // check for collision rate
         char buf[64];
-        tr1::unordered_set<string> encryptedNames;
+        unordered_set<string> encryptedNames;
         for (long i=0; i < 10000000; i++) 
         {
             snprintf(buf, sizeof(buf), "%li", i);

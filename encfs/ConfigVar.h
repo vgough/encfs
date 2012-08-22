@@ -19,9 +19,7 @@
 #define _ConfigVar_incl_
 
 #include <string>
-#include <boost/shared_ptr.hpp>
-
-using boost::shared_ptr;
+#include "shared_ptr.h"
 
 class ConfigVar
 {

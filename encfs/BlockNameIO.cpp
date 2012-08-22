@@ -31,7 +31,6 @@
 #include "i18n.h"
 
 using namespace rlog;
-using namespace boost;
 
 static RLogChannel * Info = DEF_CHANNEL( "info/nameio", Log_Info );
 

@@ -22,7 +22,6 @@
 #include "CipherKey.h"
 
 class Cipher;
-using boost::shared_ptr;
 
 class StreamNameIO : public NameIO
 {

@@ -28,8 +28,6 @@ struct evp_cipher_st;
 typedef struct evp_cipher_st EVP_CIPHER;
 #endif
 
-using boost::shared_ptr;
-
 /*
     Implements Cipher interface for OpenSSL's ciphers.
 

@@ -27,8 +27,6 @@
 #include <fcntl.h>
 #include <cerrno>
 
-using boost::shared_ptr;
-
 /*
     - Version 2:0 adds support for a per-file initialization vector with a
       fixed 8 byte header.  The headers are enabled globally within a

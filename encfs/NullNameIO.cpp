@@ -22,8 +22,6 @@
 
 #include <cstring>
 
-using boost::shared_ptr;
-
 static shared_ptr<NameIO> NewNNIO( const Interface &, 
 	const shared_ptr<Cipher> &, const CipherKey & )
 {

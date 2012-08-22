@@ -45,8 +45,6 @@
 
 #include "i18n.h"
 
-#include <boost/scoped_array.hpp>
-
 #ifdef HAVE_SSL
 #define NO_DES
 #include <openssl/ssl.h>
@@ -55,7 +53,6 @@
 using namespace rlog;
 using namespace std;
 using namespace gnu;
-using namespace boost;
 
 
 static int showInfo( int argc, char **argv );
@@ -472,8 +469,8 @@ static int copyLink(const struct stat &stBuf,
         const shared_ptr<EncFS_Root> &rootInfo,
         const string &cpath, const string &destName )
 {
-    scoped_array<char> buf(new char[stBuf.st_size+1]);
-    int res = ::readlink( cpath.c_str(), buf.get(), stBuf.st_size );
+    vector<char> buf(stBuf.st_size+1, 0);
+    int res = ::readlink( cpath.c_str(), &buf[0], stBuf.st_size );
     if(res == -1)
     {
         cerr << "unable to readlink of " << cpath << "\n";
@@ -481,7 +478,7 @@ static int copyLink(const struct stat &stBuf,
     }
 
     buf[res] = '\0';
-    string decodedLink = rootInfo->root->plainPath(buf.get());
+    string decodedLink = rootInfo->root->plainPath(&buf[0]);
 
     res = ::symlink( decodedLink.c_str(), destName.c_str() );
     if(res == -1)

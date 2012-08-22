@@ -21,11 +21,11 @@
 #ifndef _XmlReader_incl_
 #define _XmlReader_incl_
 
-#include <boost/shared_ptr.hpp>
 #include <string>
+#include "shared_ptr.h"
 
 class XmlValue;
-typedef boost::shared_ptr<XmlValue> XmlValuePtr;
+typedef shared_ptr<XmlValue> XmlValuePtr;
 
 class XmlValue
 {
@@ -72,7 +72,7 @@ public:
 
 private:
   struct XmlReaderData;
-  boost::shared_ptr<XmlReaderData> pd;
+  shared_ptr<XmlReaderData> pd;
 };
 
 #endif

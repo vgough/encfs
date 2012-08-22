@@ -29,7 +29,6 @@
 class Cipher;
 class FileIO;
 class DirNode;
-using boost::shared_ptr;
 
 class FileNode
 {

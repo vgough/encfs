@@ -61,9 +61,6 @@
 
 #include "i18n.h"
 
-#include <boost/version.hpp>
-#include <boost/filesystem/fstream.hpp>
-
 #include <google/protobuf/text_format.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 
@@ -74,7 +71,6 @@
 using namespace rlog;
 using namespace std;
 using namespace gnu;
-namespace fs = boost::filesystem;
 
 static const int DefaultBlockSize = 1024;
 // The maximum length of text passwords.  If longer are needed,
@@ -90,17 +86,8 @@ static const char ENCFS_ENV_ROOTDIR[] = "encfs_root";
 static const char ENCFS_ENV_STDOUT[] = "encfs_stdout";
 static const char ENCFS_ENV_STDERR[] = "encfs_stderr";
 
-
-//static int V5SubVersion = 20040518;
-//static int V5SubVersion = 20040621; // add external IV chaining
-static int V5SubVersion = 20040813; // fix MACFileIO block size issues
-
-// 20080813 was really made on 20080413 -- typo on date..
-//const int V6SubVersion = 20080813; // switch to v6/XML, add allowHoles option
-//const int V6SubVersion = 20080816; // add salt and iteration count
-const int V6SubVersion = 20100713; // add version field for boost 1.42+
-
-const int ProtoSubVersion = 20120302;
+const int V5Latest = 20040813; // fix MACFileIO block size issues
+const int ProtoSubVersion = 20120819;
 
 const char ConfigFileName[] = ".encfs.txt";
 
@@ -116,7 +103,7 @@ struct ConfigInfo
   {Config_V6, ".encfs6.xml", "ENCFS6_CONFIG", readV6Config },
   // backward compatible support for older versions
   {Config_V5, ".encfs5", "ENCFS5_CONFIG", readV5Config },
-  {Config_V3, ".encfs4", NULL, readV4Config },
+  {Config_V4, ".encfs4", NULL, readV4Config },
   // prehistoric - no longer support
   {Config_V3, ".encfs3", NULL, NULL },
   {Config_Prehistoric, ".encfs2", NULL, NULL },
@@ -310,7 +297,7 @@ bool readV6Config( const char *configFile,
   {
     rInfo("found 20080813");
     cfg.set_revision(20080813);
-  } else if (version < V5SubVersion)
+  } else if (version < V5Latest)
   {
     rError("Invalid version %i - please fix config file", version);
   } else
@@ -393,16 +380,16 @@ bool readV5Config( const char *configFile,
     try
     {
       config.set_revision(cfgRdr["subVersion"].readInt(0));
-      if(config.revision() > V5SubVersion)
+      if(config.revision() > V5Latest)
       {
         /* config file specifies a version outside our supported
            range..   */
         rWarning(_("Config subversion %i found, but this version of"
               " encfs only supports up to version %i."),
-            config.revision(), V5SubVersion);
+            config.revision(), V5Latest);
         return false;
       }
-      if( config.revision() < 20040813 )
+      if( config.revision() < V5Latest )
       {
         rError(_("This version of EncFS doesn't support "
               "filesystems created before 2004-08-13"));
@@ -1053,7 +1040,7 @@ RootPtr createConfig( EncFS_Context *ctx,
   config.set_block_size( blockSize );
   config.mutable_naming()->MergeFrom( nameIOIface );
   config.set_creator( "EncFS " VERSION );
-  config.set_revision( V6SubVersion );
+  config.set_revision( ProtoSubVersion );
   config.set_block_mac_bytes( blockMACBytes );
   config.set_block_mac_rand_bytes( blockMACRandBytes );
   config.set_unique_iv( uniqueIV );
@@ -1142,7 +1129,7 @@ RootPtr createConfig( EncFS_Context *ctx,
   fsConfig->cipher = cipher;
   fsConfig->key = volumeKey;
   fsConfig->nameCoding = nameCoder;
-  fsConfig->config = boost::shared_ptr<EncfsConfig>(new EncfsConfig(config));
+  fsConfig->config = shared_ptr<EncfsConfig>(new EncfsConfig(config));
   fsConfig->forceDecode = forceDecode;
   fsConfig->reverseEncryption = reverseEncryption;
   fsConfig->idleTracking = enableIdleTracking;
@@ -1227,7 +1214,7 @@ void showFSInfo( const EncfsConfig &config )
   }
   if(config.block_mac_bytes() || config.block_mac_rand_bytes())
   {
-    if(config.revision() < 20040813)
+    if(config.revision() < V5Latest)
     {
       cout << autosprintf(
           // xgroup(diag)
@@ -1636,7 +1623,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
     fsConfig->cipher = cipher;
     fsConfig->key = volumeKey;
     fsConfig->nameCoding = nameCoder;
-    fsConfig->config = boost::shared_ptr<EncfsConfig>(new EncfsConfig(config));
+    fsConfig->config = shared_ptr<EncfsConfig>(new EncfsConfig(config));
     fsConfig->forceDecode = opts->forceDecode;
     fsConfig->reverseEncryption = opts->reverseEncryption;
     fsConfig->opts = opts;

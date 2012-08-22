@@ -41,14 +41,21 @@
 #include <string>
 #include <map>
 
-#include <boost/tuple/tuple.hpp>
-#include <boost/scoped_array.hpp>
+#if HAVE_TR1_TUPLE
+#include <tr1/tuple>
+using namespace std;
+using namespace std::tr1;
+#else
+#include <tuple>
+using namespace std;
+#endif
 
 #include "DirNode.h"
 #include "MemoryPool.h"
 #include "FileUtils.h"
 #include "Mutex.h"
 #include "Context.h"
+#include "shared_ptr.h"
 
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
@@ -59,10 +66,8 @@
 
 #define ESUCCESS 0
 
-using namespace std;
 using namespace rlog;
 using rel::Lock;
-using namespace boost;
 
 #define GET_FN(ctx, finfo) ctx->getNode((void*)(uintptr_t)finfo->fh)
 
@@ -165,16 +170,16 @@ int _do_getattr(FileNode *fnode, struct stat *stbuf)
 	if(FSRoot)
 	{
 	    // determine plaintext link size..  Easiest to read and decrypt..
-	    scoped_array<char> buf(new char[stbuf->st_size+1]);
+            vector<char> buf(stbuf->st_size+1, 0);
 
-	    res = ::readlink( fnode->cipherName(), buf.get(), stbuf->st_size );
+	    res = ::readlink( fnode->cipherName(), &buf[0], stbuf->st_size );
             if(res >= 0)
             {
                 // other functions expect c-strings to be null-terminated, which
                 // readlink doesn't provide
                 buf[res] = '\0';
 
-                stbuf->st_size = FSRoot->plainPath( buf.get() ).length();
+                stbuf->st_size = FSRoot->plainPath( &buf[0] ).length();
 
                 res = ESUCCESS;
             } else
@@ -363,8 +368,8 @@ int encfs_rmdir(const char *path)
 int _do_readlink(EncFS_Context *ctx, const string &cyName,
 	tuple<char *, size_t> data )
 {
-    char *buf = data.get<0>();
-    size_t size = data.get<1>();
+    char *buf = get<0>(data);
+    size_t size = get<1>(data);
 
     int res = ESUCCESS;
     shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
@@ -500,7 +505,7 @@ int encfs_chmod(const char *path, mode_t mode)
 int _do_chown(EncFS_Context *, const string &cyName, 
 	tuple<uid_t, gid_t> data)
 {
-    int res = lchown( cyName.c_str(), data.get<0>(), data.get<1>() );
+    int res = lchown( cyName.c_str(), get<0>(data), get<1>(data) );
     return (res == -1) ? -errno : ESUCCESS;
 }
 
@@ -633,7 +638,7 @@ int encfs_release(const char *path, struct fuse_file_info *finfo)
 
 int _do_read(FileNode *fnode, tuple<unsigned char *, size_t, off_t> data)
 {
-    return fnode->read( data.get<2>(), data.get<0>(), data.get<1>());
+    return fnode->read( get<2>(data), get<0>(data), get<1>(data));
 }
 
 int encfs_read(const char *path, char *buf, size_t size, off_t offset,
@@ -656,8 +661,8 @@ int encfs_fsync(const char *path, int dataSync,
 
 int _do_write(FileNode *fnode, tuple<const char *, size_t, off_t> data)
 {
-    size_t size = data.get<1>();
-    if(fnode->write( data.get<2>(), (unsigned char *)data.get<0>(), size ))
+    size_t size = get<1>(data);
+    if(fnode->write( get<2>(data), (unsigned char *)get<0>(data), size ))
 	return size;
     else
 	return -EIO;
@@ -707,8 +712,8 @@ int _do_setxattr(EncFS_Context *, const string &cyName,
 	tuple<const char *, const char *, size_t, uint32_t> data)
 {
     int options = 0;
-    return ::setxattr( cyName.c_str(), data.get<0>(), data.get<1>(), 
-	    data.get<2>(), data.get<3>(), options );
+    return ::setxattr( cyName.c_str(), get<0>(data), get<1>(data), 
+	    get<2>(data), get<3>(data), options );
 }
 int encfs_setxattr( const char *path, const char *name,
 	const char *value, size_t size, int flags, uint32_t position )
@@ -721,8 +726,8 @@ int encfs_setxattr( const char *path, const char *name,
 int _do_setxattr(EncFS_Context *, const string &cyName, 
 	tuple<const char *, const char *, size_t, int> data)
 {
-    return ::setxattr( cyName.c_str(), data.get<0>(), data.get<1>(), 
-	    data.get<2>(), data.get<3>() );
+    return ::setxattr( cyName.c_str(), get<0>(data), get<1>(data), 
+	    get<2>(data), get<3>(data) );
 }
 int encfs_setxattr( const char *path, const char *name,
 	const char *value, size_t size, int flags )
@@ -738,8 +743,8 @@ int _do_getxattr(EncFS_Context *, const string &cyName,
 	tuple<const char *, void *, size_t, uint32_t> data)
 {
     int options = 0;
-    return ::getxattr( cyName.c_str(), data.get<0>(), 
-	    data.get<1>(), data.get<2>(), data.get<3>(), options );
+    return ::getxattr( cyName.c_str(), get<0>(data), 
+	    get<1>(data), get<2>(data), get<3>(data), options );
 }
 int encfs_getxattr( const char *path, const char *name,
 	char *value, size_t size, uint32_t position )
@@ -751,8 +756,8 @@ int encfs_getxattr( const char *path, const char *name,
 int _do_getxattr(EncFS_Context *, const string &cyName,
 	tuple<const char *, void *, size_t> data)
 {
-    return ::getxattr( cyName.c_str(), data.get<0>(), 
-	    data.get<1>(), data.get<2>());
+    return ::getxattr( cyName.c_str(), get<0>(data), 
+	    get<1>(data), get<2>(data));
 }
 int encfs_getxattr( const char *path, const char *name,
 	char *value, size_t size )
@@ -768,10 +773,10 @@ int _do_listxattr(EncFS_Context *, const string &cyName,
 {
 #ifdef XATTR_ADD_OPT
     int options = 0;
-    int res = ::listxattr( cyName.c_str(), data.get<0>(), data.get<1>(),
+    int res = ::listxattr( cyName.c_str(), get<0>(data), get<1>(data),
             options );
 #else
-    int res = ::listxattr( cyName.c_str(), data.get<0>(), data.get<1>() );
+    int res = ::listxattr( cyName.c_str(), get<0>(data), get<1>(data) );
 #endif
     return (res == -1) ? -errno : res;
 }

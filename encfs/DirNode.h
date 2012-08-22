@@ -31,8 +31,7 @@
 #include "NameIO.h"
 #include "CipherKey.h"
 #include "FSConfig.h"
-
-using boost::shared_ptr;
+#include "shared_ptr.h"
 
 class Cipher;
 class RenameOp;
@@ -71,19 +70,6 @@ private:
     shared_ptr<NameIO> naming;
 };
 inline bool DirTraverse::valid() const { return dir != 0; }
-
-#ifdef USE_HASHMAP
-namespace __gnu_cxx
-{
-    template<> struct hash<std::string>
-    {
-	size_t operator() (const std::string &__s) const
-	{
-	    return __stl_hash_string( __s.c_str() );
-	}
-    };
-}
-#endif
 
 class DirNode
 {

@@ -27,8 +27,9 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <cstring>
 
+#include <algorithm>
+#include <cstring>
 #include <map>
 
 #include <tinyxml.h>
@@ -151,7 +152,7 @@ public:
 
 struct XmlReader::XmlReaderData
 {
-  boost::shared_ptr<TiXmlDocument> doc;
+  shared_ptr<TiXmlDocument> doc;
 };
 
 XmlReader::XmlReader()

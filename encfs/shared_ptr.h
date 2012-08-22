@@ -1,8 +1,9 @@
+
 /*****************************************************************************
  * Author:   Valient Gough <vgough@pobox.com>
  *
  *****************************************************************************
- * Copyright (c) 2007, Valient Gough
+ * Copyright (c) 2012 Valient Gough
  *
  * This program is free software: you can redistribute it and/or modify it 
  * under the terms of the GNU General Public License as published by
@@ -18,19 +19,20 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _CipherKey_incl_
-#define _CipherKey_incl_
+#ifndef _SHARED_PTR_incl_
+#define _SHARED_PTR_incl_
 
-#include "shared_ptr.h"
+#include "config.h"
 
-class AbstractCipherKey
-{
-public:
-    AbstractCipherKey();
-    virtual ~AbstractCipherKey();
-};
-
-typedef shared_ptr<AbstractCipherKey> CipherKey;
+#ifdef HAVE_TR1_MEMORY
+  #include <tr1/memory>
+  using std::tr1::shared_ptr;
+  using std::tr1::dynamic_pointer_cast;
+#else
+  #include <memory>
+  using std::shared_ptr;
+  using std::dynamic_pointer_cast;
+#endif
 
 #endif
 

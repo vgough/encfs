@@ -33,9 +33,6 @@
 
 #include <getopt.h>
 
-#include <boost/scoped_ptr.hpp>
-#include <boost/shared_ptr.hpp>
-
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
 #include <rlog/RLogChannel.h>
@@ -70,8 +67,6 @@ inline static int MAX(int a, int b)
 using namespace std;
 using namespace rlog;
 using namespace gnu;
-using boost::shared_ptr;
-using boost::scoped_ptr;
 
 // Maximum number of arguments that we're going to pass on to fuse.  Doesn't
 // affect how many arguments we can handle, just how many we can pass on..
@@ -501,8 +496,8 @@ int main(int argc, char *argv[])
 #endif
 
     // log to stderr by default..
-    scoped_ptr<StdioNode> slog( new StdioNode( STDERR_FILENO ) );
-    scoped_ptr<SyslogNode> logNode;
+    shared_ptr<StdioNode> slog( new StdioNode( STDERR_FILENO ) );
+    shared_ptr<SyslogNode> logNode;
 
     // show error and warning output
     slog->subscribeTo( GetGlobalChannel("error") );

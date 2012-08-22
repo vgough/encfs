@@ -50,7 +50,6 @@
 using namespace std;
 using namespace rel;
 using namespace rlog;
-using boost::dynamic_pointer_cast;
 
 /*
    TODO: locking at the FileNode level is inefficient, since this precludes

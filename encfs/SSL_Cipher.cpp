@@ -46,9 +46,6 @@ using namespace std;
 using namespace rel;
 using namespace rlog;
 
-using boost::shared_ptr;
-using boost::dynamic_pointer_cast;
-
 const int MAX_KEYLENGTH = 32; // in bytes (256 bit)
 const int MAX_IVLENGTH = 16;
 const int KEY_CHECKSUM_BYTES = 4;

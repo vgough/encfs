@@ -19,16 +19,14 @@
 
 #include "Range.h"
 #include "Interface.h"
+#include "shared_ptr.h"
 
-#include <boost/shared_ptr.hpp>
 #include <rlog/rlog.h>
 
 #include <cstring>
 
 using namespace std;
 using namespace rlog;
-using boost::shared_ptr;
-using boost::dynamic_pointer_cast;
 
 
 static Interface NullInterface = makeInterface( "nullCipher", 1, 0, 0 );

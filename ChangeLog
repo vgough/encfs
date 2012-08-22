@@ -1,3 +1,16 @@
+Tue Aug 21 2012 Valient Gough <vgough@pobox.com>
+	* replace boost with C++11
+
+Sun Aug 19 2012 Valient Gough <vgough@pobox.com>
+	* move encrypted key into separate config block
+
+Sat Aug 18 2012 Valient Gough <vgough@pobox.com>
+	* add V to getopt for version
+
+Sun May 13 2012 Valient Gough <vgough@pobox.com>
+	* allow "config" for top-level v6 xml config
+	* drop logging of useStdin state
+
 Wed Apr 25 2012 Valient Gough <vgough@pobox.com>
 	* fix encfsctl cat when iv chaining is enabled. Fixes issue #132
 

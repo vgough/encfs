@@ -19,16 +19,17 @@
 #define _Context_incl_
 
 #include "encfs.h"
-#include <boost/shared_ptr.hpp>
+#include "shared_ptr.h"
 #include <set>
 
-#ifdef USE_HASHMAP
-#include <ext/hash_map>
+#if HAVE_TR1_UNORDERED_MAP
+#include <tr1/unordered_map>
+using std::tr1::unordered_map;
 #else
-#include <map>
+#include <unordered_map>
+using std::unordered_map;
 #endif
 
-using boost::shared_ptr;
 struct EncFS_Args;
 struct EncFS_Opts;
 class FileNode;
@@ -87,15 +88,9 @@ private:
     };
 
     // set of open files, indexed by path
-#ifdef USE_HASHMAP
-    typedef __gnu_cxx::hash_map<std::string, 
-	    std::set<Placeholder*> > FileMap;
-#else
-    typedef std::map< std::string, 
-	    std::set<Placeholder*> > FileMap;
-#endif
-
+    typedef unordered_map<std::string, std::set<Placeholder*> > FileMap;
     mutable pthread_mutex_t contextMutex;
+
     FileMap openFiles;
 
     int usageCount;

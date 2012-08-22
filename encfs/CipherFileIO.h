@@ -34,7 +34,7 @@ class Cipher;
 class CipherFileIO : public BlockFileIO
 {
 public:
-    CipherFileIO( const boost::shared_ptr<FileIO> &base, 
+    CipherFileIO( const shared_ptr<FileIO> &base, 
                   const FSConfigPtr &cfg);
     virtual ~CipherFileIO();
 
@@ -68,7 +68,7 @@ private:
     bool streamWrite( unsigned char *buf, int size, 
 	             uint64_t iv64 ) const;
 
-    boost::shared_ptr<FileIO> base;
+    shared_ptr<FileIO> base;
 
     FSConfigPtr fsConfig;
 
@@ -80,7 +80,7 @@ private:
     uint64_t fileIV;
     int lastFlags;
 
-    boost::shared_ptr<Cipher> cipher;
+    shared_ptr<Cipher> cipher;
     CipherKey key;
 };
 

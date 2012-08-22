@@ -1,10 +1,9 @@
 
 include $(top_srcdir)/Makefile.common
 
-ALL_INCLUDES = @RLOG_CFLAGS@ @OPENSSL_CFLAGS@ @BOOST_CPPFLAGS@
+ALL_INCLUDES = @RLOG_CFLAGS@ @OPENSSL_CFLAGS@
 ALL_INCLUDES += @PROTOBUF_CFLAGS@
-ALL_LDFLAGS = @RLOG_LIBS@ @OPENSSL_LIBS@ @BOOST_LDFLAGS@
-ALL_LDFLAGS += @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
+ALL_LDFLAGS = @RLOG_LIBS@ @OPENSSL_LIBS@
 ALL_LDFLAGS += @PROTOBUF_LIBS@
 
 INCLUDES = $(all_includes) -I../intl
@@ -50,9 +49,7 @@ endif
 #       :  +1 :           => internal changes, nothing breaks
 #
 libencfs_la_LDFLAGS = -version-info 7:0:0
-libencfs_la_LIBADD = @RLOG_LIBS@ \
-	@OPENSSL_LIBS@ \
-	@BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
+libencfs_la_LIBADD = @RLOG_LIBS@ @OPENSSL_LIBS@
 
 EXTRASRC = ../intl/autosprintf.cpp
 if BUILD_OPENSSL
@@ -105,7 +102,6 @@ encfsctl_SOURCES = \
 
 noinst_HEADERS = \
     base64.h \
-    boost-versioning.h \
     BlockFileIO.h \
     BlockNameIO.h \
     CipherFileIO.h \

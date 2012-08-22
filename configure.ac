@@ -46,9 +46,7 @@ AC_PROG_LIBTOOL
 
 AX_PTHREAD
 
-AX_BOOST_BASE([1.34])
-AX_BOOST_SYSTEM
-AX_BOOST_FILESYSTEM
+AC_CHECK_HEADERS([tr1/memory tr1/unordered_map tr1/unordered_set tr1/tuple])
 
 dnl Need to include any user specified flags in the tests below, as they might
 dnl specify required include directories..

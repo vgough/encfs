@@ -34,7 +34,6 @@
 #include "SSL_Cipher.h"
 
 using namespace std;
-using boost::shared_ptr;
 
 #define REF_MODULE(TYPE)  \
     if( !TYPE::Enabled() ) \

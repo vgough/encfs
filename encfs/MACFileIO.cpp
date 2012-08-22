@@ -31,8 +31,6 @@
 
 using namespace rlog;
 using namespace std;
-using boost::shared_ptr;
-using boost::dynamic_pointer_cast;
 
 static RLogChannel *Info = DEF_CHANNEL("info/MACFileIO", Log_Info);
 //
