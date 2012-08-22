@@ -1036,7 +1036,6 @@ RootPtr createConfig( EncFS_Context *ctx,
   EncfsConfig config;
 
   config.mutable_cipher()->MergeFrom( cipher->interface() );
-  //config.keySize = keySize;
   config.set_block_size( blockSize );
   config.mutable_naming()->MergeFrom( nameIOIface );
   config.set_creator( "EncFS " VERSION );
@@ -1052,6 +1051,7 @@ RootPtr createConfig( EncFS_Context *ctx,
   key->clear_salt();
   key->clear_kdf_iterations(); // filled in by keying function
   key->set_kdf_duration( desiredKDFDuration );
+  key->set_size(keySize / 8);
 
   cout << "\n";
   // xgroup(setup)
@@ -1588,7 +1588,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
     if(!userKey)
       return rootInfo;
 
-    rDebug("cipher key size = %i", cipher->encodedKeySize());
+    rDebug("cipher encoded key size = %i", cipher->encodedKeySize());
     // decode volume key..
     CipherKey volumeKey = cipher->readKey(
         (const unsigned char *)config.key().ciphertext().data(), userKey, opts->checkKey);
