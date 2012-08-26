@@ -27,6 +27,8 @@
 class XmlValue;
 typedef shared_ptr<XmlValue> XmlValuePtr;
 
+class Interface;
+
 class XmlValue
 {
   std::string value;
@@ -43,22 +45,24 @@ public:
 
   XmlValuePtr operator[] (const char *path) const;
 
-  bool readB64Data(unsigned char *data, int length) const;
-
   const std::string &text() const
   {
     return value;
   }
 
+  bool read(const char *path, std::string *out) const;
+  bool readB64(const char *path, unsigned char *out, int length) const;
+
+  bool read(const char *path, int *out) const;
+  bool read(const char *path, long *out) const;
+  bool read(const char *path, double *out) const;
+  bool read(const char *path, bool *out) const;
+
+  bool read(const char *path, Interface *out) const;
+
 protected:
   virtual XmlValuePtr find(const char *name) const;
 };
-
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, std::string &outStr);
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, int &out);
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, long &out);
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, double &out);
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, bool &out);
 
 class XmlReader
 {

@@ -19,9 +19,6 @@
  */
 
 #include "XmlReader.h"
-#include "base64.h"
-
-#include <rlog/rlog.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -38,6 +35,10 @@
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
 
+#include <rlog/rlog.h>
+#include "base64.h"
+#include "Interface.h"
+
 using namespace std;
 using namespace rlog;
 
@@ -47,48 +48,72 @@ XmlValue::~XmlValue()
 
 XmlValuePtr XmlValue::operator[] (const char *path) const
 {
-  return this->find(path);
+  return find(path);
 }
 
-XmlValuePtr XmlValue::find(const char *name) const
+XmlValuePtr XmlValue::find(const char *path) const
 {
-  rError("in XmlValue::operator[%s]", name);
-  return XmlValuePtr(new XmlValue());
+  rError("in XmlValue::find(%s)", path);
+  return XmlValuePtr();
 }
 
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, std::string &out)
+bool XmlValue::read(const char *path, std::string *out) const
 {
-  out = ptr->text();
-  return ptr;
+  XmlValuePtr value = find(path);
+  if (!value)
+    return false;
+
+  *out = value->text();
+  return true;
 }
 
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, int &out)
+bool XmlValue::read(const char *path, int *out) const
 {
-  out = atoi(ptr->text().c_str());
-  return ptr;
+  XmlValuePtr value = find(path);
+  if (!value)
+    return false;
+
+  *out = atoi(value->text().c_str());
+  return true;
 }
 
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, long &out)
+bool XmlValue::read(const char *path, long *out) const
 {
-  out = atol(ptr->text().c_str());
-  return ptr;
+  XmlValuePtr value = find(path);
+  if (!value)
+    return false;
+
+  *out = atol(value->text().c_str());
+  return true;
 }
 
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, double &out)
+bool XmlValue::read(const char *path, double *out) const
 {
-  out = atof(ptr->text().c_str());
-  return ptr;
+  XmlValuePtr value = find(path);
+  if (!value)
+    return false;
+
+  *out = atof(value->text().c_str());
+  return true;
 }
 
-const XmlValuePtr & operator >> (const XmlValuePtr &ptr, bool &out)
+bool XmlValue::read(const char *path, bool *out) const
 {
-  out = atoi(ptr->text().c_str());
-  return ptr;
+  XmlValuePtr value = find(path);
+  if (!value)
+    return false;
+
+  *out = atoi(value->text().c_str());
+  return true;
 }
 
-bool XmlValue::readB64Data(unsigned char *data, int length) const
+bool XmlValue::readB64(const char *path, unsigned char *data, int length) const
 {
-  std::string s = value;
+  XmlValuePtr value = find(path);
+  if (!value)
+    return false;
+  
+  std::string s = value->text();
   s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
 
   BIO *b64 = BIO_new(BIO_f_base64());
@@ -110,9 +135,31 @@ bool XmlValue::readB64Data(unsigned char *data, int length) const
   return true;
 }
 
-std::string safeValueForNode(TiXmlElement *element)
+bool XmlValue::read(const char *path, Interface *out) const
+{
+  XmlValuePtr node = find(path);
+  if (!node)
+    return false;
+
+  int major, minor;
+  bool ok = node->read("name", out->mutable_name())
+         && node->read("major", &major)
+         && node->read("minor", &minor);
+
+  if (!ok)
+    return false;
+
+  out->set_major(major);
+  out->set_minor(minor);
+  return true;
+}
+
+std::string safeValueForNode(const TiXmlElement *element)
 {
   std::string value;
+  if (element == NULL)
+    return value;
+
   const TiXmlNode *child = element->FirstChild();
   if (child)
   {
@@ -126,9 +173,9 @@ std::string safeValueForNode(TiXmlElement *element)
 
 class XmlNode : virtual public XmlValue
 {
-  TiXmlElement *element;
+  const TiXmlElement *element;
 public:
-  XmlNode(TiXmlElement *element_)
+  XmlNode(const TiXmlElement *element_)
     : XmlValue(safeValueForNode(element_))
     , element(element_)
   {
@@ -142,10 +189,18 @@ public:
   {
     if (name[0] == '@') 
     {
-      return XmlValuePtr(new XmlValue(element->Attribute(name+1)));
+      const char *value = element->Attribute(name+1);
+      if (value)
+        return XmlValuePtr(new XmlValue(value));
+      else 
+        return XmlValuePtr();
     } else
     {
-      return XmlValuePtr(new XmlNode(element->FirstChild(name)->ToElement()));
+      const TiXmlElement *el = element->FirstChildElement(name);
+      if (el)
+        return XmlValuePtr(new XmlNode(el));
+      else
+        return XmlValuePtr();
     }
   }
 };

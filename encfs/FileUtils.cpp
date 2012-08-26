@@ -280,14 +280,17 @@ bool readV6Config( const char *configFile,
     return false;
   }
 
-  int version = 0;
-  (*config)["@version"] >> version;
+  int version;
+  if (!config->read("version", &version) &&
+      !config->read("@version", &version)) {
+    rError("Unable to find version in config file");
+    return false;
+  }
 
   // version numbering was complicated by boost::archive 
   if (version == 20 || version >= 20100713)
   {
     rInfo("found new serialization format");
-    (*config)["version"] >> version;
     cfg.set_revision(version);
   } else if (version == 26800)
   {
@@ -307,21 +310,21 @@ bool readV6Config( const char *configFile,
   }
   rInfo("subVersion = %i", cfg.revision());
 
-  (*config)["creator"] >> (*cfg.mutable_creator());
-  (*config)["cipherAlg"] >> (*cfg.mutable_cipher());
-  (*config)["nameAlg"] >> (*cfg.mutable_naming());
+  config->read("creator", cfg.mutable_creator());
+  config->read("cipherAlg", cfg.mutable_cipher());
+  config->read("nameAlg", cfg.mutable_naming());
 
   //(*config)["keySize"] >> cfg.keySize;
   int blockSize, blockMacBytes, blockMacRandBytes;
   bool uniqueIv, chainedNameIv, externalIv, allowHoles;
 
-  (*config)["blockSize"] >> blockSize;
-  (*config)["uniqueIV"] >> uniqueIv;
-  (*config)["chainedNameIV"] >> chainedNameIv;
-  (*config)["externalIVChaining"] >> externalIv;
-  (*config)["blockMACBytes"] >> blockMacBytes;
-  (*config)["blockMACRandBytes"] >> blockMacRandBytes;
-  (*config)["allowHoles"] >> allowHoles;
+  config->read("blockSize", &blockSize);
+  config->read("uniqueIV", &uniqueIv);
+  config->read("chainedNameIV", &chainedNameIv);
+  config->read("externalIVChaining", &externalIv);
+  config->read("blockMACBytes", &blockMacBytes);
+  config->read("blockMACRandBytes", &blockMacRandBytes);
+  config->read("allowHoles", &allowHoles);
 
   cfg.set_block_size(blockSize);
   cfg.set_unique_iv(uniqueIv);
@@ -333,28 +336,28 @@ bool readV6Config( const char *configFile,
 
   EncryptedKey *encryptedKey = cfg.mutable_key();
   int encodedSize;
-  (*config)["encodedKeySize"] >> encodedSize;
+  config->read("encodedKeySize", &encodedSize);
   unsigned char *key = new unsigned char[encodedSize];
-  (*config)["encodedKeyData"]->readB64Data(key, encodedSize);
+  config->readB64("encodedKeyData", key, encodedSize);
   encryptedKey->set_ciphertext(key, encodedSize);
   delete[] key;
   
   int keySize;
-  (*config)["keySize"] >> keySize;
+  config->read("keySize", &keySize);
   encryptedKey->set_size(keySize / 8); // save as size in bytes
 
   if(cfg.revision() >= 20080816)
   {
     int saltLen;
-    (*config)["saltLen"] >> saltLen;
+    config->read("saltLen", &saltLen);
     unsigned char *salt = new unsigned char[saltLen];
-    (*config)["saltData"]->readB64Data(salt, saltLen);
+    config->readB64("saltData", salt, saltLen);
     encryptedKey->set_salt(salt, saltLen);
     delete[] salt;
 
     int kdfIterations, desiredKDFDuration;
-    (*config)["kdfIterations"] >> kdfIterations;
-    (*config)["desiredKDFDuration"] >> desiredKDFDuration;
+    config->read("kdfIterations", &kdfIterations);
+    config->read("desiredKDFDuration", &desiredKDFDuration);
     encryptedKey->set_kdf_iterations(kdfIterations);
     encryptedKey->set_kdf_duration(desiredKDFDuration);
   } else

@@ -19,7 +19,6 @@
 #define _Interface_incl_
 
 #include <string>
-#include "XmlReader.h"
 #include "config.pb.h"
 
 // check if A implements the interface described by B.
@@ -33,7 +32,6 @@ Interface makeInterface( const char *name, int major, int minor, int age );
 // Reae operation
 class ConfigVar;
 const ConfigVar & operator >> (const ConfigVar &, Interface &);
-const XmlValuePtr & operator >> (const XmlValuePtr &, Interface &);
 
 bool operator != (const Interface &a, const Interface &b);
 

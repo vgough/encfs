@@ -66,17 +66,6 @@ const ConfigVar & operator >> (const ConfigVar &src, Interface &iface)
   return src;
 }
 
-const XmlValuePtr & operator >> (const XmlValuePtr &src, Interface &iface)
-{
-    (*src)["name"] >> *iface.mutable_name();
-    int major, minor;
-    (*src)["major"] >> major;
-    (*src)["minor"] >> minor;
-    iface.set_major(major);
-    iface.set_minor(minor);
-    return src;
-}
-
 bool operator != (const Interface &a, const Interface &b)
 {
   if (a.major() != b.major())
