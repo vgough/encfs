@@ -1,12 +1,3 @@
-=cut
-Copyright (c) 2003-2008, Valient Gough <vgough@pobox.com>
-All rights reserved.
-
-EncFS is free software; you can distribute it and/or modify it under the terms
-of the GNU General Public License (GPL), as published by the Free Software
-Foundation; either version 3 of the License, or (at your option) any later
-version.
-
 =pod
 
 =head1 NAME
@@ -174,9 +165,8 @@ the B<fusermount> help page for information on available commands.
 =item B<--no-default-flags>
 
 B<Encfs> adds the FUSE flags "use_ino" and "default_permissions" by default, as
-of version 1.2.2, because that improves compatibility with some programs..  If
-for some reason you need to disable one or both of these flags, use the option
-B<--no-default-flags>.
+that improves compatibility with some programs..  If you need to disable one or
+both of these flags, use the option B<--no-default-flags>.
 
 The following command lines produce the same result:
 
@@ -196,10 +186,6 @@ for a trailing newline (\n) which will be removed.
 For example, specifying B<--extpass>=I</usr/lib/ssh/ssh-askpass> will cause
 B<EncFS> to use ssh's password prompt program.  
 
-B<Note>: B<EncFS> reads at most 2k of data from the password program, and it
-removes any trailing newline.  Versions before 1.4.x accepted only 64 bytes of
-text.
-
 =item B<-S>, B<--stdinpass>
 
 Read password from standard input, without prompting.  This may be useful for
@@ -208,6 +194,10 @@ scripting encfs mounts.
 Note that you should make sure the filesystem and mount points exist first.
 Otherwise encfs will prompt for the filesystem creation options, which may
 interfere with your script.
+
+B<Note>: B<EncFS> reads a limited amount of data from the console (roughly 2k
+bytes), and it removes any trailing newline.  If your password is larger than
+this, use --extpass.
 
 =item B<--anykey>
 
@@ -275,10 +265,10 @@ to decode filenames if desired.
 =head1 CAVEATS
 
 B<EncFS> is not a true filesystem.  It does not deal with any of the actual
-storage or maintenance of files.  It simply translates requests (encrypting or
+storage or maintenance of files.  It translates requests (encrypting or
 decrypting as necessary) and passes the requests through to the underlying
-host filesystem.  Therefor any limitations of the host filesystem will likely
-be inherited by B<EncFS> (or possibly be further limited).
+host filesystem.  Therefor any limitations of the host filesystem will be
+inherited by B<EncFS> (or possibly be further limited).
 
 One such limitation is filename length.  If your underlying filesystem limits
 you to N characters in a filename, then B<EncFS> will limit you to approximately
@@ -328,20 +318,20 @@ they mean:
 
 =head1 Key Derivation Function
 
-As of version 1.5, B<EncFS> now uses PBKDF2 as the default key derivation
-function.  The number of iterations in the keying function is selected based on
-wall clock time to generate the key.  In standard mode, a target time of 0.5
-seconds is used, and in paranoia mode a target of 3.0 seconds is used.
+B<EncFS> uses PBKDF2 as the key derivation function.  The number of iterations
+in the keying function is selected based on wall clock time to generate the
+key.  In standard mode, a target time of 0.5 seconds is used, and in paranoia
+mode a target of 3.0 seconds is used.
 
 On a 1.6Ghz AMD 64 system, it rougly 64k iterations of the key derivation
 function can be handled in half a second.  The exact number of iterations to
 use is stored in the configuration file, as it is needed to remount the
 filesystem.
 
-If an B<EncFS> filesystem configuration from 1.4.x is modified with version 1.5
-(such as when using encfsctl to change the password), then the new PBKDF2
-function will be used and the filesystem will no longer be readable by older
-versions.
+If an B<EncFS> filesystem configuration from 1.4.x is modified with a later
+version (such as when using encfsctl to change the password), then the new
+PBKDF2 function will be used and the filesystem will no longer be readable by
+older versions.
 
 =over 4
 
@@ -375,18 +365,16 @@ read and decoded, so a large block size adds overhead to small requests.  With
 write calls it is even worse, as a block must be read and decoded, the change
 applied and the block encoded and written back out.
 
-The default is 512 bytes as of version 1.0.  It was hard coded to 64 bytes in
-version 0.x, which was not as efficient as the current setting for general
-usage.
+The default block size is currently 2k.
 
 =item I<Filename Encoding>
 
-B<New in 1.1>. A choice is given between stream encoding of filename and block
-encoding.  The advantage of stream encoding is that the encoded filenames will
-be as short as possible.  If you have a filename with a single letter, it will
-be very short in the encoded form, where as block encoded filenames are always
-rounded up to the block size of the encryption cipher (8 bytes for Blowfish and
-16 bytes for AES).
+A choice is given between stream encoding of filename and block encoding.  The
+advantage of stream encoding is that the encoded filenames will be as short as
+possible.  If you have a filename with a single letter, it will be very short
+in the encoded form, where as block encoded filenames are always rounded up to
+the block size of the encryption cipher (8 bytes for Blowfish and 16 bytes for
+AES).
 
 The advantage of block encoding mode is that filename lenths all come out as a
 multiple of the cipher block size.  This means that someone looking at your
@@ -395,16 +383,14 @@ on by default, as it takes a similar amount of time to using the stream cipher.
 However stream cipher mode may be useful if you want shorter encrypted
 filenames for some reason.
 
-Prior to version 1.1, only stream encoding was supported.
-
 =item I<Filename Initialization Vector Chaining>
 
-B<New in 1.1>.  In previous versions of B<EncFS>, each filename element in
-a path was encoded separately.  So if "foo" encoded to "XXX", then it would
-always encode that way (given the same encryption key), no matter if the path
-was "a/b/foo", or "aa/foo/cc", etc.  That meant it was possible for someone
-looking at the encrypted data to see if two files in different directories had
-the same name, even though they wouldn't know what that name decoded to.
+In previous versions of B<EncFS>, each filename element in a path was encoded
+separately.  So if "foo" encoded to "XXX", then it would always encode that way
+(given the same encryption key), no matter if the path was "a/b/foo", or
+"aa/foo/cc", etc.  That meant it was possible for someone looking at the
+encrypted data to see if two files in different directories had the same name,
+even though they wouldn't know what that name decoded to.
 
 With initialization vector chaining, each directory gets its own initialization
 vector.  So "a/foo" and "b/foo" will have completely different encoded names
@@ -422,11 +408,11 @@ rename will fail.
 
 =item I<Per-File Initialization Vectors>
 
-B<New in 1.1>.  In previous versions of B<EncFS>, each file was encoded in the
-same way.  Each block in a file has always had its own initialization vector,
-but in a deterministic way so that block N in one file is encoded in the same
-was as block N in another file.  That made it possible for someone to tell if
-two files were identical (or parts of the file were identical) by comparing the
+In previous versions of B<EncFS>, each file was encoded in the same way.  Each
+block in a file has always had its own initialization vector, but in a
+deterministic way so that block N in one file is encoded in the same was as
+block N in another file.  That made it possible for someone to tell if two
+files were identical (or parts of the file were identical) by comparing the
 encoded data.
 
 With per-file initialization vectors, each file gets its own 64bit random
@@ -436,10 +422,9 @@ This option is enabled by default.
 
 =item I<External IV Chaining>
 
-B<New in 1.1.3>.  This option is closely related to Per-File Initialization
-Vectors and Filename Initialization Vector Chaining.  Basically it extends the
-initialization vector chaining from filenames to the per-file initialization
-vector.
+This option is closely related to Per-File Initialization Vectors and Filename
+Initialization Vector Chaining.  Basically it extends the initialization vector
+chaining from filenames to the per-file initialization vector.
 
 When this option is enabled, the per-file initialization vector is encoded
 using the initialization vector derived from the filename initialization vector
@@ -461,11 +446,11 @@ Because of these limits, this option is disabled by default for standard mode
 
 =item I<Block MAC headers>
 
-B<New to 1.1>.  If this is enabled, every block in every file is stored along
-with a cryptographic checksum (Message Authentication Code).  This makes it
-virtually impossible to modify a file without the change being detected by
-B<EncFS>.  B<EncFS> will refuse to read data which does not pass the checksum,
-and will log the error and return an IO error to the application.
+If this is enabled, every block in every file is stored along with a
+cryptographic checksum (Message Authentication Code).  This makes it virtually
+impossible to modify a file without the change being detected by B<EncFS>.
+B<EncFS> will refuse to read data which does not pass the checksum, and will
+log the error and return an IO error to the application.
 
 This adds substantial overhead (default being 8 bytes per filesystem block),
 plus computational overhead, and is not enabled by default except in paranoia
@@ -498,28 +483,6 @@ filesystem contents along with the algorithms B<EncFS> supports to thwart them:
 
 =over 4
 
-=item B<Attack>: modifying a few bytes of an encrypted file (without knowing
-what they will decode to).
-
-B<EncFS> does not use any form of XOR encryption which would allow
-single bytes to be modified without affecting others.  Most modifications
-would affect dozens or more bytes.  Additionally, MAC Block headers can be
-used to identify any changes to files.
-
-=item B<Attack>: copying a random block of one file to a random block of another file.
-
-Each block has its own [deterministic] initialization vector.
-
-=item B<Attack>: copying block N to block N of another file.
-
-When the Per-File Initialization Vector support is enabled (default
-in 1.1.x filesystems), a copied block will not decode properly when copied to
-another file.
-
-=item B<Attack>: copying an entire file to another file.
-
-Can be prevented by enabling External IV Chaining mode.
-
 =item B<Attack>: determine if two filenames are the same by looking at encrypted names.
 
 Filename Initialization Vector chaining prevents this by giving each file a
@@ -529,7 +492,38 @@ Filename Initialization Vector chaining prevents this by giving each file a
 
 Per-File Initialization Vector support prevents this.
 
+=item B<Attack>: copying an entire file to another file.
+
+Can be prevented by enabling External IV Chaining mode.
+
+=item B<Attack>: copying a random block of one file to a random block of another file.
+
+Each block has its own [deterministic] initialization vector.
+
+=item B<Attack>: copying block N to block N of another file.
+
+When the Per-File Initialization Vector support is enabled (the default), a
+copied block will not decode properly when copied to another file.
+
+=item B<Attack>: modifying a few bytes of an encrypted file (without knowing
+what they will decode to).
+
+B<EncFS> does not use any form of XOR encryption which would allow
+single bytes to be modified without affecting others.  Most modifications
+would affect dozens or more bytes.  Additionally, MAC Block headers can be
+used to identify any changes to files.
+
 =back
+
+=head1 LICENSE
+
+EncFS is free software; you can distribute it and/or modify it under the terms
+of the GNU General Public License (GPL), as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+The library portion of EncFS is licensed under the LGPL version 3.  See the
+COPYING files in the source distribution for details.
 
 =head1 DISCLAIMER
 

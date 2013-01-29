@@ -35,12 +35,13 @@ Usage:
 
 Technology:
 
- - Encfs uses algorithms from third-party libraries (OpenSSL is the default) to
-   encrypt data and filenames.
+ - Encfs uses algorithms from the third-party library OpenSSL to encrypt data
+   and filenames.
 
- - a user supplied password is used to decrypt a volume key, and the volume key
-   is used for encrypting all file names and contents.  This makes it possible
-   to change the password without needing to re-encrypt all files.
+ - a user supplied password is used to decrypt a randomly generated volume key,
+   and the volume key is used for encrypting all file names and contents.  This
+   makes it possible to change the password without needing to re-encrypt all
+   files.
 
  - EncFS has two encryption modes, which are used in different places:
     - Stream encryption:

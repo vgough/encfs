@@ -1,5 +1,0 @@
-2008-05-22  gettextize  <bug-gnu-gettext@gnu.org>
-
-	* Makefile.in.in: Upgrade to gettext-0.17.
-	* POTFILES.in: New file.
-

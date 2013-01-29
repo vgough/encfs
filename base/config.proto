@@ -1,0 +1,48 @@
+
+message EncfsConfig
+{
+    optional string creator = 1;
+    optional string writer = 11;
+    optional int32 revision = 2 [default=0];
+
+    required Interface cipher = 3;
+    // added for FileIO/Cipher 3.0 (encfs 1.8)
+    // Use only block encryption, no stream encryption.
+    optional bool block_mode_only = 31;
+    required EncryptedKey key = 4;
+    
+    optional Interface naming = 5;
+    optional bool unique_iv = 51 [default=false];
+    optional bool chained_iv = 52 [default=false];
+    optional bool external_iv = 53 [default=false];
+
+    required int32 block_size = 6;
+    optional int32 block_mac_bytes = 61 [default=0];
+    optional int32 block_mac_rand_bytes = 611 [default=0];
+    optional bool allow_holes = 62 [default = false];
+
+}
+
+message EncryptedKey
+{
+    required bytes ciphertext = 1;
+    required int32 size = 2;    // Size of data in bytes
+
+    optional bytes salt = 6;
+
+    optional int32 kdf_iterations = 10;
+    optional int32 kdf_duration = 11 [default=500];
+}
+
+message Interface
+{
+    required string name = 1;
+    required uint32 major = 2; // major version number
+    required uint32 minor = 3; // minor version number
+
+    // Age indicates number of major versions supported. 0 means no backward
+    // compatibility.  See libtool "updating version information" for more
+    // details on how major/minor/age are used for versioning libraries.
+    optional uint32 age = 4; 
+}
+

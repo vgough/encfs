@@ -1,1 +1,11 @@
-# List of source files which contain translatable strings.
+# For updating this file, look at the result of:
+#  $ head -3 po/POTFILES.in > /tmp/POTFILES.in && grep -l 'i18n.h' ../*.{cpp,h}* >> /tmp/POTFILES.in && cp -f /tmp/POTFILES.in po/
+
+../cipher/SSL_Cipher.cpp
+../encfs/main.cpp
+../fs/BlockFileIO.cpp
+../fs/BlockNameIO.cpp
+../fs/FileUtils.cpp
+../fs/MACFileIO.cpp
+../fs/StreamNameIO.cpp
+../util/encfsctl.cpp
