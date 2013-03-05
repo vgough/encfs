@@ -24,6 +24,8 @@
 #include <glog/logging.h>
 #include <cstring>
 
+namespace encfs {
+
 #ifndef MIN
 inline int MIN(int a, int b)
 {
@@ -70,7 +72,7 @@ void ConfigVar::resetOffset()
   pd->offset = 0;
 }
 
-int ConfigVar::read(unsigned char *buffer_, int bytes) const
+int ConfigVar::read(byte *buffer_, int bytes) const
 {
   int toCopy = MIN( bytes, pd->buffer.size() - pd->offset );
 
@@ -82,7 +84,7 @@ int ConfigVar::read(unsigned char *buffer_, int bytes) const
   return toCopy;
 }
 
-int ConfigVar::write(const unsigned char *data, int bytes)
+int ConfigVar::write(const byte *data, int bytes)
 {
   if(pd->buffer.size() == (unsigned int)pd->offset)
   {
@@ -115,7 +117,7 @@ int ConfigVar::at() const
 void ConfigVar::writeString(const char *data, int bytes)
 {
   writeInt( bytes );
-  write( (const unsigned char *)data, bytes );
+  write( (const byte *)data, bytes );
 }
 
 
@@ -129,13 +131,13 @@ void ConfigVar::writeInt(int val)
   // third byte:    0x001fb000     0000,0000 0001,1111 1100,0000 0000,0000
   // fourth byte:   0x0fe00000     0000,1111 1110,0000
   // fifth byte:    0xf0000000     1111,0000
-  unsigned char digit[5];
+  byte digit[5];
 
-  digit[4] =        (unsigned char)((val & 0x0000007f));
-  digit[3] = 0x80 | (unsigned char)((val & 0x00003f80) >> 7);
-  digit[2] = 0x80 | (unsigned char)((val & 0x001fc000) >> 14);
-  digit[1] = 0x80 | (unsigned char)((val & 0x0fe00000) >> 21);
-  digit[0] = 0x80 | (unsigned char)((val & 0xf0000000) >> 28);
+  digit[4] =        (byte)((val & 0x0000007f));
+  digit[3] = 0x80 | (byte)((val & 0x00003f80) >> 7);
+  digit[2] = 0x80 | (byte)((val & 0x001fc000) >> 14);
+  digit[1] = 0x80 | (byte)((val & 0x0fe00000) >> 21);
+  digit[0] = 0x80 | (byte)((val & 0xf0000000) >> 28);
 
   // find the starting point - we only need to output starting at the most
   // significant non-zero digit..
@@ -148,7 +150,7 @@ void ConfigVar::writeInt(int val)
 
 int ConfigVar::readInt() const
 {
-  const unsigned char * buf = (const unsigned char *)buffer();
+  const byte * buf = (const byte *)buffer();
   int bytes = this->size();
   int offset = at();
   int value = 0;
@@ -158,7 +160,7 @@ int ConfigVar::readInt() const
 
   do
   {
-    unsigned char tmp = buf[offset++];
+    byte tmp = buf[offset++];
     highBitSet = tmp & 0x80;
 
     value = (value << 7) | (int)(tmp & 0x7f);
@@ -227,10 +229,10 @@ const ConfigVar & operator >> (const ConfigVar &src, std::string &result)
 
   int readLen;
 
-  unsigned char tmpBuf[32];
+  byte tmpBuf[32];
   if(length > (int)sizeof(tmpBuf))
   {
-    unsigned char *ptr = new unsigned char[length];
+    byte *ptr = new byte[length];
     readLen = src.read( ptr, length );
     result.assign( (char*)ptr, length );
     delete[] ptr;
@@ -251,3 +253,4 @@ const ConfigVar & operator >> (const ConfigVar &src, std::string &result)
   return src;
 }
 
+}  // namespace encfs

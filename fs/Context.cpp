@@ -25,7 +25,7 @@
 #include "fs/FileUtils.h"
 #include "fs/DirNode.h"
 
-using namespace rel;
+namespace encfs {
 
 EncFS_Context::EncFS_Context()
 { 
@@ -173,3 +173,4 @@ void EncFS_Context::eraseNode(const char *path, void *pl)
   delete ph;
 }
 
+}  // namespace encfs

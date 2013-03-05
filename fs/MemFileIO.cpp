@@ -25,6 +25,8 @@
 
 #include <glog/logging.h>
 
+namespace encfs {
+
 static Interface MemFileIO_iface = makeInterface("FileIO/Mem", 1, 0, 0);
 
 MemFileIO* NewMemFileIO(const Interface& iface) {
@@ -104,3 +106,4 @@ bool MemFileIO::isWritable() const {
   return writable;
 }
 
+}  // namespace encfs

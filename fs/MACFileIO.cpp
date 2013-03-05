@@ -19,8 +19,8 @@
  */
 
 #include "fs/MACFileIO.h"
+#include "fs/fsconfig.pb.h"
 
-#include "base/config.pb.h"
 #include "base/Error.h"
 #include "base/i18n.h"
 #include "cipher/MemoryPool.h"
@@ -31,6 +31,8 @@
 #include <cstring>
 
 using namespace std;
+
+namespace encfs {
 
 //
 // Version 1.0 worked on blocks of size (blockSize + headerSize).
@@ -293,3 +295,5 @@ bool MACFileIO::isWritable() const
 {
   return base->isWritable();
 }
+
+}  // namespace encfs

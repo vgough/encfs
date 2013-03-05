@@ -28,6 +28,7 @@
 
 using namespace std;
 
+namespace encfs {
 
 static Interface NullInterface = makeInterface( "nullCipher", 1, 0, 0 );
 static Range NullKeyRange(0);
@@ -81,7 +82,7 @@ Interface NullCipher::interface() const
 }
 
 CipherKey NullCipher::newKey(const char *, int,
-        int &, long, const unsigned char *, int )
+        int &, long, const byte *, int )
 {
   return gNullKey;
 }
@@ -96,25 +97,25 @@ CipherKey NullCipher::newRandomKey()
   return gNullKey;
 }
 
-bool NullCipher::randomize( unsigned char *buf, int len, bool ) const
+bool NullCipher::randomize( byte *buf, int len, bool ) const
 {
   memset( buf, 0, len );
   return true;
 }
 
-uint64_t NullCipher::MAC_64(const unsigned char *, int , 
+uint64_t NullCipher::MAC_64(const byte *, int , 
     const CipherKey &, uint64_t *) const
 {
   return 0;
 }
 
-CipherKey NullCipher::readKey( const unsigned char *, 
+CipherKey NullCipher::readKey( const byte *, 
     const CipherKey &, bool)
 {
   return gNullKey;
 }
 
-void NullCipher::writeKey(const CipherKey &, unsigned char *, 
+void NullCipher::writeKey(const CipherKey &, byte *, 
     const CipherKey &)
 {
 }
@@ -142,7 +143,7 @@ int NullCipher::cipherBlockSize() const
   return 1;
 }
 
-bool NullCipher::streamEncode( unsigned char *src, int len,
+bool NullCipher::streamEncode( byte *src, int len,
     uint64_t iv64, const CipherKey &key) const
 {
   (void)src;
@@ -152,7 +153,7 @@ bool NullCipher::streamEncode( unsigned char *src, int len,
   return true;
 }
 
-bool NullCipher::streamDecode( unsigned char *src, int len,
+bool NullCipher::streamDecode( byte *src, int len,
     uint64_t iv64, const CipherKey &key) const
 {
   (void)src;
@@ -162,13 +163,13 @@ bool NullCipher::streamDecode( unsigned char *src, int len,
   return true;
 }
 
-bool NullCipher::blockEncode( unsigned char *, int , uint64_t, 
+bool NullCipher::blockEncode( byte *, int , uint64_t, 
     const CipherKey & ) const
 {
   return true;
 }
 
-bool NullCipher::blockDecode( unsigned char *, int, uint64_t, 
+bool NullCipher::blockDecode( byte *, int, uint64_t, 
     const CipherKey & ) const
 {
   return true;
@@ -179,3 +180,4 @@ bool NullCipher::Enabled()
   return true;
 }
 
+}  // namespace encfs

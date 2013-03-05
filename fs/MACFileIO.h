@@ -24,6 +24,8 @@
 #include "cipher/Cipher.h"
 #include "fs/BlockFileIO.h"
 
+namespace encfs {
+
 class MACFileIO : public BlockFileIO
 {
 public:
@@ -62,6 +64,8 @@ private:
     int randBytes;
     bool warnOnly;
 };
+
+}  // namespace encfs
 
 #endif
 

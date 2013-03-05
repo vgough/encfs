@@ -26,6 +26,8 @@
 
 #include <inttypes.h>
 
+namespace encfs {
+
 struct IORequest
 {
     off_t offset;
@@ -81,6 +83,8 @@ private:
     FileIO( const FileIO & );
     FileIO &operator = ( const FileIO & );
 };
+
+}  // namespace encfs
 
 #endif
 

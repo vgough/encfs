@@ -30,6 +30,8 @@
 
 using namespace std;
 
+namespace encfs {
+
 static shared_ptr<NameIO> NewStreamNameIO( const Interface &iface,
     const shared_ptr<Cipher> &cipher, const CipherKey &key)
 {
@@ -203,4 +205,6 @@ bool StreamNameIO::Enabled()
 {
   return true;
 }
+
+}  // namespace encfs
 

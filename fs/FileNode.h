@@ -29,6 +29,8 @@
 #include <sys/types.h>
 #include <string>
 
+namespace encfs {
+
 class Cipher;
 class FileIO;
 class DirNode;
@@ -95,6 +97,7 @@ private:
 
 };
 
+}  // namespace encfs
 
 #endif
 

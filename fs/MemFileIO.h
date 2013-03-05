@@ -22,10 +22,12 @@
 #ifndef _MEMFILEIO_incl_
 #define _MEMFILEIO_incl_
 
-#include "FileIO.h"
+#include "fs/FileIO.h"
 
 #include <string>
 #include <vector>
+
+namespace encfs {
 
 class MemFileIO : public FileIO {
  public:
@@ -53,6 +55,8 @@ class MemFileIO : public FileIO {
   std::string name;
   bool writable;
 };
+
+}  // namespace encfs
 
 #endif
 

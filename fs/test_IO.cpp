@@ -33,6 +33,8 @@
 #include "fs/MACFileIO.h"
 #include "fs/MemFileIO.h"
 
+using namespace encfs;
+
 namespace {
 
 TEST(MemIOTest, BasicIO) {

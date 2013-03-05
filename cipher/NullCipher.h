@@ -24,6 +24,8 @@
 #include "cipher/Cipher.h"
 #include "base/Interface.h"
 
+namespace encfs {
+
 /*
     Implements Cipher interface for a pass-through mode.  May be useful for
     testing, but that's it.
@@ -41,16 +43,16 @@ public:
     // create a new key based on a password
     virtual CipherKey newKey(const char *password, int passwdLength,
             int &iterationCount, long desiredDuration,
-            const unsigned char *salt, int saltLen);
+            const byte *salt, int saltLen);
     virtual CipherKey newKey(const char *password, int passwdLength);
     // create a new random key
     virtual CipherKey newRandomKey();
 
     // data must be len keySize()
-    virtual CipherKey readKey(const unsigned char *data, 
+    virtual CipherKey readKey(const byte *data, 
 	                      const CipherKey &encodingKey,
 			      bool checkKey); 
-    virtual void writeKey(const CipherKey &key, unsigned char *data, 
+    virtual void writeKey(const CipherKey &key, byte *data, 
 	                  const CipherKey &encodingKey); 
     virtual bool compareKey( const CipherKey &A, 
 	                     const CipherKey &B ) const;
@@ -60,27 +62,28 @@ public:
     virtual int encodedKeySize() const;
     virtual int cipherBlockSize() const;
 
-    virtual bool randomize( unsigned char *buf, int len,
+    virtual bool randomize( byte *buf, int len,
             bool strongRandom ) const;
 
-    virtual uint64_t MAC_64(const unsigned char *data, int len,
+    virtual uint64_t MAC_64(const byte *data, int len,
 	    const CipherKey &key, uint64_t *chainedIV) const;
 
     // functional interfaces
-    virtual bool streamEncode(unsigned char *in, int len, 
+    virtual bool streamEncode(byte *in, int len, 
 	    uint64_t iv64, const CipherKey &key) const;
-    virtual bool streamDecode(unsigned char *in, int len, 
+    virtual bool streamDecode(byte *in, int len, 
 	    uint64_t iv64, const CipherKey &key) const;
 
-    virtual bool blockEncode(unsigned char *buf, int size, 
+    virtual bool blockEncode(byte *buf, int size, 
 	             uint64_t iv64, const CipherKey &key) const;
-    virtual bool blockDecode(unsigned char *buf, int size, 
+    virtual bool blockDecode(byte *buf, int size, 
 	             uint64_t iv64, const CipherKey &key) const;
 
     // hack to help with static builds
     static bool Enabled();
 };
 
+}  // namespace encfs
 
 #endif
 

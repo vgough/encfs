@@ -22,7 +22,9 @@
 #define _Interface_incl_
 
 #include <string>
-#include "base/config.pb.h"
+#include "base/interface.pb.h"
+
+namespace encfs {
 
 // check if A implements the interface described by B.
 // Note that implements(A, B) is not the same as implements(B, A)
@@ -37,6 +39,8 @@ class ConfigVar;
 const ConfigVar & operator >> (const ConfigVar &, Interface &);
 
 bool operator != (const Interface &a, const Interface &b);
+
+}  // namespace encfs
 
 #endif
 

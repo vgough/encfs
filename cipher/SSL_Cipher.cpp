@@ -43,7 +43,8 @@
 #include "base/i18n.h"
 
 using namespace std;
-using namespace rel;
+
+namespace encfs {
 
 const int MAX_KEYLENGTH = 64; // in bytes (256 bit)
 const int MAX_IVLENGTH = 16;
@@ -65,13 +66,13 @@ inline int MIN(int a, int b)
    DEPRECATED: this is here for backward compatibilty only.  Use PBKDF
 */
 int BytesToKey( int keyLen, int ivLen, const EVP_MD *md,
-               const unsigned char *data, int dataLen, 
-               unsigned int rounds, unsigned char *key, unsigned char *iv)
+               const byte *data, int dataLen, 
+               unsigned int rounds, byte *key, byte *iv)
 {
   if( data == NULL || dataLen == 0 )
     return 0; // OpenSSL returns nkey here, but why?  It is a failure..
     
-  unsigned char mdBuf[ EVP_MAX_MD_SIZE ];
+  byte mdBuf[ EVP_MAX_MD_SIZE ];
   unsigned int mds=0;
   int addmd =0;
   int nkey = key ? keyLen : 0;
@@ -127,8 +128,8 @@ long time_diff(const timeval &end, const timeval &start)
 }
 
 int SSL_Cipher::TimedPBKDF2(const char *pass, int passlen,
-                            const unsigned char *salt, int saltlen,
-                            int keylen, unsigned char *out,
+                            const byte *salt, int saltlen,
+                            int keylen, byte *out,
                             long desiredPDFTime)
 {
   int iter = 1000;
@@ -138,7 +139,7 @@ int SSL_Cipher::TimedPBKDF2(const char *pass, int passlen,
   {
     gettimeofday( &start, 0 );
     int res = PKCS5_PBKDF2_HMAC_SHA1(
-        pass, passlen, const_cast<unsigned char*>(salt), saltlen, 
+        pass, passlen, const_cast<byte*>(salt), saltlen, 
         iter, keylen, out);
     if(res != 1)
       return -1;
@@ -329,14 +330,14 @@ SSLKey::~SSLKey()
   pthread_mutex_destroy( &mutex );
 }
 
-inline unsigned char* KeyData( const shared_ptr<SSLKey> &key )
+inline byte* KeyData( const shared_ptr<SSLKey> &key )
 {
-  return (unsigned char *)key->buf.data;
+  return (byte *)key->buf.data;
 }
 
-inline unsigned char* IVData( const shared_ptr<SSLKey> &key )
+inline byte* IVData( const shared_ptr<SSLKey> &key )
 {
-  return (unsigned char *)key->buf.data + key->keySize;
+  return (byte *)key->buf.data + key->keySize;
 }
 
 void initKey(const shared_ptr<SSLKey> &key, const EVP_CIPHER *_blockCipher,
@@ -424,7 +425,7 @@ Interface SSL_Cipher::interface() const
 */
 CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
                              int &iterationCount, long desiredDuration,
-                             const unsigned char *salt, int saltLen)
+                             const byte *salt, int saltLen)
 {
   shared_ptr<SSLKey> key( new SSLKey( _keySize, _ivLength) );
 
@@ -446,7 +447,7 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
     // known iteration length
     if(PKCS5_PBKDF2_HMAC_SHA1(
             password, passwdLength, 
-            const_cast<unsigned char*>(salt), saltLen, 
+            const_cast<byte*>(salt), saltLen, 
             iterationCount, _keySize + _ivLength, KeyData(key)) != 1)
     {
       LOG(ERROR) << "openssl error, PBKDF2 failed";
@@ -469,7 +470,7 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength)
     // now we use BytesToKey, which can deal with Blowfish keys larger then
     // 128 bits.
     bytes = BytesToKey( _keySize, _ivLength, EVP_sha1(), 
-                       (unsigned char *)password, passwdLength, 16,
+                       (byte *)password, passwdLength, 16,
                        KeyData(key), IVData(key) );
 
     // the reason for moving from EVP_BytesToKey to BytesToKey function..
@@ -482,7 +483,7 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength)
   {
     // for backward compatibility with filesystems created with 1:0
     bytes = EVP_BytesToKey( _blockCipher, EVP_sha1(), NULL,
-                           (unsigned char *)password, passwdLength, 16,
+                           (byte *)password, passwdLength, 16,
                            KeyData(key), IVData(key) );
   }
 
@@ -502,9 +503,9 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength)
 CipherKey SSL_Cipher::newRandomKey()
 {
   const int bufLen = MAX_KEYLENGTH;
-  unsigned char tmpBuf[ bufLen ];
+  byte tmpBuf[ bufLen ];
   int saltLen = 20;
-  unsigned char saltBuf[ saltLen ];
+  byte saltBuf[ saltLen ];
 
   if(!randomize(tmpBuf, bufLen, true) ||
      !randomize(saltBuf, saltLen, true))
@@ -532,14 +533,14 @@ CipherKey SSL_Cipher::newRandomKey()
    Compute a 64-bit check value for the data using HMAC.
 */
 static uint64_t _checksum_64(SSLKey *key,
-                             const unsigned char *data,
+                             const byte *data,
                              int dataLen,
                              uint64_t *chainedIV)
 {
   rAssert( dataLen > 0 );
   Lock lock( key->mutex );
 
-  unsigned char md[EVP_MAX_MD_SIZE];
+  byte md[EVP_MAX_MD_SIZE];
   unsigned int mdLen = EVP_MAX_MD_SIZE;
 
   HMAC_Init_ex( &key->mac_ctx, 0, 0, 0, 0 );
@@ -548,7 +549,7 @@ static uint64_t _checksum_64(SSLKey *key,
   {
     // toss in the chained IV as well
     uint64_t tmp = *chainedIV;
-    unsigned char h[8];
+    byte h[8];
     for(unsigned int i=0; i<8; ++i)
     {
       h[i] = tmp & 0xff;
@@ -563,9 +564,9 @@ static uint64_t _checksum_64(SSLKey *key,
   rAssert(mdLen >= 8);
 
   // chop this down to a 64bit value..
-  unsigned char h[8] = {0,0,0,0,0,0,0,0};
+  byte h[8] = {0,0,0,0,0,0,0,0};
   for(unsigned int i=0; i<(mdLen-1); ++i)
-    h[i%8] ^= (unsigned char)(md[i]);
+    h[i%8] ^= (byte)(md[i]);
 
   uint64_t value = (uint64_t)h[0];
   for(int i=1; i<8; ++i)
@@ -574,7 +575,7 @@ static uint64_t _checksum_64(SSLKey *key,
   return value;
 }
 
-bool SSL_Cipher::randomize( unsigned char *buf, int len,
+bool SSL_Cipher::randomize( byte *buf, int len,
                            bool strongRandom ) const
 {
   // to avoid warnings of uninitialized data from valgrind
@@ -597,7 +598,7 @@ bool SSL_Cipher::randomize( unsigned char *buf, int len,
     return true;
 }
 
-uint64_t SSL_Cipher::MAC_64( const unsigned char *data, int len,
+uint64_t SSL_Cipher::MAC_64( const byte *data, int len,
                             const CipherKey &key, uint64_t *chainedIV ) const
 {
   shared_ptr<SSLKey> mk = dynamic_pointer_cast<SSLKey>(key);
@@ -609,13 +610,13 @@ uint64_t SSL_Cipher::MAC_64( const unsigned char *data, int len,
   return tmp;
 }
 
-CipherKey SSL_Cipher::readKey(const unsigned char *data, 
+CipherKey SSL_Cipher::readKey(const byte *data, 
                               const CipherKey &masterKey, bool checkKey)
 {
   shared_ptr<SSLKey> mk = dynamic_pointer_cast<SSLKey>(masterKey);
   rAssert(mk->keySize == _keySize);
 
-  unsigned char tmpBuf[ 2 * MAX_KEYLENGTH ];
+  byte tmpBuf[ 2 * MAX_KEYLENGTH ];
 
   // First N bytes are checksum bytes.
   unsigned int checksum = 0;
@@ -654,7 +655,7 @@ CipherKey SSL_Cipher::readKey(const unsigned char *data,
   return key;
 }
 
-void SSL_Cipher::writeKey(const CipherKey &ckey, unsigned char *data, 
+void SSL_Cipher::writeKey(const CipherKey &ckey, byte *data, 
                           const CipherKey &masterKey)
 {
   shared_ptr<SSLKey> key = dynamic_pointer_cast<SSLKey>(ckey);
@@ -665,7 +666,7 @@ void SSL_Cipher::writeKey(const CipherKey &ckey, unsigned char *data,
   rAssert(mk->keySize == _keySize);
   rAssert(mk->ivLength == _ivLength);
 
-  unsigned char tmpBuf[ 2 * MAX_KEYLENGTH ];
+  byte tmpBuf[ 2 * MAX_KEYLENGTH ];
 
   unsigned int bufLen = key->buf.size;
   rAssert(_keySize + _ivLength == bufLen );
@@ -729,19 +730,19 @@ int SSL_Cipher::cipherBlockSize() const
   return size;
 }
 
-void SSL_Cipher::setIVec(unsigned char *ivec, uint64_t seed,
+void SSL_Cipher::setIVec(byte *ivec, uint64_t seed,
                          const shared_ptr<SSLKey> &key) const
 {
   if (iface.major() >= 3)
   {
     memcpy( ivec, IVData(key), _ivLength );
 
-    unsigned char md[EVP_MAX_MD_SIZE];
+    byte md[EVP_MAX_MD_SIZE];
     unsigned int mdLen = EVP_MAX_MD_SIZE;
 
     for(int i=0; i<8; ++i)
     {
-      md[i] = (unsigned char)(seed & 0xff);
+      md[i] = (byte)(seed & 0xff);
       seed >>= 8;
     }
 
@@ -764,7 +765,7 @@ void SSL_Cipher::setIVec(unsigned char *ivec, uint64_t seed,
 // could get a victim to store a carefully crafted file, they could later
 // determine if the victim had the file in encrypted storage (without decrypting
 // the file).
-void SSL_Cipher::setIVec_old(unsigned char *ivec,
+void SSL_Cipher::setIVec_old(byte *ivec,
                              unsigned int seed,
                              const shared_ptr<SSLKey> &key) const
 {
@@ -795,9 +796,9 @@ void SSL_Cipher::setIVec_old(unsigned char *ivec,
   }
 }
 
-static void flipBytes(unsigned char *buf, int size)
+static void flipBytes(byte *buf, int size)
 {
-  unsigned char revBuf[64];
+  byte revBuf[64];
 
   int bytesLeft = size;
   while(bytesLeft)
@@ -814,13 +815,13 @@ static void flipBytes(unsigned char *buf, int size)
   memset(revBuf, 0, sizeof(revBuf));
 }
 
-static void shuffleBytes(unsigned char *buf, int size)
+static void shuffleBytes(byte *buf, int size)
 {
   for(int i=0; i<size-1; ++i)
     buf[i+1] ^= buf[i];
 }
 
-static void unshuffleBytes(unsigned char *buf, int size)
+static void unshuffleBytes(byte *buf, int size)
 {
   for(int i=size-1; i; --i)
     buf[i] ^= buf[i-1];
@@ -829,7 +830,7 @@ static void unshuffleBytes(unsigned char *buf, int size)
 /* Partial blocks are encoded with a stream cipher.  We make multiple passes on
    the data to ensure that the ends of the data depend on each other.
  */
-bool SSL_Cipher::streamEncode(unsigned char *buf, int size, 
+bool SSL_Cipher::streamEncode(byte *buf, int size, 
                               uint64_t iv64, const CipherKey &ckey) const
 {
   rAssert( size > 0 );
@@ -840,7 +841,7 @@ bool SSL_Cipher::streamEncode(unsigned char *buf, int size,
 
   Lock lock( key->mutex );
 
-  unsigned char ivec[ MAX_IVLENGTH ];
+  byte ivec[ MAX_IVLENGTH ];
   int dstLen=0, tmpLen=0;
 
   shuffleBytes( buf, size );
@@ -865,7 +866,7 @@ bool SSL_Cipher::streamEncode(unsigned char *buf, int size,
   return true;
 }
 
-bool SSL_Cipher::streamDecode(unsigned char *buf, int size, 
+bool SSL_Cipher::streamDecode(byte *buf, int size, 
                               uint64_t iv64, const CipherKey &ckey) const
 {
   rAssert( size > 0 );
@@ -876,7 +877,7 @@ bool SSL_Cipher::streamDecode(unsigned char *buf, int size,
 
   Lock lock( key->mutex );
 
-  unsigned char ivec[ MAX_IVLENGTH ];
+  byte ivec[ MAX_IVLENGTH ];
   int dstLen=0, tmpLen=0;
 
   setIVec( ivec, iv64 + 1, key );
@@ -902,7 +903,7 @@ bool SSL_Cipher::streamDecode(unsigned char *buf, int size,
 }
 
 
-bool SSL_Cipher::blockEncode(unsigned char *buf, int size, 
+bool SSL_Cipher::blockEncode(byte *buf, int size, 
                              uint64_t iv64, const CipherKey &ckey ) const
 {
   rAssert( size > 0 );
@@ -916,7 +917,7 @@ bool SSL_Cipher::blockEncode(unsigned char *buf, int size,
 
   Lock lock( key->mutex );
 
-  unsigned char ivec[ MAX_IVLENGTH ];
+  byte ivec[ MAX_IVLENGTH ];
 
   int dstLen = 0, tmpLen = 0;
   setIVec( ivec, iv64, key );
@@ -932,7 +933,7 @@ bool SSL_Cipher::blockEncode(unsigned char *buf, int size,
   return true;
 }
 
-bool SSL_Cipher::blockDecode(unsigned char *buf, int size, 
+bool SSL_Cipher::blockDecode(byte *buf, int size, 
                              uint64_t iv64, const CipherKey &ckey ) const
 {
   rAssert( size > 0 );
@@ -946,7 +947,7 @@ bool SSL_Cipher::blockDecode(unsigned char *buf, int size,
 
   Lock lock( key->mutex );
 
-  unsigned char ivec[ MAX_IVLENGTH ];
+  byte ivec[ MAX_IVLENGTH ];
 
   int dstLen = 0, tmpLen = 0;
   setIVec( ivec, iv64, key );
@@ -971,3 +972,5 @@ bool SSL_Cipher::hasStreamMode() const
 {
   return false;
 }
+
+}  // namespace encfs

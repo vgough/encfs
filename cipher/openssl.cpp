@@ -31,6 +31,8 @@
 #include <openssl/engine.h>
 #endif
 
+namespace encfs {
+
 unsigned long pthreads_thread_id()
 {
   return (unsigned long)pthread_self();
@@ -107,3 +109,4 @@ void openssl_shutdown(bool threaded)
     pthreads_locking_cleanup();
 }
 
+}  // namespace encfs

@@ -22,17 +22,19 @@
 
 #include <ctype.h>
 
+namespace encfs {
+
 // change between two powers of two, stored as the low bits of the bytes in the
 // arrays.
 // It is the caller's responsibility to make sure the output array is large
 // enough.
-void changeBase2(unsigned char *src, int srcLen, int src2Pow,
-                 unsigned char *dst, int dstLen, int dst2Pow)
+void changeBase2(byte *src, int srcLen, int src2Pow,
+                 byte *dst, int dstLen, int dst2Pow)
 {
     unsigned long work = 0;
     int workBits = 0; // number of bits left in the work buffer
-    unsigned char *end = src + srcLen;
-    unsigned char *origDst = dst;
+    byte *end = src + srcLen;
+    byte *origDst = dst;
     const int mask = (1 << dst2Pow) -1;
 
     // copy the new bits onto the high bits of the stream.
@@ -63,12 +65,12 @@ void changeBase2(unsigned char *src, int srcLen, int src2Pow,
     to be written, then write the value at the tail end of the recursion.
 */
 static
-void changeBase2Inline(unsigned char *src, int srcLen, 
+void changeBase2Inline(byte *src, int srcLen, 
 	               int src2Pow, int dst2Pow,
 		       bool outputPartialLastByte,
 		       unsigned long work,
 		       int workBits,
-		       unsigned char *outLoc)
+		       byte *outLoc)
 {
     const int mask = (1 << dst2Pow) -1;
     if(!outLoc)
@@ -84,7 +86,7 @@ void changeBase2Inline(unsigned char *src, int srcLen,
     }
 
     // we have at least one value that can be output
-    unsigned char outVal = work & mask;
+    byte outVal = work & mask;
     work >>= dst2Pow;
     workBits -= dst2Pow;
 
@@ -112,7 +114,7 @@ void changeBase2Inline(unsigned char *src, int srcLen,
     }
 }
 
-void changeBase2Inline(unsigned char *src, int srcLen, 
+void changeBase2Inline(byte *src, int srcLen, 
 	               int src2Pow, int dst2Pow,
 		       bool outputPartialLastByte)
 {
@@ -128,7 +130,7 @@ void changeBase2Inline(unsigned char *src, int srcLen,
 // '.' included in the encrypted names, so that it can be reserved for files
 // with special meaning.
 static const char B642AsciiTable[] = ",-0123456789";
-void B64ToAscii(unsigned char *in, int length)
+void B64ToAscii(byte *in, int length)
 {
     for(int offset=0; offset<length; ++offset)
     {
@@ -146,20 +148,20 @@ void B64ToAscii(unsigned char *in, int length)
     }
 }
 
-static const unsigned char Ascii2B64Table[] = 
+static const byte Ascii2B64Table[] = 
        "                                            01  23456789:;       ";
     //  0123456789 123456789 123456789 123456789 123456789 123456789 1234
     //  0         1         2         3         4         5         6
-void AsciiToB64(unsigned char *in, int length)
+void AsciiToB64(byte *in, int length)
 {
     return AsciiToB64(in, in, length);
 }
 
-void AsciiToB64(unsigned char *out, const unsigned char *in, int length)
+void AsciiToB64(byte *out, const byte *in, int length)
 {
     while(length--)
     {
-	unsigned char ch = *in++;
+	byte ch = *in++;
 	if(ch >= 'A')
 	{
 	    if(ch >= 'a')
@@ -174,7 +176,7 @@ void AsciiToB64(unsigned char *out, const unsigned char *in, int length)
 }
 
 
-void B32ToAscii(unsigned char *buf, int len)
+void B32ToAscii(byte *buf, int len)
 {
     for(int offset=0; offset<len; ++offset)
     {
@@ -188,23 +190,24 @@ void B32ToAscii(unsigned char *buf, int len)
     }
 }
 
-void AsciiToB32(unsigned char *in, int length)
+void AsciiToB32(byte *in, int length)
 {
     return AsciiToB32(in, in, length);
 }
 
-void AsciiToB32(unsigned char *out, const unsigned char *in, int length)
+void AsciiToB32(byte *out, const byte *in, int length)
 {
     while(length--)
     {
-	unsigned char ch = *in++;
+	byte ch = *in++;
         int lch = toupper(ch);
         if (lch >= 'A')
             lch -= 'A';
         else
             lch += 26 - '2';
 
-	*out++ = (unsigned char)lch;
+	*out++ = (byte)lch;
     }
 }
 
+}  // namespace encfs

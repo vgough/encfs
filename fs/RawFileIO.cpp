@@ -37,6 +37,8 @@
 
 using namespace std;
 
+namespace encfs {
+
 static Interface RawFileIO_iface = makeInterface("FileIO/Raw", 1, 0, 0);
 
 FileIO *NewRawFileIO( const Interface &iface )
@@ -328,3 +330,6 @@ bool RawFileIO::isWritable() const
 {
   return canWrite;
 }
+
+}  // namespace encfs
+

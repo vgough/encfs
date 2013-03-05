@@ -50,6 +50,9 @@ if (APPLE)
     add_definitions (-D__FreeBSD__=10)
 endif (APPLE)
 
+find_package (Protobuf REQUIRED)
+include_directories (${PROTOBUF_INCLUDE_DIR})
+
 find_package (GLog REQUIRED)
 include_directories (${GLOG_INCLUDE_DIRS})
 

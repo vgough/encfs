@@ -39,6 +39,7 @@
 #include "fs/Context.h"
 #include "fs/DirNode.h"
 #include "fs/FileUtils.h"
+#include "fs/fsconfig.pb.h"
 
 
 #include <glog/logging.h>
@@ -46,7 +47,8 @@
 #include <iostream>
 
 using namespace std;
-using namespace rel;
+
+namespace encfs {
 
 class DirDeleter
 {
@@ -814,3 +816,6 @@ int DirNode::unlink( const char *plaintextName )
 
   return res;
 }
+
+}  // namespace encfs
+

@@ -29,6 +29,8 @@
 #include "base/Interface.h"
 #include "cipher/CipherKey.h"
 
+namespace encfs {
+
 class Cipher;
 
 class NameIO
@@ -137,6 +139,7 @@ do { \
   } \
 } while(0)
 
+}  // namespace encfs
 
 #endif
 

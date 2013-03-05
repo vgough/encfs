@@ -25,10 +25,10 @@
 #define _BSD_SOURCE // pick up setenv on RH7.3
 
 #include "fs/encfs.h"
+#include "fs/fsconfig.pb.h"
 
 #include "base/autosprintf.h"
 #include "base/config.h"
-#include "base/config.pb.h"
 #include "base/ConfigReader.h"
 #include "base/Error.h"
 #include "base/i18n.h"
@@ -68,6 +68,8 @@
 
 using namespace std;
 using namespace gnu;
+
+namespace encfs {
 
 static const int DefaultBlockSize = 2048;
 // The maximum length of text passwords.  If longer are needed,
@@ -1674,3 +1676,4 @@ int remountFS(EncFS_Context *ctx)
   }
 }
 
+}  // namespace encfs

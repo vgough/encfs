@@ -28,9 +28,11 @@
 #include <unistd.h>
 #include <cstring>
 
+#include "base/types.h"
 
 using namespace std;
 
+namespace encfs {
 
 ConfigReader::ConfigReader()
 {
@@ -69,7 +71,7 @@ bool ConfigReader::load(const char *fileName)
   }
 
   ConfigVar in;
-  in.write( (unsigned char *)buf, size );
+  in.write( (byte *)buf, size );
   delete[] buf;
 
   return loadFromVar( in );
@@ -132,9 +134,9 @@ ConfigVar ConfigReader::toVar() const
   for(it = vars.begin(); it != vars.end(); ++it)
   {
     out.writeInt( it->first.size() );
-    out.write( (unsigned char*)it->first.data(), it->first.size() );
+    out.write( (byte*)it->first.data(), it->first.size() );
     out.writeInt( it->second.size() );
-    out.write( (unsigned char*)it->second.buffer(), it->second.size() );
+    out.write( (byte*)it->second.buffer(), it->second.size() );
   }
 
   return out;
@@ -155,3 +157,4 @@ ConfigVar &ConfigReader::operator[] ( const std::string &varName )
     return vars[ varName ];
 }
 
+}  // namespace encfs

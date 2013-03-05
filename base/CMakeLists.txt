@@ -1,11 +1,11 @@
-find_package (Protobuf REQUIRED)
-include_directories (${PROTOBUF_INCLUDE_DIR})
-
 find_package (TinyXML REQUIRED)
 include_directories (${TINYXML_INCLUDE_DIR})
 set (LIBS ${LIBS} ${TINYXML_LIBRARIES})
 
-protobuf_generate_cpp (PROTO_SRCS PROTO_HDRS config.proto)
+find_package (Protobuf REQUIRED)
+
+
+protobuf_generate_cpp (PROTO_SRCS PROTO_HDRS ${Encfs_SOURCE_DIR}/protos/interface.proto)
 
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/config.h)

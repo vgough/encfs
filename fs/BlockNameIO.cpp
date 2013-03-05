@@ -28,6 +28,8 @@
 #include <cstring>
 #include <glog/logging.h>
 
+namespace encfs {
+
 static shared_ptr<NameIO> NewBlockNameIO( const Interface &iface,
     const shared_ptr<Cipher> &cipher, const CipherKey &key )
 {
@@ -247,4 +249,6 @@ bool BlockNameIO::Enabled()
 {
   return true;
 }
+
+}  // namespace encfs
 

@@ -1,9 +1,12 @@
 find_package (FUSE REQUIRED)
 include_directories (${FUSE_INCLUDE_DIR})
 
+protobuf_generate_cpp (PROTO_SRCS PROTO_HDRS ${Encfs_SOURCE_DIR}/protos/fsconfig.proto)
+
 enable_testing ()
 find_package (GTest)
 
+include_directories (${Encfs_BINARY_DIR}/base)
 add_library (encfs-fs
     encfs.cpp
     Context.cpp

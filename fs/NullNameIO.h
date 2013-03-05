@@ -21,7 +21,9 @@
 #ifndef _NullNameIO_incl_
 #define _NullNameIO_incl_
 
-#include "NameIO.h"
+#include "fs/NameIO.h"
+
+namespace encfs {
 
 class NullNameIO : public NameIO
 {
@@ -47,6 +49,7 @@ protected:
 private:
 };
 
+}  // namespace encfs
 
 #endif
 

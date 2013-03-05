@@ -47,6 +47,8 @@ using namespace std;
 # include <openssl/crypto.h>
 # include <openssl/buffer.h>
 
+namespace encfs {
+
 static BUF_MEM *allocBlock( int size )
 {
     BUF_MEM *block = BUF_MEM_new( );
@@ -87,7 +89,7 @@ void MemBlock::allocate(int size)
     }
 
     internalData = mem;
-    data = reinterpret_cast<unsigned char *>(mem->data);
+    data = reinterpret_cast<byte *>(mem->data);
     VALGRIND_MAKE_MEM_UNDEFINED( data, size );
 }
 
@@ -161,4 +163,5 @@ SecureMem::~SecureMem()
   }
 }         
           
+}  // namespace encfs
 

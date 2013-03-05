@@ -24,11 +24,13 @@
 #include "cipher/Cipher.h"
 #include "base/Interface.h"
 
-class SSLKey;
 #ifndef EVP_CIPHER
 struct evp_cipher_st;
 typedef struct evp_cipher_st EVP_CIPHER;
 #endif
+
+namespace encfs {
+class SSLKey;
 
 /*
    Implements Cipher interface for OpenSSL's ciphers.
@@ -89,17 +91,17 @@ class SSL_Cipher : public Cipher
   // create a new key based on a password
   virtual CipherKey newKey(const char *password, int passwdLength,
                            int &iterationCount, long desiredDuration,
-                           const unsigned char *salt, int saltLen);
+                           const byte *salt, int saltLen);
   // deprecated - for backward compatibility
   virtual CipherKey newKey(const char *password, int passwdLength);
   // create a new random key
   virtual CipherKey newRandomKey();
 
   // data must be len keySize()
-  virtual CipherKey readKey(const unsigned char *data, 
+  virtual CipherKey readKey(const byte *data, 
                             const CipherKey &encodingKey,
                             bool checkKey);
-  virtual void writeKey(const CipherKey &key, unsigned char *data, 
+  virtual void writeKey(const CipherKey &key, byte *data, 
                         const CipherKey &encodingKey); 
   virtual bool compareKey( const CipherKey &A, 
                           const CipherKey &B ) const;
@@ -111,19 +113,19 @@ class SSL_Cipher : public Cipher
 
   virtual bool hasStreamMode() const;
 
-  virtual bool randomize( unsigned char *buf, int len,
+  virtual bool randomize( byte *buf, int len,
                          bool strongRandom ) const;
 
-  virtual uint64_t MAC_64( const unsigned char *src, int len,
+  virtual uint64_t MAC_64( const byte *src, int len,
                           const CipherKey &key, uint64_t *augment ) const;
 
   // functional interfaces
   /*
      Stream encoding in-place.
    */
-  virtual bool streamEncode(unsigned char *in, int len, 
+  virtual bool streamEncode(byte *in, int len, 
                             uint64_t iv64, const CipherKey &key) const;
-  virtual bool streamDecode(unsigned char *in, int len, 
+  virtual bool streamDecode(byte *in, int len, 
                             uint64_t iv64, const CipherKey &key) const;
 
   /*
@@ -131,9 +133,9 @@ class SSL_Cipher : public Cipher
      blocks are always expected to begin on a block boundary.  See
      blockSize().
    */
-  virtual bool blockEncode(unsigned char *buf, int size, 
+  virtual bool blockEncode(byte *buf, int size, 
                            uint64_t iv64, const CipherKey &key) const;
-  virtual bool blockDecode(unsigned char *buf, int size, 
+  virtual bool blockDecode(byte *buf, int size, 
                            uint64_t iv64, const CipherKey &key) const;
 
   // hack to help with static builds
@@ -143,17 +145,19 @@ class SSL_Cipher : public Cipher
   // number of iterations based on a desired execution time (in microseconds).
   // Returns the number of iterations applied.
   static int TimedPBKDF2(const char *pass, int passLen,
-                         const unsigned char *salt, int saltLen,
-                         int keyLen, unsigned char *out,
+                         const byte *salt, int saltLen,
+                         int keyLen, byte *out,
                          long desiredPDFTimeMicroseconds);
  private:
-  void setIVec( unsigned char *ivec, uint64_t seed,
+  void setIVec( byte *ivec, uint64_t seed,
                const shared_ptr<SSLKey> &key ) const;
 
   // deprecated - for backward compatibility
-  void setIVec_old( unsigned char *ivec, unsigned int seed,
+  void setIVec_old( byte *ivec, unsigned int seed,
                    const shared_ptr<SSLKey> &key ) const;
 };
+
+}  // namespace encfs
 
 #endif
 

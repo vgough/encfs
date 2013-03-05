@@ -1,4 +1,10 @@
 
+package encfs;
+
+option optimize_for = CODE_SIZE;
+
+import "interface.proto";
+
 message EncfsConfig
 {
     optional string creator = 1;
@@ -32,17 +38,5 @@ message EncryptedKey
 
     optional int32 kdf_iterations = 10;
     optional int32 kdf_duration = 11 [default=500];
-}
-
-message Interface
-{
-    required string name = 1;
-    required uint32 major = 2; // major version number
-    required uint32 minor = 3; // minor version number
-
-    // Age indicates number of major versions supported. 0 means no backward
-    // compatibility.  See libtool "updating version information" for more
-    // details on how major/minor/age are used for versioning libraries.
-    optional uint32 age = 4; 
 }
 

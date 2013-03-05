@@ -26,6 +26,8 @@
 #include "fs/encfs.h"
 #include "fs/FSConfig.h"
 
+namespace encfs {
+
 // true if the path points to an existing node (of any type)
 bool fileExists( const char *fileName );
 // true if path is a directory
@@ -131,4 +133,6 @@ bool readV6Config( const char *configFile, EncfsConfig &config,
 bool readProtoConfig( const char *configFile, EncfsConfig &config,
     struct ConfigInfo *);
 
+
+}  // namespace encfs
 #endif

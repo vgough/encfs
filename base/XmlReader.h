@@ -23,6 +23,9 @@
 
 #include <string>
 #include "base/shared_ptr.h"
+#include "base/types.h"
+
+namespace encfs {
 
 class XmlValue;
 typedef shared_ptr<XmlValue> XmlValuePtr;
@@ -51,7 +54,7 @@ public:
   }
 
   bool read(const char *path, std::string *out) const;
-  bool readB64(const char *path, unsigned char *out, int length) const;
+  bool readB64(const char *path, byte *out, int length) const;
 
   bool read(const char *path, int *out) const;
   bool read(const char *path, long *out) const;
@@ -78,5 +81,7 @@ private:
   struct XmlReaderData;
   shared_ptr<XmlReaderData> pd;
 };
+
+}  // namespace encfs
 
 #endif

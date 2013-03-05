@@ -27,6 +27,8 @@
 #include <string>
 #include <vector>
 
+namespace encfs {
+
 class MemFileIO;
 
 class MemBlockFileIO : public BlockFileIO {
@@ -54,6 +56,8 @@ class MemBlockFileIO : public BlockFileIO {
  private:
   MemFileIO *impl;
 };
+
+}  // namespace encfs
 
 #endif
 

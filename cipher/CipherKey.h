@@ -23,6 +23,8 @@
 
 #include "base/shared_ptr.h"
 
+namespace encfs {
+
 class AbstractCipherKey
 {
 public:
@@ -31,6 +33,8 @@ public:
 };
 
 typedef shared_ptr<AbstractCipherKey> CipherKey;
+
+}  // namespace encfs
 
 #endif
 

@@ -7,6 +7,7 @@ find_package (GTest REQUIRED)
 
 add_library (encfs-cipher
     readpassphrase.cpp
+    BlockCipher.cpp
     Cipher.cpp
     CipherKey.cpp
     MemoryPool.cpp

@@ -21,21 +21,23 @@
 #include "base/config.h"
 #include "cipher/Cipher.h"
 
-#include "base/Interface.h"
-#include "base/Range.h"
-#include "base/base64.h"
-
 #include <map>
 #include <list>
 #include <string>
 #include <iostream>
 
+#include "base/Interface.h"
+#include "base/Range.h"
+#include "base/base64.h"
+
 // for static build.  Need to reference the modules which are registered at
 // run-time, to ensure that the linker doesn't optimize them away.
-#include "NullCipher.h"
-#include "SSL_Cipher.h"
+#include "cipher/NullCipher.h"
+#include "cipher/SSL_Cipher.h"
 
 using namespace std;
+
+namespace encfs {
 
 #define REF_MODULE(TYPE)  \
     if( !TYPE::Enabled() ) \
@@ -180,7 +182,7 @@ Cipher::~Cipher()
 {
 }
 
-unsigned int Cipher::MAC_32( const unsigned char *src, int len, 
+unsigned int Cipher::MAC_32( const byte *src, int len, 
 	const CipherKey &key, uint64_t *chainedIV ) const
 {
     uint64_t mac64 = MAC_64( src, len, key, chainedIV );
@@ -190,7 +192,7 @@ unsigned int Cipher::MAC_32( const unsigned char *src, int len,
     return mac32;
 }
 
-unsigned int Cipher::MAC_16( const unsigned char *src, int len, 
+unsigned int Cipher::MAC_16( const byte *src, int len, 
 	const CipherKey &key, uint64_t *chainedIV ) const
 {
     uint64_t mac64 = MAC_64( src, len, key, chainedIV );
@@ -205,12 +207,12 @@ string Cipher::encodeAsString(const CipherKey &key,
         const CipherKey &encodingKey )
 {
     int encodedKeySize = this->encodedKeySize();
-    unsigned char *keyBuf = new unsigned char[ encodedKeySize ];
+    byte *keyBuf = new byte[ encodedKeySize ];
 
     this->writeKey( key, keyBuf, encodingKey );
 
     int b64Len = B256ToB64Bytes( encodedKeySize );
-    unsigned char *b64Key = new unsigned char[ b64Len + 1 ];
+    byte *b64Key = new byte[ b64Len + 1 ];
 
     changeBase2( keyBuf, encodedKeySize, 8, b64Key,
             b64Len, 6 );
@@ -225,3 +227,4 @@ bool Cipher::hasStreamMode() const
   return true;
 }
 
+}  // namespace encfs

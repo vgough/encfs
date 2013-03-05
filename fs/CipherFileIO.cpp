@@ -20,15 +20,17 @@
 
 #include "fs/CipherFileIO.h"
 
-#include "base/config.pb.h"
 #include "base/Error.h"
 #include "cipher/Cipher.h"
 #include "cipher/MemoryPool.h"
+#include "fs/fsconfig.pb.h"
 
 #include <glog/logging.h>
 
 #include <fcntl.h>
 #include <cerrno>
+
+namespace encfs {
 
 /*
    Version 3:0 adds support for block-only encryption by adding space for
@@ -511,3 +513,4 @@ bool CipherFileIO::isWritable() const
   return base->isWritable();
 }
 
+}  // namespace encfs

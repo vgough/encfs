@@ -7,6 +7,8 @@
 #include "fs/FileUtils.h"
 #include "fs/FSConfig.h"
 
+namespace encfs {
+
 class FileIO;
 
 FSConfigPtr makeConfig(const shared_ptr<Cipher>& cipher, int blockSize);
@@ -18,6 +20,8 @@ void runWithAllCiphers(void (*func)(FSConfigPtr& config));
 void comparisonTest(FSConfigPtr& cfg, FileIO* a, FileIO* b);
 
 void compare(FileIO* a, FileIO* b, int offset, int len);
+
+}  // namespace encfs
 
 #endif
 

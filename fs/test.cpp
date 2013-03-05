@@ -56,6 +56,8 @@ using std::unordered_set;
 
 using namespace std;
 
+namespace encfs {
+
 const int FSBlockSize = 256;
 
 static
@@ -552,5 +554,5 @@ int main(int argc, char *argv[])
   return 0;
 }
 
-
+}  // namespace encfs
 

@@ -20,13 +20,15 @@
 
 #include "fs/BlockFileIO.h"
 
-#include "base/config.pb.h"
 #include "base/Error.h"
 #include "base/i18n.h"
 #include "cipher/MemoryPool.h"
+#include "fs/fsconfig.pb.h"
 
 #include <cstring>
 #include <glog/logging.h>
+
+namespace encfs {
 
 template<typename Type>
 inline Type min( Type A, Type B )
@@ -424,3 +426,4 @@ int BlockFileIO::blockTruncate( off_t size, FileIO *base )
       return res;
 }
 
+}  // namespace encfs

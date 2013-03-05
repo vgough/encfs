@@ -25,6 +25,8 @@
 #include <glog/logging.h>
 #include <ostream>
 
+namespace encfs {
+
 std::ostream& operator << (std::ostream& out, const Interface &iface) 
 {
   out << iface.name() << "(" << iface.major() 
@@ -82,3 +84,4 @@ bool operator != (const Interface &a, const Interface &b)
   return false;
 }
 
+}  // namespace encfs

@@ -30,6 +30,8 @@
 #include "fs/MemFileIO.h"
 #include "fs/MemBlockFileIO.h"
 
+using namespace encfs;
+
 namespace {
 
 TEST(BlockFileIOTest, BasicIO) {
@@ -63,5 +65,5 @@ TEST(BlockFileIOTest, BasicIO) {
   ASSERT_NO_FATAL_FAILURE(compare(&base, &block, 0, 1024));
 }
 
-}  // namespace
+}  // namespace encfs
 

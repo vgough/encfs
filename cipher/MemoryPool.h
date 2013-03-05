@@ -21,19 +21,23 @@
 #ifndef _MemoryPool_incl_
 #define _MemoryPool_incl_
 
+#include "base/types.h"
+
+namespace encfs {
+
 /*
     Memory Pool for fixed sized objects.
 
     Usage:
     MemBlock mb( size );
     // do things with storage in   mb.data
-    unsigned char *buffer = mb.data;
+    byte *buffer = mb.data;
 
     // memblock freed when destructed
 */
 struct MemBlock
 {
-    unsigned char *data;
+    byte *data;
     void *internalData;
 
     MemBlock();
@@ -60,6 +64,8 @@ struct SecureMem
   SecureMem(int len);
   ~SecureMem();
 };
+
+}  // namespace encfs
 
 #endif
 

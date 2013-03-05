@@ -21,9 +21,11 @@
 #ifndef _RawFileIO_incl_
 #define _RawFileIO_incl_
 
-#include "FileIO.h"
+#include "fs/FileIO.h"
 
 #include <string>
+
+namespace encfs {
 
 class RawFileIO : public FileIO
 {
@@ -59,6 +61,8 @@ protected:
     int oldfd;
     bool canWrite;
 };
+
+}  // namespace encfs
 
 #endif
 

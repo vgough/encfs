@@ -23,6 +23,9 @@
 
 #include <string>
 #include "base/shared_ptr.h"
+#include "base/types.h"
+
+namespace encfs {
 
 class ConfigVar
 {
@@ -46,10 +49,10 @@ public:
     void resetOffset();
 
     // read bytes
-    int read(unsigned char *buffer, int size) const;
+    int read(byte *buffer, int size) const;
 
     // write bytes..
-    int write(const unsigned char *data, int size);
+    int write(const byte *data, int size);
 
     int readInt() const;
     int readInt( int defaultValue ) const;
@@ -76,6 +79,8 @@ ConfigVar & operator << (ConfigVar &, const std::string &str);
 const ConfigVar & operator >> (const ConfigVar &, bool &); 
 const ConfigVar & operator >> (const ConfigVar &, int &); 
 const ConfigVar & operator >> (const ConfigVar &, std::string &str);
+
+}  //  namespace encfs
 
 #endif
 

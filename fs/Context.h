@@ -33,6 +33,8 @@ using std::tr1::unordered_map;
 using std::unordered_map;
 #endif
 
+namespace encfs {
+
 struct EncFS_Args;
 struct EncFS_Opts;
 class FileNode;
@@ -101,6 +103,8 @@ private:
 };
 
 int remountFS( EncFS_Context *ctx );
+
+}  // namespace encfs
 
 #endif
 

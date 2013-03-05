@@ -27,6 +27,8 @@
 
 #include <inttypes.h>
 
+namespace encfs {
+
 class Cipher;
 
 /*
@@ -94,5 +96,7 @@ private:
     shared_ptr<Cipher> cipher;
     CipherKey key;
 };
+
+}  // namespace encfs
 
 #endif

@@ -57,6 +57,8 @@ static __inline int setfsgid(gid_t gid)
 }
 #endif
 
+namespace encfs {
+
 int encfs_getattr(const char *path, struct stat *stbuf);
 int encfs_fgetattr(const char *path, struct stat *stbuf, 
 	struct fuse_file_info *fi);
@@ -104,6 +106,8 @@ int encfs_removexattr( const char *path, const char *name );
 #endif
 
 int encfs_utimens( const char *path, const struct timespec ts[2] );
+
+}  // namespace encfs
 
 #endif
 

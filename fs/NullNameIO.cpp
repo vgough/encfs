@@ -24,6 +24,8 @@
 
 #include <cstring>
 
+namespace encfs {
+
 static shared_ptr<NameIO> NewNNIO( const Interface &, 
     const shared_ptr<Cipher> &, const CipherKey & )
 {
@@ -81,4 +83,6 @@ bool NullNameIO::Enabled()
 {
   return true;
 }
+
+}  // namespace encfs
 

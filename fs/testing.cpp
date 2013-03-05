@@ -30,12 +30,15 @@
 #include "cipher/Cipher.h"
 #include "cipher/MemoryPool.h"
 
-#include "fs/MemFileIO.h"
-#include "fs/FileUtils.h"
 #include "fs/FSConfig.h"
+#include "fs/fsconfig.pb.h"
+#include "fs/FileUtils.h"
 #include "fs/MACFileIO.h"
+#include "fs/MemFileIO.h"
 
 using namespace std;
+
+namespace encfs {
 
 FSConfigPtr makeConfig(const shared_ptr<Cipher>& cipher, int blockSize) {
   FSConfigPtr cfg = FSConfigPtr(new FSConfig);
@@ -168,4 +171,6 @@ int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
+
+}  // namespace encfs
 

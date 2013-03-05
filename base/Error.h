@@ -4,6 +4,8 @@
 #include <glog/logging.h>
 #include <stdexcept>
 
+namespace encfs {
+
 class Error : public std::runtime_error
 {
 public:
@@ -20,6 +22,8 @@ public:
     } \
   } while(0)
 
+
+}  // namespace encfs
 
 #endif
 

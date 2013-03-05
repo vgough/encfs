@@ -26,6 +26,8 @@
 
 #include "base/ConfigVar.h"
 
+namespace encfs {
+
 /*
     handles Configuration load / store for Encfs filesystems.
 
@@ -62,5 +64,7 @@ private:
     std::map<std::string, ConfigVar> vars;
 };
 
+
+}  // namespace encfs
 
 #endif

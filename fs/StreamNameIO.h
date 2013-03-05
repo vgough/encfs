@@ -24,6 +24,8 @@
 #include "cipher/CipherKey.h"
 #include "fs/NameIO.h"
 
+namespace encfs {
+
 class Cipher;
 
 class StreamNameIO : public NameIO
@@ -54,6 +56,7 @@ private:
     CipherKey _key;
 };
 
+}  // namespace encfs
 
 #endif
 

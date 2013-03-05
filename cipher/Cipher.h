@@ -24,10 +24,13 @@
 #include "cipher/CipherKey.h"
 #include "base/Interface.h"
 #include "base/Range.h"
+#include "base/types.h"
 
 #include <string>
 #include <list>
 #include <inttypes.h>
+
+namespace encfs {
 
 /*
     Mostly pure virtual interface defining operations on a cipher.
@@ -91,7 +94,7 @@ public:
   // milliseconds the password derivation function should take to run.
   virtual CipherKey newKey(const char *password, int passwdLength,
                            int &iterationCount, long desiredFunctionDuration,
-                           const unsigned char *salt, int saltLen) =0;
+                           const byte *salt, int saltLen) =0;
 
   // deprecated - for backward compatibility
   virtual CipherKey newKey(const char *password, int passwdLength ) =0;
@@ -100,11 +103,11 @@ public:
   virtual CipherKey newRandomKey() =0;
 
   // data must be len encodedKeySize()
-  virtual CipherKey readKey(const unsigned char *data, 
+  virtual CipherKey readKey(const byte *data, 
                             const CipherKey &encodingKey,
                             bool checkKey = true) =0;
 
-  virtual void writeKey(const CipherKey &key, unsigned char *data, 
+  virtual void writeKey(const CipherKey &key, byte *data, 
                         const CipherKey &encodingKey) =0; 
 
   virtual std::string encodeAsString(const CipherKey &key,
@@ -124,37 +127,39 @@ public:
   // The data may be pseudo random and might not be suitable for key
   // generation.  For generating keys, uses newRandomKey() instead.
   // Returns true on success, false on failure.
-  virtual bool randomize( unsigned char *buf, int len,
+  virtual bool randomize( byte *buf, int len,
                           bool strongRandom ) const =0;
 
   // 64 bit MAC of the data with the given key
-  virtual uint64_t MAC_64( const unsigned char *src, int len,
+  virtual uint64_t MAC_64( const byte *src, int len,
                            const CipherKey &key, uint64_t *chainedIV = 0 ) const =0;
 
   // based on reductions of MAC_64
-  unsigned int MAC_32( const unsigned char *src, int len,
+  unsigned int MAC_32( const byte *src, int len,
                        const CipherKey &key, uint64_t *chainedIV = 0 ) const;
-  unsigned int MAC_16( const unsigned char *src, int len,
+  unsigned int MAC_16( const byte *src, int len,
                        const CipherKey &key, uint64_t *chainedIV = 0 ) const;
 
   // functional interfaces
   /*
       Stream encoding of data in-place.  The stream data can be any length.
    */
-  virtual bool streamEncode( unsigned char *data, int len, 
+  virtual bool streamEncode( byte *data, int len, 
                              uint64_t iv64, const CipherKey &key) const=0;
-  virtual bool streamDecode( unsigned char *data, int len, 
+  virtual bool streamDecode( byte *data, int len, 
                              uint64_t iv64, const CipherKey &key) const=0;
 
   /*
       Block encoding of data in-place.  The data size should be a multiple of
       the cipher block size.
    */
-  virtual bool blockEncode(unsigned char *buf, int size, 
+  virtual bool blockEncode(byte *buf, int size, 
 	                         uint64_t iv64, const CipherKey &key) const=0;
-  virtual bool blockDecode(unsigned char *buf, int size, 
+  virtual bool blockDecode(byte *buf, int size, 
 	                         uint64_t iv64, const CipherKey &key) const=0;
 };
+
+}  // namespace encfs
 
 #endif
 

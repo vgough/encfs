@@ -21,6 +21,7 @@
 #ifndef _Range_incl_
 #define _Range_incl_
 
+namespace encfs {
 
 class Range
 {
@@ -112,4 +113,5 @@ inline int Range::inc() const
     return increment;
 }
 
+}  // namespace encfs 
 #endif

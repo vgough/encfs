@@ -36,6 +36,8 @@
 
 using namespace std;
 
+namespace encfs {
+
 #define REF_MODULE(TYPE) \
   do { \
     if(!TYPE::Enabled() ) \
@@ -336,3 +338,6 @@ std::string NameIO::decodeName( const char *path, int length ) const
     _encodeName( path, length ) :
     _decodeName( path, length );
 }
+
+}  // namespace encfs
+

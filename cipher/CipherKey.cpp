@@ -20,6 +20,8 @@
 
 #include "cipher/CipherKey.h"
 
+namespace encfs {
+
 AbstractCipherKey::AbstractCipherKey()
 {
 }
@@ -27,4 +29,6 @@ AbstractCipherKey::AbstractCipherKey()
 AbstractCipherKey::~AbstractCipherKey()
 {
 }
+
+}  // namespace encfs
 

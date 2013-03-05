@@ -36,6 +36,8 @@
 #include "fs/NameIO.h"
 #include "fs/FSConfig.h"
 
+namespace encfs {
+
 class Cipher;
 class RenameOp;
 struct RenameEl;
@@ -169,5 +171,7 @@ private:
 
     shared_ptr<NameIO> naming;
 };
+
+}  // namespace encfs
 
 #endif

@@ -18,7 +18,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "FileIO.h"
+#include "fs/FileIO.h"
+
+namespace encfs {
 
 FileIO::FileIO()
 {
@@ -39,3 +41,4 @@ bool FileIO::setIV( uint64_t iv )
     return true;
 }
 
+}  // namespace encfs

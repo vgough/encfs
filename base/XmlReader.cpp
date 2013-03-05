@@ -41,6 +41,8 @@
 
 using namespace std;
 
+namespace encfs {
+
 XmlValue::~XmlValue()
 {
 }
@@ -106,7 +108,7 @@ bool XmlValue::read(const char *path, bool *out) const
   return true;
 }
 
-bool XmlValue::readB64(const char *path, unsigned char *data, int length) const
+bool XmlValue::readB64(const char *path, byte *data, int length) const
 {
   XmlValuePtr value = find(path);
   if (!value)
@@ -246,3 +248,4 @@ XmlValuePtr XmlReader::operator[] ( const char *name ) const
   return XmlValuePtr(new XmlNode(element));
 }
 
+}  // namespace encfs

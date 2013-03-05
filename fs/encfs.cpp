@@ -60,13 +60,13 @@ using namespace std;
 
 #include <glog/logging.h>
 
+namespace encfs {
+
 #ifndef MIN
 #define MIN(a,b) (((a)<(b)) ? (a): (b))
 #endif
 
 #define ESUCCESS 0
-
-using rel::Lock;
 
 #define GET_FN(ctx, finfo) ctx->getNode((void*)(uintptr_t)finfo->fh)
 
@@ -788,6 +788,8 @@ int encfs_removexattr( const char *path, const char *name )
 {
   return withCipherPath( "removexattr", path, _do_removexattr, name );
 }
+
+}  // namespace encfs
 
 #endif // HAVE_XATTR
 

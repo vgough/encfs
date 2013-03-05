@@ -48,7 +48,7 @@
 
 using namespace std;
 using namespace gnu;
-
+using namespace encfs;
 
 static int showInfo( int argc, char **argv );
 static int showVersion( int argc, char **argv );

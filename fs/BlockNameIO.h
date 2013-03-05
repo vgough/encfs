@@ -26,6 +26,8 @@
 
 #include <memory>
 
+namespace encfs {
+
 class Cipher;
 
 /*
@@ -64,6 +66,8 @@ private:
     CipherKey _key;
     bool _caseSensitive;
 };
+
+}  // namespace encfs
 
 #endif
 

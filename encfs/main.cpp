@@ -63,6 +63,9 @@ inline static int MAX(int a, int b)
 
 using namespace std;
 using namespace gnu;
+using namespace encfs;
+
+namespace encfs {
 
 // Maximum number of arguments that we're going to pass on to fuse.  Doesn't
 // affect how many arguments we can handle, just how many we can pass on..
@@ -110,6 +113,8 @@ struct EncFS_Args
 };
 
 static int oldStderr = STDERR_FILENO;
+
+}  // namespace encfs
 
 static
 void usage(const char *name)

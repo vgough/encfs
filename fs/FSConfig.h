@@ -25,8 +25,11 @@
 #include "base/shared_ptr.h"
 #include "cipher/CipherKey.h"
 #include "fs/encfs.h"
+#include "fs/fsconfig.pb.h"
 
 #include <vector>
+
+namespace encfs {
 
 enum ConfigType
 {
@@ -42,7 +45,6 @@ enum ConfigType
 struct EncFS_Opts;
 class Cipher;
 class NameIO;
-class EncfsConfig;
 
 CipherKey getUserKey(const EncfsConfig &config, bool useStdin);
 CipherKey getUserKey(const EncfsConfig &config,
@@ -76,6 +78,8 @@ struct FSConfig
 };
 
 typedef shared_ptr<FSConfig> FSConfigPtr;
+
+}  // namespace encfs
 
 #endif
 

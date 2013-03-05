@@ -39,19 +39,20 @@
 #include "cipher/Cipher.h"
 #include "cipher/MemoryPool.h"
 
+#include "fs/CipherFileIO.h"
+#include "fs/DirNode.h"
+#include "fs/FileIO.h"
 #include "fs/FileNode.h"
 #include "fs/FileUtils.h"
-#include "fs/CipherFileIO.h"
-#include "fs/RawFileIO.h"
 #include "fs/MACFileIO.h"
-#include "fs/DirNode.h"
-
-#include "fs/FileIO.h"
+#include "fs/RawFileIO.h"
+#include "fs/fsconfig.pb.h"
 
 #include <glog/logging.h>
 
 using namespace std;
-using namespace rel;
+
+namespace encfs {
 
 /*
    TODO: locking at the FileNode level is inefficient, since this precludes
@@ -301,3 +302,4 @@ int FileNode::sync(bool datasync)
     return fh;
 }
 
+}  // namespace encfs
