@@ -74,6 +74,8 @@ inline int MIN(int a, int b)
 class OpenSSLCipher : public BlockCipher {
  public:
   OpenSSLCipher() {
+    EVP_CIPHER_CTX_init( &enc );
+    EVP_CIPHER_CTX_init( &dec );
   }
 
   virtual ~OpenSSLCipher() {
@@ -81,23 +83,36 @@ class OpenSSLCipher : public BlockCipher {
     EVP_CIPHER_CTX_cleanup( &dec );
   }
 
-  bool rekey(const EVP_CIPHER *cipher, const byte *key, int length) {
-    EVP_CIPHER_CTX_init( &enc );
+  bool rekey(const EVP_CIPHER *cipher, const CipherKey &key) {
+    VLOG(1) << "setting key length " << key.size();
     EVP_EncryptInit_ex( &enc, cipher, NULL, NULL, NULL);
-    EVP_CIPHER_CTX_set_key_length( &enc, length );
+    EVP_CIPHER_CTX_set_key_length( &enc, key.size() );
     EVP_CIPHER_CTX_set_padding( &enc, 0 );
-    EVP_EncryptInit_ex( &enc, NULL, NULL, key, NULL);
+    EVP_EncryptInit_ex( &enc, NULL, NULL, key.data(), NULL);
 
-    EVP_CIPHER_CTX_init( &dec );
     EVP_DecryptInit_ex( &dec, cipher, NULL, NULL, NULL);
-    EVP_CIPHER_CTX_set_key_length( &dec, length );
+    EVP_CIPHER_CTX_set_key_length( &dec, key.size() );
     EVP_CIPHER_CTX_set_padding( &dec, 0 );
-    EVP_DecryptInit_ex( &dec, NULL, NULL, key, NULL);
+    EVP_DecryptInit_ex( &dec, NULL, NULL, key.data(), NULL);
     return true;
   }
 
-  static bool randomize(byte *out, int len) {
-    int result = RAND_bytes( out, len );
+  static bool randomize(CipherKey *key) {
+    int result = RAND_bytes( key->data(), key->size() );
+    if(result != 1)
+    {
+      char errStr[120]; // specs require string at least 120 bytes long..
+      unsigned long errVal = 0;
+      if((errVal = ERR_get_error()) != 0)
+        LOG(ERROR) << "openssl error: " << ERR_error_string( errVal, errStr );
+
+      return false;
+    }
+    return true;
+  }
+  
+  static bool pseudoRandomize(byte *out, int length) {
+    int result = RAND_pseudo_bytes( out, length );
     if(result != 1)
     {
       char errStr[120]; // specs require string at least 120 bytes long..
@@ -112,12 +127,12 @@ class OpenSSLCipher : public BlockCipher {
 
   // Rekey with random key.
   bool rekey(const EVP_CIPHER *cipher, int keyLength) {
-    SecureMem key(keyLength);
+    CipherKey key(keyLength);
 
-    if (!randomize(key.data, key.size))
+    if (!randomize(&key))
       return false;
 
-    return rekey(cipher, key.data, key.size);
+    return rekey(cipher, key);
   }
 
   virtual int blockSize() const {
@@ -171,15 +186,11 @@ class BfCbcBlockCipher : public OpenSSLCipher {
   BfCbcBlockCipher() {}
   virtual ~BfCbcBlockCipher() {}
 
-  virtual bool setKey(const byte *key, int length) {
-    if (BfKeyRange.allowed(length * 8))
-      return rekey(EVP_bf_cbc(), key, length);
+  virtual bool setKey(const CipherKey &key) {
+    if (BfKeyRange.allowed(key.size() * 8))
+      return rekey(EVP_bf_cbc(), key);
     else
       return false;
-  }
-
-  virtual bool randomKey(int length) {
-    return BfKeyRange.allowed(length * 8) && rekey(EVP_bf_cbc(), length);
   }
 
   static Properties GetProperties() {
@@ -198,12 +209,8 @@ class BfCfbStreamCipher : public OpenSSLCipher {
   BfCfbStreamCipher() {}
   virtual ~BfCfbStreamCipher() {}
 
-  virtual bool setKey(const byte *key, int length) {
-    return BfKeyRange.allowed(length * 8) && rekey(EVP_bf_cfb(), key, length);
-  }
-
-  virtual bool randomKey(int length) {
-    return BfKeyRange.allowed(length * 8) && rekey(EVP_bf_cfb(), length);
+  virtual bool setKey(const CipherKey &key) {
+    return BfKeyRange.allowed(key.size() * 8) && rekey(EVP_bf_cfb(), key);
   }
 
   static Properties GetProperties() {
@@ -226,14 +233,9 @@ class AesCbcBlockCipher : public OpenSSLCipher {
   AesCbcBlockCipher() {}
   virtual ~AesCbcBlockCipher() {}
 
-  virtual bool setKey(const byte *key, int length) {
-    const EVP_CIPHER *cipher = getCipher(length);
-    return (cipher != NULL) && rekey(cipher, key, length);
-  }
-
-  virtual bool randomKey(int length) {
-    const EVP_CIPHER *cipher = getCipher(length);
-    return (cipher != NULL) && rekey(cipher, length);
+  virtual bool setKey(const CipherKey& key) {
+    const EVP_CIPHER *cipher = getCipher(key.size());
+    return (cipher != NULL) && rekey(cipher, key);
   }
 
   static const EVP_CIPHER *getCipher(int keyLength) {
@@ -243,6 +245,7 @@ class AesCbcBlockCipher : public OpenSSLCipher {
       case 192: return EVP_aes_192_cbc();
       case 256: return EVP_aes_256_cbc();
       default:
+                LOG(INFO) << "Unsupported key length: " << keyLength;
                 return NULL;
     }
   }
@@ -257,6 +260,39 @@ class AesCbcBlockCipher : public OpenSSLCipher {
   }
 };
 REGISTER_CLASS(AesCbcBlockCipher, BlockCipher);
+
+class AesCfbStreamCipher : public OpenSSLCipher {
+ public:
+  AesCfbStreamCipher() {}
+  virtual ~AesCfbStreamCipher() {}
+
+  virtual bool setKey(const CipherKey& key) {
+    const EVP_CIPHER *cipher = getCipher(key.size());
+    return (cipher != NULL) && rekey(cipher, key);
+  }
+
+  static const EVP_CIPHER *getCipher(int keyLength) {
+    switch(keyLength * 8)
+    {
+      case 128: return EVP_aes_128_cfb();
+      case 192: return EVP_aes_192_cfb();
+      case 256: return EVP_aes_256_cfb();
+      default:
+                LOG(INFO) << "Unsupported key length: " << keyLength;
+                return NULL;
+    }
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.keySize = AesKeyRange;
+    props.cipher = "AES";
+    props.mode = "CFB";
+    props.library = "OpenSSL";
+    return props;
+  }
+};
+REGISTER_CLASS(AesCfbStreamCipher, StreamCipher);
 #endif
 
 #if defined(HAVE_EVP_AES_XTS)
@@ -266,14 +302,9 @@ class AesXtsBlockCipher : public OpenSSLCipher {
   AesXtsBlockCipher() {}
   virtual ~AesXtsBlockCipher() {}
 
-  virtual bool setKey(const byte *key, int length) {
-    const EVP_CIPHER *cipher = getCipher(length);
-    return (cipher != NULL) && rekey(cipher, key, length);
-  }
-
-  virtual bool randomKey(int length) {
-    const EVP_CIPHER *cipher = getCipher(length);
-    return (cipher != NULL) && rekey(cipher, length);
+  virtual bool setKey(const CipherKey &key) {
+    const EVP_CIPHER *cipher = getCipher(key.size());
+    return (cipher != NULL) && rekey(cipher, key);
   }
 
   static const EVP_CIPHER *getCipher(int keyLength) {
@@ -297,9 +328,11 @@ class AesXtsBlockCipher : public OpenSSLCipher {
 REGISTER_CLASS(AesXtsBlockCipher, BlockCipher);
 #endif
 
-class Sha1HMac : public MessageAuthenticationCode {
+class Sha1HMac : public MAC {
  public:
-  Sha1HMac() {}
+  Sha1HMac() {
+    HMAC_CTX_init(&ctx);
+  }
   virtual ~Sha1HMac() {
     HMAC_CTX_cleanup(&ctx);
   }
@@ -308,17 +341,9 @@ class Sha1HMac : public MessageAuthenticationCode {
     return 20; // 160 bit.
   }
 
-  virtual bool setKey(const byte *key, int keyLength) {
-    HMAC_CTX_init(&ctx);
-    HMAC_Init_ex(&ctx, key, keyLength, EVP_sha1(), 0);
+  virtual bool setKey(const CipherKey &key) {
+    HMAC_Init_ex(&ctx, key.data(), key.size(), EVP_sha1(), 0);
     return true;
-  }
-
-  virtual bool randomKey(int keyLength) {
-    SecureMem key(keyLength);
-
-    return OpenSSLCipher::randomize(key.data, key.size)
-        && setKey(key.data, key.size);
   }
 
   virtual void reset() {
@@ -331,6 +356,11 @@ class Sha1HMac : public MessageAuthenticationCode {
   }
 
   virtual bool write(byte *out) {
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+    if (VALGRIND_CHECK_MEM_IS_ADDRESSABLE(out, 20) != 0) {
+      return false;
+    }
+#endif
     unsigned int outSize = 0;
     HMAC_Final(&ctx, (unsigned char *)out, &outSize);
     CHECK_EQ(outputSize(), outSize) << "Invalid HMAC output size";
@@ -348,7 +378,7 @@ class Sha1HMac : public MessageAuthenticationCode {
  private:
   HMAC_CTX ctx;
 };
-REGISTER_CLASS(Sha1HMac, MessageAuthenticationCode);
+REGISTER_CLASS(Sha1HMac, MAC);
 
 
 class PbkdfPkcs5HmacSha1 : public PBKDF {
@@ -359,16 +389,27 @@ class PbkdfPkcs5HmacSha1 : public PBKDF {
   virtual bool makeKey(const char *password, int passwordLength,
                        const byte *salt, int saltLength,
                        int numIterations,
-                       byte *outKey, int keyLength) const {
+                       CipherKey *outKey) {
     return PKCS5_PBKDF2_HMAC_SHA1(
         password, passwordLength,
         const_cast<byte *>(salt), saltLength,
-        numIterations, keyLength, outKey) == 1;
+        numIterations, outKey->size(), outKey->data()) == 1;
+  }
+
+  virtual CipherKey randomKey(int length) {
+    CipherKey key(length);
+    if (!OpenSSLCipher::randomize(&key))
+      key.reset();
+    return key;
+  }
+
+  virtual bool pseudoRandom(byte *out, int length) {
+    return OpenSSLCipher::pseudoRandomize(out, length);
   }
 
   static Properties GetProperties() {
     Properties props;
-    props.mode = "PKCS5_PBKDF2_HMAC_SHA1";
+    props.mode = NAME_PKCS5_PBKDF2_HMAC_SHA1;
     props.library = "OpenSSL";
     return props;
   }

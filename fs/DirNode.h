@@ -30,6 +30,7 @@
 #include <vector>
 #include <string>
 
+#include "base/Mutex.h"
 #include "base/shared_ptr.h"
 #include "cipher/CipherKey.h"
 #include "fs/FileNode.h"
@@ -161,7 +162,7 @@ private:
     
     shared_ptr<FileNode> findOrCreate( const char *plainName);
 
-    pthread_mutex_t mutex;
+    Mutex mutex;
 
     EncFS_Context *ctx;
 

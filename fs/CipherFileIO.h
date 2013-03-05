@@ -29,7 +29,7 @@
 
 namespace encfs {
 
-class Cipher;
+class CipherV1;
 
 /*
     Implement the FileIO interface encrypting data in blocks. 
@@ -93,8 +93,7 @@ private:
     uint64_t fileIV;
     int lastFlags;
 
-    shared_ptr<Cipher> cipher;
-    CipherKey key;
+    shared_ptr<CipherV1> cipher;
 };
 
 }  // namespace encfs

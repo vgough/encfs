@@ -12,9 +12,6 @@ message EncfsConfig
     optional int32 revision = 2 [default=0];
 
     required Interface cipher = 3;
-    // added for FileIO/Cipher 3.0 (encfs 1.8)
-    // Use only block encryption, no stream encryption.
-    optional bool block_mode_only = 31;
     required EncryptedKey key = 4;
     
     optional Interface naming = 5;

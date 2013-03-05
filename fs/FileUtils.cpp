@@ -34,7 +34,7 @@
 #include "base/i18n.h"
 #include "base/XmlReader.h"
 
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "cipher/MemoryPool.h"
 #include "cipher/readpassphrase.h"
 
@@ -528,60 +528,57 @@ bool readProtoConfig( const char *fileName, EncfsConfig &config,
 }
 
 static
-Cipher::CipherAlgorithm findCipherAlgorithm(const char *name,
+CipherV1::CipherAlgorithm findCipherAlgorithm(const char *name,
     int keySize )
 {
-  Cipher::AlgorithmList algorithms = Cipher::GetAlgorithmList();
-  Cipher::AlgorithmList::const_iterator it;
-  for(it = algorithms.begin(); it != algorithms.end(); ++it)
+  for (auto &it : CipherV1::GetAlgorithmList()) 
   {
-    if( !strcmp( name, it->name.c_str() )
-        && it->keyLength.allowed( keySize ))
+    if( !strcmp( name, it.name.c_str() )
+        && it.keyLength.allowed( keySize ))
     {
-      return *it;
+      return it;
     }
   }
 
-  Cipher::CipherAlgorithm result;
+  CipherV1::CipherAlgorithm result;
   return result;
 }
 
 static
-Cipher::CipherAlgorithm selectCipherAlgorithm()
+CipherV1::CipherAlgorithm selectCipherAlgorithm()
 {
   for(;;)
   {
     // figure out what cipher they want to use..
     // xgroup(setup)
     cout << _("The following cipher algorithms are available:") << "\n";
-    Cipher::AlgorithmList algorithms = Cipher::GetAlgorithmList();
-    Cipher::AlgorithmList::const_iterator it;
-    int optNum = 1;
-    for(it = algorithms.begin(); it != algorithms.end(); ++it, ++optNum)
+    int optNum = 0;
+    auto algorithms = CipherV1::GetAlgorithmList();
+    for (auto &it : algorithms)
     {
-      cout << optNum << ". " << it->name
-        << " : " << gettext(it->description.c_str()) << "\n";
-      if(it->keyLength.min() == it->keyLength.max())
+      cout << ++optNum << ". " << it.name
+        << " : " << gettext(it.description.c_str()) << "\n";
+      if(it.keyLength.min() == it.keyLength.max())
       {
         // shown after algorithm name and description.
         // xgroup(setup)
         cout << autosprintf(_(" -- key length %i bits")
-            , it->keyLength.min()) << "\n";
+            , it.keyLength.min()) << "\n";
       } else
       {
         cout << autosprintf(
             // shown after algorithm name and description.
             // xgroup(setup)
             _(" -- Supports key lengths of %i to %i bits"),
-            it->keyLength.min(), it->keyLength.max()) << "\n";
+            it.keyLength.min(), it.keyLength.max()) << "\n";
       }
 
-      if(it->blockSize.min() == it->blockSize.max())
+      if(it.blockSize.min() == it.blockSize.max())
       {
         cout << autosprintf(
             // shown after algorithm name and description.
             // xgroup(setup)
-            _(" -- block size %i bytes"), it->blockSize.min()) 
+            _(" -- block size %i bytes"), it.blockSize.min()) 
           << "\n";
       } else
       {
@@ -589,7 +586,7 @@ Cipher::CipherAlgorithm selectCipherAlgorithm()
             // shown after algorithm name and description.
             // xgroup(setup)
             _(" -- Supports block sizes of %i to %i bytes"),
-            it->blockSize.min(), it->blockSize.max()) << "\n";
+            it.blockSize.min(), it.blockSize.max()) << "\n";
       }
     }
 
@@ -606,11 +603,15 @@ Cipher::CipherAlgorithm selectCipherAlgorithm()
       continue;
     }
 
-    it = algorithms.begin();
-    while(--cipherNum) // numbering starts at 1
-      ++it;
-
-    Cipher::CipherAlgorithm alg = *it;
+    CipherV1::CipherAlgorithm alg;
+    for (auto &it : algorithms) 
+    {
+      if (!--cipherNum)
+      {
+        alg = it;
+        break;
+      }
+    }
 
     // xgroup(setup)
     cout << autosprintf(_("Selected algorithm \"%s\""), alg.name.c_str()) 
@@ -621,7 +622,7 @@ Cipher::CipherAlgorithm selectCipherAlgorithm()
 }
 
 static
-Interface selectNameCoding(const Cipher::CipherAlgorithm &alg)
+Interface selectNameCoding(const CipherV1::CipherAlgorithm &alg)
 {
   for(;;)
   {
@@ -635,9 +636,6 @@ Interface selectNameCoding(const Cipher::CipherAlgorithm &alg)
     map<int, NameIO::AlgorithmList::const_iterator> algMap;
     for(it = algorithms.begin(); it != algorithms.end(); ++it)
     {
-      if (it->needsStreamMode && !alg.hasStreamMode)
-        continue;
-
       cout << optNum << ". " << it->name
         << " : " << gettext(it->description.c_str()) << "\n";
       algMap[optNum++] = it;
@@ -667,7 +665,7 @@ Interface selectNameCoding(const Cipher::CipherAlgorithm &alg)
 }
 
 static
-int selectKeySize( const Cipher::CipherAlgorithm &alg )
+int selectKeySize( const CipherV1::CipherAlgorithm &alg )
 {
   if(alg.keyLength.min() == alg.keyLength.max())
   {
@@ -724,7 +722,7 @@ int selectKeySize( const Cipher::CipherAlgorithm &alg )
 }
 
 static
-int selectBlockSize( const Cipher::CipherAlgorithm &alg )
+int selectBlockSize( const CipherV1::CipherAlgorithm &alg )
 {
   if(alg.blockSize.min() == alg.blockSize.max())
   {
@@ -918,7 +916,7 @@ RootPtr createConfig( EncFS_Context *ctx,
 
   int keySize = 0;
   int blockSize = 0;
-  Cipher::CipherAlgorithm alg;
+  CipherV1::CipherAlgorithm alg;
   Interface nameIOIface;
   int blockMACBytes = 0;
   int blockMACRandBytes = 0;
@@ -954,7 +952,7 @@ RootPtr createConfig( EncFS_Context *ctx,
     // Enable filename initialization vector chaning
     keySize = 256;
     blockSize = DefaultBlockSize;
-    alg = findCipherAlgorithm("AES_XTS", keySize);
+    alg = findCipherAlgorithm("AES", keySize);
     nameIOIface = BlockNameIO::CurrentInterface();
     blockMACBytes = 8;
     blockMACRandBytes = 0; // using uniqueIV, so this isn't necessary
@@ -1028,7 +1026,7 @@ RootPtr createConfig( EncFS_Context *ctx,
     }
   }
 
-  shared_ptr<Cipher> cipher = Cipher::New( alg.name, keySize );
+  shared_ptr<CipherV1> cipher = CipherV1::New( alg.iface, keySize );
   if(!cipher)
   {
     LOG(ERROR) << "Unable to instanciate cipher " << alg.name
@@ -1043,10 +1041,6 @@ RootPtr createConfig( EncFS_Context *ctx,
   EncfsConfig config;
 
   config.mutable_cipher()->MergeFrom( cipher->interface() );
-  // TODO: allow user config
-  if (!cipher->hasStreamMode())
-    config.set_block_mode_only(true);
-
   config.set_block_size( blockSize );
   config.mutable_naming()->MergeFrom( nameIOIface );
   config.set_creator( "EncFS " VERSION );
@@ -1106,25 +1100,26 @@ RootPtr createConfig( EncFS_Context *ctx,
   }
   userKey = getNewUserKey( config, useStdin, passwordProgram, rootDir );
 
-  cipher->writeKey( volumeKey, encodedKey, userKey );
+  cipher->setKey( userKey );
+  cipher->writeKey( volumeKey, encodedKey );
   userKey.reset();
 
   key->set_ciphertext(encodedKey, encodedKeySize);
   delete[] encodedKey;
 
-  if(!volumeKey)
+  if(!volumeKey.valid())
   {
     LOG(ERROR) << "Failure generating new volume key! "
       << "Please report this error.";
     return rootInfo;
   }
 
+  cipher->setKey( volumeKey );
   if(!saveConfig( rootDir, config ))
     return rootInfo;
 
   // fill in config struct
-  shared_ptr<NameIO> nameCoder = NameIO::New( config.naming(),
-      cipher, volumeKey );
+  shared_ptr<NameIO> nameCoder = NameIO::New( config.naming(), cipher );
   if(!nameCoder)
   {
     LOG(WARNING) << "Name coding interface not supported";
@@ -1157,7 +1152,7 @@ RootPtr createConfig( EncFS_Context *ctx,
 
 void showFSInfo( const EncfsConfig &config )
 {
-  shared_ptr<Cipher> cipher = Cipher::New( config.cipher(), -1 );
+  shared_ptr<CipherV1> cipher = CipherV1::New( config.cipher(), -1 );
   {
     cout << autosprintf(
         // xgroup(diag)
@@ -1192,8 +1187,7 @@ void showFSInfo( const EncfsConfig &config )
   } else
   {
     // check if we support the filename encoding interface..
-    shared_ptr<NameIO> nameCoder = NameIO::New( config.naming(),
-        cipher, CipherKey() );
+    shared_ptr<NameIO> nameCoder = NameIO::New( config.naming(), cipher );
     if(!nameCoder)
     {
       // xgroup(diag)
@@ -1276,34 +1270,35 @@ void showFSInfo( const EncfsConfig &config )
   cout << "\n";
 }
 
-shared_ptr<Cipher> getCipher(const EncfsConfig &config)
+shared_ptr<CipherV1> getCipher(const EncfsConfig &config)
 {
   return getCipher(config.cipher(), 8 * config.key().size());
 }
 
-shared_ptr<Cipher> getCipher(const Interface &iface, int keySize)
+shared_ptr<CipherV1> getCipher(const Interface &iface, int keySize)
 {
-  return Cipher::New( iface, keySize );
+  return CipherV1::New( iface, keySize );
 }
 
 CipherKey makeNewKey(EncfsConfig &config, const char *password, int passwdLen)
 {
   CipherKey userKey;
-  shared_ptr<Cipher> cipher = getCipher(config);
+  shared_ptr<CipherV1> cipher = getCipher(config);
+
+  EncryptedKey *key = config.mutable_key();
 
   unsigned char salt[20];
-  if(!cipher->randomize( salt, sizeof(salt), true))
+  if(!cipher->pseudoRandomize( salt, sizeof(salt)))
   {
     cout << _("Error creating salt\n");
     return userKey;
   }
-  EncryptedKey *key = config.mutable_key();
   key->set_salt(salt, sizeof(salt));
 
   int iterations = key->kdf_iterations();
-  userKey = cipher->newKey( password, passwdLen,
-      iterations, key->kdf_duration(), 
-      salt, sizeof(salt));
+  userKey = cipher->newKey(password, passwdLen,
+                           &iterations, key->kdf_duration(),
+                           salt, sizeof(salt));
   key->set_kdf_iterations(iterations);
 
   return userKey;
@@ -1313,14 +1308,15 @@ CipherKey decryptKey(const EncfsConfig &config, const char *password, int passwd
 {
   const EncryptedKey &key = config.key();
   CipherKey userKey;
-  shared_ptr<Cipher> cipher = getCipher(config.cipher(), 8 * key.size());
+  shared_ptr<CipherV1> cipher = getCipher(config.cipher(), 8 * key.size());
 
   if(!key.salt().empty())
   {
     int iterations = key.kdf_iterations();
-    userKey = cipher->newKey( password, passwdLen,
-        iterations, key.kdf_duration(), 
-        (const unsigned char *)key.salt().data(), key.salt().size());
+    userKey = cipher->newKey(password, passwdLen,
+                             &iterations, key.kdf_duration(), 
+                             (const byte *)key.salt().data(),
+                             key.salt().size());
 
     if (iterations != key.kdf_iterations()) 
     {
@@ -1582,7 +1578,7 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
     }
 
     // first, instanciate the cipher.
-    shared_ptr<Cipher> cipher = getCipher(config);
+    shared_ptr<CipherV1> cipher = getCipher(config);
     if(!cipher)
     {
       Interface iface = config.cipher();
@@ -1605,24 +1601,27 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
     } else
       userKey = getUserKey( config, opts->passwordProgram, opts->rootDir );
 
-    if(!userKey)
+    if(!userKey.valid())
       return rootInfo;
+
+    cipher->setKey(userKey); 
 
     VLOG(1) << "cipher encoded key size = " << cipher->encodedKeySize();
     // decode volume key..
     CipherKey volumeKey = cipher->readKey(
-        (const unsigned char *)config.key().ciphertext().data(), userKey, opts->checkKey);
+        (const unsigned char *)config.key().ciphertext().data(), opts->checkKey);
     userKey.reset();
 
-    if(!volumeKey)
+    if(!volumeKey.valid())
     {
       // xgroup(diag)
       cout << _("Error decoding volume key, password incorrect\n");
       return rootInfo;
     }
 
-    shared_ptr<NameIO> nameCoder = NameIO::New( config.naming(), 
-        cipher, volumeKey );
+    cipher->setKey(volumeKey);
+
+    shared_ptr<NameIO> nameCoder = NameIO::New( config.naming(), cipher );
     if(!nameCoder)
     {
       Interface iface = config.naming();

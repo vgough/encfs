@@ -39,7 +39,7 @@ TEST(BlockFileIOTest, BasicIO) {
   MemFileIO base(1024);
   ASSERT_EQ(1024, base.getSize());
 
-  FSConfigPtr cfg = makeConfig( Cipher::New("Null"), 512);
+  FSConfigPtr cfg = makeConfig( CipherV1::New("Null"), 512);
   MemBlockFileIO block(512, cfg);
   block.truncate(1024);
   ASSERT_EQ(1024, block.getSize());

@@ -19,7 +19,7 @@
  */
 
 #include "base/base64.h"
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "fs/NullNameIO.h"
 
 #include <cstring>
@@ -27,7 +27,7 @@
 namespace encfs {
 
 static shared_ptr<NameIO> NewNNIO( const Interface &, 
-    const shared_ptr<Cipher> &, const CipherKey & )
+    const shared_ptr<CipherV1> & )
 {
   return shared_ptr<NameIO>( new NullNameIO() );
 }

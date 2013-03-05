@@ -2,13 +2,13 @@
 
 namespace encfs {
 
-DEFINE_REGISTERABLE_TYPE(MessageAuthenticationCode)
+DEFINE_REGISTERABLE_TYPE(MAC)
 
-MessageAuthenticationCode::MessageAuthenticationCode()
+MAC::MAC()
 {
 }
 
-MessageAuthenticationCode::~MessageAuthenticationCode()
+MAC::~MAC()
 {
 }
 

@@ -2,11 +2,7 @@
 
 namespace encfs {
 
-Registry<StreamCipher>& StreamCipher::GetRegistry()
-{
-  static Registry<StreamCipher> registry;
-  return registry;
-}
+DEFINE_REGISTERABLE_TYPE(StreamCipher);
 
 StreamCipher::StreamCipher()
 {

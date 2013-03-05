@@ -2,7 +2,7 @@
  * Author:   Valient Gough <vgough@pobox.com>
  *
  *****************************************************************************
- * Copyright (c) 2004, Valient Gough
+ * Copyright (c) 2004-2013, Valient Gough
  *
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
@@ -18,22 +18,24 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _SSL_Cipher_incl_
-#define _SSL_Cipher_incl_
+#ifndef _CipherV1_incl_
+#define _CipherV1_incl_
 
-#include "cipher/Cipher.h"
 #include "base/Interface.h"
+#include "base/Mutex.h"
+#include "base/shared_ptr.h"
 
-#ifndef EVP_CIPHER
-struct evp_cipher_st;
-typedef struct evp_cipher_st EVP_CIPHER;
-#endif
+#include "cipher/BlockCipher.h"
+#include "cipher/StreamCipher.h"
+#include "cipher/MAC.h"
+#include "cipher/PBKDF.h"
 
 namespace encfs {
-class SSLKey;
+
+class SecureMem;
 
 /*
-   Implements Cipher interface for OpenSSL's ciphers.
+   Implements Encfs V1.x ciphers support.
 
    Design:
    Variable algorithm, key size, and block size.
@@ -70,91 +72,107 @@ class SSLKey;
    initial value vector to randomize the output.  But it makes the code
    simpler to reuse the encryption algorithm as is.
 */
-class SSL_Cipher : public Cipher
+class CipherV1
 {
   Interface iface;
   Interface realIface;
-  const EVP_CIPHER *_blockCipher;
-  const EVP_CIPHER *_streamCipher;
+
+  shared_ptr<BlockCipher> _blockCipher;
+  shared_ptr<StreamCipher> _streamCipher;
+  shared_ptr<PBKDF> _pbkdf;
+
+  // HMac is stateful, so access is controlled via mutex.
+  mutable Mutex _hmacMutex;
+  mutable shared_ptr<MAC> _hmac;
+
   unsigned int _keySize; // in bytes
   unsigned int _ivLength;
 
+  shared_ptr<SecureMem> _iv;
+  bool _keySet;
+
  public:
-  SSL_Cipher(const Interface &iface, const Interface &realIface,
-             const EVP_CIPHER *blockCipher, const EVP_CIPHER *streamCipher,
-             int keyLength);
-  virtual ~SSL_Cipher();
 
-  // returns the real interface, not the one we're emulating (if any)..
-  virtual Interface interface() const;
+  struct CipherAlgorithm
+  {
+    std::string name;
+    std::string description;
+    Interface iface;
+    Range keyLength;
+    Range blockSize;
+  };
 
-  // create a new key based on a password
-  virtual CipherKey newKey(const char *password, int passwdLength,
-                           int &iterationCount, long desiredDuration,
-                           const byte *salt, int saltLen);
-  // deprecated - for backward compatibility
-  virtual CipherKey newKey(const char *password, int passwdLength);
-  // create a new random key
-  virtual CipherKey newRandomKey();
-
-  // data must be len keySize()
-  virtual CipherKey readKey(const byte *data, 
-                            const CipherKey &encodingKey,
-                            bool checkKey);
-  virtual void writeKey(const CipherKey &key, byte *data, 
-                        const CipherKey &encodingKey); 
-  virtual bool compareKey( const CipherKey &A, 
-                          const CipherKey &B ) const;
-
-  // meta-data about the cypher
-  virtual int keySize() const;
-  virtual int encodedKeySize() const;
-  virtual int cipherBlockSize() const;
-
-  virtual bool hasStreamMode() const;
-
-  virtual bool randomize( byte *buf, int len,
-                         bool strongRandom ) const;
-
-  virtual uint64_t MAC_64( const byte *src, int len,
-                          const CipherKey &key, uint64_t *augment ) const;
-
-  // functional interfaces
-  /*
-     Stream encoding in-place.
-   */
-  virtual bool streamEncode(byte *in, int len, 
-                            uint64_t iv64, const CipherKey &key) const;
-  virtual bool streamDecode(byte *in, int len, 
-                            uint64_t iv64, const CipherKey &key) const;
-
-  /*
-     Block encoding is done in-place.  Partial blocks are supported, but
-     blocks are always expected to begin on a block boundary.  See
-     blockSize().
-   */
-  virtual bool blockEncode(byte *buf, int size, 
-                           uint64_t iv64, const CipherKey &key) const;
-  virtual bool blockDecode(byte *buf, int size, 
-                           uint64_t iv64, const CipherKey &key) const;
-
-  // hack to help with static builds
-  static bool Enabled();
+  // Returns a list of supported algorithms.
+  static std::list<CipherAlgorithm> GetAlgorithmList();
+  static shared_ptr<CipherV1> New(const std::string &name, int keyLen = -1);
+  static shared_ptr<CipherV1> New(const Interface &alg, int keyLen = -1);
 
   // Password-based key derivation function which determines the
   // number of iterations based on a desired execution time (in microseconds).
   // Returns the number of iterations applied.
   static int TimedPBKDF2(const char *pass, int passLen,
                          const byte *salt, int saltLen,
-                         int keyLen, byte *out,
-                         long desiredPDFTimeMicroseconds);
- private:
-  void setIVec( byte *ivec, uint64_t seed,
-               const shared_ptr<SSLKey> &key ) const;
+                         CipherKey *out, long desiredPDFTimeMicroseconds);
 
+  CipherV1(const Interface &iface, const Interface &realIface, int keyLength);
+  ~CipherV1();
+
+  // returns the real interface, not the one we're emulating (if any)..
+  Interface interface() const;
+
+  // create a new key based on a password
+  CipherKey newKey(const char *password, int passwdLength,
+                   int *iterationCount, long desiredDuration,
+                   const byte *salt, int saltLen);
   // deprecated - for backward compatibility
-  void setIVec_old( byte *ivec, unsigned int seed,
-                   const shared_ptr<SSLKey> &key ) const;
+  CipherKey newKey(const char *password, int passwdLength);
+  // create a new random key
+  CipherKey newRandomKey();
+
+  // Read and decrypt a key.
+  // data must be len keySize()
+  CipherKey readKey(const byte *data, bool checkKey);
+
+  // Encrypt and write the given key.
+  void writeKey(const CipherKey &key, byte *data); 
+
+  // Encrypt and store a key as a string.
+  std::string encodeAsString(const CipherKey &key);
+              
+
+  // meta-data about the cypher
+  int keySize() const;
+  int encodedKeySize() const;
+  int cipherBlockSize() const;
+
+  bool pseudoRandomize(byte *buf, int len);
+
+  // Sets the key used for encoding / decoding, and MAC operations.
+  bool setKey(const CipherKey &key);
+
+  uint64_t MAC_64(const byte *src, int len,
+                  uint64_t *augment = NULL) const;
+
+  static unsigned int reduceMac32(uint64_t mac64);
+  static unsigned int reduceMac16(uint64_t mac64);
+
+  // functional interfaces
+  /*
+     Stream encoding in-place.
+   */
+  bool streamEncode(byte *data, int len, uint64_t iv64) const;
+  bool streamDecode(byte *data, int len, uint64_t iv64) const;
+
+  /*
+     Block encoding is done in-place.  Partial blocks are supported, but
+     blocks are always expected to begin on a block boundary.  See
+     blockSize().
+   */
+  bool blockEncode(byte *buf, int size, uint64_t iv64) const;
+  bool blockDecode(byte *buf, int size, uint64_t iv64) const;
+
+ private:
+  void setIVec(byte *out, uint64_t seed) const;
 };
 
 }  // namespace encfs

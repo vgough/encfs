@@ -57,12 +57,13 @@ namespace MemoryPool
     void destroyAll();
 }
 
-struct SecureMem
+class SecureMem
 {
+ public:
   int size;
   byte *data;
 
-  SecureMem(int len);
+  explicit SecureMem(int len);
   ~SecureMem();
 };
 

@@ -23,7 +23,7 @@
 #include "base/base64.h"
 #include "base/Error.h"
 #include "base/i18n.h"
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 
 #include <cstring>
 #include <glog/logging.h>
@@ -31,17 +31,17 @@
 namespace encfs {
 
 static shared_ptr<NameIO> NewBlockNameIO( const Interface &iface,
-    const shared_ptr<Cipher> &cipher, const CipherKey &key )
+    const shared_ptr<CipherV1> &cipher )
 {
   return shared_ptr<NameIO>( 
-      new BlockNameIO( iface, cipher, key, false));
+      new BlockNameIO( iface, cipher, false));
 }
 
 static shared_ptr<NameIO> NewBlockNameIO32( const Interface &iface,
-    const shared_ptr<Cipher> &cipher, const CipherKey &key )
+    const shared_ptr<CipherV1> &cipher )
 {
   return shared_ptr<NameIO>( 
-      new BlockNameIO( iface, cipher, key, true));
+      new BlockNameIO( iface, cipher, true));
 }
 
 static bool BlockIO_registered = NameIO::Register("Block",
@@ -85,12 +85,11 @@ Interface BlockNameIO::CurrentInterface(bool caseSensitive)
 }
 
 BlockNameIO::BlockNameIO( const Interface &iface,
-    const shared_ptr<Cipher> &cipher, 
-    const CipherKey &key, bool caseSensitiveEncoding )
+    const shared_ptr<CipherV1> &cipher, 
+    bool caseSensitiveEncoding )
     : _interface( iface.major() )
     , _bs( cipher->cipherBlockSize() )
     , _cipher( cipher )
-    , _key( key )
     , _caseSensitive( caseSensitiveEncoding )
 {
   rAssert( _bs < 128 );
@@ -144,15 +143,16 @@ int BlockNameIO::encodeName( const char *plaintextName, int length,
     tmpIV = *iv;
 
   // include padding in MAC computation
-  unsigned int mac = _cipher->MAC_16( (unsigned char *)encodedName+2,
-      length+padding, _key, iv );
+  unsigned int mac = _cipher->reduceMac16(
+      _cipher->MAC_64( (unsigned char *)encodedName+2,
+      length+padding, iv ));
 
   // add checksum bytes
   encodedName[0] = (mac >> 8) & 0xff;
   encodedName[1] = (mac     ) & 0xff;
 
   _cipher->blockEncode( (unsigned char *)encodedName+2, length+padding,
-      (uint64_t)mac ^ tmpIV, _key);
+      (uint64_t)mac ^ tmpIV );
 
   // convert to base 64 ascii
   int encodedStreamLen = length + 2 + padding;
@@ -211,7 +211,7 @@ int BlockNameIO::decodeName( const char *encodedName, int length,
     tmpIV = *iv;
 
   _cipher->blockDecode( (unsigned char *)tmpBuf+2, decodedStreamLen,
-      (uint64_t)mac ^ tmpIV, _key);
+      (uint64_t)mac ^ tmpIV );
 
   // find out true string length
   int padding = (unsigned char)tmpBuf[2+decodedStreamLen-1];
@@ -230,8 +230,9 @@ int BlockNameIO::decodeName( const char *encodedName, int length,
   plaintextName[finalSize] = '\0';
 
   // check the mac
-  unsigned int mac2 = _cipher->MAC_16((const unsigned char *)tmpBuf+2,
-      decodedStreamLen, _key, iv);
+  unsigned int mac2 = _cipher->reduceMac16(
+      _cipher->MAC_64((const unsigned char *)tmpBuf+2,
+      decodedStreamLen, iv));
 
   BUFFER_RESET( tmpBuf );
 

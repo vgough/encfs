@@ -112,8 +112,8 @@ bool NameIO::Register( const char *name, const char *description,
   return true;
 }
 
-shared_ptr<NameIO> NameIO::New( const string &name, 
-    const shared_ptr<Cipher> &cipher, const CipherKey &key)
+shared_ptr<NameIO> NameIO::New(const string &name, 
+                               const shared_ptr<CipherV1> &cipher)
 {
   shared_ptr<NameIO> result;
   if(gNameIOMap)
@@ -122,14 +122,14 @@ shared_ptr<NameIO> NameIO::New( const string &name,
     if(it != gNameIOMap->end())
     {
       Constructor fn = it->second.constructor;
-      result = (*fn)( it->second.iface, cipher, key );
+      result = (*fn)( it->second.iface, cipher );
     }
   }
   return result;
 }
 
-shared_ptr<NameIO> NameIO::New( const Interface &iface, 
-    const shared_ptr<Cipher> &cipher, const CipherKey &key )
+shared_ptr<NameIO> NameIO::New(const Interface &iface, 
+                               const shared_ptr<CipherV1> &cipher)
 {
   shared_ptr<NameIO> result;
   if(gNameIOMap)
@@ -141,7 +141,7 @@ shared_ptr<NameIO> NameIO::New( const Interface &iface,
       if( implements(it->second.iface, iface ))
       {
         Constructor fn = it->second.constructor;
-        result = (*fn)( iface, cipher, key );
+        result = (*fn)( iface, cipher );
         break;
       }
     }

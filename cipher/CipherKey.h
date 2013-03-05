@@ -21,18 +21,40 @@
 #ifndef _CipherKey_incl_
 #define _CipherKey_incl_
 
+#include <cstring>
+
 #include "base/shared_ptr.h"
+#include "base/types.h"
 
 namespace encfs {
 
-class AbstractCipherKey
+class SecureMem;
+
+class CipherKey
 {
-public:
-    AbstractCipherKey();
-    virtual ~AbstractCipherKey();
+ public:
+  CipherKey();  // Creates a key for which valid() returns false.
+  explicit CipherKey(int length);
+  CipherKey(const byte *data, int length);
+  CipherKey(const CipherKey& src);
+  ~CipherKey();
+
+  void operator = (const CipherKey& src);
+
+  byte *data() const;
+  int size() const;
+
+  // Clear memory associated with key.
+  void reset();
+
+  bool valid() const;
+
+ private:
+  bool _valid;
+  shared_ptr<SecureMem> _mem;
 };
 
-typedef shared_ptr<AbstractCipherKey> CipherKey;
+bool operator == (const CipherKey &a, const CipherKey &b);
 
 }  // namespace encfs
 

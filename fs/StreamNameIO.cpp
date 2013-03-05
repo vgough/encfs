@@ -21,7 +21,7 @@
 #include "base/base64.h"
 #include "base/Error.h"
 #include "base/i18n.h"
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "fs/StreamNameIO.h"
 
 #include <glog/logging.h>
@@ -33,9 +33,9 @@ using namespace std;
 namespace encfs {
 
 static shared_ptr<NameIO> NewStreamNameIO( const Interface &iface,
-    const shared_ptr<Cipher> &cipher, const CipherKey &key)
+    const shared_ptr<CipherV1> &cipher )
 {
-  return shared_ptr<NameIO>( new StreamNameIO( iface, cipher, key ) );
+  return shared_ptr<NameIO>( new StreamNameIO( iface, cipher ) );
 }
 
 static bool StreamIO_registered = NameIO::Register("Stream",
@@ -72,11 +72,9 @@ Interface StreamNameIO::CurrentInterface()
 }
 
 StreamNameIO::StreamNameIO( const Interface &iface,
-	const shared_ptr<Cipher> &cipher, 
-	const CipherKey &key )
+	const shared_ptr<CipherV1> &cipher )
     : _interface( iface.major() )
     , _cipher( cipher )
-    , _key( key )
 {
 
 }
@@ -109,8 +107,8 @@ int StreamNameIO::encodeName( const char *plaintextName, int length,
   if( iv && _interface >= 2 )
     tmpIV = *iv;
 
-  unsigned int mac = _cipher->MAC_16( (const unsigned char *)plaintextName, 
-      length, _key, iv );
+  unsigned int mac = _cipher->reduceMac16(
+      _cipher->MAC_64((const byte *)plaintextName, length, iv ));
 
   // add on checksum bytes
   unsigned char *encodeBegin;
@@ -130,7 +128,7 @@ int StreamNameIO::encodeName( const char *plaintextName, int length,
 
   // stream encode the plaintext bytes
   memcpy( encodeBegin, plaintextName, length );
-  _cipher->streamEncode( encodeBegin, length, (uint64_t)mac ^ tmpIV, _key);
+  _cipher->streamEncode( encodeBegin, length, (uint64_t)mac ^ tmpIV);
 
   // convert the entire thing to base 64 ascii..
   int encodedStreamLen = length + 2;
@@ -184,11 +182,11 @@ int StreamNameIO::decodeName( const char *encodedName, int length,
   }
 
   _cipher->streamDecode( (unsigned char *)plaintextName, decodedStreamLen, 
-      (uint64_t)mac ^ tmpIV, _key);
+      (uint64_t)mac ^ tmpIV );
 
   // compute MAC to check with stored value
-  unsigned int mac2 = _cipher->MAC_16((const unsigned char *)plaintextName, 
-      decodedStreamLen, _key, iv);
+  unsigned int mac2 = _cipher->reduceMac16(
+      _cipher->MAC_64((const byte *)plaintextName, decodedStreamLen, iv));
 
   BUFFER_RESET( tmpBuf );
   if(mac2 != mac)

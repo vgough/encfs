@@ -4,15 +4,14 @@ link_directories (${Encfs_BINARY_DIR}/base)
 
 add_library (encfs-cipher
     BlockCipher.cpp
-    Cipher.cpp
     CipherKey.cpp
+    CipherV1.cpp
     MAC.cpp
     MemoryPool.cpp
-    NullCipher.cpp
+    NullCiphers.cpp
     openssl.cpp
     PBKDF.cpp
     readpassphrase.cpp
-    SSL_Cipher.cpp
     StreamCipher.cpp
 )
 

@@ -30,6 +30,13 @@ namespace encfs {
 
 std::string stringToHex(const byte *data, int len);
 
+template <typename T>
+std::string stringToHex(const T& value) {
+  return stringToHex(value.data(), value.size());
+}
+
+void setDataFromHex(byte *out, int size, const char *hex);
+
 }  // namespace encfs
 
 #endif

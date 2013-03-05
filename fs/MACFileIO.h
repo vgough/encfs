@@ -21,7 +21,7 @@
 #ifndef _MACFileIO_incl_
 #define _MACFileIO_incl_
 
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "fs/BlockFileIO.h"
 
 namespace encfs {
@@ -58,8 +58,7 @@ private:
     virtual bool writeOneBlock( const IORequest &req );
 
     shared_ptr<FileIO> base;
-    shared_ptr<Cipher> cipher;
-    CipherKey key;
+    shared_ptr<CipherV1> cipher;
     int macBytes;
     int randBytes;
     bool warnOnly;

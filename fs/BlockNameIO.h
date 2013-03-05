@@ -21,14 +21,13 @@
 #ifndef _BlockNameIO_incl_
 #define _BlockNameIO_incl_
 
-#include "cipher/CipherKey.h"
 #include "fs/NameIO.h"
 
 #include <memory>
 
 namespace encfs {
 
-class Cipher;
+class CipherV1;
 
 /*
     Implement NameIO interface for filename encoding.  Uses cipher in block
@@ -37,34 +36,32 @@ class Cipher;
 */
 class BlockNameIO : public NameIO
 {
-public:
-    static Interface CurrentInterface(bool caseSensitive = false);
+ public:
+  static Interface CurrentInterface(bool caseSensitive = false);
 
-    BlockNameIO( const Interface &iface,
-	         const shared_ptr<Cipher> &cipher, 
-	         const CipherKey &key,
-           bool caseSensitiveEncoding = false );
-    virtual ~BlockNameIO();
+  BlockNameIO(const Interface &iface,
+              const shared_ptr<CipherV1> &cipher, 
+              bool caseSensitiveEncoding = false );
+  virtual ~BlockNameIO();
 
-    virtual Interface interface() const;
+  virtual Interface interface() const;
 
-    virtual int maxEncodedNameLen( int plaintextNameLen ) const;
-    virtual int maxDecodedNameLen( int encodedNameLen ) const;
+  virtual int maxEncodedNameLen( int plaintextNameLen ) const;
+  virtual int maxDecodedNameLen( int encodedNameLen ) const;
 
-    // hack to help with static builds
-    static bool Enabled();
-protected:
-    virtual int encodeName( const char *plaintextName, int length,
-	                    uint64_t *iv, char *encodedName ) const;
-    virtual int decodeName( const char *encodedName, int length,
-	                    uint64_t *iv, char *plaintextName ) const;
+  // hack to help with static builds
+  static bool Enabled();
+ protected:
+  virtual int encodeName(const char *plaintextName, int length,
+                         uint64_t *iv, char *encodedName ) const;
+  virtual int decodeName(const char *encodedName, int length,
+                         uint64_t *iv, char *plaintextName ) const;
 
-private:
-    int _interface;
-    int _bs;
-    shared_ptr<Cipher> _cipher;
-    CipherKey _key;
-    bool _caseSensitive;
+ private:
+  int _interface;
+  int _bs;
+  shared_ptr<CipherV1> _cipher;
+  bool _caseSensitive;
 };
 
 }  // namespace encfs

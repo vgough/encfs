@@ -61,7 +61,6 @@ MACFileIO::MACFileIO( const shared_ptr<FileIO> &_base,
    : BlockFileIO( dataBlockSize( cfg ), cfg )
    , base( _base )
    , cipher( cfg->cipher )
-   , key( cfg->key )
    , macBytes( cfg->config->block_mac_bytes() )
    , randBytes( cfg->config->block_mac_rand_bytes() )
    , warnOnly( cfg->opts->forceDecode )
@@ -202,7 +201,7 @@ ssize_t MACFileIO::readOneBlock( const IORequest &req ) const
       // At this point the data has been decoded.  So, compute the MAC of
       // the block and check against the checksum stored in the header..
       uint64_t mac = cipher->MAC_64( tmp.data + macBytes, 
-          readSize - macBytes, key );
+          readSize - macBytes );
 
       for(int i=0; i<macBytes; ++i, mac >>= 8)
       {
@@ -255,7 +254,7 @@ bool MACFileIO::writeOneBlock( const IORequest &req )
   memcpy( newReq.data + headerSize, req.data, req.dataLen );
   if(randBytes > 0)
   {
-    if(!cipher->randomize( newReq.data+macBytes, randBytes, false ))
+    if(!cipher->pseudoRandomize( newReq.data+macBytes, randBytes))
       return false;
   }
 
@@ -263,7 +262,7 @@ bool MACFileIO::writeOneBlock( const IORequest &req )
   {
     // compute the mac (which includes the random data) and fill it in
     uint64_t mac = cipher->MAC_64( newReq.data+macBytes, 
-        req.dataLen + randBytes, key );
+        req.dataLen + randBytes );
 
     for(int i=0; i<macBytes; ++i)
     {

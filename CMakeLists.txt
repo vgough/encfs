@@ -73,6 +73,9 @@ include_directories (${PROTOBUF_INCLUDE_DIR})
 find_package (GLog REQUIRED)
 include_directories (${GLOG_INCLUDE_DIRS})
 
+find_package (Threads)
+
+set (CMAKE_THREAD_PREFER_PTHREAD)
 find_program (POD2MAN pod2man)
 
 find_package (GTest)

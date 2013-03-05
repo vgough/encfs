@@ -475,14 +475,16 @@ void encfs_destroy( void *_ctx )
   {
     ctx->running = false;
 
+#ifdef CMAKE_USE_PTHREADS_INIT
     // wake up the thread if it is waiting..
     VLOG(1) << "waking up monitoring thread";
-    pthread_mutex_lock( &ctx->wakeupMutex );
+    ctx->wakeupMutex.lock();
     pthread_cond_signal( &ctx->wakeupCond );
-    pthread_mutex_unlock( &ctx->wakeupMutex );
+    ctx->wakeupMutex.unlock();
     VLOG(1) << "joining with idle monitoring thread";
     pthread_join( ctx->monitorThread , 0 );
     VLOG(1) << "join done";
+#endif
   }
 }
 
@@ -695,7 +697,7 @@ void * idleMonitor(void *_arg)
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;
   int idleCycles = 0;
 
-  pthread_mutex_lock( &ctx->wakeupMutex );
+  ctx->wakeupMutex.lock();
 
   while(ctx->running)
   {
@@ -711,8 +713,10 @@ void * idleMonitor(void *_arg)
       int openCount = ctx->openFileCount();
       if( openCount == 0 && unmountFS( ctx ) )
       {
+#ifdef CMAKE_USE_PTHREADS_INIT
         // wait for main thread to wake us up
-        pthread_cond_wait( &ctx->wakeupCond, &ctx->wakeupMutex );
+        pthread_cond_wait( &ctx->wakeupCond, &ctx->wakeupMutex._mutex );
+#endif
         break;
       }
 
@@ -727,11 +731,13 @@ void * idleMonitor(void *_arg)
     struct timespec wakeupTime;
     wakeupTime.tv_sec = currentTime.tv_sec + ActivityCheckInterval;
     wakeupTime.tv_nsec = currentTime.tv_usec * 1000;
+#ifdef CMAKE_USE_PTHREADS_INIT
     pthread_cond_timedwait( &ctx->wakeupCond, 
-        &ctx->wakeupMutex, &wakeupTime );
+        &ctx->wakeupMutex._mutex, &wakeupTime );
+#endif
   }
 
-  pthread_mutex_unlock( &ctx->wakeupMutex );
+  ctx->wakeupMutex.unlock();
 
   VLOG(1) << "Idle monitoring thread exiting";
 

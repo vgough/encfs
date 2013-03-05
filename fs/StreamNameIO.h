@@ -21,12 +21,11 @@
 #ifndef _StreamNameIO_incl_
 #define _StreamNameIO_incl_
 
-#include "cipher/CipherKey.h"
 #include "fs/NameIO.h"
 
 namespace encfs {
 
-class Cipher;
+class CipherV1;
 
 class StreamNameIO : public NameIO
 {
@@ -34,8 +33,7 @@ public:
     static Interface CurrentInterface();
 
     StreamNameIO( const Interface &iface,
-	          const shared_ptr<Cipher> &cipher, 
-		  const CipherKey &key );
+	          const shared_ptr<CipherV1> &cipher);
     virtual ~StreamNameIO();
 
     virtual Interface interface() const;
@@ -52,8 +50,7 @@ protected:
 	                    uint64_t *iv, char *plaintextName ) const;
 private:
     int _interface;
-    shared_ptr<Cipher> _cipher;
-    CipherKey _key;
+    shared_ptr<CipherV1> _cipher;
 };
 
 }  // namespace encfs

@@ -21,6 +21,7 @@
 #ifndef _FileNode_incl_
 #define _FileNode_incl_
 
+#include "base/Mutex.h"
 #include "cipher/CipherKey.h"
 #include "fs/encfs.h"
 #include "fs/FileUtils.h"
@@ -82,7 +83,7 @@ private:
     // easier to avoid any race conditions with operations such as
     // truncate() which may result in multiple calls down to the FileIO
     // level.
-    mutable pthread_mutex_t mutex;
+    mutable Mutex mutex;
 
     FSConfigPtr fsConfig;
 

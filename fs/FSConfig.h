@@ -43,7 +43,7 @@ enum ConfigType
 };
 
 struct EncFS_Opts;
-class Cipher;
+class CipherV1;
 class NameIO;
 
 CipherKey getUserKey(const EncfsConfig &config, bool useStdin);
@@ -54,8 +54,8 @@ CipherKey getUserKey(const EncfsConfig &config,
 CipherKey getNewUserKey(EncfsConfig &config, bool useStdin, 
     const std::string &program, const std::string &rootDir);
     
-shared_ptr<Cipher> getCipher(const EncfsConfig &cfg);
-shared_ptr<Cipher> getCipher(const Interface &iface, int keySize);
+shared_ptr<CipherV1> getCipher(const EncfsConfig &cfg);
+shared_ptr<CipherV1> getCipher(const Interface &iface, int keySize);
 
 // helpers for serializing to/from a stream
 std::ostream &operator << (std::ostream &os, const EncfsConfig &cfg);
@@ -67,7 +67,7 @@ struct FSConfig
     shared_ptr<EncfsConfig> config;
     shared_ptr<EncFS_Opts> opts;
 
-    shared_ptr<Cipher> cipher;
+    shared_ptr<CipherV1> cipher;
     CipherKey key;
     shared_ptr<NameIO> nameCoding;
 

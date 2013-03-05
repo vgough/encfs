@@ -21,7 +21,7 @@
 #include "fs/CipherFileIO.h"
 
 #include "base/Error.h"
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "cipher/MemoryPool.h"
 #include "fs/fsconfig.pb.h"
 
@@ -33,9 +33,6 @@
 namespace encfs {
 
 /*
-   Version 3:0 adds support for block-only encryption by adding space for
-   a full block to the file header.
-
    Version 2:0 adds support for a per-file initialization vector with a
    fixed 8 byte header.  The headers are enabled globally within a
    filesystem at the filesystem configuration level.
@@ -48,7 +45,6 @@ CipherFileIO::CipherFileIO( const shared_ptr<FileIO> &_base,
     : BlockFileIO( cfg->config->block_size(), cfg )
     , base( _base )
     , headerLen( 0 )
-    , blockOnlyMode( cfg->config->block_mode_only() )
     , perFileIV( cfg->config->unique_iv() )
     , externalIV( 0 )
     , fileIV( 0 )
@@ -56,18 +52,9 @@ CipherFileIO::CipherFileIO( const shared_ptr<FileIO> &_base,
 {
   fsConfig = cfg;
   cipher = cfg->cipher;
-  key = cfg->key;
 
-  if ( blockOnlyMode )
-  {
-    headerLen += blockSize();
-    if ( perFileIV )
-      headerLen += cipher->cipherBlockSize();
-  } else
-  {
-    if ( perFileIV )
-      headerLen += sizeof(uint64_t); // 64bit IV per file
-  }
+  if ( perFileIV )
+    headerLen += sizeof(uint64_t); // 64bit IV per file
 
   int blockBoundary = fsConfig->config->block_size() % 
     fsConfig->cipher->cipherBlockSize();
@@ -200,19 +187,13 @@ void CipherFileIO::initHeader( )
 
     IORequest req;
     req.offset = 0;
-    if (blockOnlyMode)
-      req.offset += blockSize();
-
     req.data = mb.data;
-    req.dataLen = blockOnlyMode ? cbs : sizeof(uint64_t);
+    req.dataLen = sizeof(uint64_t);
     base->read( req );
 
     if (perFileIV)
     {
-      if (blockOnlyMode)
-        cipher->blockDecode( mb.data, cbs, externalIV, key );
-      else
-        cipher->streamDecode( mb.data, sizeof(uint64_t), externalIV, key );
+      cipher->streamDecode( mb.data, sizeof(uint64_t), externalIV );
 
       fileIV = 0;
       for(unsigned int i=0; i<sizeof(uint64_t); ++i)
@@ -226,7 +207,7 @@ void CipherFileIO::initHeader( )
 
     do
     {
-      if(!cipher->randomize( mb.data, 8, false ))
+      if(!cipher->pseudoRandomize( mb.data, 8 ))
         throw Error("Unable to generate a random file IV");
 
       fileIV = 0;
@@ -237,20 +218,14 @@ void CipherFileIO::initHeader( )
         << "Unexpected result: randomize returned 8 null bytes!";
     } while(fileIV == 0); // don't accept 0 as an option..
    
-    if (blockOnlyMode)
-      cipher->blockEncode( mb.data, cbs, externalIV, key );
-    else
-      cipher->streamEncode( mb.data, sizeof(uint64_t), externalIV, key );
+    cipher->streamEncode( mb.data, sizeof(uint64_t), externalIV );
 
     if( base->isWritable() )
     {
       IORequest req;
       req.offset = 0;
-      if (blockOnlyMode)
-        req.offset += blockSize();
-
       req.data = mb.data;
-      req.dataLen = blockOnlyMode ? cbs : sizeof(uint64_t);
+      req.dataLen = sizeof(uint64_t);
 
       base->write( req );
     } else
@@ -281,8 +256,7 @@ bool CipherFileIO::writeHeader( )
 
   if (perFileIV)
   {
-    int cbs = cipher->cipherBlockSize();
-    unsigned char *buf = mb.data + (blockOnlyMode ? blockSize() : 0);
+    unsigned char *buf = mb.data;
 
     for(int i=sizeof(buf)-1; i>=0; --i)
     {
@@ -290,10 +264,7 @@ bool CipherFileIO::writeHeader( )
       fileIV >>= 8;
     }
 
-    if (blockOnlyMode)
-      cipher->blockEncode( buf, cbs, externalIV, key );
-    else
-      cipher->streamEncode( buf, sizeof(uint64_t), externalIV, key);
+    cipher->streamEncode( buf, sizeof(uint64_t), externalIV );
   }
 
   IORequest req;
@@ -322,25 +293,6 @@ ssize_t CipherFileIO::readOneBlock( const IORequest &req ) const
     tmpReq.offset += headerLen;
 
   int maxReadSize = req.dataLen;
-  if (blockOnlyMode)
-  {
-    off_t size = getSize();
-    if (req.offset + req.dataLen > size)
-    {
-      // Last block written as full block at front of the file header.
-      mb.allocate(bs);
-
-      tmpReq.offset = 0;
-      tmpReq.dataLen = bs;
-      tmpReq.data = mb.data;
- 
-      // TODO: what is the expected behavior if req.offset >= size?
-      maxReadSize = size - req.offset;
-      if (maxReadSize <= 0)
-        return 0;
-    }
-  }
-
   readSize = base->read( tmpReq );
 
   bool ok;
@@ -349,7 +301,7 @@ ssize_t CipherFileIO::readOneBlock( const IORequest &req ) const
     if(headerLen != 0 && fileIV == 0)
       const_cast<CipherFileIO*>(this)->initHeader();
 
-    if(blockOnlyMode || readSize == bs)
+    if(readSize == bs)
     {
       ok = blockRead( tmpReq.data, bs, blockNum ^ fileIV);
     } else 
@@ -378,7 +330,6 @@ ssize_t CipherFileIO::readOneBlock( const IORequest &req ) const
 bool CipherFileIO::writeOneBlock( const IORequest &req )
 {
   int bs = blockSize();
-  int cbs = cipher->cipherBlockSize();
   off_t blockNum = req.offset / bs;
 
   if(headerLen != 0 && fileIV == 0)
@@ -390,13 +341,6 @@ bool CipherFileIO::writeOneBlock( const IORequest &req )
   if (req.dataLen == bs)
   {
     ok = blockWrite( req.data, bs, blockNum ^ fileIV );
-  } else if (blockOnlyMode)
-  {
-    mb.allocate(bs);
-    cipher->randomize(mb.data + bs - cbs, cbs, false);
-    memcpy(mb.data, req.data, req.dataLen);
-
-    ok = blockWrite( mb.data, bs, blockNum ^ fileIV );
   } else
   {
     ok = streamWrite( req.data, (int)req.dataLen, 
@@ -437,18 +381,18 @@ bool CipherFileIO::blockWrite( unsigned char *buf, int size,
                               uint64_t _iv64 ) const
 {
   if (!fsConfig->reverseEncryption)
-    return cipher->blockEncode( buf, size, _iv64, key );
+    return cipher->blockEncode( buf, size, _iv64 );
   else
-    return cipher->blockDecode( buf, size, _iv64, key );
+    return cipher->blockDecode( buf, size, _iv64 );
 } 
 
 bool CipherFileIO::streamWrite( unsigned char *buf, int size, 
                                uint64_t _iv64 ) const
 {
   if (!fsConfig->reverseEncryption)
-    return cipher->streamEncode( buf, size, _iv64, key );
+    return cipher->streamEncode( buf, size, _iv64 );
   else
-    return cipher->streamDecode( buf, size, _iv64, key );
+    return cipher->streamDecode( buf, size, _iv64 );
 } 
 
 
@@ -456,26 +400,26 @@ bool CipherFileIO::blockRead( unsigned char *buf, int size,
                              uint64_t _iv64 ) const
 {
   if (fsConfig->reverseEncryption)
-    return cipher->blockEncode( buf, size, _iv64, key );
+    return cipher->blockEncode( buf, size, _iv64 );
   else if(_allowHoles)
   {
     // special case - leave all 0's alone
     for(int i=0; i<size; ++i)
       if(buf[i] != 0)
-        return cipher->blockDecode( buf, size, _iv64, key );
+        return cipher->blockDecode( buf, size, _iv64 );
 
     return true;
   } else
-    return cipher->blockDecode( buf, size, _iv64, key );
+    return cipher->blockDecode( buf, size, _iv64 );
 } 
 
 bool CipherFileIO::streamRead( unsigned char *buf, int size, 
                               uint64_t _iv64 ) const
 {
   if (fsConfig->reverseEncryption)
-    return cipher->streamEncode( buf, size, _iv64, key );
+    return cipher->streamEncode( buf, size, _iv64 );
   else
-    return cipher->streamDecode( buf, size, _iv64, key );
+    return cipher->streamDecode( buf, size, _iv64 );
 } 
 
 int CipherFileIO::truncate( off_t size )

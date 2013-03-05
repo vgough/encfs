@@ -5,14 +5,17 @@
 
 #include "base/Registry.h"
 #include "base/types.h"
+#include "cipher/CipherKey.h"
 
 namespace encfs {
 
-// MessageAuthenticationCode provides keyed MAC algorithms, eg HMAC.
-class MessageAuthenticationCode
+static const char NAME_SHA1_HMAC[] = "SHA-1/HMAC";
+
+// MAC provides keyed MessageAuthenticationCode algorithms, eg HMAC.
+class MAC
 {
  public:
-  DECLARE_REGISTERABLE_TYPE(MessageAuthenticationCode);
+  DECLARE_REGISTERABLE_TYPE(MAC);
 
   struct Properties {
     int blockSize;      // Block length of hash function.
@@ -25,13 +28,12 @@ class MessageAuthenticationCode
     }
   };
 
-  MessageAuthenticationCode();
-  virtual ~MessageAuthenticationCode();
+  MAC();
+  virtual ~MAC();
 
   virtual int outputSize() const =0;
 
-  virtual bool setKey(const byte *key, int keyLength) =0;
-  virtual bool randomKey(int keyLength) =0;
+  virtual bool setKey(const CipherKey &key) =0;
 
   virtual void reset() =0;
   virtual bool update(const byte *in, int length) =0;

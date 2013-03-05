@@ -19,48 +19,19 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _STREAMCIPHER_incl_
-#define _STREAMCIPHER_incl_
+#ifndef _NULLCIPHERS_incl_
+#define _NULLCIPHERS_incl_
 
-#include "base/Range.h"
 #include "base/Registry.h"
-#include "base/shared_ptr.h"
-#include "base/types.h"
-#include "cipher/CipherKey.h"
 
 namespace encfs {
 
-static const char NAME_AES_CFB[] = "AES/CFB";
-static const char NAME_BLOWFISH_CFB[] = "Blowfish/CFB";
-
-class StreamCipher
-{
+class NullCiphers {
  public:
-  DECLARE_REGISTERABLE_TYPE(StreamCipher);
-
-  struct Properties {
-    Range keySize;
-    std::string cipher;
-    std::string mode;
-    std::string library;
-    std::string toString() const {
-      return cipher + "/" + mode;
-    }
-  };
-
-  StreamCipher();
-  virtual ~StreamCipher();
-
-  virtual bool setKey(const CipherKey& key) =0;
-
-  virtual bool encrypt(const byte *iv, const byte *in,
-                       byte *out, int numBytes) =0;
-  virtual bool decrypt(const byte *iv, const byte *in,
-                       byte *out, int numBytes) =0;
+  static void registerCiphers();
 };
 
 }  // namespace encfs
-
 
 #endif
 

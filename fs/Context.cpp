@@ -18,10 +18,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "base/Mutex.h"
+#include "fs/Context.h"
+
 #include "base/Error.h"
 #include "fs/FileNode.h"
-#include "fs/Context.h"
 #include "fs/FileUtils.h"
 #include "fs/DirNode.h"
 
@@ -29,18 +29,18 @@ namespace encfs {
 
 EncFS_Context::EncFS_Context()
 { 
+#ifdef CMAKE_USE_PTHREADS_INIT
   pthread_cond_init( &wakeupCond, 0 );
-  pthread_mutex_init( &wakeupMutex, 0 );
-  pthread_mutex_init( &contextMutex, 0 );
+#endif
 
   usageCount = 0;
 }
 
 EncFS_Context::~EncFS_Context()
 {
-  pthread_mutex_destroy( &contextMutex );
-  pthread_mutex_destroy( &wakeupMutex );
+#ifdef CMAKE_USE_PTHREADS_INIT
   pthread_cond_destroy( &wakeupCond );
+#endif
 
   // release all entries from map
   openFiles.clear();

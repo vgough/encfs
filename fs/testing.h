@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "fs/FileUtils.h"
 #include "fs/FSConfig.h"
 
@@ -11,7 +11,7 @@ namespace encfs {
 
 class FileIO;
 
-FSConfigPtr makeConfig(const shared_ptr<Cipher>& cipher, int blockSize);
+FSConfigPtr makeConfig(const shared_ptr<CipherV1>& cipher, int blockSize);
 
 void runWithCipher(const std::string& cipherName, int blockSize,
                    void (*func)(FSConfigPtr& config));

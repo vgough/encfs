@@ -27,7 +27,7 @@
 
 #include <gtest/gtest.h>
 
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "cipher/MemoryPool.h"
 
 #include "fs/FSConfig.h"
@@ -40,10 +40,11 @@ using namespace std;
 
 namespace encfs {
 
-FSConfigPtr makeConfig(const shared_ptr<Cipher>& cipher, int blockSize) {
+FSConfigPtr makeConfig(const shared_ptr<CipherV1>& cipher, int blockSize) {
   FSConfigPtr cfg = FSConfigPtr(new FSConfig);
   cfg->cipher = cipher;
   cfg->key = cipher->newRandomKey();
+  cfg->cipher->setKey(cfg->key);
   cfg->config.reset(new EncfsConfig);
   cfg->config->set_block_size(blockSize);
   cfg->opts.reset(new EncFS_Opts);
@@ -53,7 +54,7 @@ FSConfigPtr makeConfig(const shared_ptr<Cipher>& cipher, int blockSize) {
 
 void runWithCipher(const string& cipherName, int blockSize,
                    void (*func)(FSConfigPtr& config)) {
-  shared_ptr<Cipher> cipher = Cipher::New(cipherName);
+  shared_ptr<CipherV1> cipher = CipherV1::New(cipherName);
   ASSERT_TRUE(cipher.get() != NULL);
 
   FSConfigPtr cfg = makeConfig(cipher, blockSize);
@@ -61,14 +62,14 @@ void runWithCipher(const string& cipherName, int blockSize,
 }
 
 void runWithAllCiphers(void (*func)(FSConfigPtr& config)) {
-  list<Cipher::CipherAlgorithm> algorithms = Cipher::GetAlgorithmList();
-  list<Cipher::CipherAlgorithm>::const_iterator it;
+  list<CipherV1::CipherAlgorithm> algorithms = CipherV1::GetAlgorithmList();
+  list<CipherV1::CipherAlgorithm>::const_iterator it;
   for (it = algorithms.begin(); it != algorithms.end(); ++it) {
     int blockSize = it->blockSize.closest(512);
     int keyLength = it->keyLength.closest(128);
     SCOPED_TRACE(testing::Message() << "Testng with cipher " << it->name 
         << ", blocksize " << blockSize << ", keyLength " << keyLength);
-    shared_ptr<Cipher> cipher = Cipher::New(it->name, keyLength);
+    shared_ptr<CipherV1> cipher = CipherV1::New(it->iface, keyLength);
     ASSERT_TRUE(cipher.get() != NULL);
 
     FSConfigPtr cfg = makeConfig(cipher, blockSize);
@@ -95,7 +96,7 @@ void writeRandom(FSConfigPtr& cfg, FileIO* a, FileIO* b, int offset, int len) {
     a->truncate(offset + len);
 
   unsigned char *buf = new unsigned char[len];
-  ASSERT_TRUE(cfg->cipher->randomize(buf, len, false));
+  ASSERT_TRUE(cfg->cipher->pseudoRandomize(buf, len));
 
   IORequest req;
   req.data = new unsigned char[len];

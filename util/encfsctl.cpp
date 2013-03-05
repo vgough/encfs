@@ -23,7 +23,7 @@
 #include "base/Error.h"
 #include "base/i18n.h"
 
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "cipher/BlockCipher.h"
 #include "cipher/MAC.h"
 #include "cipher/StreamCipher.h"
@@ -172,33 +172,49 @@ static int showCiphers( int argc, char **argv )
 {
   (void)argc;
   (void)argv;
-  list<string> names = BlockCipher::GetRegistry().GetAll();
-  for (const string& name : names) {
+
+  cout << _("Block modes:\n");
+  for (const string& name : BlockCipher::GetRegistry().GetAll()) {
     auto props = BlockCipher::GetRegistry().GetProperties(name.c_str());
     cout << _("Implementation: ") << name << "\n";
-    cout << "\t" << _("Block cipher: ") << props->cipher << " / " << props->mode
-        << " ( " << autosprintf(_("via %s"), props->library.c_str()) << " )\n";
+    cout << "\t" << _("Provider: ") << props->library << "\n";
+    cout << "\t" << _("Block cipher: ") << props->cipher << " / "
+        << props->mode << "\n";
     cout << "\t" << _("Key Sizes: ") << props->keySize << "\n";
   }
-  
-  names = StreamCipher::GetRegistry().GetAll();
-  for (const string& name : names) {
+  cout << "\n";
+
+  cout << _("Stream modes:\n");
+  for (const string& name : StreamCipher::GetRegistry().GetAll()) {
     auto props = StreamCipher::GetRegistry().GetProperties(name.c_str());
     cout << _("Implementation: ") << name << "\n";
-    cout << "\t" << _("Stream cipher: ") << props->cipher << " / " << props->mode
-        << " ( " << autosprintf(_("via %s"), props->library.c_str()) << " )\n";
+    cout << "\t" << _("Provider: ") << props->library << "\n";
+    cout << "\t" << _("Stream cipher: ") << props->cipher << " / "
+        << props->mode << "\n";
     cout << "\t" << _("Key Sizes: ") << props->keySize << "\n";
   }
+  cout << "\n";
   
-  names = MessageAuthenticationCode::GetRegistry().GetAll();
-  for (const string& name : names) {
-    auto props = MessageAuthenticationCode::GetRegistry()
-        .GetProperties(name.c_str());
+  cout << _("MAC modes:\n");
+  for (const string& name : MAC::GetRegistry().GetAll()) {
+    auto props = MAC::GetRegistry().GetProperties(name.c_str());
     cout << _("Implementation: ") << name << "\n";
-    cout << "\t" << _("HMAC: ") << props->hashFunction << " / " << props->mode
-        << " ( " << autosprintf(_("via %s"), props->library.c_str()) << " )\n";
+    cout << "\t" << _("Provider: ") << props->library << "\n";
+    cout << "\t" << _("Hash mode: ") << props->hashFunction << " / "
+        << props->mode << "\n";
     cout << "\t" << _("Block size: ") << props->blockSize << "\n";
   }
+  cout << "\n";
+
+  cout << _("PBKDF modes:\n");
+  for (const string& name : PBKDF::GetRegistry().GetAll()) {
+    auto props = PBKDF::GetRegistry().GetProperties(name.c_str());
+    cout << _("Implementation: ") << name << "\n";
+    cout << "\t" << _("Provider: ") << props->library << "\n";
+    cout << "\t" << _("Mode: ") << props->mode << "\n";
+  }
+  cout << "\n";
+
   return EXIT_SUCCESS;
 }
 
@@ -335,8 +351,7 @@ static int cmd_showKey( int argc, char **argv )
   else
   {
     // encode with itself
-    string b64Key = rootInfo->cipher->encodeAsString(
-        rootInfo->volumeKey, rootInfo->volumeKey );
+    string b64Key = rootInfo->cipher->encodeAsString( rootInfo->volumeKey );
 
     cout << b64Key << "\n";
 
@@ -739,33 +754,36 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
     return EXIT_FAILURE;
   }
 
+  // ask for existing password
+  cout << _("Enter current Encfs password\n");
+  if (annotate)
+    cerr << "$PROMPT$ passwd" << endl;
+  CipherKey userKey = getUserKey( config, useStdin );
+  if(!userKey.valid())
+    return EXIT_FAILURE;
+
   // instanciate proper cipher
-  shared_ptr<Cipher> cipher = getCipher(config);
+  shared_ptr<CipherV1> cipher = getCipher(config);
   if(!cipher)
   {
     cout << autosprintf(_("Unable to find specified cipher \"%s\"\n"),
         config.cipher().name().c_str());
     return EXIT_FAILURE;
   }
-
-  // ask for existing password
-  cout << _("Enter current Encfs password\n");
-  if (annotate)
-    cerr << "$PROMPT$ passwd" << endl;
-  CipherKey userKey = getUserKey( config, useStdin );
-  if(!userKey)
-    return EXIT_FAILURE;
+  cipher->setKey(userKey);
 
   // decode volume key using user key -- at this point we detect an incorrect
   // password if the key checksum does not match (causing readKey to fail).
   CipherKey volumeKey = cipher->readKey( 
-      (const unsigned char *)config.key().ciphertext().data(), userKey );
+      (const unsigned char *)config.key().ciphertext().data(), true );
 
-  if(!volumeKey)
+  if(!volumeKey.valid())
   {
     cout << _("Invalid password\n");
     return EXIT_FAILURE;
   }
+
+  cipher->setKey(volumeKey);
 
   // Now, get New user key..
   userKey.reset();
@@ -782,14 +800,16 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
 
   // re-encode the volume key using the new user key and write it out..
   int result = EXIT_FAILURE;
-  if(userKey)
+  if(userKey.valid())
   {
     int encodedKeySize = cipher->encodedKeySize();
     unsigned char *keyBuf = new unsigned char[ encodedKeySize ];
 
     // encode volume key with new user key
-    cipher->writeKey( volumeKey, keyBuf, userKey );
+    cipher->setKey(userKey);
+    cipher->writeKey( volumeKey, keyBuf );
     userKey.reset();
+    cipher->setKey(volumeKey);
 
     EncryptedKey *key = config.mutable_key();
     key->set_ciphertext( keyBuf, encodedKeySize );

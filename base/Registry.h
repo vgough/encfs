@@ -3,6 +3,7 @@
 
 #include <list>
 #include <map>
+#include <string>
 
 namespace encfs {
 
@@ -36,7 +37,8 @@ public:
   T* CreateForMatch(const std::string &description)
   {
     for (auto &it : data) {
-      if (description == it.second.properties.toString())
+      auto name = it.second.properties.toString();
+      if (!name.compare(0, description.size(), description))
         return (*it.second.constructor)();
     }
     return NULL;
@@ -56,6 +58,17 @@ public:
       return NULL;
     return &(it->second.properties);
   }
+  
+  const typename T::Properties *GetPropertiesForMatch(
+      const std::string &description) const {
+    for (auto &it : data) {
+      auto name = it.second.properties.toString();
+      if (!name.compare(0, description.size(), description))
+        return &(it.second.properties);
+    }
+    return NULL;
+  }
+
 
 private:
   std::map<std::string, Data> data;
@@ -87,7 +100,7 @@ public:
     }
 
 #define REGISTER_CLASS(DERIVED, BASE) \
-    static Registrar<DERIVED, BASE> registrar_##DERIVED(#DERIVED)
+    static Registrar<DERIVED, BASE> registrar_ ## DERIVED ## _ ## BASE (#DERIVED)
 
 }  // namespace encfs
 

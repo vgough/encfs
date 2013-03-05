@@ -24,7 +24,6 @@
 #include <gtest/gtest.h>
 #include "fs/testing.h"
 
-#include "cipher/Cipher.h"
 #include "cipher/MemoryPool.h"
 
 #include "fs/CipherFileIO.h"

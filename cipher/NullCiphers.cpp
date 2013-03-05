@@ -19,48 +19,55 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _STREAMCIPHER_incl_
-#define _STREAMCIPHER_incl_
+#include "cipher/NullCiphers.h"
 
-#include "base/Range.h"
-#include "base/Registry.h"
-#include "base/shared_ptr.h"
-#include "base/types.h"
-#include "cipher/CipherKey.h"
+#include "cipher/BlockCipher.h"
+#include "cipher/StreamCipher.h"
 
 namespace encfs {
 
-static const char NAME_AES_CFB[] = "AES/CFB";
-static const char NAME_BLOWFISH_CFB[] = "Blowfish/CFB";
-
-class StreamCipher
-{
+class NullCipher : public BlockCipher {
  public:
-  DECLARE_REGISTERABLE_TYPE(StreamCipher);
+  virtual ~NullCipher() {}
 
-  struct Properties {
-    Range keySize;
-    std::string cipher;
-    std::string mode;
-    std::string library;
-    std::string toString() const {
-      return cipher + "/" + mode;
-    }
-  };
+  virtual int blockSize() const {
+    return 8;
+  }
 
-  StreamCipher();
-  virtual ~StreamCipher();
-
-  virtual bool setKey(const CipherKey& key) =0;
+  virtual bool setKey(const CipherKey &key) {
+    return true;
+  }
 
   virtual bool encrypt(const byte *iv, const byte *in,
-                       byte *out, int numBytes) =0;
+                       byte *out, int numBytes) {
+    if (in != out)
+      memcpy(out, in, numBytes);
+    return true;
+  }
+  
   virtual bool decrypt(const byte *iv, const byte *in,
-                       byte *out, int numBytes) =0;
+                       byte *out, int numBytes) {
+    if (in != out)
+      memcpy(out, in, numBytes);
+    return true;
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.keySize = Range(0);
+    props.cipher = "NullCipher";
+    props.mode = "ECB";
+    props.library = "internal";
+    return props;
+  }
 };
 
-}  // namespace encfs
+REGISTER_CLASS(NullCipher, BlockCipher);
+REGISTER_CLASS(NullCipher, StreamCipher);
 
+void NullCiphers::registerCiphers() {
+  // Nothing required. 
+}
 
-#endif
+} //  namespace encfs
 

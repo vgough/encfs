@@ -25,7 +25,6 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
-#include <pthread.h>
 #include <unistd.h>
 #ifdef linux
 #include <sys/fsuid.h>
@@ -33,7 +32,6 @@
 
 #include <cstring>
 
-#include "cipher/Cipher.h"
 #include "base/Error.h"
 #include "base/Mutex.h"
 #include "fs/Context.h"
@@ -309,8 +307,6 @@ DirNode::DirNode(EncFS_Context *_ctx,
     const string &sourceDir,
     const FSConfigPtr &_config)
 {
-  pthread_mutex_init( &mutex, 0 );
-    
   Lock _lock( mutex );
 
   ctx = _ctx;

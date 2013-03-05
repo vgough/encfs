@@ -44,12 +44,12 @@ std::string parentDirectory( const std::string &path );
 bool userAllowMkdir(const char *dirPath, mode_t mode );
 bool userAllowMkdir(int promptno, const char *dirPath, mode_t mode );
 
-class Cipher;
+class CipherV1;
 class DirNode;
 
 struct EncFS_Root
 {
-  shared_ptr<Cipher> cipher;
+  shared_ptr<CipherV1> cipher;
   CipherKey volumeKey;
   shared_ptr<DirNode> root;
 

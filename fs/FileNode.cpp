@@ -36,7 +36,6 @@
 #include "base/config.h"
 #include "base/Error.h"
 #include "base/Mutex.h"
-#include "cipher/Cipher.h"
 #include "cipher/MemoryPool.h"
 
 #include "fs/CipherFileIO.h"
@@ -66,8 +65,6 @@ namespace encfs {
 FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
     const char *plaintextName_, const char *cipherName_)
 {
-  pthread_mutex_init( &mutex, 0 );
-
   Lock _lock( mutex );
 
   this->_pname = plaintextName_;
@@ -87,13 +84,10 @@ FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
 FileNode::~FileNode()
 {
   // FileNode mutex should be locked before the destructor is called
-  //pthread_mutex_lock( &mutex );
 
   _pname.assign( _pname.length(), '\0' );
   _cname.assign( _cname.length(), '\0' );
   io.reset();
-
-  pthread_mutex_destroy( &mutex );
 }
 
 const char *FileNode::cipherName() const

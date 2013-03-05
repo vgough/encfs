@@ -21,15 +21,38 @@
 #ifndef _Mutex_incl_
 #define _Mutex_incl_
 
+#include "base/config.h"
+
+#ifdef CMAKE_USE_PTHREADS_INIT
 #include <pthread.h>
+#else
+#warning No thread support.
+#endif
 
 namespace encfs
 {
 
+class Mutex
+{
+ public:
+#ifdef CMAKE_USE_PTHREADS_INIT
+  pthread_mutex_t _mutex;
+  Mutex() {
+    pthread_mutex_init( &_mutex, 0 );
+  }
+  ~Mutex() {
+    pthread_mutex_destroy( &_mutex );
+  }
+#endif
+
+  void lock();
+  void unlock();
+};
+
 class Lock
 {
 public:
-  Lock( pthread_mutex_t &mutex );
+  explicit Lock( Mutex &mutex );
   ~Lock();
 
   // leave the lock as it is.  When the Lock wrapper is destroyed, it
@@ -40,24 +63,39 @@ private:
   Lock(const Lock &src); // not allowed
   Lock &operator = (const Lock &src); // not allowed
 
-  pthread_mutex_t *_mutex;
+  Mutex *_mutex;
 };
 
-inline Lock::Lock( pthread_mutex_t &mutex )
+inline void Mutex::lock() 
+{
+#ifdef CMAKE_USE_PTHREADS_INIT
+  pthread_mutex_lock( &_mutex );
+#endif
+}
+
+inline void Mutex::unlock()
+{
+#ifdef CMAKE_USE_PTHREADS_INIT
+  pthread_mutex_unlock( &_mutex );
+#endif
+}
+
+inline Lock::Lock( Mutex &mutex )
     : _mutex( &mutex )
 {
-  pthread_mutex_lock( _mutex );
+  if (_mutex)
+    _mutex->lock();
 }
 
 inline Lock::~Lock( )
 {
   if(_mutex)
-    pthread_mutex_unlock( _mutex );
+    _mutex->unlock();
 }
 
 inline void Lock::leave()
 {
-  _mutex = 0;
+  _mutex = NULL;
 }
 
 }  // namespace encfs
