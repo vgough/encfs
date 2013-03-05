@@ -132,20 +132,39 @@ void changeBase2Inline(byte *src, int srcLen,
 static const char B642AsciiTable[] = ",-0123456789";
 void B64ToAscii(byte *in, int length)
 {
-    for(int offset=0; offset<length; ++offset)
+  for(int offset=0; offset<length; ++offset)
+  {
+    int ch = in[offset];
+    if(ch > 11)
     {
-	int ch = in[offset];
-	if(ch > 11)
-	{
-	    if(ch > 37)
-		ch += 'a' - 38;
-	    else
-		ch += 'A' - 12;
-	} else
-	    ch = B642AsciiTable[ ch ];
-	
-	in[offset] = ch;
-    }
+      if(ch > 37)
+        ch += 'a' - 38;
+      else
+        ch += 'A' - 12;
+    } else
+      ch = B642AsciiTable[ ch ];
+
+    in[offset] = ch;
+  }
+}
+
+void B64ToAsciiStandard(byte *in, int length)
+{
+  static const char LookupTable[] = "+/0123456789";
+  for(int offset=0; offset<length; ++offset)
+  {
+    int ch = in[offset];
+    if(ch > 11)
+    {
+      if(ch > 37)
+        ch += 'a' - 38;
+      else
+        ch += 'A' - 12;
+    } else
+      ch = LookupTable[ ch ];
+
+    in[offset] = ch;
+  }
 }
 
 static const byte Ascii2B64Table[] = 
@@ -159,55 +178,55 @@ void AsciiToB64(byte *in, int length)
 
 void AsciiToB64(byte *out, const byte *in, int length)
 {
-    while(length--)
+  while(length--)
+  {
+    byte ch = *in++;
+    if(ch >= 'A')
     {
-	byte ch = *in++;
-	if(ch >= 'A')
-	{
-	    if(ch >= 'a')
-		ch += 38 - 'a';
-	    else
-		ch += 12 - 'A';
-	} else
-	    ch = Ascii2B64Table[ ch ] - '0';
+      if(ch >= 'a')
+        ch += 38 - 'a';
+      else
+        ch += 12 - 'A';
+    } else
+      ch = Ascii2B64Table[ ch ] - '0';
 
-	*out++ = ch;
-    }
+    *out++ = ch;
+  }
 }
 
 
 void B32ToAscii(byte *buf, int len)
 {
-    for(int offset=0; offset<len; ++offset)
-    {
-	int ch = buf[offset];
-        if (ch >= 0 && ch < 26)
-            ch += 'A';
-        else
-            ch += '2' - 26;
-	
-	buf[offset] = ch;
-    }
+  for(int offset=0; offset<len; ++offset)
+  {
+    int ch = buf[offset];
+    if (ch >= 0 && ch < 26)
+      ch += 'A';
+    else
+      ch += '2' - 26;
+
+    buf[offset] = ch;
+  }
 }
 
 void AsciiToB32(byte *in, int length)
 {
-    return AsciiToB32(in, in, length);
+  return AsciiToB32(in, in, length);
 }
 
 void AsciiToB32(byte *out, const byte *in, int length)
 {
-    while(length--)
-    {
-	byte ch = *in++;
-        int lch = toupper(ch);
-        if (lch >= 'A')
-            lch -= 'A';
-        else
-            lch += 26 - '2';
+  while(length--)
+  {
+    byte ch = *in++;
+    int lch = toupper(ch);
+    if (lch >= 'A')
+      lch -= 'A';
+    else
+      lch += 26 - '2';
 
-	*out++ = (byte)lch;
-    }
+    *out++ = (byte)lch;
+  }
 }
 
 }  // namespace encfs

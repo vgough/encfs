@@ -24,6 +24,16 @@ target_link_libraries (encfs-fs
     ${PROTOBUF_LIBRARY}
 )
 
+add_executable (checkops
+    checkops.cpp
+)
+target_link_libraries (checkops
+    encfs-fs
+    encfs-cipher
+    encfs-base
+    ${GLOG_LIBRARIES}
+)
+
 # Unit tests are optional, depends on libgtest (Google's C++ test framework).
 if (GTEST_FOUND)
     link_directories (${PROJECT_BINARY_DIR}/base)

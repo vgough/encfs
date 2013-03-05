@@ -36,7 +36,8 @@
 #include "fs/MACFileIO.h"
 #include "fs/MemFileIO.h"
 
-using namespace std;
+using std::list;
+using std::string;
 
 namespace encfs {
 
@@ -92,27 +93,46 @@ void truncate(FileIO* a, FileIO* b, int len) {
 void writeRandom(FSConfigPtr& cfg, FileIO* a, FileIO* b, int offset, int len) {
   SCOPED_TRACE(testing::Message() << "Write random " << offset << ", " << len);
 
-  if (a->getSize() < offset + len)
+  if (a->getSize() < offset + len) {
     a->truncate(offset + len);
+  }
 
+  if (b->getSize() < offset + len) {
+    b->truncate(offset + len);
+  }
+    
   unsigned char *buf = new unsigned char[len];
   ASSERT_TRUE(cfg->cipher->pseudoRandomize(buf, len));
 
   IORequest req;
   req.data = new unsigned char[len];
   req.dataLen = len;
- 
+
   memcpy(req.data, buf, len);
   req.offset = offset;
   ASSERT_TRUE(a->write(req));
+
+  // Check that write succeeded.
+  req.offset = offset;
+  req.dataLen = len;
+  ASSERT_EQ(len, a->read(req));
+  ASSERT_TRUE(memcmp(req.data, buf, len) == 0);
   
   memcpy(req.data, buf, len);
   req.offset = offset;
+  req.dataLen = len;
   ASSERT_TRUE(b->write(req));
+
+  // Check that write succeeded.
+  req.offset = offset;
+  req.dataLen = len;
+  ASSERT_EQ(len, b->read(req));
+  ASSERT_TRUE(memcmp(req.data, buf, len) == 0);
 
   compare(a, b, offset, len);
 
   delete[] buf;
+  delete[] req.data;
 }
 
 void compare(FileIO* a, FileIO* b, int offset, int len) {
@@ -137,7 +157,8 @@ void compare(FileIO* a, FileIO* b, int offset, int len) {
   ASSERT_EQ(size1, size2);
   for(int i = 0; i < len; i++) {
     bool match = (buf1[i] == buf2[i]);
-    ASSERT_TRUE(match) << "mismatched data at offset " << i << " of " << len;
+    ASSERT_TRUE(match) << "mismatched data at offset " << i << " of " << len
+        << ", got " << int(buf1[i]) << " and " << int(buf2[i]);
     if(!match) {
         break;
     }
@@ -148,15 +169,13 @@ void compare(FileIO* a, FileIO* b, int offset, int len) {
 }
 
 void comparisonTest(FSConfigPtr& cfg, FileIO* a, FileIO* b) {
-  const int size = 18*1024;
+  const int size = 2*1024;
   writeRandom(cfg, a, b, 0, size);
-  if (testing::Test::HasFatalFailure()) return;
-  compare(a, b, 0, size);
   if (testing::Test::HasFatalFailure()) return;
 
   for (int i = 0; i < 10000; i++) {
     SCOPED_TRACE(testing::Message() << "Test Loop " << i);
-    int len = 128 + random() % 2048;
+    int len = 128 + random() % 512;
     int offset = (len == a->getSize()) ? 0 
         : random() % (a->getSize() - len);
     writeRandom(cfg, a, b, offset, len);

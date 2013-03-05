@@ -46,6 +46,13 @@ class StreamCipher
     std::string toString() const {
       return cipher + "/" + mode;
     }
+    Properties() {}
+    Properties(Range keys, const char *cipher_, const char *mode_,
+               const char *library_) 
+        : keySize(keys),
+          cipher(cipher_),
+          mode(mode_),
+          library(library_) { }
   };
 
   StreamCipher();
@@ -53,9 +60,9 @@ class StreamCipher
 
   virtual bool setKey(const CipherKey& key) =0;
 
-  virtual bool encrypt(const byte *iv, const byte *in,
+  virtual bool encrypt(const byte *ivec, const byte *in,
                        byte *out, int numBytes) =0;
-  virtual bool decrypt(const byte *iv, const byte *in,
+  virtual bool decrypt(const byte *ivec, const byte *in, 
                        byte *out, int numBytes) =0;
 };
 

@@ -42,105 +42,69 @@
 #include <map>
 #include <list>
 
-using namespace std;
-
+#ifdef WITH_OPENSSL
 # include <openssl/crypto.h>
 # include <openssl/buffer.h>
+#endif
 
 namespace encfs {
 
-static BUF_MEM *allocBlock( int size )
+#ifdef WITH_OPENSSL
+static byte *allocBlock( int size )
 {
-    BUF_MEM *block = BUF_MEM_new( );
-    BUF_MEM_grow( block, size );
-    VALGRIND_MAKE_MEM_NOACCESS( block->data, block->max );
-
-    return block;
+  byte *block = (byte *)OPENSSL_malloc(size);
+  return block;
 }
 
-static void freeBlock( BUF_MEM *block )
+static void freeBlock( byte *block, int size )
 {
-    VALGRIND_MAKE_MEM_UNDEFINED( block->data, block->max );
-    BUF_MEM_free( block );
+  OPENSSL_cleanse(block, size);
+  OPENSSL_free(block);
+}
+#elif defined(WITH_COMMON_CRYPTO)
+static byte *allocBlock(int size) {
+  byte *block = new byte[size];
+  return block;
 }
 
-static pthread_mutex_t gMPoolMutex = PTHREAD_MUTEX_INITIALIZER;
-
-typedef std::map<int, std::list<BUF_MEM* > > FreeBlockMap;
-static FreeBlockMap gFreeBlocks;
+unsigned char cleanse_ctr = 0;
+static void freeBlock(byte *data, int len) {
+  byte *p = data;
+  size_t loop = len, ctr = cleanse_ctr;
+  while(loop--)
+  {
+    *(p++) = (unsigned char)ctr;
+    ctr += (17 + ((size_t)p & 0xF));
+  }
+  // Try to ensure the compiler doesn't optimize away the loop.
+  p=(byte *)memchr(data, (unsigned char)ctr, len);
+  if(p)
+    ctr += (63 + (size_t)p);
+  cleanse_ctr = (unsigned char)ctr;
+  delete[] data;
+}
+#endif
 
 void MemBlock::allocate(int size)
 {
-    rAssert(size > 0);
-    pthread_mutex_lock( &gMPoolMutex );
-
-    list<BUF_MEM*> &freeList = gFreeBlocks[size];
-    BUF_MEM *mem;
-
-    if (!freeList.empty())
-    {
-      mem = freeList.front();
-      freeList.pop_front();
-      pthread_mutex_unlock( &gMPoolMutex );
-    } else
-    {
-      pthread_mutex_unlock( &gMPoolMutex );
-      mem = allocBlock( size );
-    }
-
-    internalData = mem;
-    data = reinterpret_cast<byte *>(mem->data);
-    VALGRIND_MAKE_MEM_UNDEFINED( data, size );
+  rAssert(size > 0);
+  this->data = allocBlock(size);
+  this->size = size;
 }
 
 MemBlock::~MemBlock()
 {
-    BUF_MEM *block = (BUF_MEM*)internalData;
-    data = NULL;
-    internalData = NULL;
-
-    if (block)
-    {
-      // wipe the buffer..
-      VALGRIND_MAKE_MEM_UNDEFINED( block->data, block->max );
-      memset( block->data , 0, block->max);
-      VALGRIND_MAKE_MEM_NOACCESS( block->data, block->max );
-
-      pthread_mutex_lock( &gMPoolMutex );
-      gFreeBlocks[ block->max ].push_front(block);
-      pthread_mutex_unlock( &gMPoolMutex );
-    }
-}
-
-void MemoryPool::destroyAll()
-{
-    pthread_mutex_lock( &gMPoolMutex );
-
-    for (FreeBlockMap::const_iterator it = gFreeBlocks.begin();
-         it != gFreeBlocks.end(); it++)
-    {
-      for (list<BUF_MEM*>::const_iterator bIt = it->second.begin();
-           bIt != it->second.end(); bIt++)
-      {
-        freeBlock( *bIt );
-      }
-    }
-   
-    gFreeBlocks.clear();
-
-    pthread_mutex_unlock( &gMPoolMutex );
+  freeBlock(data, size);
 }
 
 SecureMem::SecureMem(int len)
 {
   rAssert(len > 0);
-  data = (byte *)OPENSSL_malloc(len);
+  data = allocBlock(len);
   if (data)
   {
     size = len;
     mlock(data, size);
-    memset(data, '\0', size);
-    VALGRIND_MAKE_MEM_UNDEFINED( data, size );
   } else
   {
     size = 0;
@@ -151,17 +115,18 @@ SecureMem::~SecureMem()
 {
   if (size)
   {
-    memset(data, '\0', size);
-    OPENSSL_cleanse(data, size);
-
+    freeBlock(data, size);
     munlock(data, size);
-    OPENSSL_free(data);
-    VALGRIND_MAKE_MEM_NOACCESS( data, size );
 
     data = NULL;
     size = 0;
   }
 }         
-          
+
+bool operator == (const SecureMem &a, const SecureMem &b) {
+  return (a.size == b.size) &&
+         (memcmp(a.data, b.data, a.size) == 0);
+}
+
 }  // namespace encfs
 

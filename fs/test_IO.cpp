@@ -76,6 +76,38 @@ TEST(IOTest, MacIO) {
   runWithAllCiphers(testMacIO);
 }
 
+void testBasicCipherIO(FSConfigPtr& cfg) {
+  shared_ptr<MemFileIO> base(new MemFileIO(0));
+  shared_ptr<CipherFileIO> test(new CipherFileIO(base, cfg));
+
+  byte buf[1024];
+  cfg->cipher->pseudoRandomize(buf, sizeof(buf));
+
+  IORequest req;
+  req.data = new byte[sizeof(buf)];
+  req.offset = 0;
+  req.dataLen = sizeof(buf);
+
+  memcpy(req.data, buf, sizeof(buf));
+  ASSERT_TRUE(test->write(req));
+
+  memset(req.data, 0, sizeof(buf));
+  ASSERT_EQ(req.dataLen, test->read(req));
+
+  for (unsigned int i = 0; i < sizeof(buf); ++i) {
+    bool match = (buf[i] == req.data[i]);
+    ASSERT_TRUE(match) << "mismatched data at offset " << i;
+    if (!match)
+      break;
+  }
+
+  delete[] req.data;
+}
+
+TEST(IOTest, BasicCipherFileIO) {
+  runWithAllCiphers(testBasicCipherIO);
+}
+
 void testCipherIO(FSConfigPtr& cfg) {
   shared_ptr<MemFileIO> base(new MemFileIO(0));
   shared_ptr<CipherFileIO> test(new CipherFileIO(base, cfg));

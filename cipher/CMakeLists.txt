@@ -1,6 +1,15 @@
-include_directories (${OPENSSL_INCLUDE_DIR})
-
 link_directories (${Encfs_BINARY_DIR}/base)
+
+if (WITH_COMMON_CRYPTO)
+  find_library (SECURITY_FRAMEWORK Security)
+  mark_as_advanced (SECURITY_FRAMEWORK)
+  set (EXTRA_LIBS ${SECURITY_FRAMEWORK})
+  set (EXTRA_SOURCE CommonCrypto.cpp)
+elseif (WITH_OPENSSL)
+  include_directories (${OPENSSL_INCLUDE_DIR})
+  set (EXTRA_LIBS ${OPENSSL_LIBRARIES})
+  set (EXTRA_SOURCE openssl.cpp)
+endif (WITH_COMMON_CRYPTO)
 
 add_library (encfs-cipher
     BlockCipher.cpp
@@ -9,14 +18,14 @@ add_library (encfs-cipher
     MAC.cpp
     MemoryPool.cpp
     NullCiphers.cpp
-    openssl.cpp
     PBKDF.cpp
     readpassphrase.cpp
     StreamCipher.cpp
+    ${EXTRA_SOURCE}
 )
 
 target_link_libraries (encfs-cipher
-    ${OPENSSL_LIBRARIES}
+    ${EXTRA_LIBS}
 )
 
 if (GTEST_FOUND)

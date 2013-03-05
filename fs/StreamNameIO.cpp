@@ -28,8 +28,6 @@
 
 #include <cstring>
 
-using namespace std;
-
 namespace encfs {
 
 static shared_ptr<NameIO> NewStreamNameIO( const Interface &iface,

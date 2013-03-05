@@ -50,9 +50,14 @@
 #include <openssl/ssl.h>
 #endif
 
-using namespace std;
-using namespace gnu;
 using namespace encfs;
+using gnu::autosprintf;
+using std::cerr;
+using std::cin;
+using std::cout;
+using std::endl;
+using std::string;
+using std::vector;
 
 static int showInfo( int argc, char **argv );
 static int showVersion( int argc, char **argv );

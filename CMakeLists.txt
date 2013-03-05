@@ -3,10 +3,16 @@ project(Encfs)
 
 set (ENCFS_MAJOR 2)
 set (ENCFS_MINOR 0)
-set (ENCFS_PATCH 0)
-set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}.${ENCFS_PATCH}")
+set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}")
 
 option (BUILD_SHARED_LIBS "Build dynamic link libraries" OFF)
+
+option (WITH_OPENSSL "WithOpenSSL" ON)
+option (WITH_COMMON_CRYPTO "WithCommonCrypto" OFF)
+
+if (WITH_COMMON_CRYPTO)
+  set (WITH_OPENSSL OFF)
+endif (WITH_COMMON_CRYPTO)
 
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
     "${CMAKE_SOURCE_DIR}/CMakeModules/")
@@ -36,7 +42,6 @@ endif (APPLE)
 set (CPACK_PACKAGE_NAME "Encfs")
 set (CPACK_PACKAGE_VERSION_MAJOR ${ENCFS_MAJOR})
 set (CPACK_PACKAGE_VERSION_MINOR ${ENCFS_MINOR})
-set (CPACK_PACKAGE_VERSION_PATCH ${ENCFS_PATCH})
 set (CPACK_SOURCE_GENERATOR TGZ)
 set (CPACK_SOURCE_IGNORE_FILES
     "/_darcs/"
@@ -56,9 +61,15 @@ check_include_file_cxx (tr1/tuple HAVE_TR1_TUPLE)
 check_include_file_cxx (valgrind/valgrind.h HAVE_VALGRIND_VALGRIND_H)
 check_include_file_cxx (valgrind/memcheck.h HAVE_VALGRIND_MEMCHECK_H)
 
-# TODO: move this to cipher directory.
-find_package (OpenSSL REQUIRED)
-include (OpenSSLTests)
+if (WITH_COMMON_CRYPTO)
+  check_include_file_cxx (Security/SecRandom.h HAVE_SEC_RANDOM_H)
+endif (WITH_COMMON_CRYPTO)
+
+if (WITH_OPENSSL)
+  # TODO: move this to cipher directory.
+  find_package (OpenSSL REQUIRED)
+  include (OpenSSLTests)
+endif (WITH_OPENSSL)
 
 # Check if xattr functions take extra argument.
 include (CheckCXXSourceCompiles)

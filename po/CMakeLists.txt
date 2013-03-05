@@ -4,7 +4,7 @@ file (GLOB CXX_FILES RELATIVE ${PROJECT_SOURCE_DIR} "*/*.cpp")
 
 set (GettextTranslate_GMO_BINARY true)
 
-include (GetTextTranslate)
+include (GettextTranslate)
 
 
 

@@ -44,7 +44,7 @@ TEST(HMacSha1Test, MAC) {
   for (int i = 0; i < 20; ++i)
     key.data()[i] = 0x0b;
   hmac->setKey(key);
-  hmac->reset();
+  hmac->init();
   hmac->update((byte *)"Hi There", 8);
   hmac->write(out);
   ASSERT_EQ("b617318655057264e28bc0b6fb378c8ef146be00", stringToHex(out, 20));
@@ -52,7 +52,7 @@ TEST(HMacSha1Test, MAC) {
   // Test case 2
   key = CipherKey((const byte *)"Jefe", 4);
   hmac->setKey(key);
-  hmac->reset();
+  hmac->init();
   hmac->update((byte *)"what do ya want for nothing?", 28);
   hmac->write(out);
   ASSERT_EQ("effcdf6ae5eb2fa2d27416d5f184df9c259a7c79", stringToHex(out, 20));
@@ -62,7 +62,7 @@ TEST(HMacSha1Test, MAC) {
   for (int i = 0; i < 20; ++i)
     key.data()[i] = 0xaa;
   hmac->setKey(key);
-  hmac->reset();
+  hmac->init();
   {
     byte data[50];
     memset(data, 0xdd, 50);
@@ -75,7 +75,7 @@ TEST(HMacSha1Test, MAC) {
   key = CipherKey(80);
   memset(key.data(), 0xaa, 80);
   hmac->setKey(key);
-  hmac->reset();
+  hmac->init();
   hmac->update((byte *)"Test Using Larger Than Block-Size Key and Larger "
                "Than One Block-Size Data", 73);
   hmac->write(out);

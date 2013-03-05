@@ -30,7 +30,9 @@
 
 #include "base/types.h"
 
-using namespace std;
+using std::make_pair;
+using std::map;
+using std::string;
 
 namespace encfs {
 

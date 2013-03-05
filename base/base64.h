@@ -62,6 +62,8 @@ void changeBase2Inline(byte *buf, int srcLength,
 
 // inplace translation from values [0,2^6] => base64 ASCII
 void B64ToAscii(byte *buf, int length);
+// Like B64ToAscii, but uses standard characters "+" and "/" in encoding.
+void B64ToAsciiStandard(byte *buf, int length);
 // inplace translation from values [0,2^5] => base32 ASCII
 void B32ToAscii(byte *buf, int length);
 

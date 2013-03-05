@@ -26,7 +26,7 @@
 #include "base/config.h"
 #include "base/Interface.h"
 #include "base/Error.h"
-#include "cipher/Cipher.h"
+#include "cipher/CipherV1.h"
 #include "cipher/MemoryPool.h"
 #include "fs/DirNode.h"
 #include "fs/FileUtils.h"
@@ -46,7 +46,7 @@
 
 #include <google/protobuf/text_format.h>
 
-#if HAVE_TR1_UNORDERED_SET
+#ifdef HAVE_TR1_UNORDERED_SET
 #include <tr1/unordered_set>
 using std::tr1::unordered_set;
 #else
@@ -54,15 +54,17 @@ using std::tr1::unordered_set;
 using std::unordered_set;
 #endif
 
-using namespace std;
+using std::cerr;
+using std::string;
+using namespace encfs;
 
 namespace encfs {
 
 const int FSBlockSize = 256;
 
 static
-int checkErrorPropogation( const shared_ptr<Cipher> &cipher,
-    int size, int byteToChange, const CipherKey &key )
+int checkErrorPropogation( const shared_ptr<CipherV1> &cipher,
+    int size, int byteToChange )
 {
   MemBlock orig;
   orig.allocate(size);
@@ -77,9 +79,9 @@ int checkErrorPropogation( const shared_ptr<Cipher> &cipher,
   }
 
   if(size != FSBlockSize)
-    cipher->streamEncode( data.data, size, 0, key );
+    cipher->streamEncode( data.data, size, 0 );
   else
-    cipher->blockEncode( data.data, size, 0, key );
+    cipher->blockEncode( data.data, size, 0 );
 
   // intoduce an error in the encoded data, so we can check error propogation
   if(byteToChange >= 0 && byteToChange < size)
@@ -92,9 +94,9 @@ int checkErrorPropogation( const shared_ptr<Cipher> &cipher,
   }
 
   if(size != FSBlockSize)
-    cipher->streamDecode( data.data, size, 0, key );
+    cipher->streamDecode( data.data, size, 0 );
   else
-    cipher->blockDecode( data.data, size, 0, key );
+    cipher->blockDecode( data.data, size, 0 );
 
   int numByteErrors = 0;
   for(int i=0; i<size; ++i)
@@ -191,7 +193,7 @@ bool testNameCoding( DirNode &dirNode, bool verbose,
   return true;
 }
 
-bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
+bool runTests(const shared_ptr<CipherV1> &cipher, bool verbose)
 {
   // create a random key
   if(verbose)
@@ -205,16 +207,17 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     int encodedKeySize = cipher->encodedKeySize();
     unsigned char *keyBuf = new unsigned char [ encodedKeySize ];
 
-    cipher->writeKey( key, keyBuf, encodingKey );
-    CipherKey key2 = cipher->readKey( keyBuf, encodingKey );
-    if(!key2)
+    cipher->setKey(encodingKey);
+    cipher->writeKey( key, keyBuf );
+    CipherKey key2 = cipher->readKey( keyBuf, true );
+    if(!key2.valid())
     {
       if(verbose)
         cerr << "   FAILED (decode error)\n";
       return false;
     }
 
-    if(cipher->compareKey( key, key2 ))
+    if(key == key2)
     {
       if(verbose)
         cerr << "   OK\n";
@@ -233,7 +236,8 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     int encodedKeySize = cipher->encodedKeySize();
     unsigned char *keyBuf = new unsigned char [ encodedKeySize ];
 
-    cipher->writeKey( key, keyBuf, encodingKey );
+    cipher->setKey(encodingKey);
+    cipher->writeKey( key, keyBuf );
 
     // store in config struct..
     EncfsConfig cfg;
@@ -257,16 +261,15 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     rAssert( cfg.block_size() == cfg2.block_size() );
 
     // try decoding key..
-
-    CipherKey key2 = cipher->readKey( (unsigned char *)cfg2.key().ciphertext().data(), encodingKey );
-    if(!key2)
+    CipherKey key2 = cipher->readKey( (unsigned char *)cfg2.key().ciphertext().data(), true );
+    if(!key2.valid())
     {
       if(verbose)
         cerr << "   FAILED (decode error)\n";
       return false;
     }
 
-    if(cipher->compareKey( key, key2 ))
+    if(key == key2)
     {
       if(verbose)
         cerr << "   OK\n";
@@ -285,15 +288,15 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
   fsCfg->config->set_block_size(FSBlockSize);
   fsCfg->opts.reset(new EncFS_Opts);
 
+  cipher->setKey(key);
   if(verbose)
     cerr << "Testing name encode/decode (stream coding w/ IV chaining)\n";
-  if (cipher->hasStreamMode())
   {
     fsCfg->opts->idleTracking = false;
     fsCfg->config->set_unique_iv(false);
 
     fsCfg->nameCoding.reset( new StreamNameIO(
-          StreamNameIO::CurrentInterface(), cipher, key ) );
+          StreamNameIO::CurrentInterface(), cipher) );
     fsCfg->nameCoding->setChainedNameIV( true );
 
     DirNode dirNode( NULL, TEST_ROOTDIR, fsCfg );
@@ -308,7 +311,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     fsCfg->opts->idleTracking = false;
     fsCfg->config->set_unique_iv(false);
     fsCfg->nameCoding.reset( new BlockNameIO(
-          BlockNameIO::CurrentInterface(), cipher, key ) );
+          BlockNameIO::CurrentInterface(), cipher) );
     fsCfg->nameCoding->setChainedNameIV( true );
 
     DirNode dirNode( NULL, TEST_ROOTDIR, fsCfg );
@@ -323,7 +326,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     fsCfg->opts->idleTracking = false;
     fsCfg->config->set_unique_iv(false);
     fsCfg->nameCoding.reset( new BlockNameIO(
-          BlockNameIO::CurrentInterface(), cipher, key, true ) );
+          BlockNameIO::CurrentInterface(), cipher) );
     fsCfg->nameCoding->setChainedNameIV( true );
 
     DirNode dirNode( NULL, TEST_ROOTDIR, fsCfg );
@@ -334,12 +337,11 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 
   if(!verbose)
   {
-    if (cipher->hasStreamMode())
     {
       // test stream mode, this time without IV chaining
       fsCfg->nameCoding =
         shared_ptr<NameIO>( new StreamNameIO( 
-              StreamNameIO::CurrentInterface(), cipher, key ) );
+              StreamNameIO::CurrentInterface(), cipher) );
       fsCfg->nameCoding->setChainedNameIV( false );
 
       DirNode dirNode( NULL, TEST_ROOTDIR, fsCfg );
@@ -351,7 +353,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     {
       // test block mode, this time without IV chaining
       fsCfg->nameCoding = shared_ptr<NameIO>( new BlockNameIO(
-            BlockNameIO::CurrentInterface(), cipher, key ) );
+            BlockNameIO::CurrentInterface(), cipher) );
       fsCfg->nameCoding->setChainedNameIV( false );
 
       DirNode dirNode( NULL, TEST_ROOTDIR, fsCfg );
@@ -365,7 +367,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     cerr << "Testing block encode/decode on full block -  ";
   {
     int numErrors = checkErrorPropogation( cipher,
-        FSBlockSize, -1, key );
+        FSBlockSize, -1 );
     if(numErrors)
     {
       if(verbose)
@@ -379,10 +381,9 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
   }
   if(verbose)
     cerr << "Testing block encode/decode on partial block -  ";
-  if (cipher->hasStreamMode())
   {
     int numErrors = checkErrorPropogation( cipher,
-        FSBlockSize-1, -1, key );
+        FSBlockSize-1, -1 );
     if(numErrors)
     {
       if(verbose)
@@ -397,7 +398,6 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
 
   if(verbose)
     cerr << "Checking error propogation in partial block:\n";
-  if (cipher->hasStreamMode())
   {
     int minChanges = FSBlockSize-1;
     int maxChanges = 0;
@@ -406,7 +406,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     for(int i=0; i<FSBlockSize-1; ++i)
     {
       int numErrors = checkErrorPropogation( cipher,
-          FSBlockSize-1, i, key );
+          FSBlockSize-1, i );
 
       if(numErrors < minChanges) 
       {
@@ -438,7 +438,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
     for(int i=0; i<FSBlockSize; ++i)
     {
       int numErrors = checkErrorPropogation( cipher,
-          FSBlockSize, i, key );
+          FSBlockSize, i );
 
       if(numErrors < minChanges) 
       {
@@ -464,6 +464,7 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose)
   return true;
 }
 
+}  // namespace encfs
 
 int main(int argc, char *argv[])
 {
@@ -488,9 +489,9 @@ int main(int argc, char *argv[])
   srand( time(0) );
 
   // get a list of the available algorithms
-  std::list<Cipher::CipherAlgorithm> algorithms =
-    Cipher::GetAlgorithmList();
-  std::list<Cipher::CipherAlgorithm>::const_iterator it;
+  std::list<CipherV1::CipherAlgorithm> algorithms =
+    CipherV1::GetAlgorithmList();
+  std::list<CipherV1::CipherAlgorithm>::const_iterator it;
   cerr << "Supported Crypto interfaces:\n";
   for(it = algorithms.begin(); it != algorithms.end(); ++it)
   {
@@ -515,7 +516,7 @@ int main(int argc, char *argv[])
       cerr << it->name << ", key length " << keySize
         << ", block size " << blockSize << ":  ";
 
-      shared_ptr<Cipher> cipher = Cipher::New( it->name, keySize );
+      shared_ptr<CipherV1> cipher = CipherV1::New( it->name, keySize );
       if(!cipher)
       {
         cerr << "FAILED TO CREATE\n";
@@ -536,7 +537,7 @@ int main(int argc, char *argv[])
   }
 
   // run one test with verbose output too..
-  shared_ptr<Cipher> cipher = Cipher::New("AES", 192);
+  shared_ptr<CipherV1> cipher = CipherV1::New("AES", 192);
   if(!cipher)
   {
     cerr << "\nNo AES cipher found, skipping verbose test.\n";
@@ -549,10 +550,6 @@ int main(int argc, char *argv[])
     runTests( cipher, true );
   }
 
-  MemoryPool::destroyAll();
-
   return 0;
 }
-
-}  // namespace encfs
 

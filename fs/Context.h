@@ -26,6 +26,7 @@
 #include "base/Mutex.h"
 
 #include <set>
+#include <string>
 
 #ifdef HAVE_TR1_UNORDERED_MAP
 #include <tr1/unordered_map>

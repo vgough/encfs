@@ -44,7 +44,8 @@
 
 #include <iostream>
 
-using namespace std;
+using std::list;
+using std::string;
 
 namespace encfs {
 

@@ -66,8 +66,12 @@
 #include <google/protobuf/text_format.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 
-using namespace std;
-using namespace gnu;
+using gnu::autosprintf;
+using std::cout;
+using std::cerr;
+using std::endl;
+using std::map;
+using std::string;
 
 namespace encfs {
 
@@ -1186,6 +1190,11 @@ void showFSInfo( const EncfsConfig &config )
       cout <<  "\n";
   } else
   {
+    // Set a null key - the cipher won't work, but it will at least know the
+    // key size and blocksize.
+    CipherKey tmpKey(config.key().size());
+    cipher->setKey(tmpKey);
+
     // check if we support the filename encoding interface..
     shared_ptr<NameIO> nameCoder = NameIO::New( config.naming(), cipher );
     if(!nameCoder)

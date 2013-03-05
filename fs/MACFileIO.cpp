@@ -30,8 +30,6 @@
 
 #include <cstring>
 
-using namespace std;
-
 namespace encfs {
 
 //

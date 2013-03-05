@@ -19,6 +19,7 @@
  */
 
 #include "cipher/openssl.h"
+#include "base/config.h"
 
 #include <cstring>
 #include <ctime>
@@ -27,6 +28,10 @@
 #include <sys/time.h>
 
 #include <glog/logging.h>
+
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+#include <valgrind/memcheck.h>
+#endif
 
 #include "base/config.h"
 
@@ -53,8 +58,6 @@
 #include "cipher/MemoryPool.h"
 #include "cipher/PBKDF.h"
 #include "cipher/StreamCipher.h"
-
-using namespace std;
 
 namespace encfs {
 
@@ -108,10 +111,18 @@ class OpenSSLCipher : public BlockCipher {
 
       return false;
     }
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+    VALGRIND_MAKE_MEM_DEFINED(key->data(), key->size());
+#endif
     return true;
   }
   
   static bool pseudoRandomize(byte *out, int length) {
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+    if (VALGRIND_CHECK_MEM_IS_ADDRESSABLE(out, length) != 0) {
+      return false;
+    }
+#endif
     int result = RAND_pseudo_bytes( out, length );
     if(result != 1)
     {
@@ -136,12 +147,27 @@ class OpenSSLCipher : public BlockCipher {
   }
 
   virtual int blockSize() const {
-    return EVP_CIPHER_CTX_block_size(&enc);
+    int len = EVP_CIPHER_CTX_block_size(&enc);
+    // Some versions of OpenSSL report 1 for block size os AES_XTS..
+    if (len == 1)
+      len = EVP_CIPHER_CTX_key_length(&enc);
+    return len;
   }
 
   virtual bool encrypt(const byte *ivec, const byte *in,
                        byte *out, int size) {
     int dstLen = 0, tmpLen = 0;
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+    int ivLen = EVP_CIPHER_CTX_iv_length(&enc);
+    if (VALGRIND_CHECK_MEM_IS_DEFINED(ivec, ivLen) != 0) {
+      LOG(ERROR) << "expected iv of length " << ivLen;
+      return false;
+    }
+    if (VALGRIND_CHECK_MEM_IS_ADDRESSABLE(out, size) != 0) {
+      LOG(ERROR) << "expected output length " << size;
+      return false;
+    }
+#endif
     EVP_EncryptInit_ex( &enc, NULL, NULL, NULL, ivec);
     EVP_EncryptUpdate( &enc, out, &dstLen, in, size);
     EVP_EncryptFinal_ex( &enc, out+dstLen, &tmpLen );
@@ -159,6 +185,17 @@ class OpenSSLCipher : public BlockCipher {
   virtual bool decrypt(const byte *ivec, const byte *in,
                        byte *out, int size) {
     int dstLen = 0, tmpLen = 0;
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+    int ivLen = EVP_CIPHER_CTX_iv_length(&enc);
+    if (VALGRIND_CHECK_MEM_IS_DEFINED(ivec, ivLen) != 0) {
+      LOG(ERROR) << "expected iv of length " << ivLen;
+      return false;
+    }
+    if (VALGRIND_CHECK_MEM_IS_ADDRESSABLE(out, size) != 0) {
+      LOG(ERROR) << "expected output length " << size;
+      return false;
+    }
+#endif
     EVP_DecryptInit_ex( &dec, NULL, NULL, NULL, ivec);
     EVP_DecryptUpdate( &dec, out, &dstLen, in, size );
     EVP_DecryptFinal_ex( &dec, out+dstLen, &tmpLen );
@@ -346,7 +383,7 @@ class Sha1HMac : public MAC {
     return true;
   }
 
-  virtual void reset() {
+  virtual void init() {
     HMAC_Init_ex(&ctx, 0, 0, 0, 0);
   }
  
@@ -364,6 +401,9 @@ class Sha1HMac : public MAC {
     unsigned int outSize = 0;
     HMAC_Final(&ctx, (unsigned char *)out, &outSize);
     CHECK_EQ(outputSize(), outSize) << "Invalid HMAC output size";
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+    VALGRIND_MAKE_MEM_DEFINED(out, outSize);
+#endif
     return true;
   }
 

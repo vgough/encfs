@@ -18,7 +18,6 @@ target_link_libraries (encfsctl
     encfs-cipher
     encfs-base
     ${GLOG_LIBRARIES}
-    ${FUSE_LIBRARIES}
 )
 
 if (POD2MAN)

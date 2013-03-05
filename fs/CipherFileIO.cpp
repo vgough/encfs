@@ -289,8 +289,7 @@ ssize_t CipherFileIO::readOneBlock( const IORequest &req ) const
   IORequest tmpReq = req;
 
   MemBlock mb;
-  if (headerLen != 0)
-    tmpReq.offset += headerLen;
+  tmpReq.offset += headerLen;
 
   int maxReadSize = req.dataLen;
   readSize = base->read( tmpReq );

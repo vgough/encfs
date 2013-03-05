@@ -1,7 +1,13 @@
 
+#include <glog/logging.h>
 #include <gtest/gtest.h>
 
+#include "base/config.h"
 #include "cipher/testing.h"
+
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+#include <valgrind/memcheck.h>
+#endif
 
 namespace encfs {
 
@@ -22,6 +28,9 @@ std::string stringToHex(const byte *data, int len) {
 }
 
 void setDataFromHex(byte *out, int len, const char *hex) {
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+  VALGRIND_CHECK_MEM_IS_ADDRESSABLE(out, len);
+#endif
   bool odd = false;
   unsigned int last = 0;
   while (len > 0 && *hex != '\0') {
@@ -49,6 +58,7 @@ void setDataFromHex(byte *out, int len, const char *hex) {
 }
 
 int main(int argc, char **argv) {
+  google::InitGoogleLogging(argv[0]);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

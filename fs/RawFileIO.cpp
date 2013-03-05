@@ -35,8 +35,6 @@
 
 #include <cerrno>
 
-using namespace std;
-
 namespace encfs {
 
 static Interface RawFileIO_iface = makeInterface("FileIO/Raw", 1, 0, 0);

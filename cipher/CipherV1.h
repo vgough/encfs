@@ -102,6 +102,9 @@ class CipherV1
     Range blockSize;
   };
 
+  static void init(bool threaded);
+  static void shutdown(bool threaded);
+
   // Returns a list of supported algorithms.
   static std::list<CipherAlgorithm> GetAlgorithmList();
   static shared_ptr<CipherV1> New(const std::string &name, int keyLen = -1);
@@ -114,8 +117,11 @@ class CipherV1
                          const byte *salt, int saltLen,
                          CipherKey *out, long desiredPDFTimeMicroseconds);
 
-  CipherV1(const Interface &iface, const Interface &realIface, int keyLength);
+  CipherV1();
   ~CipherV1();
+
+  bool initCiphers(const Interface &iface,
+                   const Interface &realIface, int keyLength);
 
   // returns the real interface, not the one we're emulating (if any)..
   Interface interface() const;

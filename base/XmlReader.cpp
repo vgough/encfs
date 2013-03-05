@@ -38,8 +38,7 @@
 #include <glog/logging.h>
 #include "base/base64.h"
 #include "base/Interface.h"
-
-using namespace std;
+#include "base/shared_ptr.h"
 
 namespace encfs {
 
@@ -116,16 +115,9 @@ bool XmlValue::readB64(const char *path, byte *data, int length) const
   
   std::string s = value->text();
   s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
+  s.erase(s.find_last_not_of("=")+1);
 
-  BIO *b64 = BIO_new(BIO_f_base64());
-  BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
-
-  BIO *bmem = BIO_new_mem_buf((void *)s.c_str(), s.size());
-  bmem = BIO_push(b64, bmem);
-
-  int decodedSize = BIO_read(bmem, data, length);
-  BIO_free_all(b64);
-  
+  int decodedSize = B64ToB256Bytes(s.size());
   if (decodedSize != length) 
   {
     LOG(ERROR) << "decoding bytes len " << s.size()
@@ -133,6 +125,8 @@ bool XmlValue::readB64(const char *path, byte *data, int length) const
                << ", got " << decodedSize;
     return false;
   }
+  changeBase2((byte *)s.data(), s.size(), 6, data, length, 8);
+  B64ToAsciiStandard(data, length);
 
   return true;
 }

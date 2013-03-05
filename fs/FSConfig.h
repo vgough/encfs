@@ -75,6 +75,11 @@ struct FSConfig
     bool reverseEncryption; // reverse encryption operation
 
     bool idleTracking; // turn on idle monitoring of filesystem
+
+    FSConfig() 
+      : forceDecode(false),
+        reverseEncryption(false),
+        idleTracking(false) { }
 };
 
 typedef shared_ptr<FSConfig> FSConfigPtr;

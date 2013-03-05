@@ -40,8 +40,7 @@
 #include "base/Interface.h"
 #include "base/i18n.h"
 
-#include "cipher/MemoryPool.h"
-#include "cipher/openssl.h"
+#include "cipher/CipherV1.h"
 
 #include "fs/FileUtils.h"
 #include "fs/DirNode.h"
@@ -61,9 +60,12 @@ inline static int MAX(int a, int b)
 }
 #endif
 
-using namespace std;
-using namespace gnu;
 using namespace encfs;
+using gnu::autosprintf;
+using std::cerr;
+using std::endl;
+using std::string;
+using std::ostringstream;
 
 namespace encfs {
 
@@ -580,7 +582,7 @@ int main(int argc, char *argv[])
   // encfs_oper.fsetattr_x
 #endif
 
-  OpenSSL::init( encfsArgs->isThreaded );
+  CipherV1::init( encfsArgs->isThreaded );
 
   // context is not a smart pointer because it will live for the life of
   // the filesystem.
@@ -672,8 +674,7 @@ int main(int argc, char *argv[])
   rootInfo.reset();
   ctx->setRoot( shared_ptr<DirNode>() );
 
-  MemoryPool::destroyAll();
-  OpenSSL::shutdown( encfsArgs->isThreaded );
+  CipherV1::shutdown( encfsArgs->isThreaded );
 
   return returnCode;
 }

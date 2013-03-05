@@ -29,8 +29,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-using namespace std;
-
 void genKey( const shared_ptr<Cipher> &cipher )
 {
     CipherKey key = cipher->newRandomKey();

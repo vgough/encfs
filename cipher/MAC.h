@@ -35,7 +35,8 @@ class MAC
 
   virtual bool setKey(const CipherKey &key) =0;
 
-  virtual void reset() =0;
+  // Init must be called before any calls to update.
+  virtual void init() =0;
   virtual bool update(const byte *in, int length) =0;
   virtual bool write(byte *out) =0;
 };

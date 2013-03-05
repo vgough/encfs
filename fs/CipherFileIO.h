@@ -84,8 +84,6 @@ private:
 
     // if haveHeader is true, then we have a transparent file header which
     int headerLen;
-    // Use block only encryption, no stream encryption.
-    bool blockOnlyMode;
 
     bool perFileIV;
     bool externalIVChaining;

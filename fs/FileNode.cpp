@@ -49,7 +49,7 @@
 
 #include <glog/logging.h>
 
-using namespace std;
+using std::string;
 
 namespace encfs {
 

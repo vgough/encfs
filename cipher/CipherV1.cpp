@@ -19,6 +19,7 @@
  */
 
 #include "cipher/CipherV1.h"
+#include "base/config.h"
 
 #include <cstring>
 #include <ctime>
@@ -28,18 +29,29 @@
 
 #include <glog/logging.h>
 
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+#include <valgrind/memcheck.h>
+#endif
+
 #include "base/base64.h"
 #include "base/Error.h"
 #include "base/i18n.h"
 #include "base/Mutex.h"
 #include "base/Range.h"
+
 #include "cipher/MemoryPool.h"
 #include "cipher/MAC.h"
 #include "cipher/BlockCipher.h"
 #include "cipher/PBKDF.h"
 #include "cipher/StreamCipher.h"
 
-using namespace std;
+#ifdef WITH_OPENSSL
+#include "cipher/openssl.h"
+#endif
+
+using std::list;
+using std::string;
+using std::vector;
 
 namespace encfs {
 
@@ -53,6 +65,18 @@ inline int MIN(int a, int b)
   return (a < b) ? a : b;
 }
 #endif
+
+void CipherV1::init(bool threaded) {
+#ifdef WITH_OPENSSL
+  OpenSSL::init(threaded);
+#endif
+}
+
+void CipherV1::shutdown(bool threaded) {
+#ifdef WITH_OPENSSL
+  OpenSSL::shutdown(threaded);
+#endif
+}
 
 /*
    DEPRECATED: this is here for backward compatibilty only.  Use PBKDF
@@ -77,7 +101,7 @@ bool BytesToKey(const byte *data, int dataLen,
 
   for(;;)
   {
-    sha1->reset();
+    sha1->init();
     if( addmd++ )
       sha1->update(mdBuf.data, mdBuf.size);
     sha1->update(data, dataLen);
@@ -85,7 +109,7 @@ bool BytesToKey(const byte *data, int dataLen,
 
     for(unsigned int i=1; i < rounds; ++i)
     {
-      sha1->reset();
+      sha1->init();
       sha1->update(mdBuf.data, mdBuf.size);
       sha1->write(mdBuf.data);
     }
@@ -115,6 +139,10 @@ int CipherV1::TimedPBKDF2(const char *pass, int passlen,
                           const byte *salt, int saltlen,
                           CipherKey *key, long desiredPDFTime)
 {
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+  VALGRIND_CHECK_MEM_IS_DEFINED(pass, passlen);
+  VALGRIND_CHECK_MEM_IS_DEFINED(salt, saltlen);
+#endif
   Registry<PBKDF> registry = PBKDF::GetRegistry();
   shared_ptr<PBKDF> impl(registry.CreateForMatch(NAME_PKCS5_PBKDF2_HMAC_SHA1));
   if (!impl)
@@ -212,11 +240,18 @@ shared_ptr<CipherV1> CipherV1::New(const std::string& name, int keyLen) {
 }
 
 shared_ptr<CipherV1> CipherV1::New(const Interface &iface, int keyLen) {
-  return shared_ptr<CipherV1>(new CipherV1(iface, iface, keyLen));
+  shared_ptr<CipherV1> result(new CipherV1());
+  if (!result->initCiphers(iface, iface, keyLen))
+    result.reset();
+  return result;
 }
 
-CipherV1::CipherV1(const Interface &iface, const Interface &realIface,
-                   int keyLength)
+CipherV1::CipherV1()
+{
+}
+
+bool CipherV1::initCiphers(const Interface &iface, const Interface &realIface,
+                           int keyLength)
 {
   this->iface = iface;
   this->realIface = realIface;
@@ -243,12 +278,11 @@ CipherV1::CipherV1(const Interface &iface, const Interface &realIface,
     defaultKeyLength = 0;
     _blockCipher.reset( blockCipherRegistry.CreateForMatch("NullCipher") );
     _streamCipher.reset( streamCipherRegistry.CreateForMatch("NullCipher") );
-  } else {
-    throw Error("Unsupported cipher");
   }
 
   if (!_blockCipher || !_streamCipher) {
-    throw Error("Requested cipher not available");
+    LOG(INFO) << "Unsupported cipher " << iface.name();
+    return false;
   }
 
   if (keyLength <= 0)
@@ -259,7 +293,8 @@ CipherV1::CipherV1(const Interface &iface, const Interface &realIface,
   _pbkdf.reset(PBKDF::GetRegistry().CreateForMatch(
                NAME_PKCS5_PBKDF2_HMAC_SHA1));
   if (!_pbkdf) {
-    throw Error("PBKDF not available");
+    LOG(ERROR) << "PBKDF missing";
+    return false;
   }
 
   // Initialize the cipher with a temporary key in order to determine the block
@@ -272,8 +307,12 @@ CipherV1::CipherV1(const Interface &iface, const Interface &realIface,
 
   Lock l(_hmacMutex);
   _hmac.reset(MAC::GetRegistry().CreateForMatch(NAME_SHA1_HMAC));
-  if (!_hmac)
-    throw Error("SHA1_HMAC not available");
+  if (!_hmac) {
+    LOG(ERROR) << "SHA1_HMAC not available";
+    return false;
+  }
+
+  return true;
 }
 
 CipherV1::~CipherV1()
@@ -296,6 +335,10 @@ CipherKey CipherV1::newKey(const char *password, int passwdLength,
                            int *iterationCount, long desiredDuration,
                            const byte *salt, int saltLen)
 {
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+  VALGRIND_CHECK_MEM_IS_DEFINED(password, passwdLength);
+  VALGRIND_CHECK_MEM_IS_DEFINED(salt, saltLen);
+#endif
   CipherKey key(_keySize + _ivLength);
 
   if(*iterationCount == 0)
@@ -329,6 +372,9 @@ CipherKey CipherV1::newKey(const char *password, int passwdLength,
 // password is changed or configuration is rewritten.
 CipherKey CipherV1::newKey(const char *password, int passwdLength)
 {
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+  VALGRIND_CHECK_MEM_IS_DEFINED(password, passwdLength);
+#endif
   CipherKey key(_keySize + _ivLength);
 
   bool ok = BytesToKey((byte *)password, passwdLength, 16, &key);
@@ -376,8 +422,8 @@ uint64_t CipherV1::MAC_64(const byte *data, int len,
   byte md[_hmac->outputSize()];
   
   Lock l(_hmacMutex);
-  _hmac->reset();
 
+  _hmac->init();
   _hmac->update(data, len);
   if(chainedIV)
   {
@@ -398,8 +444,11 @@ uint64_t CipherV1::MAC_64(const byte *data, int len,
 
   // chop this down to a 64bit value..
   byte h[8] = {0,0,0,0,0,0,0,0};
-  // TODO: outputSize - 1?
-  for(unsigned int i=0; i<_hmac->outputSize(); ++i)
+
+  // XXX: the last byte off the hmac isn't used.  This minor inconsistency
+  // must be maintained in order to maintain backward compatiblity with earlier
+  // releases.
+  for(int i=0; i<_hmac->outputSize()-1; ++i)
     h[i%8] ^= (byte)(md[i]);
 
   uint64_t value = (uint64_t)h[0];
@@ -435,14 +484,27 @@ CipherKey CipherV1::readKey(const byte *data, bool checkKey)
     checksum = (checksum << 8) | (unsigned int)data[i];
 
   memcpy( key.data(), data+KEY_CHECKSUM_BYTES, key.size() );
-  streamDecode(key.data(), key.size(), checksum);
+  if (!streamDecode(key.data(), key.size(), checksum)) {
+    LOG(ERROR) << "stream decode failure";
+    return CipherKey();
+  }
 
   // check for success
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+  VALGRIND_CHECK_MEM_IS_DEFINED(key.data(), key.size());
+#endif
+
   unsigned int checksum2 = reduceMac32(
       MAC_64( key.data(), key.size(), NULL ));
-  if(checksum2 != checksum && checkKey)
+
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+  VALGRIND_CHECK_VALUE_IS_DEFINED(checksum2);
+  VALGRIND_CHECK_VALUE_IS_DEFINED(checksum);
+#endif
+
+  if(checkKey && (checksum2 != checksum))
   {
-    VLOG(1) << "checksum mismatch: expected " << checksum 
+    LOG(INFO) << "checksum mismatch: expected " << checksum 
         << ", got " << checksum2
         << "on decode of " << _keySize + _ivLength << " bytes";
     return CipherKey();
@@ -454,16 +516,13 @@ CipherKey CipherV1::readKey(const byte *data, bool checkKey)
 void CipherV1::writeKey(const CipherKey &ckey, byte *out)
 {
   rAssert( _keySet );
-  rAssert(ckey.size() > KEY_CHECKSUM_BYTES);
 
   SecureMem tmpBuf(ckey.size());
   memcpy(tmpBuf.data, ckey.data(), tmpBuf.size);
 
   unsigned int checksum = reduceMac32(
-      MAC_64( tmpBuf.data, tmpBuf.size, NULL ));
+      MAC_64(tmpBuf.data, tmpBuf.size, NULL));
   streamEncode(tmpBuf.data, tmpBuf.size, checksum);
-
-  memcpy( out+KEY_CHECKSUM_BYTES, tmpBuf.data, tmpBuf.size );
 
   // first N bytes contain HMAC derived checksum..
   for(int i=1; i<=KEY_CHECKSUM_BYTES; ++i)
@@ -471,6 +530,8 @@ void CipherV1::writeKey(const CipherKey &ckey, byte *out)
     out[KEY_CHECKSUM_BYTES-i] = checksum & 0xff;
     checksum >>= 8;
   }
+
+  memcpy( out+KEY_CHECKSUM_BYTES, tmpBuf.data, tmpBuf.size );
 }
 
 std::string CipherV1::encodeAsString(const CipherKey &key)
@@ -558,7 +619,7 @@ void CipherV1::setIVec(byte *ivec, uint64_t seed) const
 
   // combine ivec and seed with HMAC
   Lock l(_hmacMutex);
-  _hmac->reset();
+  _hmac->init();
   _hmac->update(ivec, _ivLength);
   _hmac->update(md.data(), 8);
   _hmac->write(md.data());

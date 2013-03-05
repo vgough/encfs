@@ -39,7 +39,7 @@ namespace encfs {
 struct MemBlock
 {
     byte *data;
-    void *internalData;
+    int size;
 
     MemBlock();
     ~MemBlock();
@@ -48,13 +48,8 @@ struct MemBlock
 };
 
 inline MemBlock::MemBlock()
-    : data(0), internalData(0)
+    : data(0), size(0)
 {
-}
-
-namespace MemoryPool
-{
-    void destroyAll();
 }
 
 class SecureMem
@@ -66,6 +61,8 @@ class SecureMem
   explicit SecureMem(int len);
   ~SecureMem();
 };
+
+bool operator == (const SecureMem &a, const SecureMem &b);
 
 }  // namespace encfs
 

@@ -10,14 +10,18 @@
 #cmakedefine HAVE_TR1_UNORDERED_SET
 #cmakedefine HAVE_TR1_TUPLE
 
+#cmakedefine HAVE_VALGRIND_VALGRIND_H
+#cmakedefine HAVE_VALGRIND_MEMCHECK_H
+
+#cmakedefine WITH_OPENSSL
+#cmakedefine WITH_COMMON_CRYPTO
+#cmakedefine HAVE_SEC_RANDOM_H
+
 #cmakedefine HAVE_EVP_BF
 #cmakedefine HAVE_EVP_AES
 #cmakedefine HAVE_EVP_AES_XTS
 
 #cmakedefine HAVE_LCHMOD
-
-#cmakedefine HAVE_VALGRIND_VALGRIND_H
-#cmakedefine HAVE_VALGRIND_MEMCHECK_H
 
 /* TODO: add other thread library support. */
 #cmakedefine CMAKE_USE_PTHREADS_INIT

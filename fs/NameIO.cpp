@@ -34,7 +34,11 @@
 #include "fs/StreamNameIO.h"
 #include "fs/NullNameIO.h"
 
-using namespace std;
+using std::cerr;
+using std::list;
+using std::make_pair;
+using std::multimap;
+using std::string;
 
 namespace encfs {
 
