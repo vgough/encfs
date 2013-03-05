@@ -14,6 +14,8 @@
 #cmakedefine HAVE_EVP_AES
 #cmakedefine HAVE_EVP_AES_XTS
 
+#cmakedefine HAVE_LCHMOD
+
 #cmakedefine HAVE_VALGRIND_VALGRIND_H
 #cmakedefine HAVE_VALGRIND_MEMCHECK_H
 

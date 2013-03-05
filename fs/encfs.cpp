@@ -50,6 +50,7 @@ using namespace std::tr1;
 using namespace std;
 #endif
 
+#include "base/config.h"
 #include "base/shared_ptr.h"
 #include "base/Mutex.h"
 #include "base/Error.h"
@@ -483,7 +484,11 @@ int encfs_rename(const char *from, const char *to)
 
 int _do_chmod(EncFS_Context *, const string &cipherPath, mode_t mode)
 {
+#ifdef HAVE_LCHMOD
+  return lchmod( cipherPath.c_str(), mode );
+#else
   return chmod( cipherPath.c_str(), mode );
+#endif
 }
 
 int encfs_chmod(const char *path, mode_t mode)
@@ -697,7 +702,7 @@ int encfs_statfs(const char *path, struct statvfs *st)
 int _do_setxattr(EncFS_Context *, const string &cyName, 
     tuple<const char *, const char *, size_t, uint32_t> data)
 {
-  int options = 0;
+  int options = XATTR_NOFOLLOW;
   return ::setxattr( cyName.c_str(), get<0>(data), get<1>(data), 
       get<2>(data), get<3>(data), options );
 }

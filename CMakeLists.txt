@@ -66,6 +66,9 @@ CHECK_CXX_SOURCE_COMPILES ("#include <sys/types.h>
   #include <sys/xattr.h>
   int main() { getxattr(0,0,0,0,0,0); return 1; } " XATTR_ADD_OPT)
 
+include (CheckFunctionExists)
+check_function_exists(lchmod HAVE_LCHMOD)
+
 # Libraries or programs used for multiple modules.
 find_package (Protobuf REQUIRED)
 include_directories (${PROTOBUF_INCLUDE_DIR})
