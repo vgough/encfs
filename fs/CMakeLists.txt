@@ -1,12 +1,6 @@
-find_package (FUSE REQUIRED)
-include_directories (${FUSE_INCLUDE_DIR})
+protobuf_generate_cpp (PROTO_SRCS PROTO_HDRS ${PROJECT_SOURCE_DIR}/protos/fsconfig.proto)
 
-protobuf_generate_cpp (PROTO_SRCS PROTO_HDRS ${Encfs_SOURCE_DIR}/protos/fsconfig.proto)
-
-enable_testing ()
-find_package (GTest)
-
-include_directories (${Encfs_BINARY_DIR}/base)
+include_directories (${PROJECT_BINARY_DIR}/base)
 add_library (encfs-fs
     encfs.cpp
     Context.cpp
@@ -32,11 +26,11 @@ target_link_libraries (encfs-fs
 
 # Unit tests are optional, depends on libgtest (Google's C++ test framework).
 if (GTEST_FOUND)
-    link_directories (${Encfs_BINARY_DIR}/base)
-    link_directories (${Encfs_BINARY_DIR}/cipher)
+    link_directories (${PROJECT_BINARY_DIR}/base)
+    link_directories (${PROJECT_BINARY_DIR}/cipher)
 
     include_directories (${GTEST_INCLUDE_DIR})
-    add_executable (unittests
+    add_executable (fs-tests
         MemBlockFileIO.cpp
         MemFileIO.cpp
         testing.cpp
@@ -44,7 +38,7 @@ if (GTEST_FOUND)
         test_BlockIO.cpp
     )
 
-    target_link_libraries (unittests
+    target_link_libraries (fs-tests
         ${GTEST_BOTH_LIBRARIES}
         encfs-fs
         encfs-cipher
@@ -52,8 +46,6 @@ if (GTEST_FOUND)
         ${GLOG_LIBRARIES}
     )
 
-    add_test (UnitTests unittests)
-    GTEST_ADD_TESTS (unittests "${UnitTestArgs}" test_IO.cpp test_BlockIO.cpp)
-    add_custom_target (test COMMAND ${CMAKE_CTEST_COMMAND} DEPENDS unittests)
-
+    add_test (FSTests fs-tests)
+    GTEST_ADD_TESTS (fs-tests "${FSTestArgs}" test_IO.cpp test_BlockIO.cpp)
 endif (GTEST_FOUND)

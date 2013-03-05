@@ -11,8 +11,28 @@ option (BUILD_SHARED_LIBS "Build dynamic link libraries" OFF)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
     "${CMAKE_SOURCE_DIR}/CMakeModules/")
 
+# Tweak compiler flags.
 set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall")
 
+include (CheckCXXCompilerFlag)
+check_cxx_compiler_flag (-std=c++11 HAVE_C11_FLAG)
+check_cxx_compiler_flag (-std=gnu++11 HAVE_GNU11_FLAG)
+
+if (HAVE_GNU11_FLAG)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=gnu++11")
+elseif (HAVE_C11_FLAG)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+endif (HAVE_GNU11_FLAG)
+
+# Flume specific flags.
+find_package (FUSE REQUIRED)
+include_directories (${FUSE_INCLUDE_DIR})
+add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
+if (APPLE)
+    add_definitions (-D__FreeBSD__=10)
+endif (APPLE)
+
+# Packaging config.
 set (CPACK_PACKAGE_NAME "Encfs")
 set (CPACK_PACKAGE_VERSION_MAJOR ${ENCFS_MAJOR})
 set (CPACK_PACKAGE_VERSION_MINOR ${ENCFS_MINOR})
@@ -23,6 +43,7 @@ set (CPACK_SOURCE_IGNORE_FILES
     "/build/")
 include (CPack)
 
+# Check for external files.
 include (CheckIncludeFileCXX)
 check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
 check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
@@ -45,11 +66,7 @@ CHECK_CXX_SOURCE_COMPILES ("#include <sys/types.h>
   #include <sys/xattr.h>
   int main() { getxattr(0,0,0,0,0,0); return 1; } " XATTR_ADD_OPT)
 
-add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
-if (APPLE)
-    add_definitions (-D__FreeBSD__=10)
-endif (APPLE)
-
+# Libraries or programs used for multiple modules.
 find_package (Protobuf REQUIRED)
 include_directories (${PROTOBUF_INCLUDE_DIR})
 
@@ -58,13 +75,27 @@ include_directories (${GLOG_INCLUDE_DIRS})
 
 find_program (POD2MAN pod2man)
 
+find_package (GTest)
+if (GTEST_FOUND) 
+    enable_testing()
+endif (GTEST_FOUND)
+
+# Prefix for encfs module includes.
 include_directories (${Encfs_BINARY_DIR})
 include_directories (${Encfs_SOURCE_DIR})
 
+# Subdirectories.
 add_subdirectory(base)
 add_subdirectory(cipher)
 add_subdirectory(fs)
 add_subdirectory(encfs)
 add_subdirectory(util)
 add_subdirectory(po)
+
+# Test target.
+if (GTEST_FOUND)
+    add_custom_target (test COMMAND ${CMAKE_TEST_COMMAND} DEPENDS
+        cipher/cipher-tests fs/fs-tests)
+endif (GTEST_FOUND)
+
 

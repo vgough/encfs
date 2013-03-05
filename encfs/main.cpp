@@ -578,7 +578,7 @@ int main(int argc, char *argv[])
   // encfs_oper.fsetattr_x
 #endif
 
-  openssl_init( encfsArgs->isThreaded );
+  OpenSSL::init( encfsArgs->isThreaded );
 
   // context is not a smart pointer because it will live for the life of
   // the filesystem.
@@ -671,7 +671,7 @@ int main(int argc, char *argv[])
   ctx->setRoot( shared_ptr<DirNode>() );
 
   MemoryPool::destroyAll();
-  openssl_shutdown( encfsArgs->isThreaded );
+  OpenSSL::shutdown( encfsArgs->isThreaded );
 
   return returnCode;
 }

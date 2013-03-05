@@ -134,7 +134,7 @@ void MemoryPool::destroyAll()
 SecureMem::SecureMem(int len)
 {
   rAssert(len > 0);
-  data = (char *)OPENSSL_malloc(len);
+  data = (byte *)OPENSSL_malloc(len);
   if (data)
   {
     size = len;

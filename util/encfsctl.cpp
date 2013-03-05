@@ -24,6 +24,9 @@
 #include "base/i18n.h"
 
 #include "cipher/Cipher.h"
+#include "cipher/BlockCipher.h"
+#include "cipher/MAC.h"
+#include "cipher/StreamCipher.h"
 
 #include "fs/FileUtils.h"
 #include "fs/Context.h"
@@ -35,6 +38,7 @@
 #include <iostream>
 #include <string>
 #include <cstdio>
+#include <list>
 
 #include <getopt.h>
 #include <sys/types.h>
@@ -52,6 +56,7 @@ using namespace encfs;
 
 static int showInfo( int argc, char **argv );
 static int showVersion( int argc, char **argv );
+static int showCiphers( int argc, char **argv );
 static int chpasswd( int argc, char **argv );
 static int chpasswdAutomaticly( int argc, char **argv );
 static int cmd_ls( int argc, char **argv );
@@ -101,6 +106,9 @@ struct CommandOpts
   {"export", 2, 2, cmd_export, "(root dir) path",
     // xgroup(usage)
     gettext_noop("  -- decrypts a volume and writes results to path")}, 
+  {"--ciphers", 0, 0, showCiphers, "",
+    // xgroup(usage)
+    gettext_noop("  -- show available ciphers")},
   {"--version", 0, 0, showVersion, "", 
     // xgroup(usage)
     gettext_noop("  -- print version number and exit")},
@@ -140,7 +148,7 @@ static bool checkDir( string &rootDir )
 {
   if( !isDirectory( rootDir.c_str() ))
   {
-    cerr << autosprintf(_("directory %s does not exist.\n"),
+    cout << autosprintf(_("directory %s does not exist.\n"),
         rootDir.c_str());
     return false;
   }
@@ -155,8 +163,42 @@ static int showVersion( int argc, char **argv )
   (void)argc;
   (void)argv;
   // xgroup(usage)
-  cerr << autosprintf(_("encfsctl version %s"), VERSION) << "\n";
+  cout << autosprintf(_("encfsctl version %s"), VERSION) << "\n";
 
+  return EXIT_SUCCESS;
+}
+
+static int showCiphers( int argc, char **argv )
+{
+  (void)argc;
+  (void)argv;
+  list<string> names = BlockCipher::GetRegistry().GetAll();
+  for (const string& name : names) {
+    auto props = BlockCipher::GetRegistry().GetProperties(name.c_str());
+    cout << _("Implementation: ") << name << "\n";
+    cout << "\t" << _("Block cipher: ") << props->cipher << " / " << props->mode
+        << " ( " << autosprintf(_("via %s"), props->library.c_str()) << " )\n";
+    cout << "\t" << _("Key Sizes: ") << props->keySize << "\n";
+  }
+  
+  names = StreamCipher::GetRegistry().GetAll();
+  for (const string& name : names) {
+    auto props = StreamCipher::GetRegistry().GetProperties(name.c_str());
+    cout << _("Implementation: ") << name << "\n";
+    cout << "\t" << _("Stream cipher: ") << props->cipher << " / " << props->mode
+        << " ( " << autosprintf(_("via %s"), props->library.c_str()) << " )\n";
+    cout << "\t" << _("Key Sizes: ") << props->keySize << "\n";
+  }
+  
+  names = MessageAuthenticationCode::GetRegistry().GetAll();
+  for (const string& name : names) {
+    auto props = MessageAuthenticationCode::GetRegistry()
+        .GetProperties(name.c_str());
+    cout << _("Implementation: ") << name << "\n";
+    cout << "\t" << _("HMAC: ") << props->hashFunction << " / " << props->mode
+        << " ( " << autosprintf(_("via %s"), props->library.c_str()) << " )\n";
+    cout << "\t" << _("Block size: ") << props->blockSize << "\n";
+  }
   return EXIT_SUCCESS;
 }
 
@@ -676,7 +718,7 @@ static int cmd_showcruft( int argc, char **argv )
 
   int filesFound = showcruft( rootInfo, "/" );
 
-  cerr << autosprintf("Found %i invalid file(s).", filesFound) << "\n";
+  cout << autosprintf("Found %i invalid file(s).", filesFound) << "\n";
 
   return EXIT_SUCCESS;
 }

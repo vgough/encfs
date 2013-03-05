@@ -21,6 +21,8 @@
 #ifndef _Range_incl_
 #define _Range_incl_
 
+#include <ostream>
+
 namespace encfs {
 
 class Range
@@ -41,6 +43,18 @@ public:
     int max() const;
     int inc() const;
 };
+
+inline std::ostream & operator << (std::ostream &st, const Range &r) {
+  bool separator = false;
+  for (int size = r.min(); size <= r.max(); size += r.inc()) {
+    if (separator)
+      st << ", ";
+    else
+      separator = true;
+    st << size;
+  }
+  return st;
+}
 
 inline Range::Range(int minMax)
 {

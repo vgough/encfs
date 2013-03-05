@@ -21,10 +21,17 @@
 #ifndef _openssl_incl_
 #define _openssl_incl_
 
+#include "base/Registry.h"
+
 namespace encfs {
 
-void openssl_init(bool isThreaded);
-void openssl_shutdown(bool isThreaded);
+class OpenSSL {
+ public:
+  static void init(bool isThreaded);
+  static void shutdown(bool isThreaded);
+
+  static void registerCiphers();
+};
 
 }  // namespace encfs
 

@@ -17,6 +17,8 @@ add_library (encfs-base
     ConfigVar.cpp
     Error.cpp
     Interface.cpp
+    Range.h
+    Registry.h
     XmlReader.cpp
     ${PROTO_SRCS}
     ${PROTO_HDRS}

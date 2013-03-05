@@ -8,10 +8,6 @@ link_directories (${Encfs_BINARY_DIR}/cipher)
 include_directories (${Encfs_SOURCE_DIR}/fs)
 link_directories (${Encfs_BINARY_DIR}/fs)
 
-# TODO: move FUSE code into encfs-fs.
-find_package (FUSE REQUIRED)
-include_directories (${FUSE_INCLUDE_DIR})
-
 include_directories (${CMAKE_BINARY_DIR}/base)
 
 

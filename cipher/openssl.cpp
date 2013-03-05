@@ -2,7 +2,7 @@
  * Author:   Valient Gough <vgough@pobox.com>
  *
  *****************************************************************************
- * Copyright (c) 2007, Valient Gough
+ * Copyright (c) 2007-2013, Valient Gough
  *
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
@@ -20,9 +20,15 @@
 
 #include "cipher/openssl.h"
 
+#include <cstring>
+#include <ctime>
 #include <pthread.h>
+#include <sys/mman.h>
+#include <sys/time.h>
 
 #include <glog/logging.h>
+
+#include "base/config.h"
 
 #define NO_DES
 #include <openssl/ssl.h>
@@ -31,7 +37,344 @@
 #include <openssl/engine.h>
 #endif
 
+#include <openssl/blowfish.h>
+#include <openssl/err.h>
+#include <openssl/hmac.h>
+#include <openssl/rand.h>
+#include <openssl/sha.h>
+
+#include "base/Error.h"
+#include "base/i18n.h"
+#include "base/Mutex.h"
+#include "base/Range.h"
+
+#include "cipher/BlockCipher.h"
+#include "cipher/MAC.h"
+#include "cipher/MemoryPool.h"
+#include "cipher/PBKDF.h"
+#include "cipher/StreamCipher.h"
+
+using namespace std;
+
 namespace encfs {
+
+const int MAX_KEYLENGTH = 64; // in bytes (256 bit)
+const int MAX_IVLENGTH = 16;
+const int KEY_CHECKSUM_BYTES = 4;
+
+#ifndef MIN
+inline int MIN(int a, int b)
+{
+  return (a < b) ? a : b;
+}
+#endif
+
+
+// Base for {Block,Stream}Cipher implementation.
+class OpenSSLCipher : public BlockCipher {
+ public:
+  OpenSSLCipher() {
+  }
+
+  virtual ~OpenSSLCipher() {
+    EVP_CIPHER_CTX_cleanup( &enc );
+    EVP_CIPHER_CTX_cleanup( &dec );
+  }
+
+  bool rekey(const EVP_CIPHER *cipher, const byte *key, int length) {
+    EVP_CIPHER_CTX_init( &enc );
+    EVP_EncryptInit_ex( &enc, cipher, NULL, NULL, NULL);
+    EVP_CIPHER_CTX_set_key_length( &enc, length );
+    EVP_CIPHER_CTX_set_padding( &enc, 0 );
+    EVP_EncryptInit_ex( &enc, NULL, NULL, key, NULL);
+
+    EVP_CIPHER_CTX_init( &dec );
+    EVP_DecryptInit_ex( &dec, cipher, NULL, NULL, NULL);
+    EVP_CIPHER_CTX_set_key_length( &dec, length );
+    EVP_CIPHER_CTX_set_padding( &dec, 0 );
+    EVP_DecryptInit_ex( &dec, NULL, NULL, key, NULL);
+    return true;
+  }
+
+  static bool randomize(byte *out, int len) {
+    int result = RAND_bytes( out, len );
+    if(result != 1)
+    {
+      char errStr[120]; // specs require string at least 120 bytes long..
+      unsigned long errVal = 0;
+      if((errVal = ERR_get_error()) != 0)
+        LOG(ERROR) << "openssl error: " << ERR_error_string( errVal, errStr );
+
+      return false;
+    }
+    return true;
+  }
+
+  // Rekey with random key.
+  bool rekey(const EVP_CIPHER *cipher, int keyLength) {
+    SecureMem key(keyLength);
+
+    if (!randomize(key.data, key.size))
+      return false;
+
+    return rekey(cipher, key.data, key.size);
+  }
+
+  virtual int blockSize() const {
+    return EVP_CIPHER_CTX_block_size(&enc);
+  }
+
+  virtual bool encrypt(const byte *ivec, const byte *in,
+                       byte *out, int size) {
+    int dstLen = 0, tmpLen = 0;
+    EVP_EncryptInit_ex( &enc, NULL, NULL, NULL, ivec);
+    EVP_EncryptUpdate( &enc, out, &dstLen, in, size);
+    EVP_EncryptFinal_ex( &enc, out+dstLen, &tmpLen );
+    dstLen += tmpLen;
+
+    if (dstLen != size) {
+      LOG(ERROR) << "encoding " << size
+          << " bytes, got back " << dstLen << " (" << tmpLen << " in final_ex)";
+      return false;
+    }
+
+    return true;
+  }
+
+  virtual bool decrypt(const byte *ivec, const byte *in,
+                       byte *out, int size) {
+    int dstLen = 0, tmpLen = 0;
+    EVP_DecryptInit_ex( &dec, NULL, NULL, NULL, ivec);
+    EVP_DecryptUpdate( &dec, out, &dstLen, in, size );
+    EVP_DecryptFinal_ex( &dec, out+dstLen, &tmpLen );
+    dstLen += tmpLen;
+
+    if (dstLen != size) {
+      LOG(ERROR) << "decoding " << size
+          << " bytes, got back " << dstLen << " (" << tmpLen << " in final_ex)";
+      return false;
+    }
+
+    return true;
+  }
+
+ private:
+  EVP_CIPHER_CTX enc;
+  EVP_CIPHER_CTX dec;
+};
+
+
+#if defined(HAVE_EVP_BF)
+static Range BfKeyRange(128,256,32);
+class BfCbcBlockCipher : public OpenSSLCipher {
+ public:
+  BfCbcBlockCipher() {}
+  virtual ~BfCbcBlockCipher() {}
+
+  virtual bool setKey(const byte *key, int length) {
+    if (BfKeyRange.allowed(length * 8))
+      return rekey(EVP_bf_cbc(), key, length);
+    else
+      return false;
+  }
+
+  virtual bool randomKey(int length) {
+    return BfKeyRange.allowed(length * 8) && rekey(EVP_bf_cbc(), length);
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.keySize = BfKeyRange;
+    props.cipher = "Blowfish";
+    props.mode = "CBC";
+    props.library = "OpenSSL";
+    return props;
+  }
+};
+REGISTER_CLASS(BfCbcBlockCipher, BlockCipher);
+
+class BfCfbStreamCipher : public OpenSSLCipher {
+ public:
+  BfCfbStreamCipher() {}
+  virtual ~BfCfbStreamCipher() {}
+
+  virtual bool setKey(const byte *key, int length) {
+    return BfKeyRange.allowed(length * 8) && rekey(EVP_bf_cfb(), key, length);
+  }
+
+  virtual bool randomKey(int length) {
+    return BfKeyRange.allowed(length * 8) && rekey(EVP_bf_cfb(), length);
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.keySize = BfKeyRange;
+    props.cipher = "Blowfish";
+    props.mode = "CFB";
+    props.library = "OpenSSL";
+    return props;
+  }
+};
+REGISTER_CLASS(BfCfbStreamCipher, StreamCipher);
+#endif
+
+
+#if defined(HAVE_EVP_AES)
+static Range AesKeyRange(128,256,64);
+class AesCbcBlockCipher : public OpenSSLCipher {
+ public:
+  AesCbcBlockCipher() {}
+  virtual ~AesCbcBlockCipher() {}
+
+  virtual bool setKey(const byte *key, int length) {
+    const EVP_CIPHER *cipher = getCipher(length);
+    return (cipher != NULL) && rekey(cipher, key, length);
+  }
+
+  virtual bool randomKey(int length) {
+    const EVP_CIPHER *cipher = getCipher(length);
+    return (cipher != NULL) && rekey(cipher, length);
+  }
+
+  static const EVP_CIPHER *getCipher(int keyLength) {
+    switch(keyLength * 8)
+    {
+      case 128: return EVP_aes_128_cbc();
+      case 192: return EVP_aes_192_cbc();
+      case 256: return EVP_aes_256_cbc();
+      default:
+                return NULL;
+    }
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.keySize = AesKeyRange;
+    props.cipher = "AES";
+    props.mode = "CBC";
+    props.library = "OpenSSL";
+    return props;
+  }
+};
+REGISTER_CLASS(AesCbcBlockCipher, BlockCipher);
+#endif
+
+#if defined(HAVE_EVP_AES_XTS)
+static Range AesXtsKeyRange(128,256,128);
+class AesXtsBlockCipher : public OpenSSLCipher {
+ public:
+  AesXtsBlockCipher() {}
+  virtual ~AesXtsBlockCipher() {}
+
+  virtual bool setKey(const byte *key, int length) {
+    const EVP_CIPHER *cipher = getCipher(length);
+    return (cipher != NULL) && rekey(cipher, key, length);
+  }
+
+  virtual bool randomKey(int length) {
+    const EVP_CIPHER *cipher = getCipher(length);
+    return (cipher != NULL) && rekey(cipher, length);
+  }
+
+  static const EVP_CIPHER *getCipher(int keyLength) {
+    switch(keyLength * 8)
+    {
+      case 128: return EVP_aes_128_xts();
+      case 256: return EVP_aes_256_xts();
+      default:  return NULL;
+    }
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.keySize = AesXtsKeyRange;
+    props.cipher = "AES";
+    props.mode = "XTS";
+    props.library = "OpenSSL";
+    return props;
+  }
+};
+REGISTER_CLASS(AesXtsBlockCipher, BlockCipher);
+#endif
+
+class Sha1HMac : public MessageAuthenticationCode {
+ public:
+  Sha1HMac() {}
+  virtual ~Sha1HMac() {
+    HMAC_CTX_cleanup(&ctx);
+  }
+
+  virtual int outputSize() const {
+    return 20; // 160 bit.
+  }
+
+  virtual bool setKey(const byte *key, int keyLength) {
+    HMAC_CTX_init(&ctx);
+    HMAC_Init_ex(&ctx, key, keyLength, EVP_sha1(), 0);
+    return true;
+  }
+
+  virtual bool randomKey(int keyLength) {
+    SecureMem key(keyLength);
+
+    return OpenSSLCipher::randomize(key.data, key.size)
+        && setKey(key.data, key.size);
+  }
+
+  virtual void reset() {
+    HMAC_Init_ex(&ctx, 0, 0, 0, 0);
+  }
+ 
+  virtual bool update(const byte *in, int length) {
+    HMAC_Update(&ctx, in, length);
+    return true;
+  }
+
+  virtual bool write(byte *out) {
+    unsigned int outSize = 0;
+    HMAC_Final(&ctx, (unsigned char *)out, &outSize);
+    CHECK_EQ(outputSize(), outSize) << "Invalid HMAC output size";
+    return true;
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.blockSize = 20;
+    props.hashFunction = "SHA-1";
+    props.mode = "HMAC";
+    props.library = "OpenSSL";
+    return props;
+  }
+ private:
+  HMAC_CTX ctx;
+};
+REGISTER_CLASS(Sha1HMac, MessageAuthenticationCode);
+
+
+class PbkdfPkcs5HmacSha1 : public PBKDF {
+ public:
+  PbkdfPkcs5HmacSha1() {}
+  virtual ~PbkdfPkcs5HmacSha1() {}
+
+  virtual bool makeKey(const char *password, int passwordLength,
+                       const byte *salt, int saltLength,
+                       int numIterations,
+                       byte *outKey, int keyLength) const {
+    return PKCS5_PBKDF2_HMAC_SHA1(
+        password, passwordLength,
+        const_cast<byte *>(salt), saltLength,
+        numIterations, keyLength, outKey) == 1;
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.mode = "PKCS5_PBKDF2_HMAC_SHA1";
+    props.library = "OpenSSL";
+    return props;
+  }
+};
+REGISTER_CLASS(PbkdfPkcs5HmacSha1, PBKDF);
+
 
 unsigned long pthreads_thread_id()
 {
@@ -73,7 +416,7 @@ void pthreads_locking_cleanup()
   }
 }
 
-void openssl_init(bool threaded)
+void OpenSSL::init(bool threaded)
 {
   // initialize the SSL library
   SSL_load_error_strings();
@@ -99,7 +442,7 @@ void openssl_init(bool threaded)
   }
 }
 
-void openssl_shutdown(bool threaded)
+void OpenSSL::shutdown(bool threaded)
 {
 #ifndef OPENSSL_NO_ENGINE
   ENGINE_cleanup();
@@ -107,6 +450,12 @@ void openssl_shutdown(bool threaded)
 
   if(threaded)
     pthreads_locking_cleanup();
+}
+
+void OpenSSL::registerCiphers()
+{
+  // Nothing required.. Just need to reference this code block to get static
+  // initializers.
 }
 
 }  // namespace encfs

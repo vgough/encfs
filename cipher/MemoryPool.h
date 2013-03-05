@@ -29,7 +29,8 @@ namespace encfs {
     Memory Pool for fixed sized objects.
 
     Usage:
-    MemBlock mb( size );
+    MemBlock mb;
+    mb.allocate( size );
     // do things with storage in   mb.data
     byte *buffer = mb.data;
 
@@ -59,7 +60,7 @@ namespace MemoryPool
 struct SecureMem
 {
   int size;
-  char *data;
+  byte *data;
 
   SecureMem(int len);
   ~SecureMem();
