@@ -10,7 +10,8 @@
 namespace encfs {
 
 // Well-known algorithms.
-static const char NAME_PKCS5_PBKDF2_HMAC_SHA1[] = "PKCS5_PBKDF2_HMAC_SHA1";
+static const char NAME_PBKDF2_HMAC_SHA1[] = "PBKDF2_HMAC_SHA1";
+static const char NAME_PBKDF2_HMAC_SHA256[] = "PBKDF2_HMAC_SHA256";
 
 // Password Based Key Derivation Function.
 class PBKDF

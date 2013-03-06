@@ -47,6 +47,10 @@
 # include <openssl/buffer.h>
 #endif
 
+#ifdef WITH_BOTAN
+# include <botan/botan.h>
+#endif
+
 namespace encfs {
 
 #ifdef WITH_OPENSSL
@@ -61,14 +65,16 @@ static void freeBlock( byte *block, int size )
   OPENSSL_cleanse(block, size);
   OPENSSL_free(block);
 }
-#elif defined(WITH_COMMON_CRYPTO)
+
+#else
+
 static byte *allocBlock(int size) {
   byte *block = new byte[size];
   return block;
 }
 
 unsigned char cleanse_ctr = 0;
-static void freeBlock(byte *data, int len) {
+static void cleanBlock(byte *data, int len) {
   byte *p = data;
   size_t loop = len, ctr = cleanse_ctr;
   while(loop--)
@@ -81,8 +87,8 @@ static void freeBlock(byte *data, int len) {
   if(p)
     ctr += (63 + (size_t)p);
   cleanse_ctr = (unsigned char)ctr;
-  delete[] data;
 }
+
 #endif
 
 void MemBlock::allocate(int size)
@@ -94,38 +100,49 @@ void MemBlock::allocate(int size)
 
 MemBlock::~MemBlock()
 {
-  freeBlock(data, size);
+  cleanBlock(data, size);
+  delete[] data;
 }
 
 SecureMem::SecureMem(int len)
+#ifdef WITH_BOTAN
+  : data_(len)
+#endif
 {
   rAssert(len > 0);
-  data = allocBlock(len);
-  if (data)
+#ifndef WITH_BOTAN
+  data_ = allocBlock(len);
+  if (data_)
   {
-    size = len;
-    mlock(data, size);
+    size_ = len;
+    mlock(data_, size_);
   } else
   {
-    size = 0;
+    size_ = 0;
   }
+#endif
 } 
           
 SecureMem::~SecureMem()
 {
-  if (size)
+#ifdef WITH_BOTAN
+  data_.destroy();
+#else
+  if (size_)
   {
-    freeBlock(data, size);
-    munlock(data, size);
+    cleanBlock(data_, size_);
+    delete[] data_;
+    munlock(data_, size_);
 
-    data = NULL;
-    size = 0;
+    data_ = NULL;
+    size_ = 0;
   }
+#endif
 }         
 
 bool operator == (const SecureMem &a, const SecureMem &b) {
-  return (a.size == b.size) &&
-         (memcmp(a.data, b.data, a.size) == 0);
+  return (a.size() == b.size()) &&
+         (memcmp(a.data(), b.data(), a.size()) == 0);
 }
 
 }  // namespace encfs

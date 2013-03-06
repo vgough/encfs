@@ -49,6 +49,10 @@
 #include "cipher/openssl.h"
 #endif
 
+#ifdef WITH_BOTAN
+#include "cipher/botan.h"
+#endif
+
 using std::list;
 using std::string;
 using std::vector;
@@ -69,6 +73,9 @@ inline int MIN(int a, int b)
 void CipherV1::init(bool threaded) {
 #ifdef WITH_OPENSSL
   OpenSSL::init(threaded);
+#endif
+#ifdef WITH_BOTAN
+  Botan_init(threaded);
 #endif
 }
 
@@ -103,22 +110,22 @@ bool BytesToKey(const byte *data, int dataLen,
   {
     sha1->init();
     if( addmd++ )
-      sha1->update(mdBuf.data, mdBuf.size);
+      sha1->update(mdBuf.data(), mdBuf.size());
     sha1->update(data, dataLen);
-    sha1->write(mdBuf.data);
+    sha1->write(mdBuf.data());
 
     for(unsigned int i=1; i < rounds; ++i)
     {
       sha1->init();
-      sha1->update(mdBuf.data, mdBuf.size);
-      sha1->write(mdBuf.data);
+      sha1->update(mdBuf.data(), mdBuf.size());
+      sha1->write(mdBuf.data());
     }
 
     int offset = 0;
-    int toCopy = MIN( remaining, (int)mdBuf.size - offset );
+    int toCopy = MIN( remaining, mdBuf.size() - offset );
     if( toCopy )
     {
-      memcpy( key->data(), mdBuf.data+offset, toCopy );
+      memcpy( key->data(), mdBuf.data()+offset, toCopy );
       key += toCopy;
       remaining -= toCopy;
       offset += toCopy;
@@ -144,7 +151,7 @@ int CipherV1::TimedPBKDF2(const char *pass, int passlen,
   VALGRIND_CHECK_MEM_IS_DEFINED(salt, saltlen);
 #endif
   Registry<PBKDF> registry = PBKDF::GetRegistry();
-  shared_ptr<PBKDF> impl(registry.CreateForMatch(NAME_PKCS5_PBKDF2_HMAC_SHA1));
+  shared_ptr<PBKDF> impl(registry.CreateForMatch(NAME_PBKDF2_HMAC_SHA1));
   if (!impl)
     return -1;
 
@@ -291,7 +298,7 @@ bool CipherV1::initCiphers(const Interface &iface, const Interface &realIface,
     _keySize = keyRange.closest(keyLength) / 8;
 
   _pbkdf.reset(PBKDF::GetRegistry().CreateForMatch(
-               NAME_PKCS5_PBKDF2_HMAC_SHA1));
+               NAME_PBKDF2_HMAC_SHA1));
   if (!_pbkdf) {
     LOG(ERROR) << "PBKDF missing";
     return false;
@@ -401,7 +408,7 @@ bool CipherV1::setKey(const CipherKey &keyIv) {
   // Key is actually key plus iv, so extract the different parts.
   CipherKey key(_keySize);
   memcpy(key.data(), keyIv.data(), _keySize);
-  memcpy(_iv->data, keyIv.data() + _keySize, _ivLength);
+  memcpy(_iv->data(), keyIv.data() + _keySize, _ivLength);
 
   if (_blockCipher->setKey(key)
       && _streamCipher->setKey(key)
@@ -518,11 +525,11 @@ void CipherV1::writeKey(const CipherKey &ckey, byte *out)
   rAssert( _keySet );
 
   SecureMem tmpBuf(ckey.size());
-  memcpy(tmpBuf.data, ckey.data(), tmpBuf.size);
+  memcpy(tmpBuf.data(), ckey.data(), tmpBuf.size());
 
   unsigned int checksum = reduceMac32(
-      MAC_64(tmpBuf.data, tmpBuf.size, NULL));
-  streamEncode(tmpBuf.data, tmpBuf.size, checksum);
+      MAC_64(tmpBuf.data(), tmpBuf.size(), NULL));
+  streamEncode(tmpBuf.data(), tmpBuf.size(), checksum);
 
   // first N bytes contain HMAC derived checksum..
   for(int i=1; i<=KEY_CHECKSUM_BYTES; ++i)
@@ -531,7 +538,7 @@ void CipherV1::writeKey(const CipherKey &ckey, byte *out)
     checksum >>= 8;
   }
 
-  memcpy( out+KEY_CHECKSUM_BYTES, tmpBuf.data, tmpBuf.size );
+  memcpy( out+KEY_CHECKSUM_BYTES, tmpBuf.data(), tmpBuf.size() );
 }
 
 std::string CipherV1::encodeAsString(const CipherKey &key)
@@ -602,7 +609,7 @@ static void setIVec_old(byte *ivec, int ivLen, unsigned int seed)
 void CipherV1::setIVec(byte *ivec, uint64_t seed) const
 {
   rAssert( _keySet );
-  memcpy( ivec, _iv->data, _ivLength );
+  memcpy( ivec, _iv->data(), _ivLength );
   if (iface.major() < 3)
   {
     // Backward compatible mode.

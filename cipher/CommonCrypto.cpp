@@ -40,17 +40,19 @@
 namespace encfs {
 namespace commoncrypto {
 
-class PbkdfPkcs5HmacSha1CC : public PBKDF {
+class PbkdfPkcs5Hmac : public PBKDF {
+  CCPseudoRandomAlgorithm prf_;
 public:
-  PbkdfPkcs5HmacSha1CC() {}
-  virtual ~PbkdfPkcs5HmacSha1CC() {}
+  PbkdfPkcs5Hmac(CCPseudoRandomAlgorithm prf)
+      : prf_(prf) {}
+  virtual ~PbkdfPkcs5Hmac() {}
   
   virtual bool makeKey(const char *password, int passwordLength,
                        const byte *salt, int saltLength,
                        int numIterations,
                        CipherKey *outKey) {
     int ret = CCKeyDerivationPBKDF(kCCPBKDF2, password, passwordLength,
-                                   salt, saltLength, kCCPRFHmacAlgSHA1,
+                                   salt, saltLength, prf_,
                                    numIterations,
                                    outKey->data(), outKey->size());
     if (ret != 0) {
@@ -86,15 +88,36 @@ public:
 #endif
     return true;
   }
+};
+
   
+class PbkdfPkcs5HmacSha1CC : public PbkdfPkcs5Hmac {
+public:
+  PbkdfPkcs5HmacSha1CC() : PbkdfPkcs5Hmac(kCCPRFHmacAlgSHA1) {}
+  ~PbkdfPkcs5HmacSha1CC() {}
+
   static Properties GetProperties() {
     Properties props;
-    props.mode = NAME_PKCS5_PBKDF2_HMAC_SHA1;
+    props.mode = NAME_PBKDF2_HMAC_SHA1;
     props.library = "CommonCrypto";
     return props;
   }
 };
 REGISTER_CLASS(PbkdfPkcs5HmacSha1CC, PBKDF);
+
+class PbkdfPkcs5HmacSha256CC : public PbkdfPkcs5Hmac {
+public:
+  PbkdfPkcs5HmacSha256CC() : PbkdfPkcs5Hmac(kCCPRFHmacAlgSHA256) {}
+  ~PbkdfPkcs5HmacSha256CC() {}
+
+  static Properties GetProperties() {
+    Properties props;
+    props.mode = NAME_PBKDF2_HMAC_SHA256;
+    props.library = "CommonCrypto";
+    return props;
+  }
+};
+REGISTER_CLASS(PbkdfPkcs5HmacSha256CC, PBKDF);
 
 class CCCipher : public BlockCipher {
   CipherKey key;

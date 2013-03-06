@@ -15,6 +15,7 @@
 
 #cmakedefine WITH_OPENSSL
 #cmakedefine WITH_COMMON_CRYPTO
+#cmakedefine WITH_BOTAN
 #cmakedefine HAVE_SEC_RANDOM_H
 
 #cmakedefine HAVE_EVP_BF

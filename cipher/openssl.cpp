@@ -33,8 +33,6 @@
 #include <valgrind/memcheck.h>
 #endif
 
-#include "base/config.h"
-
 #define NO_DES
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
@@ -449,7 +447,7 @@ class PbkdfPkcs5HmacSha1 : public PBKDF {
 
   static Properties GetProperties() {
     Properties props;
-    props.mode = NAME_PKCS5_PBKDF2_HMAC_SHA1;
+    props.mode = NAME_PBKDF2_HMAC_SHA1;
     props.library = "OpenSSL";
     return props;
   }

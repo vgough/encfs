@@ -21,12 +21,18 @@
 #ifndef _MemoryPool_incl_
 #define _MemoryPool_incl_
 
+#include "base/config.h"
 #include "base/types.h"
+
+#ifdef WITH_BOTAN
+#include <botan/secmem.h>
+#endif
 
 namespace encfs {
 
 /*
     Memory Pool for fixed sized objects.
+    Use SecureMem if storing sensitive information.
 
     Usage:
     MemBlock mb;
@@ -55,12 +61,36 @@ inline MemBlock::MemBlock()
 class SecureMem
 {
  public:
-  int size;
-  byte *data;
+  byte* data() const;
+  int size() const;
 
   explicit SecureMem(int len);
   ~SecureMem();
+
+ private:
+#ifdef WITH_BOTAN
+  Botan::SecureVector<Botan::byte> data_;
+#else
+  byte *data_;
+  int size_;
+#endif
 };
+
+#ifdef WITH_BOTAN
+inline byte* SecureMem::data() const {
+  return const_cast<byte*>(data_.begin());
+}
+inline int SecureMem::size() const {
+  return data_.size();
+}
+#else
+inline byte* SecureMem::data() const {
+  return data_;
+}
+inline int SecureMem::size() const {
+  return size_;
+}
+#endif
 
 bool operator == (const SecureMem &a, const SecureMem &b);
 

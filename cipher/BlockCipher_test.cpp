@@ -153,7 +153,7 @@ TEST(BlockEncryptionTest, BlockCipher) {
   Registry<BlockCipher> registry = BlockCipher::GetRegistry();
 
   shared_ptr<PBKDF> pbkdf(
-      PBKDF::GetRegistry().CreateForMatch(NAME_PKCS5_PBKDF2_HMAC_SHA1));
+      PBKDF::GetRegistry().CreateForMatch(NAME_PBKDF2_HMAC_SHA1));
 
   list<string> ciphers = registry.GetAll(); 
   for (const string &name : ciphers) {

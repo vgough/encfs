@@ -7,12 +7,16 @@ set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}")
 
 option (BUILD_SHARED_LIBS "Build dynamic link libraries" OFF)
 
-option (WITH_OPENSSL "WithOpenSSL" ON)
+option (WITH_OPENSSL "WithOpenSSL" OFF)
 option (WITH_COMMON_CRYPTO "WithCommonCrypto" OFF)
+option (WITH_BOTAN "WithBotan" ON)
 
-if (WITH_COMMON_CRYPTO)
+if (WITH_BOTAN)
+  set (WITH_COMMON_CRYPTO OFF)
   set (WITH_OPENSSL OFF)
-endif (WITH_COMMON_CRYPTO)
+elseif (WITH_COMMON_CRYPTO)
+  set (WITH_OPENSSL OFF)
+endif (WITH_BOTAN)
 
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
     "${CMAKE_SOURCE_DIR}/CMakeModules/")
@@ -61,15 +65,8 @@ check_include_file_cxx (tr1/tuple HAVE_TR1_TUPLE)
 check_include_file_cxx (valgrind/valgrind.h HAVE_VALGRIND_VALGRIND_H)
 check_include_file_cxx (valgrind/memcheck.h HAVE_VALGRIND_MEMCHECK_H)
 
-if (WITH_COMMON_CRYPTO)
-  check_include_file_cxx (Security/SecRandom.h HAVE_SEC_RANDOM_H)
-endif (WITH_COMMON_CRYPTO)
-
-if (WITH_OPENSSL)
-  # TODO: move this to cipher directory.
-  find_package (OpenSSL REQUIRED)
-  include (OpenSSLTests)
-endif (WITH_OPENSSL)
+# Used with CommonCrypto
+check_include_file_cxx (Security/SecRandom.h HAVE_SEC_RANDOM_H)
 
 # Check if xattr functions take extra argument.
 include (CheckCXXSourceCompiles)

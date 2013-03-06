@@ -43,7 +43,7 @@ CipherKey::CipherKey(const byte *data, int length)
     : _valid(true)
 {
   _mem.reset(new SecureMem(length));
-  memcpy(_mem->data, data, length);
+  memcpy(_mem->data(), data, length);
 }
 
 CipherKey::CipherKey(const CipherKey& src)
@@ -64,12 +64,12 @@ void CipherKey::operator = (const CipherKey& src)
 
 byte *CipherKey::data() const 
 {
-  return !_mem ? NULL : _mem->data;
+  return !_mem ? NULL : _mem->data();
 }
 
 int CipherKey::size() const 
 {
-  return !_mem ? 0 : _mem->size;
+  return !_mem ? 0 : _mem->size();
 }
 
 void CipherKey::reset() 

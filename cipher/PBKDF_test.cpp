@@ -34,7 +34,7 @@ namespace {
 
 TEST(PKCS5_PBKDF2_HMAC_SHA1, PBKDF) {
   Registry<PBKDF> registry = PBKDF::GetRegistry();
-  shared_ptr<PBKDF> impl( registry.CreateForMatch(NAME_PKCS5_PBKDF2_HMAC_SHA1));
+  shared_ptr<PBKDF> impl( registry.CreateForMatch(NAME_PBKDF2_HMAC_SHA1));
   ASSERT_FALSE(!impl);
 
   // Test cases from rfc6070
@@ -68,6 +68,50 @@ TEST(PKCS5_PBKDF2_HMAC_SHA1, PBKDF) {
   }
 }
 
+TEST(PKCS5_PBKDF2_HMAC_SHA256, PBKDF) {
+  Registry<PBKDF> registry = PBKDF::GetRegistry();
+  shared_ptr<PBKDF> impl(
+          registry.CreateForMatch(NAME_PBKDF2_HMAC_SHA256));
+  ASSERT_FALSE(!impl);
+
+  // Test case 1
+  {
+    CipherKey key(32);
+    bool ok = impl->makeKey("password", 8, 
+                            (byte*)"salt", 4,
+                            1, &key);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ("120fb6cffcf8b32c"
+              "43e7225256c4f837"
+              "a86548c92ccc3548"
+              "0805987cb70be17b", stringToHex(key));
+  }
+
+  // Test case 2
+  {
+    CipherKey key(40);
+    bool ok = impl->makeKey("passwordPASSWORDpassword", 24, 
+                            (byte*)"saltSALTsaltSALTsaltSALTsaltSALTsalt", 36,
+                            4096, &key);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ("348c89dbcbd32b2f"
+              "32d814b8116e84cf"
+              "2b17347ebc180018"
+              "1c4e2a1fb8dd53e1"
+              "c635518c7dac47e9",
+              stringToHex(key));
+  }
+
+  // Test case 3
+  {
+    CipherKey key(16);
+    bool ok = impl->makeKey("pass\0word", 9, 
+                            (byte*)"sa\0lt", 5,
+                            4096, &key);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ("89b69d0516f829893c696226650a8687", stringToHex(key));
+  }
+}
 
 }  // namespace
 

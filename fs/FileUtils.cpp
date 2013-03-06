@@ -1350,11 +1350,11 @@ std::string readPassword( int FD )
 
   while(1)
   {
-    ssize_t rdSize = recv(FD, buf->data, buf->size, 0);
+    ssize_t rdSize = recv(FD, buf->data(), buf->size(), 0);
 
     if(rdSize > 0)
     {
-      result.append( (char*)buf->data, rdSize );
+      result.append( (char*)buf->data(), rdSize );
     } else
       break;
   }
@@ -1441,7 +1441,7 @@ SecureMem *passwordFromProgram(const std::string &passProg,
 
   SecureMem *result = new SecureMem(password.length()+1);
   if (result)
-    strncpy((char *)result->data, password.c_str(), result->size);
+    strncpy((char *)result->data(), password.c_str(), result->size());
   password.assign(password.length(), '\0');
 
   return result;
@@ -1451,13 +1451,13 @@ SecureMem *passwordFromStdin()
 {
   SecureMem *buf = new SecureMem(MaxPassBuf);
 
-  char *res = fgets( (char *)buf->data, buf->size, stdin );
+  char *res = fgets( (char *)buf->data(), buf->size(), stdin );
   if (res)
   {
     // Kill the trailing newline.
-    int last = strnlen((char *)buf->data, buf->size);
-    if (last > 0 && buf->data[last-1] == '\n')
-      buf->data[ last-1 ] = '\0';
+    int last = strnlen((char *)buf->data(), buf->size());
+    if (last > 0 && buf->data()[last-1] == '\n')
+      buf->data()[ last-1 ] = '\0';
   }
   
   return buf;
@@ -1469,7 +1469,7 @@ SecureMem *passwordFromPrompt()
 
   // xgroup(common)
   char *res = readpassphrase( _("EncFS Password: "),
-      (char *)buf->data, buf->size-1, RPP_ECHO_OFF );
+      (char *)buf->data(), buf->size()-1, RPP_ECHO_OFF );
   if (!res) 
   {
     delete buf;
@@ -1488,13 +1488,13 @@ SecureMem *passwordFromPrompts()
   {
     // xgroup(common)
     char *res1 = readpassphrase(_("New Encfs Password: "), 
-        (char *)buf->data, buf->size-1, RPP_ECHO_OFF);
+        (char *)buf->data(), buf->size()-1, RPP_ECHO_OFF);
     // xgroup(common)
     char *res2 = readpassphrase(_("Verify Encfs Password: "), 
-        (char *)buf2->data, buf2->size-1, RPP_ECHO_OFF);
+        (char *)buf2->data(), buf2->size()-1, RPP_ECHO_OFF);
 
     if(res1 && res2
-       && !strncmp((char*)buf->data, (char*)buf2->data, MaxPassBuf))
+       && !strncmp((char*)buf->data(), (char*)buf2->data(), MaxPassBuf))
     {
       break; 
     } else
@@ -1520,8 +1520,8 @@ CipherKey getUserKey(const EncfsConfig &config, bool useStdin)
 
   if (password)
   {
-    userKey = decryptKey(config, (char*)password->data,
-                         strlen((char*)password->data));
+    userKey = decryptKey(config, (char*)password->data(),
+                         strlen((char*)password->data()));
     delete password;
   }
 
@@ -1536,8 +1536,8 @@ CipherKey getUserKey( const EncfsConfig &config, const std::string &passProg,
 
   if (password)
   {
-    result = decryptKey(config, (char*)password->data,
-                        strlen((char*)password->data));
+    result = decryptKey(config, (char*)password->data(),
+                        strlen((char*)password->data()));
     delete password;
   }
 
@@ -1560,8 +1560,8 @@ CipherKey getNewUserKey(EncfsConfig &config,
 
   if (password)
   {
-    result = makeNewKey(config, (char*)password->data,
-                        strlen((char*)password->data));
+    result = makeNewKey(config, (char*)password->data(),
+                        strlen((char*)password->data()));
     delete password;
   }
 
