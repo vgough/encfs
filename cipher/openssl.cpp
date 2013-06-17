@@ -457,6 +457,42 @@ class PbkdfPkcs5HmacSha1 : public PBKDF {
 };
 REGISTER_CLASS(PbkdfPkcs5HmacSha1, PBKDF);
 
+class PbkdfPkcs5HmacSha256 : public PBKDF {
+ public:
+  PbkdfPkcs5HmacSha256() {}
+  virtual ~PbkdfPkcs5HmacSha256() {}
+
+  virtual bool makeKey(const char *password, int passwordLength,
+                       const byte *salt, int saltLength,
+                       int numIterations,
+                       CipherKey *outKey) {
+    return PKCS5_PBKDF2_HMAC(
+        password, passwordLength,
+        const_cast<byte *>(salt), saltLength,
+        numIterations, EVP_sha256(),
+        outKey->size(), outKey->data()) == 1;
+  }
+
+  virtual CipherKey randomKey(int length) {
+    CipherKey key(length);
+    if (!OpenSSLCipher::randomize(&key))
+      key.reset();
+    return key;
+  }
+
+  virtual bool pseudoRandom(byte *out, int length) {
+    return OpenSSLCipher::pseudoRandomize(out, length);
+  }
+
+  static Properties GetProperties() {
+    Properties props;
+    props.mode = NAME_PBKDF2_HMAC_SHA256;
+    props.library = "OpenSSL";
+    return props;
+  }
+};
+REGISTER_CLASS(PbkdfPkcs5HmacSha256, PBKDF);
+
 
 unsigned long pthreads_thread_id()
 {
