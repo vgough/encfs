@@ -91,6 +91,7 @@ find_program (POD2MAN pod2man)
 
 find_package (GTest)
 if (GTEST_FOUND) 
+    include_directories(${GTEST_INCLUDE_DIR})
     enable_testing()
 endif (GTEST_FOUND)
 

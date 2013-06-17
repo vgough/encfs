@@ -49,6 +49,7 @@
 
 #ifdef WITH_BOTAN
 # include <botan/botan.h>
+# include <botan/version.h>
 #endif
 
 namespace encfs {
@@ -104,13 +105,33 @@ MemBlock::~MemBlock()
   delete[] data;
 }
 
-SecureMem::SecureMem(int len)
 #ifdef WITH_BOTAN
-  : data_(len)
-#endif
+SecureMem::SecureMem(int len) 
+    : data_(new Botan::SecureVector<unsigned char>(len))
 {
   rAssert(len > 0);
-#ifndef WITH_BOTAN
+}
+
+SecureMem::~SecureMem()
+{
+# if BOTAN_VERSION_CODE >= BOTAN_VERSION_CODE_FOR(1,11,0)
+  data_->destroy();
+# endif
+  delete data_;
+}
+
+byte* SecureMem::data() const {
+  return const_cast<byte*>(data_->begin());
+}
+
+int SecureMem::size() const {
+  return data_->size();
+}
+
+#else
+SecureMem::SecureMem(int len)
+{
+  rAssert(len > 0);
   data_ = allocBlock(len);
   if (data_)
   {
@@ -120,14 +141,10 @@ SecureMem::SecureMem(int len)
   {
     size_ = 0;
   }
-#endif
 } 
-          
+
 SecureMem::~SecureMem()
 {
-#ifdef WITH_BOTAN
-  data_.destroy();
-#else
   if (size_)
   {
     cleanBlock(data_, size_);
@@ -137,8 +154,8 @@ SecureMem::~SecureMem()
     data_ = NULL;
     size_ = 0;
   }
-#endif
 }         
+#endif
 
 bool operator == (const SecureMem &a, const SecureMem &b) {
   return (a.size() == b.size()) &&

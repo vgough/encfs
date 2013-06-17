@@ -25,7 +25,9 @@
 #include "base/types.h"
 
 #ifdef WITH_BOTAN
-#include <botan/secmem.h>
+namespace Botan {
+template <typename T> class SecureVector;
+}
 #endif
 
 namespace encfs {
@@ -69,21 +71,14 @@ class SecureMem
 
  private:
 #ifdef WITH_BOTAN
-  Botan::SecureVector<Botan::byte> data_;
+  Botan::SecureVector<unsigned char> *data_;
 #else
   byte *data_;
   int size_;
 #endif
 };
 
-#ifdef WITH_BOTAN
-inline byte* SecureMem::data() const {
-  return const_cast<byte*>(data_.begin());
-}
-inline int SecureMem::size() const {
-  return data_.size();
-}
-#else
+#ifndef WITH_BOTAN
 inline byte* SecureMem::data() const {
   return data_;
 }

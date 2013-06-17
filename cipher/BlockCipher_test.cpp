@@ -26,6 +26,7 @@
 #include "base/config.h"
 #include "base/shared_ptr.h"
 #include "cipher/BlockCipher.h"
+#include "cipher/CipherV1.h"
 #include "cipher/MemoryPool.h"
 #include "cipher/PBKDF.h"
 #include "cipher/testing.h"
@@ -39,6 +40,13 @@ using std::list;
 using std::string;
 
 namespace {
+
+class BlockCipherTest : public testing::Test {
+ public:
+  virtual void SetUp() {
+    CipherV1::init(false);
+  }
+};
 
 void compare(const byte *a, const byte *b, int size) {
 #ifdef HAVE_VALGRIND_MEMCHECK_H
@@ -54,7 +62,7 @@ void compare(const byte *a, const byte *b, int size) {
   }
 }
 
-TEST(RequiredBlockCiphers, BlockCipher) {
+TEST_F(BlockCipherTest, RequiredBlockCiphers) {
   auto aes_cbc = BlockCipher::GetRegistry().CreateForMatch(NAME_AES_CBC);
   ASSERT_TRUE(aes_cbc != NULL);
 
@@ -62,7 +70,7 @@ TEST(RequiredBlockCiphers, BlockCipher) {
   ASSERT_TRUE(bf_cbc != NULL);
 }
 
-TEST(RequiredStreamCiphers, StreamCipher) {
+TEST_F(BlockCipherTest, RequiredStreamCiphers) {
   auto aes_cfb = StreamCipher::GetRegistry().CreateForMatch(NAME_AES_CFB);
   ASSERT_TRUE(aes_cfb != NULL);
 
@@ -84,6 +92,7 @@ void checkTestVector(const char *cipherName,
 
   CipherKey key(strlen(hexKey)/2);
   setDataFromHex(key.data(), key.size(), hexKey);
+
   ASSERT_TRUE(cipher->setKey(key));
 
   byte iv[strlen(hexIv)/2];
@@ -93,19 +102,23 @@ void checkTestVector(const char *cipherName,
   setDataFromHex(plaintext, sizeof(plaintext), hexPlaintext);
 
   byte ciphertext[sizeof(plaintext)];
-  ASSERT_TRUE(cipher->encrypt(iv, plaintext, ciphertext, sizeof(ciphertext)));
 
-  ASSERT_EQ(hexCipher, stringToHex(ciphertext, sizeof(ciphertext)));
+  // Run test in a loop with the same cipher, since that's how we use it later.
+  for (int i = 0; i < 2; ++i) {
+    ASSERT_TRUE(cipher->encrypt(iv, plaintext, ciphertext, sizeof(ciphertext)));
 
-  byte decypered[sizeof(plaintext)];
-  ASSERT_TRUE(cipher->decrypt(iv, ciphertext, decypered, sizeof(ciphertext)));
+    ASSERT_EQ(hexCipher, stringToHex(ciphertext, sizeof(ciphertext)));
 
-  for (unsigned int i = 0; i < sizeof(plaintext); ++i) {
-    ASSERT_EQ(plaintext[i], decypered[i]);
+    byte decypered[sizeof(plaintext)];
+    ASSERT_TRUE(cipher->decrypt(iv, ciphertext, decypered, sizeof(ciphertext)));
+
+    for (unsigned int i = 0; i < sizeof(plaintext); ++i) {
+      ASSERT_EQ(plaintext[i], decypered[i]);
+    }
   }
 }
 
-TEST(TestVectors, BlockCipher) {
+TEST_F(BlockCipherTest, TestVectors) {
   // BF128 CBC
   checkTestVector<BlockCipher>(NAME_BLOWFISH_CBC,
       "0123456789abcdeff0e1d2c3b4a59687",
@@ -149,7 +162,7 @@ TEST(TestVectors, BlockCipher) {
       "dc7e84bfda79164b7ecd8486985d3860");
 }
 
-TEST(BlockEncryptionTest, BlockCipher) {
+TEST_F(BlockCipherTest, BlockEncryptionTest) {
   Registry<BlockCipher> registry = BlockCipher::GetRegistry();
 
   shared_ptr<PBKDF> pbkdf(

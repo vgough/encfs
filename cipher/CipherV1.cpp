@@ -297,6 +297,8 @@ bool CipherV1::initCiphers(const Interface &iface, const Interface &realIface,
   else
     _keySize = keyRange.closest(keyLength) / 8;
 
+  LOG_IF(ERROR, _keySize == 0) << "invalid key size";
+
   _pbkdf.reset(PBKDF::GetRegistry().CreateForMatch(
                NAME_PBKDF2_HMAC_SHA1));
   if (!_pbkdf) {
@@ -404,6 +406,9 @@ bool CipherV1::pseudoRandomize( byte *buf, int len )
 
 bool CipherV1::setKey(const CipherKey &keyIv) {
   Lock l(_hmacMutex);
+
+  LOG_IF(ERROR, _keySize != keyIv.size()) << "Mismatched key size: passed " 
+      << keyIv.size() << ", expecting " << _keySize;
 
   // Key is actually key plus iv, so extract the different parts.
   CipherKey key(_keySize);

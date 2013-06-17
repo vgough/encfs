@@ -15,6 +15,7 @@ elseif (WITH_BOTAN)
   find_package (Botan REQUIRED)
   set (EXTRA_LIBS ${BOTAN_LIBRARIES})
   set (EXTRA_SOURCE botan.cpp)
+  include_directories (${BOTAN_INCLUDE_DIR}) 
 endif (WITH_COMMON_CRYPTO)
 
 add_library (encfs-cipher

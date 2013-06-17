@@ -31,10 +31,6 @@
 
 #include <tinyxml.h>
 
-#include <openssl/evp.h>
-#include <openssl/bio.h>
-#include <openssl/buffer.h>
-
 #include <glog/logging.h>
 #include "base/base64.h"
 #include "base/Interface.h"

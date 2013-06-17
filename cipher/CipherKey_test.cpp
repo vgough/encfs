@@ -19,9 +19,17 @@ using std::string;
 
 namespace {
 
-TEST(CipherKey, ReadWrite) {
+class CipherKeyTest : public testing::Test {
+ protected:
+  virtual void SetUp() {
+    CipherV1::init(false);
+  }
+};
+
+TEST_F(CipherKeyTest, ReadWrite) {
   for (auto alg : CipherV1::GetAlgorithmList()) {
     auto cipher = CipherV1::New(alg.iface);
+    ASSERT_FALSE(!cipher);
 
     CipherKey masterKey = cipher->newRandomKey();
     CipherKey volumeKey = cipher->newRandomKey();
