@@ -407,7 +407,8 @@ bool CipherV1::pseudoRandomize( byte *buf, int len )
 bool CipherV1::setKey(const CipherKey &keyIv) {
   Lock l(_hmacMutex);
 
-  LOG_IF(ERROR, _keySize != keyIv.size()) << "Mismatched key size: passed " 
+  LOG_IF(ERROR, (int)_keySize != keyIv.size()) 
+      << "Mismatched key size: passed " 
       << keyIv.size() << ", expecting " << _keySize;
 
   // Key is actually key plus iv, so extract the different parts.
