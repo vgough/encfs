@@ -75,7 +75,7 @@ static byte *allocBlock(int size) {
 }
 
 unsigned char cleanse_ctr = 0;
-static void cleanBlock(byte *data, int len) {
+static void freeBlock(byte *data, int len) {
   byte *p = data;
   size_t loop = len, ctr = cleanse_ctr;
   while(loop--)
@@ -88,6 +88,7 @@ static void cleanBlock(byte *data, int len) {
   if(p)
     ctr += (63 + (size_t)p);
   cleanse_ctr = (unsigned char)ctr;
+  delete[] data;
 }
 
 #endif
@@ -101,8 +102,7 @@ void MemBlock::allocate(int size)
 
 MemBlock::~MemBlock()
 {
-  cleanBlock(data, size);
-  delete[] data;
+  freeBlock(data, size);
 }
 
 #ifdef WITH_BOTAN
@@ -147,8 +147,7 @@ SecureMem::~SecureMem()
 {
   if (size_)
   {
-    cleanBlock(data_, size_);
-    delete[] data_;
+    freeBlock(data_, size_);
     munlock(data_, size_);
 
     data_ = NULL;
