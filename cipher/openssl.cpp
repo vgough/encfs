@@ -131,6 +131,9 @@ class OpenSSLCipher : public BlockCipher {
 
       return false;
     }
+#ifdef HAVE_VALGRIND_MEMCHECK_H
+    VALGRIND_MAKE_MEM_DEFINED(out, length);
+#endif
     return true;
   }
 

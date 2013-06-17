@@ -11,15 +11,28 @@ option (WITH_OPENSSL "WithOpenSSL" OFF)
 option (WITH_COMMON_CRYPTO "WithCommonCrypto" OFF)
 option (WITH_BOTAN "WithBotan" ON)
 
-if (WITH_BOTAN)
-  set (WITH_COMMON_CRYPTO OFF)
-  set (WITH_OPENSSL OFF)
-elseif (WITH_COMMON_CRYPTO)
-  set (WITH_OPENSSL OFF)
-endif (WITH_BOTAN)
-
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
     "${CMAKE_SOURCE_DIR}/CMakeModules/")
+
+# Include Crypto checks here so that they can set values in config.h
+if (WITH_COMMON_CRYPTO)
+  set (WITH_BOTAN OFF)
+  set (WITH_OPENSSL OFF)
+
+  find_library (SECURITY_FRAMEWORK Security)
+  mark_as_advanced (SECURITY_FRAMEWORK)
+elseif (WITH_BOTAN)
+  set (WITH_COMMON_CRYPTO OFF)
+  set (WITH_OPENSSL OFF)
+
+  find_package (Botan REQUIRED)
+elseif (WITH_OPENSSL)
+  set (WITH_BOTAN OFF)
+  set (WITH_COMMON_CRYPTO OFF)
+
+  find_package (OpenSSL REQUIRED)
+  include (OpenSSLTests)
+endif (WITH_COMMON_CRYPTO)
 
 # Tweak compiler flags.
 set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall")
