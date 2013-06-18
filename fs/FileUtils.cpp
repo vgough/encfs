@@ -668,6 +668,18 @@ Interface selectNameCoding(const CipherV1::CipherAlgorithm &alg)
   }
 }
 
+static int selectKDFDuration() {
+  cout << autosprintf(_("Select desired KDF duration in milliseconds.\n"
+                        "The default is 500 (half a second): "));
+
+  char answer[10];
+  char *res = fgets( answer, sizeof(answer), stdin );
+  int duration = (res == 0 ? 0 : atoi( answer ));
+  cout << "\n";
+
+  return duration;
+}
+
 static
 int selectKeySize( const CipherV1::CipherAlgorithm &alg )
 {
@@ -1028,6 +1040,7 @@ RootPtr createConfig( EncFS_Context *ctx,
       selectBlockMAC(&blockMACBytes, &blockMACRandBytes);
       allowHoles = selectZeroBlockPassThrough();
     }
+    desiredKDFDuration = selectKDFDuration();
   }
 
   shared_ptr<CipherV1> cipher = CipherV1::New( alg.iface, keySize );
