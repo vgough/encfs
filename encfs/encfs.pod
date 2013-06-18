@@ -102,7 +102,7 @@ you want before considering the use of B<--public>.
 Mount the filesystem on-demand.  This currently only makes sense in combination
 with B<--idle> and B<--extpass> options.  When the filesystem becomes idle,
 instead of exiting, B<EncFS> stops allowing access to the filesystem by
-internally dropping it's reference to it.  If someone attempts to access the
+internally dropping its reference to it.  If someone attempts to access the
 filesystem again, the extpass program is used to prompt the user for the
 password.  If this succeeds, then the filesystem becomes available again.
 
