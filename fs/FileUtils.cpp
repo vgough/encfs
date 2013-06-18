@@ -180,7 +180,8 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode )
   // TODO: can we internationalize the y/n names?  Seems strange to prompt in
   // their own language but then have to respond 'y' or 'n'.
   // xgroup(setup)
-  cerr << autosprintf( _("The directory \"%s\" does not exist. Should it be created? (y,n) "), path );
+  cerr << autosprintf( _("The directory \"%s\" does not exist. "
+                         "Should it be created? (y,n) "), path );
   char answer[10];
   char *res;
 
@@ -868,7 +869,7 @@ bool selectChainedIV()
   return boolDefaultYes(
       _("Enable filename initialization vector chaining?\n"
         "This makes filename encoding dependent on the complete path, \n"
-        "rather then encoding each path element individually."));
+        "rather than encoding each path element individually."));
 }
 
 static 
