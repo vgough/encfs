@@ -405,7 +405,7 @@ bool CipherV1::pseudoRandomize( byte *buf, int len )
 bool CipherV1::setKey(const CipherKey &keyIv) {
   Lock l(_hmacMutex);
 
-  LOG_IF(ERROR, (int)_keySize + _ivLength != keyIv.size()) 
+  LOG_IF(ERROR, (int)(_keySize + _ivLength) != keyIv.size()) 
       << "Mismatched key size: passed " 
       << keyIv.size() << ", expecting " << _keySize;
 
@@ -579,10 +579,9 @@ int CipherV1::cipherBlockSize() const
 }
 
 // Deprecated: For backward compatibility only.
-// A watermark attack was discovered against this IV construction.  If an
-// attacker could get a victim to store a carefully crafted file, they could
-// later determine if the victim had the file in encrypted storage (without
-// decrypting the file).
+// A watermark attack was published against this data-independent IV schedule.
+// The replacement incorporates the filesystem key, making it unique to each
+// filesystem.
 static void setIVec_old(byte *ivec, int ivLen, unsigned int seed)
 {
   unsigned int var1 = 0x060a4011 * seed; 
