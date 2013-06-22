@@ -1170,7 +1170,8 @@ RootPtr createConfig( EncFS_Context *ctx,
 
 void showFSInfo( const EncfsConfig &config )
 {
-  shared_ptr<CipherV1> cipher = CipherV1::New( config.cipher(), -1 );
+  shared_ptr<CipherV1> cipher = CipherV1::New( config.cipher(), 
+        config.key().size() );
   {
     cout << autosprintf(
         // xgroup(diag)
@@ -1204,11 +1205,6 @@ void showFSInfo( const EncfsConfig &config )
       cout <<  "\n";
   } else
   {
-    // Set a null key - the cipher won't work, but it will at least know the
-    // key size and blocksize.
-    CipherKey tmpKey(config.key().size());
-    cipher->setKey(tmpKey);
-
     // check if we support the filename encoding interface..
     shared_ptr<NameIO> nameCoder = NameIO::New( config.naming(), cipher );
     if(!nameCoder)

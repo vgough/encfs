@@ -358,8 +358,9 @@ CipherKey CipherV1::newKey(const char *password, int passwdLength,
     {
       LOG(ERROR) << "openssl error, PBKDF2 failed";
       return CipherKey();
-    } else
+    } else {
       *iterationCount = res;
+    }
   } else
   {
     // known iteration length
@@ -574,7 +575,6 @@ int CipherV1::keySize() const
 
 int CipherV1::cipherBlockSize() const
 {
-  rAssert( _keySet );
   return _blockCipher->blockSize();
 }
 
