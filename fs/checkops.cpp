@@ -36,14 +36,6 @@
 
 #include <glog/logging.h>
 
-#ifdef HAVE_SSL
-#define NO_DES
-#include <openssl/ssl.h>
-#ifndef OPENSSL_NO_ENGINE
-#include <openssl/engine.h>
-#endif
-#endif
-
 #include <google/protobuf/text_format.h>
 
 #ifdef HAVE_TR1_UNORDERED_SET
@@ -210,6 +202,8 @@ bool runTests(const shared_ptr<CipherV1> &cipher, bool verbose)
     cipher->setKey(encodingKey);
     cipher->writeKey( key, keyBuf );
     CipherKey key2 = cipher->readKey( keyBuf, true );
+    delete[] keyBuf;
+
     if(!key2.valid())
     {
       if(verbose)
@@ -246,6 +240,8 @@ bool runTests(const shared_ptr<CipherV1> &cipher, bool verbose)
     encryptedKey->set_size(8 * cipher->keySize());
     encryptedKey->set_ciphertext( keyBuf, encodedKeySize );
     cfg.set_block_size(FSBlockSize);
+
+    delete[] keyBuf;
 
     // save config
     string data;
@@ -474,17 +470,8 @@ int main(int argc, char *argv[])
   google::InitGoogleLogging(argv[0]);
   google::InstallFailureSignalHandler();
 
-#ifdef HAVE_SSL
-  SSL_load_error_strings();
-  SSL_library_init();
-
-#ifndef OPENSSL_NO_ENGINE
-  ENGINE_load_builtin_engines();
-  ENGINE_register_all_ciphers();
-  ENGINE_register_all_digests();
-  ENGINE_register_all_RAND();
-#endif
-#endif
+  bool isThreaded = false;
+  CipherV1::init(isThreaded);
 
   srand( time(0) );
 
@@ -549,6 +536,8 @@ int main(int argc, char *argv[])
 
     runTests( cipher, true );
   }
+
+  CipherV1::shutdown(isThreaded);
 
   return 0;
 }

@@ -45,11 +45,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#ifdef HAVE_SSL
-#define NO_DES
-#include <openssl/ssl.h>
-#endif
-
 using namespace encfs;
 using gnu::autosprintf;
 using std::cerr;
@@ -864,10 +859,8 @@ int main(int argc, char **argv)
   textdomain( PACKAGE );
 #endif
 
-#ifdef HAVE_SSL
-  SSL_load_error_strings();
-  SSL_library_init();
-#endif
+  bool isThreaded = false;
+  CipherV1::init(isThreaded);
 
   if(argc < 2)
   {
@@ -906,6 +899,8 @@ int main(int argc, char **argv)
         return (*commands[offset].func)( argc-1, argv+1 );
     }
   }
+
+  CipherV1::shutdown(isThreaded);
 
   return EXIT_FAILURE;
 }
