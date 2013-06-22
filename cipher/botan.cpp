@@ -174,8 +174,8 @@ class BotanBlockCipher : public BlockCipher {
     auto written = decryptor->read(out, size, Pipe::LAST_MESSAGE);
     LOG_IF(ERROR, (int)written != size) << "expected output size " << size
         << ", got " << written;
-    LOG_IF(ERROR, encryptor->remaining() > 0) << "unread bytes in pipe: " 
-        << encryptor->remaining();
+    LOG_IF(ERROR, decryptor->remaining() > 0) << "unread bytes in pipe: " 
+        << decryptor->remaining();
     return true;
   }
 };
