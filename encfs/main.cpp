@@ -506,6 +506,15 @@ void encfs_destroy( void *_ctx )
 
 int main(int argc, char *argv[])
 {
+  cerr << "\n\n";
+  cerr << "====== WARNING ======= WARNING ======== WARNING ========\n";
+  cerr << "NOTE: this version of Encfs comes from SVN mainline and is\n"
+      "an unreleased 2.x BETA. It is known to have issues!\n";
+  cerr << "               USE AT YOUR OWN RISK!\n";
+  cerr << "Stable releases are available from the Encfs website, or look\n"
+      "for the 1.x branch in SVN for the stable 1.x series.";
+  cerr << "\n\n";
+
   // log to stderr by default..
   FLAGS_logtostderr = 1; 
   FLAGS_minloglevel = 1; // WARNING and above.
