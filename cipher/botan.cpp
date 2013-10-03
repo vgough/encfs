@@ -41,6 +41,7 @@
 #endif
 
 #include <string>
+#include <sstream>
 
 using namespace Botan;
 using std::string;

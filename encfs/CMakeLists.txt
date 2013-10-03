@@ -18,6 +18,7 @@ target_link_libraries (encfs
     encfs-base
     ${GLOG_LIBRARIES}
     ${FUSE_LIBRARIES}
+    ${CMAKE_THREAD_LIBS_INIT}
 )
 
 if (POD2MAN)

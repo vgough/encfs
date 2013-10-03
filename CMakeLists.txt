@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project(Encfs)
+project(Encfs C CXX)
 
 set (ENCFS_MAJOR 2)
 set (ENCFS_MINOR 0)
