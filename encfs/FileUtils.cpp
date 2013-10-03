@@ -1641,6 +1641,14 @@ RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 	    return rootInfo;
 	}
 
+	if(opts->delayMount)
+	{
+	    rootInfo = RootPtr( new EncFS_Root );
+	    rootInfo->cipher = cipher;
+	    rootInfo->root = shared_ptr<DirNode>();
+	    return rootInfo;
+	}
+
 	// get user key
 	CipherKey userKey;
 
