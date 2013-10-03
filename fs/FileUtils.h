@@ -72,6 +72,7 @@ struct EncFS_Opts
   bool createIfNotFound;  // create filesystem if not found
   bool idleTracking; // turn on idle monitoring of filesystem
   bool mountOnDemand; // mounting on-demand
+  bool delayMount;    // delay initial mount
 
   bool checkKey;  // check crypto key decoding
   bool forceDecode; // force decode on MAC block failures
@@ -91,6 +92,7 @@ struct EncFS_Opts
     createIfNotFound = true;
     idleTracking = false;
     mountOnDemand = false;
+    delayMount = false;
     checkKey = true;
     forceDecode = false;
     useStdin = false;

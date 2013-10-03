@@ -102,6 +102,7 @@ struct EncFS_Args
     if(opts->annotate) ss << "(annotate) ";
     if(opts->reverseEncryption) ss << "(reverseEncryption) ";
     if(opts->mountOnDemand) ss << "(mountOnDemand) ";
+    if(opts->delayMount) ss << "(delayMount) ";
     for(int i=0; i<fuseArgc; ++i)
       ss << fuseArgv[i] << ' ';
 
@@ -219,6 +220,7 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
     {"anykey", 0, 0, 'k'}, // skip key checks
     {"no-default-flags", 0, 0, 'N'}, // don't use default fuse flags
     {"ondemand", 0, 0, 'm'}, // mount on-demand
+    {"delaymount", 0, 0, 'M'}, // delay initial mount until use
     {"public", 0, 0, 'P'}, // public mode
     {"extpass", 1, 0, 'p'}, // external password program
     // {"single-thread", 0, 0, 's'}, // single-threaded mode
@@ -293,6 +295,9 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
       break;
     case 'm':
       out->opts->mountOnDemand = true;
+      break;
+    case 'M':
+      out->opts->delayMount = true;
       break;
     case 'N':
       useDefaultFlags = false;
@@ -402,6 +407,15 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
             "mount point.") << endl;
       return false;
     }
+  }
+
+  if(out->opts->delayMount && !out->opts->mountOnDemand)
+  {
+    cerr <<
+      // xgroup(usage)
+      _("You must use mount-on-demand with delay-mount")
+      << endl;
+    return false;
   }
 
   if(out->opts->mountOnDemand && out->opts->passwordProgram.empty())
@@ -594,6 +608,10 @@ int main(int argc, char *argv[])
 
   if( rootInfo )
   {
+    // turn off delayMount, as our prior call to initFS has already
+    // respected any delay, and we want future calls to actually mount.
+    encfsArgs->opts->delayMount = false;
+
     // set the globally visible root directory node
     ctx->setRoot( rootInfo->root );
     ctx->args = encfsArgs;

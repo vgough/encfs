@@ -10,7 +10,7 @@ B<encfs> [B<--version>] [B<-s>] [B<-f>] [B<-v>|B<--verbose>]
 [B<-i MINUTES>|B<--idle=MINUTES>] [B<--extpass=program>] 
 [B<-S>|B<--stdinpass>] [B<--anykey>] [B<--forcedecode>] 
 [B<-d>|B<--fuse-debug>] [B<--public>] [B<--no-default-flags>]
-[B<--ondemand>] [B<--reverse>] [B<--standard>] 
+[B<--ondemand>] [B<--delaymount>] [B<--reverse>] [B<--standard>] 
 [B<-o FUSE_OPTION>]
 I<rootdir> I<mountPoint> 
 [B<--> [I<Fuse Mount Options>]]
@@ -105,6 +105,11 @@ instead of exiting, B<EncFS> stops allowing access to the filesystem by
 internally dropping its reference to it.  If someone attempts to access the
 filesystem again, the extpass program is used to prompt the user for the
 password.  If this succeeds, then the filesystem becomes available again.
+
+=item B<--delaymount>
+
+Do not mount the filesystem when encfs starts; instead, delay mounting until
+first use.  This option only makes sense with B<--ondemand>.
 
 =item B<--reverse>
 
