@@ -106,10 +106,10 @@ struct CommandOpts
   {"export", 2, 2, cmd_export, "(root dir) path",
     // xgroup(usage)
     gettext_noop("  -- decrypts a volume and writes results to path")}, 
-  {"--ciphers", 0, 0, showCiphers, "",
+  {"ciphers", 0, 0, showCiphers, "",
     // xgroup(usage)
     gettext_noop("  -- show available ciphers")},
-  {"--version", 0, 0, showVersion, "", 
+  {"version", 0, 0, showVersion, "", 
     // xgroup(usage)
     gettext_noop("  -- print version number and exit")},
   {0,0,0,0,0,0}
@@ -850,6 +850,10 @@ int main(int argc, char **argv)
   FLAGS_logtostderr = 1;
   FLAGS_minloglevel = 1;
 
+#ifdef DECLARE_VARIABLE
+  google::ParseCommandLineFlags(&argc, &argv, true);
+#endif
+
   google::InitGoogleLogging(argv[0]);
   google::InstallFailureSignalHandler();
 
@@ -868,36 +872,28 @@ int main(int argc, char **argv)
     return EXIT_FAILURE;
   }
 
-  if(argc == 2 && !(*argv[1] == '-' && *(argv[1]+1) == '-'))
+  // find the specified command
+  int offset = 0;
+  while(commands[offset].name != 0)
   {
-    // default command when only 1 argument given -- treat the argument as
-    // a directory..
-    return showInfo( argc, argv );
+    if(!strcmp( argv[1], commands[offset].name ))
+      break;
+    ++offset;
+  }
+
+  if(commands[offset].name == 0)
+  {
+    cerr << autosprintf(_("invalid command: \"%s\""), argv[1]) << "\n";
   } else
   {
-    // find the specified command
-    int offset = 0;
-    while(commands[offset].name != 0)
+    if((argc-2 < commands[offset].minOptions) || 
+        (argc-2 > commands[offset].maxOptions))
     {
-      if(!strcmp( argv[1], commands[offset].name ))
-        break;
-      ++offset;
-    }
-
-    if(commands[offset].name == 0)
-    {
-      cerr << autosprintf(_("invalid command: \"%s\""), argv[1]) << "\n";
+      cerr << autosprintf(
+          _("Incorrect number of arguments for command \"%s\""), 
+          argv[1]) << "\n";
     } else
-    {
-      if((argc-2 < commands[offset].minOptions) || 
-          (argc-2 > commands[offset].maxOptions))
-      {
-        cerr << autosprintf(
-            _("Incorrect number of arguments for command \"%s\""), 
-            argv[1]) << "\n";
-      } else
-        return (*commands[offset].func)( argc-1, argv+1 );
-    }
+      return (*commands[offset].func)( argc-1, argv+1 );
   }
 
   CipherV1::shutdown(isThreaded);
