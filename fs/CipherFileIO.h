@@ -80,7 +80,6 @@ class CipherFileIO : public BlockFileIO {
   int headerLen;
 
   bool perFileIV;
-  bool externalIVChaining;
   uint64_t externalIV;
   uint64_t fileIV;
   int lastFlags;
