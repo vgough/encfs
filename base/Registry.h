@@ -8,34 +8,29 @@
 namespace encfs {
 
 template <typename T>
-class Registry
-{
-public:
+class Registry {
+ public:
   typedef T *(*FactoryFn)();
   struct Data {
     FactoryFn constructor;
     typename T::Properties properties;
   };
 
-  void Register(const char *name,  FactoryFn fn,
-                typename T::Properties properties)
-  {
+  void Register(const char *name, FactoryFn fn,
+                typename T::Properties properties) {
     Data d;
     d.constructor = fn;
     d.properties = properties;
     data[name] = d;
   }
 
-  T* Create(const char *name)
-  {
+  T *Create(const char *name) {
     auto it = data.find(name);
-    if (it == data.end())
-      return NULL;
+    if (it == data.end()) return NULL;
     return (*it->second.constructor)();
   }
 
-  T* CreateForMatch(const std::string &description)
-  {
+  T *CreateForMatch(const std::string &description) {
     for (auto &it : data) {
       auto name = it.second.properties.toString();
       if (!name.compare(0, description.size(), description))
@@ -54,11 +49,10 @@ public:
 
   const typename T::Properties *GetProperties(const char *name) const {
     auto it = data.find(name);
-    if (it == data.end())
-      return NULL;
+    if (it == data.end()) return NULL;
     return &(it->second.properties);
   }
-  
+
   const typename T::Properties *GetPropertiesForMatch(
       const std::string &description) const {
     for (auto &it : data) {
@@ -69,39 +63,32 @@ public:
     return NULL;
   }
 
-
-private:
+ private:
   std::map<std::string, Data> data;
 };
 
 template <typename T, typename BASE>
-class Registrar
-{
-public:
-  Registrar(const char *name)
-  {
-    BASE::GetRegistry().Register(name,
-                                 Registrar<T, BASE>::Construct,
+class Registrar {
+ public:
+  Registrar(const char *name) {
+    BASE::GetRegistry().Register(name, Registrar<T, BASE>::Construct,
                                  T::GetProperties());
   }
 
-  static BASE *Construct() {
-    return new T();
-  }
+  static BASE *Construct() { return new T(); }
 };
 
-#define DECLARE_REGISTERABLE_TYPE(TYPE) \
-    static Registry<TYPE>& GetRegistry()
+#define DECLARE_REGISTERABLE_TYPE(TYPE) static Registry<TYPE> &GetRegistry()
 
-#define DEFINE_REGISTERABLE_TYPE(TYPE) \
-    Registry<TYPE>& TYPE::GetRegistry() { \
-      static Registry<TYPE> registry; \
-      return registry; \
-    }
+#define DEFINE_REGISTERABLE_TYPE(TYPE)  \
+  Registry<TYPE> &TYPE::GetRegistry() { \
+    static Registry<TYPE> registry;     \
+    return registry;                    \
+  }
 
 #define REGISTER_CLASS(DERIVED, BASE) \
-    static Registrar<DERIVED, BASE> registrar_ ## DERIVED ## _ ## BASE (#DERIVED)
+  static Registrar<DERIVED, BASE> registrar_##DERIVED##_##BASE(#DERIVED)
 
 }  // namespace encfs
 
-#endif // REGISTRY_H
+#endif  // REGISTRY_H

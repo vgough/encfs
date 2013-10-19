@@ -8,7 +8,7 @@
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
  * Software Foundation, either version 3 of the License, or (at your option) any
- * later version.  
+ * later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -42,13 +42,14 @@ class MemBlockFileIO : public BlockFileIO {
   virtual const char *getFileName() const;
 
   virtual int open(int flags);
-  
+
   virtual int getAttr(struct stat *stbuf) const;
   virtual off_t getSize() const;
 
   virtual bool isWritable() const;
 
   virtual int truncate(off_t size);
+
  protected:
   virtual ssize_t readOneBlock(const IORequest &req) const;
   virtual bool writeOneBlock(const IORequest &req);
@@ -60,4 +61,3 @@ class MemBlockFileIO : public BlockFileIO {
 }  // namespace encfs
 
 #endif
-

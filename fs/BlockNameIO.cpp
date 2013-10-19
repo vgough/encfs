@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -30,33 +30,30 @@
 
 namespace encfs {
 
-static shared_ptr<NameIO> NewBlockNameIO( const Interface &iface,
-    const shared_ptr<CipherV1> &cipher )
-{
-  return shared_ptr<NameIO>( 
-      new BlockNameIO( iface, cipher, false));
+static shared_ptr<NameIO> NewBlockNameIO(const Interface &iface,
+                                         const shared_ptr<CipherV1> &cipher) {
+  return shared_ptr<NameIO>(new BlockNameIO(iface, cipher, false));
 }
 
-static shared_ptr<NameIO> NewBlockNameIO32( const Interface &iface,
-    const shared_ptr<CipherV1> &cipher )
-{
-  return shared_ptr<NameIO>( 
-      new BlockNameIO( iface, cipher, true));
+static shared_ptr<NameIO> NewBlockNameIO32(const Interface &iface,
+                                           const shared_ptr<CipherV1> &cipher) {
+  return shared_ptr<NameIO>(new BlockNameIO(iface, cipher, true));
 }
 
-static bool BlockIO_registered = NameIO::Register("Block",
+static bool BlockIO_registered = NameIO::Register(
+    "Block",
     // description of block name encoding algorithm..
     // xgroup(setup)
     gettext_noop("Block encoding, hides file name size somewhat"),
-    BlockNameIO::CurrentInterface(false),
-    NewBlockNameIO, false);
+    BlockNameIO::CurrentInterface(false), NewBlockNameIO, false);
 
-static bool BlockIO32_registered = NameIO::Register("Block32",
+static bool BlockIO32_registered = NameIO::Register(
+    "Block32",
     // description of block name encoding algorithm..
     // xgroup(setup)
-    gettext_noop("Block encoding with base32 output for case-sensitive systems"),
-    BlockNameIO::CurrentInterface(true),
-    NewBlockNameIO32, false);
+    gettext_noop(
+        "Block encoding with base32 output for case-sensitive systems"),
+    BlockNameIO::CurrentInterface(true), NewBlockNameIO32, false);
 
 /*
     - Version 1.0 computed MAC over the filename, but not the padding bytes.
@@ -75,8 +72,7 @@ static bool BlockIO32_registered = NameIO::Register("Block32",
     - Version 4.0 adds support for base32, creating names more suitable for
     case-insensitive filesystems (eg Mac).
  */
-Interface BlockNameIO::CurrentInterface(bool caseSensitive)
-{
+Interface BlockNameIO::CurrentInterface(bool caseSensitive) {
   // implement major version 4 plus support for two prior versions
   if (caseSensitive)
     return makeInterface("nameio/block32", 4, 0, 2);
@@ -84,172 +80,146 @@ Interface BlockNameIO::CurrentInterface(bool caseSensitive)
     return makeInterface("nameio/block", 4, 0, 2);
 }
 
-BlockNameIO::BlockNameIO( const Interface &iface,
-    const shared_ptr<CipherV1> &cipher, 
-    bool caseSensitiveEncoding )
-    : _interface( iface.major() )
-    , _bs( cipher->cipherBlockSize() )
-    , _cipher( cipher )
-    , _caseSensitive( caseSensitiveEncoding )
-{
-  rAssert( _bs < 128 );
+BlockNameIO::BlockNameIO(const Interface &iface,
+                         const shared_ptr<CipherV1> &cipher,
+                         bool caseSensitiveEncoding)
+    : _interface(iface.major()),
+      _bs(cipher->cipherBlockSize()),
+      _cipher(cipher),
+      _caseSensitive(caseSensitiveEncoding) {
+  rAssert(_bs < 128);
 }
 
-BlockNameIO::~BlockNameIO()
-{
-}
+BlockNameIO::~BlockNameIO() {}
 
-Interface BlockNameIO::interface() const
-{
+Interface BlockNameIO::interface() const {
   return CurrentInterface(_caseSensitive);
 }
 
-int BlockNameIO::maxEncodedNameLen( int plaintextNameLen ) const
-{
+int BlockNameIO::maxEncodedNameLen(int plaintextNameLen) const {
   // number of blocks, rounded up.. Only an estimate at this point, err on
   // the size of too much space rather then too little.
-  int numBlocks = ( plaintextNameLen + _bs ) / _bs;
-  int encodedNameLen = numBlocks * _bs + 2; // 2 checksum bytes
+  int numBlocks = (plaintextNameLen + _bs) / _bs;
+  int encodedNameLen = numBlocks * _bs + 2;  // 2 checksum bytes
   if (_caseSensitive)
-    return B256ToB32Bytes( encodedNameLen );
+    return B256ToB32Bytes(encodedNameLen);
   else
-    return B256ToB64Bytes( encodedNameLen );
+    return B256ToB64Bytes(encodedNameLen);
 }
 
-int BlockNameIO::maxDecodedNameLen( int encodedNameLen ) const
-{
-  int decLen256 = _caseSensitive ? 
-    B32ToB256Bytes( encodedNameLen ) :
-    B64ToB256Bytes( encodedNameLen );
-  return decLen256 - 2; // 2 checksum bytes removed..
+int BlockNameIO::maxDecodedNameLen(int encodedNameLen) const {
+  int decLen256 = _caseSensitive ? B32ToB256Bytes(encodedNameLen)
+                                 : B64ToB256Bytes(encodedNameLen);
+  return decLen256 - 2;  // 2 checksum bytes removed..
 }
 
-int BlockNameIO::encodeName( const char *plaintextName, int length,
-    uint64_t *iv, char *encodedName ) const
-{
+int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
+                            char *encodedName) const {
   // copy the data into the encoding buffer..
-  memcpy( encodedName+2, plaintextName, length );
+  memcpy(encodedName + 2, plaintextName, length);
 
   // Pad encryption buffer to block boundary..
   int padding = _bs - length % _bs;
-  if(padding == 0)
-    padding = _bs; // padding a full extra block!
+  if (padding == 0) padding = _bs;  // padding a full extra block!
 
-  memset( encodedName+length+2, (unsigned char)padding, padding );
+  memset(encodedName + length + 2, (unsigned char)padding, padding);
 
   // store the IV before it is modified by the MAC call.
   uint64_t tmpIV = 0;
-  if( iv && _interface >= 3 )
-    tmpIV = *iv;
+  if (iv && _interface >= 3) tmpIV = *iv;
 
   // include padding in MAC computation
   unsigned int mac = _cipher->reduceMac16(
-      _cipher->MAC_64( (unsigned char *)encodedName+2,
-      length+padding, iv ));
+      _cipher->MAC_64((unsigned char *)encodedName + 2, length + padding, iv));
 
   // add checksum bytes
   encodedName[0] = (mac >> 8) & 0xff;
-  encodedName[1] = (mac     ) & 0xff;
+  encodedName[1] = (mac) & 0xff;
 
-  _cipher->blockEncode( (unsigned char *)encodedName+2, length+padding,
-      (uint64_t)mac ^ tmpIV );
+  _cipher->blockEncode((unsigned char *)encodedName + 2, length + padding,
+                       (uint64_t)mac ^ tmpIV);
 
   // convert to base 64 ascii
   int encodedStreamLen = length + 2 + padding;
   int encLen;
 
-  if (_caseSensitive) 
-  {
-    encLen = B256ToB32Bytes( encodedStreamLen );
+  if (_caseSensitive) {
+    encLen = B256ToB32Bytes(encodedStreamLen);
 
-    changeBase2Inline( (unsigned char *)encodedName, encodedStreamLen,
-        8, 5, true );
-    B32ToAscii( (unsigned char *)encodedName, encLen );
-  } else 
-  {
-    encLen = B256ToB64Bytes( encodedStreamLen );
+    changeBase2Inline((unsigned char *)encodedName, encodedStreamLen, 8, 5,
+                      true);
+    B32ToAscii((unsigned char *)encodedName, encLen);
+  } else {
+    encLen = B256ToB64Bytes(encodedStreamLen);
 
-    changeBase2Inline( (unsigned char *)encodedName, encodedStreamLen,
-        8, 6, true );
-    B64ToAscii( (unsigned char *)encodedName, encLen );
+    changeBase2Inline((unsigned char *)encodedName, encodedStreamLen, 8, 6,
+                      true);
+    B64ToAscii((unsigned char *)encodedName, encLen);
   }
 
   return encLen;
 }
 
-int BlockNameIO::decodeName( const char *encodedName, int length,
-    uint64_t *iv, char *plaintextName ) const
-{
-  int decLen256 = _caseSensitive ?
-    B32ToB256Bytes( length ) :
-    B64ToB256Bytes( length );
+int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
+                            char *plaintextName) const {
+  int decLen256 =
+      _caseSensitive ? B32ToB256Bytes(length) : B64ToB256Bytes(length);
   int decodedStreamLen = decLen256 - 2;
 
   // don't bother trying to decode files which are too small
-  if(decodedStreamLen < _bs)
-    throw Error("Filename too small to decode");
+  if (decodedStreamLen < _bs) throw Error("Filename too small to decode");
 
-  BUFFER_INIT( tmpBuf, 32, (unsigned int)length );
+  BUFFER_INIT(tmpBuf, 32, (unsigned int)length);
 
   // decode into tmpBuf,
-  if (_caseSensitive) 
-  {
+  if (_caseSensitive) {
     AsciiToB32((unsigned char *)tmpBuf, (unsigned char *)encodedName, length);
     changeBase2Inline((unsigned char *)tmpBuf, length, 5, 8, false);
-  } else 
-  {
+  } else {
     AsciiToB64((unsigned char *)tmpBuf, (unsigned char *)encodedName, length);
     changeBase2Inline((unsigned char *)tmpBuf, length, 6, 8, false);
   }
 
   // pull out the header information
-  unsigned int mac = ((unsigned int)((unsigned char)tmpBuf[0])) << 8
-    | ((unsigned int)((unsigned char)tmpBuf[1]));
+  unsigned int mac = ((unsigned int)((unsigned char)tmpBuf[0])) << 8 |
+                     ((unsigned int)((unsigned char)tmpBuf[1]));
 
   uint64_t tmpIV = 0;
-  if( iv && _interface >= 3 )
-    tmpIV = *iv;
+  if (iv && _interface >= 3) tmpIV = *iv;
 
-  _cipher->blockDecode( (unsigned char *)tmpBuf+2, decodedStreamLen,
-      (uint64_t)mac ^ tmpIV );
+  _cipher->blockDecode((unsigned char *)tmpBuf + 2, decodedStreamLen,
+                       (uint64_t)mac ^ tmpIV);
 
   // find out true string length
-  int padding = (unsigned char)tmpBuf[2+decodedStreamLen-1];
+  int padding = (unsigned char)tmpBuf[2 + decodedStreamLen - 1];
   int finalSize = decodedStreamLen - padding;
 
   // might happen if there is an error decoding..
-  if(padding > _bs || finalSize < 0)
-  {
-    VLOG(1) << "padding, _bx, finalSize = " << padding
-      << ", " << _bs << ", " << finalSize;
-    throw Error( "invalid padding size" );
+  if (padding > _bs || finalSize < 0) {
+    VLOG(1) << "padding, _bx, finalSize = " << padding << ", " << _bs << ", "
+            << finalSize;
+    throw Error("invalid padding size");
   }
 
   // copy out the result..
-  memcpy(plaintextName, tmpBuf+2, finalSize);
+  memcpy(plaintextName, tmpBuf + 2, finalSize);
   plaintextName[finalSize] = '\0';
 
   // check the mac
   unsigned int mac2 = _cipher->reduceMac16(
-      _cipher->MAC_64((const unsigned char *)tmpBuf+2,
-      decodedStreamLen, iv));
+      _cipher->MAC_64((const unsigned char *)tmpBuf + 2, decodedStreamLen, iv));
 
-  BUFFER_RESET( tmpBuf );
+  BUFFER_RESET(tmpBuf);
 
-  if(mac2 != mac)
-  {
-    LOG(INFO) << "checksum mismatch: expected " << mac << ", got "
-      << mac2 << " on decode of " << finalSize << " bytes";
-    throw Error( "checksum mismatch in filename decode" );
+  if (mac2 != mac) {
+    LOG(INFO) << "checksum mismatch: expected " << mac << ", got " << mac2
+              << " on decode of " << finalSize << " bytes";
+    throw Error("checksum mismatch in filename decode");
   }
 
   return finalSize;
 }
 
-bool BlockNameIO::Enabled()
-{
-  return true;
-}
+bool BlockNameIO::Enabled() { return true; }
 
 }  // namespace encfs
-

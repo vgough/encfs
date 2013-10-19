@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -25,31 +25,31 @@
 
 namespace encfs {
 
-class NullNameIO : public NameIO
-{
-public:
-    static Interface CurrentInterface();
+class NullNameIO : public NameIO {
+ public:
+  static Interface CurrentInterface();
 
-    NullNameIO( );
+  NullNameIO();
 
-    virtual ~NullNameIO();
+  virtual ~NullNameIO();
 
-    virtual Interface interface() const;
+  virtual Interface interface() const;
 
-    virtual int maxEncodedNameLen( int plaintextNameLen ) const;
-    virtual int maxDecodedNameLen( int encodedNameLen ) const;
+  virtual int maxEncodedNameLen(int plaintextNameLen) const;
+  virtual int maxDecodedNameLen(int encodedNameLen) const;
 
-   // hack to help with static builds
-    static bool Enabled();
-protected:
-    virtual int encodeName( const char *plaintextName, int length,
-	                    uint64_t *iv, char *encodedName ) const;
-    virtual int decodeName( const char *encodedName, int length,
-	                    uint64_t *iv, char *plaintextName ) const;
-private:
+  // hack to help with static builds
+  static bool Enabled();
+
+ protected:
+  virtual int encodeName(const char *plaintextName, int length, uint64_t *iv,
+                         char *encodedName) const;
+  virtual int decodeName(const char *encodedName, int length, uint64_t *iv,
+                         char *plaintextName) const;
+
+ private:
 };
 
 }  // namespace encfs
 
 #endif
-

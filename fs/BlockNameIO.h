@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -34,28 +34,27 @@ class CipherV1;
     mode to encode filenames.  The filenames are padded to be a multiple of the
     cipher block size.
 */
-class BlockNameIO : public NameIO
-{
+class BlockNameIO : public NameIO {
  public:
   static Interface CurrentInterface(bool caseSensitive = false);
 
-  BlockNameIO(const Interface &iface,
-              const shared_ptr<CipherV1> &cipher, 
-              bool caseSensitiveEncoding = false );
+  BlockNameIO(const Interface &iface, const shared_ptr<CipherV1> &cipher,
+              bool caseSensitiveEncoding = false);
   virtual ~BlockNameIO();
 
   virtual Interface interface() const;
 
-  virtual int maxEncodedNameLen( int plaintextNameLen ) const;
-  virtual int maxDecodedNameLen( int encodedNameLen ) const;
+  virtual int maxEncodedNameLen(int plaintextNameLen) const;
+  virtual int maxDecodedNameLen(int encodedNameLen) const;
 
   // hack to help with static builds
   static bool Enabled();
+
  protected:
-  virtual int encodeName(const char *plaintextName, int length,
-                         uint64_t *iv, char *encodedName ) const;
-  virtual int decodeName(const char *encodedName, int length,
-                         uint64_t *iv, char *plaintextName ) const;
+  virtual int encodeName(const char *plaintextName, int length, uint64_t *iv,
+                         char *encodedName) const;
+  virtual int decodeName(const char *encodedName, int length, uint64_t *iv,
+                         char *plaintextName) const;
 
  private:
   int _interface;
@@ -67,4 +66,3 @@ class BlockNameIO : public NameIO
 }  // namespace encfs
 
 #endif
-

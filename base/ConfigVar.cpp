@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -27,39 +27,22 @@
 namespace encfs {
 
 #ifndef MIN
-inline int MIN(int a, int b)
-{
-  return (a < b) ? a : b;
-}
+inline int MIN(int a, int b) { return (a < b) ? a : b; }
 #endif
 
+ConfigVar::ConfigVar() : pd(new ConfigVarData) { pd->offset = 0; }
 
-ConfigVar::ConfigVar()
-    : pd( new ConfigVarData )
-{
-  pd->offset = 0;
-}
-
-ConfigVar::ConfigVar(const std::string &buf)
-    : pd( new ConfigVarData )
-{
+ConfigVar::ConfigVar(const std::string &buf) : pd(new ConfigVarData) {
   pd->buffer = buf;
   pd->offset = 0;
 }
 
-ConfigVar::ConfigVar(const ConfigVar &src)
-{
-  pd = src.pd;
-}
+ConfigVar::ConfigVar(const ConfigVar &src) { pd = src.pd; }
 
-ConfigVar::~ConfigVar()
-{
-  pd.reset();
-}
+ConfigVar::~ConfigVar() { pd.reset(); }
 
-ConfigVar & ConfigVar::operator = (const ConfigVar &src)
-{
-  if(src.pd == pd)
+ConfigVar &ConfigVar::operator=(const ConfigVar &src) {
+  if (src.pd == pd)
     return *this;
   else
     pd = src.pd;
@@ -67,31 +50,23 @@ ConfigVar & ConfigVar::operator = (const ConfigVar &src)
   return *this;
 }
 
-void ConfigVar::resetOffset()
-{
-  pd->offset = 0;
-}
+void ConfigVar::resetOffset() { pd->offset = 0; }
 
-int ConfigVar::read(byte *buffer_, int bytes) const
-{
-  int toCopy = MIN( bytes, pd->buffer.size() - pd->offset );
+int ConfigVar::read(byte *buffer_, int bytes) const {
+  int toCopy = MIN(bytes, pd->buffer.size() - pd->offset);
 
-  if(toCopy > 0)
-    memcpy( buffer_, pd->buffer.data() + pd->offset, toCopy );
+  if (toCopy > 0) memcpy(buffer_, pd->buffer.data() + pd->offset, toCopy);
 
   pd->offset += toCopy;
 
   return toCopy;
 }
 
-int ConfigVar::write(const byte *data, int bytes)
-{
-  if(pd->buffer.size() == (unsigned int)pd->offset)
-  {
-    pd->buffer.append( (const char *)data, bytes );
-  } else
-  {
-    pd->buffer.insert( pd->offset, (const char *)data, bytes );
+int ConfigVar::write(const byte *data, int bytes) {
+  if (pd->buffer.size() == (unsigned int)pd->offset) {
+    pd->buffer.append((const char *)data, bytes);
+  } else {
+    pd->buffer.insert(pd->offset, (const char *)data, bytes);
   }
 
   pd->offset += bytes;
@@ -99,31 +74,19 @@ int ConfigVar::write(const byte *data, int bytes)
   return bytes;
 }
 
-int ConfigVar::size() const
-{
-  return pd->buffer.size();
-}
+int ConfigVar::size() const { return pd->buffer.size(); }
 
-const char *ConfigVar::buffer() const
-{
-  return pd->buffer.data();
-}
+const char *ConfigVar::buffer() const { return pd->buffer.data(); }
 
-int ConfigVar::at() const
-{
-  return pd->offset;
-}
+int ConfigVar::at() const { return pd->offset; }
 
-void ConfigVar::writeString(const char *data, int bytes)
-{
-  writeInt( bytes );
-  write( (const byte *)data, bytes );
+void ConfigVar::writeString(const char *data, int bytes) {
+  writeInt(bytes);
+  write((const byte *)data, bytes);
 }
-
 
 // convert integer to BER encoded integer
-void ConfigVar::writeInt(int val)
-{
+void ConfigVar::writeInt(int val) {
   // we can represent 7 bits per char output, so a 32bit number may take up
   // to 5 bytes.
   // first byte:    0x0000007f                                   0111,1111
@@ -133,7 +96,7 @@ void ConfigVar::writeInt(int val)
   // fifth byte:    0xf0000000     1111,0000
   byte digit[5];
 
-  digit[4] =        (byte)((val & 0x0000007f));
+  digit[4] = (byte)((val & 0x0000007f));
   digit[3] = 0x80 | (byte)((val & 0x00003f80) >> 7);
   digit[2] = 0x80 | (byte)((val & 0x001fc000) >> 14);
   digit[1] = 0x80 | (byte)((val & 0x0fe00000) >> 21);
@@ -142,110 +105,96 @@ void ConfigVar::writeInt(int val)
   // find the starting point - we only need to output starting at the most
   // significant non-zero digit..
   int start = 0;
-  while(digit[start] == 0x80)
-    ++start;
+  while (digit[start] == 0x80) ++start;
 
-  write( digit + start, 5-start );
+  write(digit + start, 5 - start);
 }
 
-int ConfigVar::readInt() const
-{
-  const byte * buf = (const byte *)buffer();
+int ConfigVar::readInt() const {
+  const byte *buf = (const byte *)buffer();
   int bytes = this->size();
   int offset = at();
   int value = 0;
   bool highBitSet;
 
-  rAssert( offset < bytes );
+  rAssert(offset < bytes);
 
-  do
-  {
+  do {
     byte tmp = buf[offset++];
     highBitSet = tmp & 0x80;
 
     value = (value << 7) | (int)(tmp & 0x7f);
-  } while(highBitSet && offset < bytes);
+  } while (highBitSet && offset < bytes);
 
   pd->offset = offset;
 
   // should never end up with a negative number..
-  rAssert( value >= 0 );
+  rAssert(value >= 0);
 
   return value;
 }
 
-int ConfigVar::readInt( int defaultValue ) const
-{
+int ConfigVar::readInt(int defaultValue) const {
   int bytes = this->size();
   int offset = at();
 
-  if(offset >= bytes)
+  if (offset >= bytes)
     return defaultValue;
   else
     return readInt();
 }
 
-bool ConfigVar::readBool( bool defaultValue ) const
-{
-  int tmp = readInt( defaultValue ? 1 : 0 );
+bool ConfigVar::readBool(bool defaultValue) const {
+  int tmp = readInt(defaultValue ? 1 : 0);
   return (tmp != 0);
 }
 
-ConfigVar & operator << (ConfigVar &src, bool value)
-{
-  src.writeInt( value ? 1 : 0 );
+ConfigVar &operator<<(ConfigVar &src, bool value) {
+  src.writeInt(value ? 1 : 0);
   return src;
 }
 
-ConfigVar & operator << (ConfigVar &src, int var)
-{
-  src.writeInt( var );
+ConfigVar &operator<<(ConfigVar &src, int var) {
+  src.writeInt(var);
   return src;
 }
 
-ConfigVar & operator << (ConfigVar &src, const std::string &str)
-{
-  src.writeString( str.data(), str.length() );
+ConfigVar &operator<<(ConfigVar &src, const std::string &str) {
+  src.writeString(str.data(), str.length());
   return src;
 }
 
-const ConfigVar & operator >> (const ConfigVar &src, bool &result)
-{
+const ConfigVar &operator>>(const ConfigVar &src, bool &result) {
   int tmp = src.readInt();
   result = (tmp != 0);
   return src;
 }
 
-const ConfigVar & operator >> (const ConfigVar &src, int &result)
-{
+const ConfigVar &operator>>(const ConfigVar &src, int &result) {
   result = src.readInt();
   return src;
 }
 
-const ConfigVar & operator >> (const ConfigVar &src, std::string &result)
-{
+const ConfigVar &operator>>(const ConfigVar &src, std::string &result) {
   int length = src.readInt();
   LOG_IF(WARNING, length <= 0) << "Invalid config length " << length;
 
   int readLen;
 
   byte tmpBuf[32];
-  if(length > (int)sizeof(tmpBuf))
-  {
+  if (length > (int)sizeof(tmpBuf)) {
     byte *ptr = new byte[length];
-    readLen = src.read( ptr, length );
-    result.assign( (char*)ptr, length );
+    readLen = src.read(ptr, length);
+    result.assign((char *)ptr, length);
     delete[] ptr;
-  } else
-  {
-    readLen = src.read( tmpBuf, length );
-    result.assign( (char*)tmpBuf, length );
+  } else {
+    readLen = src.read(tmpBuf, length);
+    result.assign((char *)tmpBuf, length);
   }
 
-  if(readLen != length)
-  {
-    VLOG(1) << "string encoded as size " << length 
-        << " bytes, read " << readLen;
+  if (readLen != length) {
+    VLOG(1) << "string encoded as size " << length << " bytes, read "
+            << readLen;
   }
 
   rAssert(readLen == length);

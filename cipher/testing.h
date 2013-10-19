@@ -8,7 +8,7 @@
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
  * Software Foundation, either version 3 of the License, or (at your option) any
- * later version.  
+ * later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -31,7 +31,7 @@ namespace encfs {
 std::string stringToHex(const byte *data, int len);
 
 template <typename T>
-std::string stringToHex(const T& value) {
+std::string stringToHex(const T &value) {
   return stringToHex(value.data(), value.size());
 }
 
@@ -40,4 +40,3 @@ void setDataFromHex(byte *out, int size, const char *hex);
 }  // namespace encfs
 
 #endif
-

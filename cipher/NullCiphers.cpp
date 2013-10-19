@@ -8,7 +8,7 @@
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
  * Software Foundation, either version 3 of the License, or (at your option) any
- * later version.  
+ * later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -30,25 +30,19 @@ class NullCipher : public BlockCipher {
  public:
   virtual ~NullCipher() {}
 
-  virtual int blockSize() const {
-    return 8;
-  }
+  virtual int blockSize() const { return 8; }
 
-  virtual bool setKey(const CipherKey &key) {
+  virtual bool setKey(const CipherKey &key) { return true; }
+
+  virtual bool encrypt(const byte *iv, const byte *in, byte *out,
+                       int numBytes) {
+    if (in != out) memcpy(out, in, numBytes);
     return true;
   }
 
-  virtual bool encrypt(const byte *iv, const byte *in,
-                       byte *out, int numBytes) {
-    if (in != out)
-      memcpy(out, in, numBytes);
-    return true;
-  }
-  
-  virtual bool decrypt(const byte *iv, const byte *in,
-                       byte *out, int numBytes) {
-    if (in != out)
-      memcpy(out, in, numBytes);
+  virtual bool decrypt(const byte *iv, const byte *in, byte *out,
+                       int numBytes) {
+    if (in != out) memcpy(out, in, numBytes);
     return true;
   }
 
@@ -66,8 +60,7 @@ REGISTER_CLASS(NullCipher, BlockCipher);
 REGISTER_CLASS(NullCipher, StreamCipher);
 
 void NullCiphers::registerCiphers() {
-  // Nothing required. 
+  // Nothing required.
 }
 
-} //  namespace encfs
-
+}  //  namespace encfs

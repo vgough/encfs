@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -72,8 +72,7 @@ class SecureMem;
    initial value vector to randomize the output.  But it makes the code
    simpler to reuse the encryption algorithm as is.
 */
-class CipherV1
-{
+class CipherV1 {
   Interface iface;
   Interface realIface;
 
@@ -85,16 +84,14 @@ class CipherV1
   mutable Mutex _hmacMutex;
   mutable shared_ptr<MAC> _hmac;
 
-  unsigned int _keySize; // in bytes
+  unsigned int _keySize;  // in bytes
   unsigned int _ivLength;
 
   shared_ptr<SecureMem> _iv;
   bool _keySet;
 
  public:
-
-  struct CipherAlgorithm
-  {
+  struct CipherAlgorithm {
     std::string name;
     std::string description;
     Interface iface;
@@ -113,23 +110,22 @@ class CipherV1
   // Password-based key derivation function which determines the
   // number of iterations based on a desired execution time (in microseconds).
   // Returns the number of iterations applied.
-  static int TimedPBKDF2(const char *pass, int passLen,
-                         const byte *salt, int saltLen,
-                         CipherKey *out, long desiredPDFTimeMicroseconds);
+  static int TimedPBKDF2(const char *pass, int passLen, const byte *salt,
+                         int saltLen, CipherKey *out,
+                         long desiredPDFTimeMicroseconds);
 
   CipherV1();
   ~CipherV1();
 
-  bool initCiphers(const Interface &iface,
-                   const Interface &realIface, int keyLength);
+  bool initCiphers(const Interface &iface, const Interface &realIface,
+                   int keyLength);
 
   // returns the real interface, not the one we're emulating (if any)..
   Interface interface() const;
 
   // create a new key based on a password
-  CipherKey newKey(const char *password, int passwdLength,
-                   int *iterationCount, long desiredDuration,
-                   const byte *salt, int saltLen);
+  CipherKey newKey(const char *password, int passwdLength, int *iterationCount,
+                   long desiredDuration, const byte *salt, int saltLen);
   // deprecated - for backward compatibility
   CipherKey newKey(const char *password, int passwdLength);
   // create a new random key
@@ -140,11 +136,10 @@ class CipherV1
   CipherKey readKey(const byte *data, bool checkKey);
 
   // Encrypt and write the given key.
-  void writeKey(const CipherKey &key, byte *data); 
+  void writeKey(const CipherKey &key, byte *data);
 
   // Encrypt and store a key as a string.
   std::string encodeAsString(const CipherKey &key);
-              
 
   // meta-data about the cypher
   int keySize() const;
@@ -156,8 +151,7 @@ class CipherV1
   // Sets the key used for encoding / decoding, and MAC operations.
   bool setKey(const CipherKey &key);
 
-  uint64_t MAC_64(const byte *src, int len,
-                  uint64_t *augment = NULL) const;
+  uint64_t MAC_64(const byte *src, int len, uint64_t *augment = NULL) const;
 
   static unsigned int reduceMac32(uint64_t mac64);
   static unsigned int reduceMac16(uint64_t mac64);
@@ -184,4 +178,3 @@ class CipherV1
 }  // namespace encfs
 
 #endif
-

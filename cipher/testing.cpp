@@ -35,7 +35,7 @@ void setDataFromHex(byte *out, int len, const char *hex) {
   unsigned int last = 0;
   while (len > 0 && *hex != '\0') {
     byte nibble = *hex++;
-    if (nibble >= '0' && nibble <= '9') 
+    if (nibble >= '0' && nibble <= '9')
       nibble -= '0';
     else if (nibble >= 'A' && nibble <= 'F')
       nibble -= 'A' - 10;
@@ -64,4 +64,3 @@ int main(int argc, char **argv) {
 }
 
 }  // namespace encfs
-

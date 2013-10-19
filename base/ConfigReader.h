@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-                             
+
 #ifndef _ConfigReader_incl_
 #define _ConfigReader_incl_
 
@@ -45,25 +45,23 @@ namespace encfs {
     ConfigReader cfg;
     cfg["cipher"] << cipher->interface();
 */
-class ConfigReader
-{
-public:
-    ConfigReader();
-    ~ConfigReader();
+class ConfigReader {
+ public:
+  ConfigReader();
+  ~ConfigReader();
 
-    bool load(const char *fileName);
-    bool save(const char *fileName) const;
+  bool load(const char *fileName);
+  bool save(const char *fileName) const;
 
-    ConfigVar toVar() const;
-    bool loadFromVar( ConfigVar &var );
+  ConfigVar toVar() const;
+  bool loadFromVar(ConfigVar &var);
 
-    ConfigVar operator[](const std::string &varName) const;
-    ConfigVar &operator[](const std::string &varName);
+  ConfigVar operator[](const std::string &varName) const;
+  ConfigVar &operator[](const std::string &varName);
 
-private:
-    std::map<std::string, ConfigVar> vars;
+ private:
+  std::map<std::string, ConfigVar> vars;
 };
-
 
 }  // namespace encfs
 

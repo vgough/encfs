@@ -8,7 +8,7 @@
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
  * Software Foundation, either version 3 of the License, or (at your option) any
- * later version.  
+ * later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -18,7 +18,6 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
 
 #include "fs/testing.h"
 
@@ -68,8 +67,9 @@ void runWithAllCiphers(void (*func)(FSConfigPtr& config)) {
   for (it = algorithms.begin(); it != algorithms.end(); ++it) {
     int blockSize = it->blockSize.closest(512);
     int keyLength = it->keyLength.closest(128);
-    SCOPED_TRACE(testing::Message() << "Testng with cipher " << it->name 
-        << ", blocksize " << blockSize << ", keyLength " << keyLength);
+    SCOPED_TRACE(testing::Message() << "Testng with cipher " << it->name
+                                    << ", blocksize " << blockSize
+                                    << ", keyLength " << keyLength);
     shared_ptr<CipherV1> cipher = CipherV1::New(it->iface, keyLength);
     ASSERT_TRUE(cipher.get() != NULL);
 
@@ -80,7 +80,7 @@ void runWithAllCiphers(void (*func)(FSConfigPtr& config)) {
 
 void truncate(FileIO* a, FileIO* b, int len) {
   SCOPED_TRACE(testing::Message() << "Truncate from " << a->getSize()
-      << " to len " << len);
+                                  << " to len " << len);
   a->truncate(len);
   ASSERT_EQ(len, a->getSize());
 
@@ -100,8 +100,8 @@ void writeRandom(FSConfigPtr& cfg, FileIO* a, FileIO* b, int offset, int len) {
   if (b->getSize() < offset + len) {
     b->truncate(offset + len);
   }
-    
-  unsigned char *buf = new unsigned char[len];
+
+  unsigned char* buf = new unsigned char[len];
   ASSERT_TRUE(cfg->cipher->pseudoRandomize(buf, len));
 
   IORequest req;
@@ -117,7 +117,7 @@ void writeRandom(FSConfigPtr& cfg, FileIO* a, FileIO* b, int offset, int len) {
   req.dataLen = len;
   ASSERT_EQ(len, a->read(req));
   ASSERT_TRUE(memcmp(req.data, buf, len) == 0);
-  
+
   memcpy(req.data, buf, len);
   req.offset = offset;
   req.dataLen = len;
@@ -137,9 +137,9 @@ void writeRandom(FSConfigPtr& cfg, FileIO* a, FileIO* b, int offset, int len) {
 
 void compare(FileIO* a, FileIO* b, int offset, int len) {
   SCOPED_TRACE(testing::Message() << "compare " << offset << ", " << len
-      << " from file length " << a->getSize());
-  unsigned char *buf1 = new unsigned char[len];
-  unsigned char *buf2 = new unsigned char[len];
+                                  << " from file length " << a->getSize());
+  unsigned char* buf1 = new unsigned char[len];
+  unsigned char* buf2 = new unsigned char[len];
   memset(buf1, 0, len);
   memset(buf2, 0, len);
 
@@ -155,12 +155,12 @@ void compare(FileIO* a, FileIO* b, int offset, int len) {
   ssize_t size2 = b->read(req);
 
   ASSERT_EQ(size1, size2);
-  for(int i = 0; i < len; i++) {
+  for (int i = 0; i < len; i++) {
     bool match = (buf1[i] == buf2[i]);
     ASSERT_TRUE(match) << "mismatched data at offset " << i << " of " << len
-        << ", got " << int(buf1[i]) << " and " << int(buf2[i]);
-    if(!match) {
-        break;
+                       << ", got " << int(buf1[i]) << " and " << int(buf2[i]);
+    if (!match) {
+      break;
     }
   }
 
@@ -169,15 +169,14 @@ void compare(FileIO* a, FileIO* b, int offset, int len) {
 }
 
 void comparisonTest(FSConfigPtr& cfg, FileIO* a, FileIO* b) {
-  const int size = 2*1024;
+  const int size = 2 * 1024;
   writeRandom(cfg, a, b, 0, size);
   if (testing::Test::HasFatalFailure()) return;
 
   for (int i = 0; i < 10000; i++) {
     SCOPED_TRACE(testing::Message() << "Test Loop " << i);
     int len = 128 + random() % 512;
-    int offset = (len == a->getSize()) ? 0 
-        : random() % (a->getSize() - len);
+    int offset = (len == a->getSize()) ? 0 : random() % (a->getSize() - len);
     writeRandom(cfg, a, b, offset, len);
     if (testing::Test::HasFatalFailure()) return;
     ASSERT_EQ(a->getSize(), b->getSize());
@@ -187,10 +186,9 @@ void comparisonTest(FSConfigPtr& cfg, FileIO* a, FileIO* b) {
   compare(a, b, 0, a->getSize());
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
 
 }  // namespace encfs
-

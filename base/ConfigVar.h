@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -27,60 +27,57 @@
 
 namespace encfs {
 
-class ConfigVar
-{
-    struct ConfigVarData
-    {
-	std::string buffer;
-	int offset;
-    };
+class ConfigVar {
+  struct ConfigVarData {
+    std::string buffer;
+    int offset;
+  };
 
-    shared_ptr<ConfigVarData> pd;
+  shared_ptr<ConfigVarData> pd;
 
-public:
-    ConfigVar();
-    ConfigVar(const std::string &buffer);
-    ConfigVar(const ConfigVar &src);
-    ~ConfigVar();
+ public:
+  ConfigVar();
+  ConfigVar(const std::string &buffer);
+  ConfigVar(const ConfigVar &src);
+  ~ConfigVar();
 
-    ConfigVar & operator = (const ConfigVar &src);
+  ConfigVar &operator=(const ConfigVar &src);
 
-    // reset read/write offset..
-    void resetOffset();
+  // reset read/write offset..
+  void resetOffset();
 
-    // read bytes
-    int read(byte *buffer, int size) const;
+  // read bytes
+  int read(byte *buffer, int size) const;
 
-    // write bytes..
-    int write(const byte *data, int size);
+  // write bytes..
+  int write(const byte *data, int size);
 
-    int readInt() const;
-    int readInt( int defaultValue ) const;
-    void writeInt(int value);
+  int readInt() const;
+  int readInt(int defaultValue) const;
+  void writeInt(int value);
 
-    bool readBool( bool defaultValue ) const;
+  bool readBool(bool defaultValue) const;
 
-    void writeString(const char *data, int size);
+  void writeString(const char *data, int size);
 
-    // return amount of data in var
-    int size() const;
-    // return data pointer - returns front of data pointer, not the current
-    // position.  
-    const char *buffer() const; 
+  // return amount of data in var
+  int size() const;
+  // return data pointer - returns front of data pointer, not the current
+  // position.
+  const char *buffer() const;
 
-    // return current position in data() buffer.
-    int at() const;
+  // return current position in data() buffer.
+  int at() const;
 };
 
-ConfigVar & operator << (ConfigVar &, bool); 
-ConfigVar & operator << (ConfigVar &, int); 
-ConfigVar & operator << (ConfigVar &, const std::string &str);
+ConfigVar &operator<<(ConfigVar &, bool);
+ConfigVar &operator<<(ConfigVar &, int);
+ConfigVar &operator<<(ConfigVar &, const std::string &str);
 
-const ConfigVar & operator >> (const ConfigVar &, bool &); 
-const ConfigVar & operator >> (const ConfigVar &, int &); 
-const ConfigVar & operator >> (const ConfigVar &, std::string &str);
+const ConfigVar &operator>>(const ConfigVar &, bool &);
+const ConfigVar &operator>>(const ConfigVar &, int &);
+const ConfigVar &operator>>(const ConfigVar &, std::string &str);
 
 }  //  namespace encfs
 
 #endif
-

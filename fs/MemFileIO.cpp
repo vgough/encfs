@@ -8,7 +8,7 @@
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
  * Software Foundation, either version 3 of the License, or (at your option) any
- * later version.  
+ * later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -34,25 +34,15 @@ MemFileIO* NewMemFileIO(const Interface& iface) {
   return new MemFileIO(0);
 }
 
-MemFileIO::MemFileIO(int size) 
-    : writable(false) {
-  buf.resize(size);
-}
+MemFileIO::MemFileIO(int size) : writable(false) { buf.resize(size); }
 
-MemFileIO::~MemFileIO() {
-}
+MemFileIO::~MemFileIO() {}
 
-Interface MemFileIO::interface() const {
-  return MemFileIO_iface;
-}
+Interface MemFileIO::interface() const { return MemFileIO_iface; }
 
-void MemFileIO::setFileName(const char *name) {
-  this->name = name;
-}
+void MemFileIO::setFileName(const char* name) { this->name = name; }
 
-const char *MemFileIO::getFileName() const {
-  return name.c_str();
-}
+const char* MemFileIO::getFileName() const { return name.c_str(); }
 
 int MemFileIO::open(int flags) {
   bool requestWrite = ((flags & O_RDWR) || (flags & O_WRONLY));
@@ -67,9 +57,7 @@ int MemFileIO::getAttr(struct stat* stbuf) const {
   return 0;
 }
 
-off_t MemFileIO::getSize() const {
-  return buf.size();
-}
+off_t MemFileIO::getSize() const { return buf.size(); }
 
 ssize_t MemFileIO::read(const IORequest& req) const {
   rAssert(req.offset >= 0);
@@ -102,8 +90,6 @@ int MemFileIO::truncate(off_t size) {
   return 0;
 }
 
-bool MemFileIO::isWritable() const {
-  return writable;
-}
+bool MemFileIO::isWritable() const { return writable; }
 
 }  // namespace encfs

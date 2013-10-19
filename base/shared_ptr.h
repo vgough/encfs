@@ -8,7 +8,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -25,14 +25,13 @@
 #include "base/config.h"
 
 #ifdef HAVE_TR1_MEMORY
-  #include <tr1/memory>
-  using std::tr1::shared_ptr;
-  using std::tr1::dynamic_pointer_cast;
+#include <tr1/memory>
+using std::tr1::shared_ptr;
+using std::tr1::dynamic_pointer_cast;
 #else
-  #include <memory>
-  using std::shared_ptr;
-  using std::dynamic_pointer_cast;
+#include <memory>
+using std::shared_ptr;
+using std::dynamic_pointer_cast;
 #endif
 
 #endif
-

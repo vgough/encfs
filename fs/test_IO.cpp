@@ -8,7 +8,7 @@
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
  * Software Foundation, either version 3 of the License, or (at your option) any
- * later version.  
+ * later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -68,13 +68,9 @@ void testMacIO(FSConfigPtr& cfg) {
   comparisonTest(cfg, test.get(), dup.get());
 }
 
-TEST(IOTest, NullMacIO) {
-  runWithCipher("Null", 512, testMacIO);
-}
+TEST(IOTest, NullMacIO) { runWithCipher("Null", 512, testMacIO); }
 
-TEST(IOTest, MacIO) {
-  runWithAllCiphers(testMacIO);
-}
+TEST(IOTest, MacIO) { runWithAllCiphers(testMacIO); }
 
 void testBasicCipherIO(FSConfigPtr& cfg) {
   shared_ptr<MemFileIO> base(new MemFileIO(0));
@@ -97,16 +93,13 @@ void testBasicCipherIO(FSConfigPtr& cfg) {
   for (unsigned int i = 0; i < sizeof(buf); ++i) {
     bool match = (buf[i] == req.data[i]);
     ASSERT_TRUE(match) << "mismatched data at offset " << i;
-    if (!match)
-      break;
+    if (!match) break;
   }
 
   delete[] req.data;
 }
 
-TEST(IOTest, BasicCipherFileIO) {
-  runWithAllCiphers(testBasicCipherIO);
-}
+TEST(IOTest, BasicCipherFileIO) { runWithAllCiphers(testBasicCipherIO); }
 
 void testCipherIO(FSConfigPtr& cfg) {
   shared_ptr<MemFileIO> base(new MemFileIO(0));
@@ -116,13 +109,8 @@ void testCipherIO(FSConfigPtr& cfg) {
   comparisonTest(cfg, test.get(), dup.get());
 }
 
-TEST(IOTest, NullCipherFileIO) {
-  runWithCipher("Null", 512, testCipherIO);
-}
+TEST(IOTest, NullCipherFileIO) { runWithCipher("Null", 512, testCipherIO); }
 
-TEST(IOTest, CipherFileIO) {
-  runWithAllCiphers(testCipherIO);
-}
+TEST(IOTest, CipherFileIO) { runWithAllCiphers(testCipherIO); }
 
 }  // namespace
-

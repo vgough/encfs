@@ -21,9 +21,7 @@ namespace {
 
 class CipherKeyTest : public testing::Test {
  protected:
-  virtual void SetUp() {
-    CipherV1::init(false);
-  }
+  virtual void SetUp() { CipherV1::init(false); }
 };
 
 TEST_F(CipherKeyTest, ReadWrite) {
@@ -49,5 +47,4 @@ TEST_F(CipherKeyTest, ReadWrite) {
   }
 }
 
-
-} //  namespace
+}  //  namespace

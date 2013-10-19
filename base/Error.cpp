@@ -2,9 +2,6 @@
 
 namespace encfs {
 
-Error::Error(const char *msg)
-    : runtime_error(msg)
-{
-}
+Error::Error(const char *msg) : runtime_error(msg) {}
 
 }  // namespace encfs

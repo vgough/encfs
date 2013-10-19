@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -19,7 +19,7 @@
  */
 
 #ifdef linux
-#define _XOPEN_SOURCE 500 // pick up pread , pwrite
+#define _XOPEN_SOURCE 500  // pick up pread , pwrite
 #endif
 #include <unistd.h>
 
@@ -39,57 +39,41 @@ namespace encfs {
 
 static Interface RawFileIO_iface = makeInterface("FileIO/Raw", 1, 0, 0);
 
-FileIO *NewRawFileIO( const Interface &iface )
-{
-    (void)iface;
-    return new RawFileIO();
+FileIO *NewRawFileIO(const Interface &iface) {
+  (void)iface;
+  return new RawFileIO();
 }
 
-inline void swap( int &x, int &y )
-{
-    int tmp = x;
-    x = y;
-    y = tmp;
+inline void swap(int &x, int &y) {
+  int tmp = x;
+  x = y;
+  y = tmp;
 }
 
-RawFileIO::RawFileIO( )
-    : knownSize( false )
-    , fileSize(0)
-    , fd( -1 )
-    , oldfd( -1 )
-    , canWrite( false )
-{
-}
+RawFileIO::RawFileIO()
+    : knownSize(false), fileSize(0), fd(-1), oldfd(-1), canWrite(false) {}
 
-RawFileIO::RawFileIO( const std::string &fileName )
-    : name( fileName )
-    , knownSize( false )
-    , fileSize( 0 )
-    , fd( -1 )
-    , oldfd( -1 )
-    , canWrite( false )
-{
-}
+RawFileIO::RawFileIO(const std::string &fileName)
+    : name(fileName),
+      knownSize(false),
+      fileSize(0),
+      fd(-1),
+      oldfd(-1),
+      canWrite(false) {}
 
-RawFileIO::~RawFileIO()
-{
+RawFileIO::~RawFileIO() {
   int _fd = -1;
   int _oldfd = -1;
 
-  swap( _fd, fd );
-  swap( _oldfd, oldfd );
+  swap(_fd, fd);
+  swap(_oldfd, oldfd);
 
-  if( _oldfd != -1 )
-    close( _oldfd );
+  if (_oldfd != -1) close(_oldfd);
 
-  if( _fd != -1 )
-    close( _fd );
+  if (_fd != -1) close(_fd);
 }
 
-Interface RawFileIO::interface() const
-{
-  return RawFileIO_iface;
-}
+Interface RawFileIO::interface() const { return RawFileIO_iface; }
 
 /*
     Workaround for opening a file for write when permissions don't allow.
@@ -98,19 +82,16 @@ Interface RawFileIO::interface() const
     be called with a lock around it so that there won't be a race condition
     with calls to lstat picking up the wrong permissions.
 */
-static int open_readonly_workaround(const char *path, int flags)
-{
+static int open_readonly_workaround(const char *path, int flags) {
   int fd = -1;
   struct stat stbuf;
   memset(&stbuf, 0, sizeof(struct stat));
-  if(lstat( path, &stbuf ) != -1)
-  {
+  if (lstat(path, &stbuf) != -1) {
     // make sure user has read/write permission..
-    chmod( path , stbuf.st_mode | 0600 );
-    fd = ::open( path , flags );
-    chmod( path , stbuf.st_mode );
-  } else
-  {
+    chmod(path, stbuf.st_mode | 0600);
+    fd = ::open(path, flags);
+    chmod(path, stbuf.st_mode);
+  } else {
     LOG(INFO) << "can't stat file " << path;
   }
 
@@ -126,48 +107,40 @@ static int open_readonly_workaround(const char *path, int flags)
     -  Also keep the O_LARGEFILE flag, in case the underlying filesystem needs
        it..
 */
-int RawFileIO::open(int flags)
-{
+int RawFileIO::open(int flags) {
   bool requestWrite = ((flags & O_RDWR) || (flags & O_WRONLY));
 
-  VLOG(1) << "open call for "
-    << (requestWrite ? "writable" : "read only")
-    << " file";
+  VLOG(1) << "open call for " << (requestWrite ? "writable" : "read only")
+          << " file";
 
   int result = 0;
 
   // if we have a descriptor and it is writable, or we don't need writable..
-  if((fd >= 0) && (canWrite || !requestWrite))
-  {
+  if ((fd >= 0) && (canWrite || !requestWrite)) {
     VLOG(1) << "using existing file descriptor";
-    result = fd; // success
-  } else
-  {
+    result = fd;  // success
+  } else {
     int finalFlags = requestWrite ? O_RDWR : O_RDONLY;
 
 #if defined(O_LARGEFILE)
-    if( flags & O_LARGEFILE )
-      finalFlags |= O_LARGEFILE;
+    if (flags & O_LARGEFILE) finalFlags |= O_LARGEFILE;
 #else
 #warning O_LARGEFILE not supported
 #endif
 
-    int newFd = ::open( name.c_str(), finalFlags );
+    int newFd = ::open(name.c_str(), finalFlags);
 
     VLOG(1) << "open file with flags " << finalFlags << ", result = " << newFd;
 
-    if((newFd == -1) && (errno == EACCES))
-    {
+    if ((newFd == -1) && (errno == EACCES)) {
       VLOG(1) << "using readonly workaround for open";
-      newFd = open_readonly_workaround( name.c_str(), finalFlags );
+      newFd = open_readonly_workaround(name.c_str(), finalFlags);
     }
 
-    if(newFd >= 0)
-    {
-      if(oldfd >= 0)
-      {
-        LOG(ERROR) << "leaking FD?: oldfd = "
-          << oldfd << ", fd = " << fd << ", newfd = " << newFd;
+    if (newFd >= 0) {
+      if (oldfd >= 0) {
+        LOG(ERROR) << "leaking FD?: oldfd = " << oldfd << ", fd = " << fd
+                   << ", newfd = " << newFd;
       }
 
       // the old fd might still be in use, so just keep it around for
@@ -175,8 +148,7 @@ int RawFileIO::open(int flags)
       canWrite = requestWrite;
       oldfd = fd;
       result = fd = newFd;
-    } else
-    {
+    } else {
       result = -errno;
       LOG(INFO) << "::open error: " << strerror(errno);
     }
@@ -187,68 +159,53 @@ int RawFileIO::open(int flags)
   return result;
 }
 
-int RawFileIO::getAttr( struct stat *stbuf ) const
-{
-  int res = lstat( name.c_str(), stbuf );
+int RawFileIO::getAttr(struct stat *stbuf) const {
+  int res = lstat(name.c_str(), stbuf);
   int eno = errno;
 
-  LOG_IF(INFO, res < 0) << "getAttr error on " << name
-    << ": " << strerror( eno );
+  LOG_IF(INFO, res < 0) << "getAttr error on " << name << ": " << strerror(eno);
 
-  return ( res < 0 ) ? -eno : 0;
+  return (res < 0) ? -eno : 0;
 }
 
-void RawFileIO::setFileName( const char *fileName )
-{
-  name = fileName;
-}
+void RawFileIO::setFileName(const char *fileName) { name = fileName; }
 
-const char *RawFileIO::getFileName() const
-{
-  return name.c_str();
-}
+const char *RawFileIO::getFileName() const { return name.c_str(); }
 
-off_t RawFileIO::getSize() const
-{
-  if(!knownSize)
-  {
+off_t RawFileIO::getSize() const {
+  if (!knownSize) {
     struct stat stbuf;
-    memset( &stbuf, 0, sizeof( struct stat ));
-    int res = lstat( name.c_str(), &stbuf );
+    memset(&stbuf, 0, sizeof(struct stat));
+    int res = lstat(name.c_str(), &stbuf);
 
-    if(res == 0)
-    {
+    if (res == 0) {
       fileSize = stbuf.st_size;
       knownSize = true;
       return fileSize;
     } else
       return -1;
-  } else
-  {
+  } else {
     return fileSize;
   }
 }
 
-ssize_t RawFileIO::read( const IORequest &req ) const
-{
-  rAssert( fd >= 0 );
+ssize_t RawFileIO::read(const IORequest &req) const {
+  rAssert(fd >= 0);
 
   VLOG(2) << "Read " << req.dataLen << " bytes from offset " << req.offset;
-  ssize_t readSize = pread( fd, req.data, req.dataLen, req.offset );
+  ssize_t readSize = pread(fd, req.data, req.dataLen, req.offset);
 
-  if(readSize < 0)
-  {
-    LOG(INFO) << "read failed at offset " << req.offset
-      << " for " << req.dataLen << " bytes: " << strerror(errno);
+  if (readSize < 0) {
+    LOG(INFO) << "read failed at offset " << req.offset << " for "
+              << req.dataLen << " bytes: " << strerror(errno);
   }
 
   return readSize;
 }
 
-bool RawFileIO::write( const IORequest &req )
-{
-  rAssert( fd >= 0 );
-  rAssert( true == canWrite );
+bool RawFileIO::write(const IORequest &req) {
+  rAssert(fd >= 0);
+  rAssert(true == canWrite);
 
   VLOG(2) << "Write " << req.dataLen << " bytes to offset " << req.offset;
 
@@ -257,65 +214,55 @@ bool RawFileIO::write( const IORequest &req )
   ssize_t bytes = req.dataLen;
   off_t offset = req.offset;
 
-  while( bytes && retrys > 0 )
-  {
-    ssize_t writeSize = ::pwrite( fd, buf, bytes, offset );
+  while (bytes && retrys > 0) {
+    ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
 
-    if( writeSize < 0 )
-    {
+    if (writeSize < 0) {
       knownSize = false;
-      LOG(INFO) << "write failed at offset " << offset << " for " 
-        << bytes << " bytes: " << strerror(errno);
+      LOG(INFO) << "write failed at offset " << offset << " for " << bytes
+                << " bytes: " << strerror(errno);
       return false;
     }
 
     bytes -= writeSize;
     offset += writeSize;
-    buf = (void*)((char*)buf + writeSize);
+    buf = (void *)((char *)buf + writeSize);
     --retrys;
   }
 
-  if(bytes != 0)
-  {
-    LOG(ERROR) << "Write error: wrote " << (req.dataLen-bytes) 
-      << " bytes of " << req.dataLen << ", max retries reached";
+  if (bytes != 0) {
+    LOG(ERROR) << "Write error: wrote " << (req.dataLen - bytes) << " bytes of "
+               << req.dataLen << ", max retries reached";
     knownSize = false;
     return false;
-  } else
-  {
-    if(knownSize)
-    {
+  } else {
+    if (knownSize) {
       off_t last = req.offset + req.dataLen;
-      if(last > fileSize)
-        fileSize = last;
+      if (last > fileSize) fileSize = last;
     }
 
     return true;
   }
 }
 
-int RawFileIO::truncate( off_t size )
-{
+int RawFileIO::truncate(off_t size) {
   int res;
 
-  if(fd >= 0 && canWrite)
-  {
-    res = ::ftruncate( fd, size );
+  if (fd >= 0 && canWrite) {
+    res = ::ftruncate(fd, size);
 #ifndef __FreeBSD__
-    ::fdatasync( fd );
+    ::fdatasync(fd);
 #endif
   } else
-    res = ::truncate( name.c_str(), size );
+    res = ::truncate(name.c_str(), size);
 
-  if(res < 0)
-  {
+  if (res < 0) {
     int eno = errno;
-    LOG(INFO) << "truncate failed for " << name 
-      << " (" << fd << ") size " << size << ", error " << strerror(eno);
+    LOG(INFO) << "truncate failed for " << name << " (" << fd << ") size "
+              << size << ", error " << strerror(eno);
     res = -eno;
     knownSize = false;
-  } else
-  {
+  } else {
     res = 0;
     fileSize = size;
     knownSize = true;
@@ -324,10 +271,6 @@ int RawFileIO::truncate( off_t size )
   return res;
 }
 
-bool RawFileIO::isWritable() const
-{
-  return canWrite;
-}
+bool RawFileIO::isWritable() const { return canWrite; }
 
 }  // namespace encfs
-

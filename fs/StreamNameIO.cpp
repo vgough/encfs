@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -30,17 +30,15 @@
 
 namespace encfs {
 
-static shared_ptr<NameIO> NewStreamNameIO( const Interface &iface,
-    const shared_ptr<CipherV1> &cipher )
-{
-  return shared_ptr<NameIO>( new StreamNameIO( iface, cipher ) );
+static shared_ptr<NameIO> NewStreamNameIO(const Interface &iface,
+                                          const shared_ptr<CipherV1> &cipher) {
+  return shared_ptr<NameIO>(new StreamNameIO(iface, cipher));
 }
 
-static bool StreamIO_registered = NameIO::Register("Stream",
+static bool StreamIO_registered = NameIO::Register(
+    "Stream",
     gettext_noop("Stream encoding, keeps filenames as short as possible"),
-    StreamNameIO::CurrentInterface(),
-    NewStreamNameIO, true);
-
+    StreamNameIO::CurrentInterface(), NewStreamNameIO, true);
 
 /*
     - Version 0.1 is for EncFS 0.x support.  The difference to 1.0 is that 0.x
@@ -63,144 +61,117 @@ static bool StreamIO_registered = NameIO::Register("Stream",
 
     - Version 2.1 adds support for version 0 for EncFS 0.x compatibility.
 */
-Interface StreamNameIO::CurrentInterface()
-{
+Interface StreamNameIO::CurrentInterface() {
   // implement major version 2, 1, and 0
   return makeInterface("nameio/stream", 2, 1, 2);
 }
 
-StreamNameIO::StreamNameIO( const Interface &iface,
-	const shared_ptr<CipherV1> &cipher )
-    : _interface( iface.major() )
-    , _cipher( cipher )
-{
+StreamNameIO::StreamNameIO(const Interface &iface,
+                           const shared_ptr<CipherV1> &cipher)
+    : _interface(iface.major()), _cipher(cipher) {}
 
-}
+StreamNameIO::~StreamNameIO() {}
 
-StreamNameIO::~StreamNameIO()
-{
-}
+Interface StreamNameIO::interface() const { return CurrentInterface(); }
 
-Interface StreamNameIO::interface() const
-{
-  return CurrentInterface();
-}
-
-int StreamNameIO::maxEncodedNameLen( int plaintextStreamLen ) const
-{
+int StreamNameIO::maxEncodedNameLen(int plaintextStreamLen) const {
   int encodedStreamLen = 2 + plaintextStreamLen;
-  return B256ToB64Bytes( encodedStreamLen );
+  return B256ToB64Bytes(encodedStreamLen);
 }
 
-int StreamNameIO::maxDecodedNameLen( int encodedStreamLen ) const
-{
-  int decLen256 = B64ToB256Bytes( encodedStreamLen );
+int StreamNameIO::maxDecodedNameLen(int encodedStreamLen) const {
+  int decLen256 = B64ToB256Bytes(encodedStreamLen);
   return decLen256 - 2;
 }
 
-int StreamNameIO::encodeName( const char *plaintextName, int length,
-    uint64_t *iv, char *encodedName ) const
-{
+int StreamNameIO::encodeName(const char *plaintextName, int length,
+                             uint64_t *iv, char *encodedName) const {
   uint64_t tmpIV = 0;
-  if( iv && _interface >= 2 )
-    tmpIV = *iv;
+  if (iv && _interface >= 2) tmpIV = *iv;
 
   unsigned int mac = _cipher->reduceMac16(
-      _cipher->MAC_64((const byte *)plaintextName, length, iv ));
+      _cipher->MAC_64((const byte *)plaintextName, length, iv));
 
   // add on checksum bytes
   unsigned char *encodeBegin;
-  if(_interface >= 1)
-  {
+  if (_interface >= 1) {
     // current versions store the checksum at the beginning
     encodedName[0] = (mac >> 8) & 0xff;
-    encodedName[1] = (mac     ) & 0xff;
-    encodeBegin = (unsigned char *)encodedName+2;
-  } else
-  {
+    encodedName[1] = (mac) & 0xff;
+    encodeBegin = (unsigned char *)encodedName + 2;
+  } else {
     // encfs 0.x stored checksums at the end.
     encodedName[length] = (mac >> 8) & 0xff;
-    encodedName[length+1] = (mac     ) & 0xff;
+    encodedName[length + 1] = (mac) & 0xff;
     encodeBegin = (unsigned char *)encodedName;
   }
 
   // stream encode the plaintext bytes
-  memcpy( encodeBegin, plaintextName, length );
-  _cipher->streamEncode( encodeBegin, length, (uint64_t)mac ^ tmpIV);
+  memcpy(encodeBegin, plaintextName, length);
+  _cipher->streamEncode(encodeBegin, length, (uint64_t)mac ^ tmpIV);
 
   // convert the entire thing to base 64 ascii..
   int encodedStreamLen = length + 2;
-  int encLen64 = B256ToB64Bytes( encodedStreamLen );
+  int encLen64 = B256ToB64Bytes(encodedStreamLen);
 
-  changeBase2Inline( (unsigned char *)encodedName, encodedStreamLen,
-      8, 6, true );
-  B64ToAscii( (unsigned char *)encodedName, encLen64 );
+  changeBase2Inline((unsigned char *)encodedName, encodedStreamLen, 8, 6, true);
+  B64ToAscii((unsigned char *)encodedName, encLen64);
 
   return encLen64;
 }
 
-int StreamNameIO::decodeName( const char *encodedName, int length,
-    uint64_t *iv, char *plaintextName ) const
-{
+int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
+                             char *plaintextName) const {
   rAssert(length > 2);
-  int decLen256 = B64ToB256Bytes( length );
+  int decLen256 = B64ToB256Bytes(length);
   int decodedStreamLen = decLen256 - 2;
 
-  if(decodedStreamLen <= 0)
-    throw Error("Filename too small to decode");
+  if (decodedStreamLen <= 0) throw Error("Filename too small to decode");
 
-  BUFFER_INIT( tmpBuf, 32, (unsigned int)length );
+  BUFFER_INIT(tmpBuf, 32, (unsigned int)length);
 
   // decode into tmpBuf, because this step produces more data then we can fit
   // into the result buffer..
-  AsciiToB64( (unsigned char *)tmpBuf, (unsigned char *)encodedName, length );
+  AsciiToB64((unsigned char *)tmpBuf, (unsigned char *)encodedName, length);
   changeBase2Inline((unsigned char *)tmpBuf, length, 6, 8, false);
 
   // pull out the checksum value which is used as an initialization vector
   uint64_t tmpIV = 0;
   unsigned int mac;
-  if(_interface >= 1)
-  {
+  if (_interface >= 1) {
     // current versions store the checksum at the beginning
-    mac = ((unsigned int)((unsigned char)tmpBuf[0])) << 8
-      | ((unsigned int)((unsigned char)tmpBuf[1]));
+    mac = ((unsigned int)((unsigned char)tmpBuf[0])) << 8 |
+          ((unsigned int)((unsigned char)tmpBuf[1]));
 
     // version 2 adds support for IV chaining..
-    if( iv && _interface >= 2 )
-      tmpIV = *iv;
+    if (iv && _interface >= 2) tmpIV = *iv;
 
-    memcpy( plaintextName, tmpBuf+2, decodedStreamLen );
-  } else
-  {
+    memcpy(plaintextName, tmpBuf + 2, decodedStreamLen);
+  } else {
     // encfs 0.x stored checksums at the end.
-    mac = ((unsigned int)((unsigned char)tmpBuf[decodedStreamLen])) << 8
-      | ((unsigned int)((unsigned char)tmpBuf[decodedStreamLen+1]));
+    mac = ((unsigned int)((unsigned char)tmpBuf[decodedStreamLen])) << 8 |
+          ((unsigned int)((unsigned char)tmpBuf[decodedStreamLen + 1]));
 
-    memcpy( plaintextName, tmpBuf, decodedStreamLen );
+    memcpy(plaintextName, tmpBuf, decodedStreamLen);
   }
 
-  _cipher->streamDecode( (unsigned char *)plaintextName, decodedStreamLen, 
-      (uint64_t)mac ^ tmpIV );
+  _cipher->streamDecode((unsigned char *)plaintextName, decodedStreamLen,
+                        (uint64_t)mac ^ tmpIV);
 
   // compute MAC to check with stored value
   unsigned int mac2 = _cipher->reduceMac16(
       _cipher->MAC_64((const byte *)plaintextName, decodedStreamLen, iv));
 
-  BUFFER_RESET( tmpBuf );
-  if(mac2 != mac)
-  {
+  BUFFER_RESET(tmpBuf);
+  if (mac2 != mac) {
     VLOG(1) << "checksum mismatch: expected " << mac << ", got " << mac2
-      << "on decode of " << decodedStreamLen << " bytes";
-    throw Error( "checksum mismatch in filename decode" );
+            << "on decode of " << decodedStreamLen << " bytes";
+    throw Error("checksum mismatch in filename decode");
   }
 
   return decodedStreamLen;
 }
 
-bool StreamNameIO::Enabled()
-{
-  return true;
-}
+bool StreamNameIO::Enabled() { return true; }
 
 }  // namespace encfs
-

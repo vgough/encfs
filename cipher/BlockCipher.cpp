@@ -13,12 +13,10 @@
 
 namespace encfs {
 
-Registry<BlockCipher>& BlockCipher::GetRegistry()
-{
+Registry<BlockCipher>& BlockCipher::GetRegistry() {
   static Registry<BlockCipher> registry;
   static bool first = true;
-  if (first)
-  {
+  if (first) {
 #ifdef WITH_OPENSSL
     OpenSSL::registerCiphers();
 #endif
@@ -31,13 +29,8 @@ Registry<BlockCipher>& BlockCipher::GetRegistry()
   return registry;
 }
 
-BlockCipher::BlockCipher()
-{
-}
+BlockCipher::BlockCipher() {}
 
-BlockCipher::~BlockCipher()
-{
-}
+BlockCipher::~BlockCipher() {}
 
 }  // namespace encfs
-

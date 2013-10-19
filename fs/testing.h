@@ -24,4 +24,3 @@ void compare(FileIO* a, FileIO* b, int offset, int len);
 }  // namespace encfs
 
 #endif
-

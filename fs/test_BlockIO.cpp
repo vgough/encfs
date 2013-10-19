@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
  * Software Foundation, either version 3 of the License, or (at your option) any
- * later version.  
+ * later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -39,7 +39,7 @@ TEST(BlockFileIOTest, BasicIO) {
   MemFileIO base(1024);
   ASSERT_EQ(1024, base.getSize());
 
-  FSConfigPtr cfg = makeConfig( CipherV1::New("Null"), 512);
+  FSConfigPtr cfg = makeConfig(CipherV1::New("Null"), 512);
   MemBlockFileIO block(512, cfg);
   block.truncate(1024);
   ASSERT_EQ(1024, block.getSize());
@@ -56,7 +56,7 @@ TEST(BlockFileIOTest, BasicIO) {
     req.offset = i * 256;
     memset(req.data, 0, req.dataLen);
     ASSERT_TRUE(base.write(req));
-    
+
     req.offset = i * 256;
     memset(req.data, 0, req.dataLen);
     ASSERT_TRUE(block.write(req));
@@ -66,4 +66,3 @@ TEST(BlockFileIOTest, BasicIO) {
 }
 
 }  // namespace encfs
-

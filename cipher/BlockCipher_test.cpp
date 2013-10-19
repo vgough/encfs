@@ -8,7 +8,7 @@
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU Lesser General Public License as published by the Free
  * Software Foundation, either version 3 of the License, or (at your option) any
- * later version.  
+ * later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -43,9 +43,7 @@ namespace {
 
 class BlockCipherTest : public testing::Test {
  public:
-  virtual void SetUp() {
-    CipherV1::init(false);
-  }
+  virtual void SetUp() { CipherV1::init(false); }
 };
 
 void compare(const byte *a, const byte *b, int size) {
@@ -55,10 +53,8 @@ void compare(const byte *a, const byte *b, int size) {
 #endif
   for (int i = 0; i < size; i++) {
     bool match = (a[i] == b[i]);
-    ASSERT_TRUE(match) << "mismatched data at offset " << i 
-        << " of " << size;
-    if (!match)
-      break;
+    ASSERT_TRUE(match) << "mismatched data at offset " << i << " of " << size;
+    if (!match) break;
   }
 }
 
@@ -79,26 +75,25 @@ TEST_F(BlockCipherTest, RequiredStreamCiphers) {
 }
 
 template <typename T>
-void checkTestVector(const char *cipherName,
-                     const char *hexKey,
-                     const char *hexIv,
-                     const char *hexPlaintext,
+void checkTestVector(const char *cipherName, const char *hexKey,
+                     const char *hexIv, const char *hexPlaintext,
                      const char *hexCipher) {
   SCOPED_TRACE(testing::Message() << "Testing cipher: " << cipherName
-               << ", key = " << hexKey << ", plaintext = " << hexPlaintext);
+                                  << ", key = " << hexKey
+                                  << ", plaintext = " << hexPlaintext);
 
   auto cipher = T::GetRegistry().CreateForMatch(cipherName);
   ASSERT_TRUE(cipher != NULL);
 
-  CipherKey key(strlen(hexKey)/2);
+  CipherKey key(strlen(hexKey) / 2);
   setDataFromHex(key.data(), key.size(), hexKey);
 
   ASSERT_TRUE(cipher->setKey(key));
 
-  byte iv[strlen(hexIv)/2];
+  byte iv[strlen(hexIv) / 2];
   setDataFromHex(iv, sizeof(iv), hexIv);
 
-  byte plaintext[strlen(hexPlaintext)/2];
+  byte plaintext[strlen(hexPlaintext) / 2];
   setDataFromHex(plaintext, sizeof(plaintext), hexPlaintext);
 
   byte ciphertext[sizeof(plaintext)];
@@ -120,45 +115,41 @@ void checkTestVector(const char *cipherName,
 
 TEST_F(BlockCipherTest, TestVectors) {
   // BF128 CBC
-  checkTestVector<BlockCipher>(NAME_BLOWFISH_CBC,
-      "0123456789abcdeff0e1d2c3b4a59687",
-      "fedcba9876543210",
+  checkTestVector<BlockCipher>(
+      NAME_BLOWFISH_CBC, "0123456789abcdeff0e1d2c3b4a59687", "fedcba9876543210",
       "37363534333231204e6f77206973207468652074696d6520666f722000000000",
       "6b77b4d63006dee605b156e27403979358deb9e7154616d959f1652bd5ff92cc");
 
   // BF128 CFB
-  checkTestVector<StreamCipher>(NAME_BLOWFISH_CFB,
-      "0123456789abcdeff0e1d2c3b4a59687",
-      "fedcba9876543210",
+  checkTestVector<StreamCipher>(
+      NAME_BLOWFISH_CFB, "0123456789abcdeff0e1d2c3b4a59687", "fedcba9876543210",
       "37363534333231204e6f77206973207468652074696d6520666f722000",
       "e73214a2822139caf26ecf6d2eb9e76e3da3de04d1517200519d57a6c3");
- 
+
   // AES128 CBC
-  checkTestVector<BlockCipher>(NAME_AES_CBC,
-      "2b7e151628aed2a6abf7158809cf4f3c",
-      "000102030405060708090a0b0c0d0e0f",
-      "6bc1bee22e409f96e93d7e117393172a",
-      "7649abac8119b246cee98e9b12e9197d");
-  
+  checkTestVector<BlockCipher>(NAME_AES_CBC, "2b7e151628aed2a6abf7158809cf4f3c",
+                               "000102030405060708090a0b0c0d0e0f",
+                               "6bc1bee22e409f96e93d7e117393172a",
+                               "7649abac8119b246cee98e9b12e9197d");
+
   // AES128 CFB
-  checkTestVector<StreamCipher>(NAME_AES_CFB,
-      "2b7e151628aed2a6abf7158809cf4f3c",
-      "000102030405060708090a0b0c0d0e0f",
-      "6bc1bee22e409f96e93d7e117393172a",
+  checkTestVector<StreamCipher>(
+      NAME_AES_CFB, "2b7e151628aed2a6abf7158809cf4f3c",
+      "000102030405060708090a0b0c0d0e0f", "6bc1bee22e409f96e93d7e117393172a",
       "3b3fd92eb72dad20333449f8e83cfb4a");
 
   // AES256 CBC
-  checkTestVector<BlockCipher>(NAME_AES_CBC,
+  checkTestVector<BlockCipher>(
+      NAME_AES_CBC,
       "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
-      "000102030405060708090a0b0c0d0e0f",
-      "6bc1bee22e409f96e93d7e117393172a",
+      "000102030405060708090a0b0c0d0e0f", "6bc1bee22e409f96e93d7e117393172a",
       "f58c4c04d6e5f1ba779eabfb5f7bfbd6");
-  
+
   // AES256 CFB
-  checkTestVector<StreamCipher>(NAME_AES_CFB,
+  checkTestVector<StreamCipher>(
+      NAME_AES_CFB,
       "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
-      "000102030405060708090a0b0c0d0e0f",
-      "6bc1bee22e409f96e93d7e117393172a",
+      "000102030405060708090a0b0c0d0e0f", "6bc1bee22e409f96e93d7e117393172a",
       "dc7e84bfda79164b7ecd8486985d3860");
 }
 
@@ -168,7 +159,7 @@ TEST_F(BlockCipherTest, BlockEncryptionTest) {
   shared_ptr<PBKDF> pbkdf(
       PBKDF::GetRegistry().CreateForMatch(NAME_PBKDF2_HMAC_SHA1));
 
-  list<string> ciphers = registry.GetAll(); 
+  list<string> ciphers = registry.GetAll();
   for (const string &name : ciphers) {
     const BlockCipher::Properties *properties =
         registry.GetProperties(name.c_str());
@@ -179,7 +170,7 @@ TEST_F(BlockCipherTest, BlockEncryptionTest) {
          keySize += properties->keySize.inc()) {
       SCOPED_TRACE(testing::Message() << "Key size " << keySize);
 
-      shared_ptr<BlockCipher> cipher (registry.Create(name.c_str()));
+      shared_ptr<BlockCipher> cipher(registry.Create(name.c_str()));
 
       CipherKey key = pbkdf->randomKey(keySize / 8);
       ASSERT_TRUE(key.valid());
@@ -206,14 +197,14 @@ TEST_F(BlockCipherTest, BlockEncryptionTest) {
       MemBlock encrypted;
       encrypted.allocate(16 * blockSize);
 
-      ASSERT_TRUE(cipher->encrypt(iv.data, mb.data,
-                                  encrypted.data, 16 * blockSize));
+      ASSERT_TRUE(
+          cipher->encrypt(iv.data, mb.data, encrypted.data, 16 * blockSize));
 
       // Decrypt.
       MemBlock decrypted;
       decrypted.allocate(16 * blockSize);
-      ASSERT_TRUE(cipher->decrypt(iv.data, encrypted.data,
-                                  decrypted.data, 16 * blockSize));
+      ASSERT_TRUE(cipher->decrypt(iv.data, encrypted.data, decrypted.data,
+                                  16 * blockSize));
 
       compare(mb.data, decrypted.data, 16 * blockSize);
     }

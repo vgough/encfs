@@ -4,7 +4,6 @@
 namespace encfs {
 
 typedef unsigned char byte;
-
 }
 
-#endif // TYPES_H
+#endif  // TYPES_H

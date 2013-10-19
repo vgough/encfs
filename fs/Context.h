@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -43,8 +43,7 @@ struct EncFS_Opts;
 class FileNode;
 class DirNode;
 
-class EncFS_Context
-{
+class EncFS_Context {
  public:
   EncFS_Context();
   ~EncFS_Context();
@@ -91,15 +90,14 @@ class EncFS_Context
    * release() is called.  shared_ptr then does our reference counting for
    * us.
    */
-  struct Placeholder
-  {
+  struct Placeholder {
     shared_ptr<FileNode> node;
 
-    Placeholder( const shared_ptr<FileNode> &ptr ) : node(ptr) {}
+    Placeholder(const shared_ptr<FileNode> &ptr) : node(ptr) {}
   };
 
   // set of open files, indexed by path
-  typedef unordered_map<std::string, std::set<Placeholder*> > FileMap;
+  typedef unordered_map<std::string, std::set<Placeholder *> > FileMap;
 
 #ifdef CMAKE_USE_PTHREADS_INIT
   mutable Mutex contextMutex;
@@ -111,9 +109,8 @@ class EncFS_Context
   shared_ptr<DirNode> root;
 };
 
-int remountFS( EncFS_Context *ctx );
+int remountFS(EncFS_Context *ctx);
 
 }  // namespace encfs
 
 #endif
-

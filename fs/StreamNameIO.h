@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -27,33 +27,32 @@ namespace encfs {
 
 class CipherV1;
 
-class StreamNameIO : public NameIO
-{
-public:
-    static Interface CurrentInterface();
+class StreamNameIO : public NameIO {
+ public:
+  static Interface CurrentInterface();
 
-    StreamNameIO( const Interface &iface,
-	          const shared_ptr<CipherV1> &cipher);
-    virtual ~StreamNameIO();
+  StreamNameIO(const Interface &iface, const shared_ptr<CipherV1> &cipher);
+  virtual ~StreamNameIO();
 
-    virtual Interface interface() const;
+  virtual Interface interface() const;
 
-    virtual int maxEncodedNameLen( int plaintextNameLen ) const;
-    virtual int maxDecodedNameLen( int encodedNameLen ) const;
+  virtual int maxEncodedNameLen(int plaintextNameLen) const;
+  virtual int maxDecodedNameLen(int encodedNameLen) const;
 
-    // hack to help with static builds
-    static bool Enabled();
-protected:
-    virtual int encodeName( const char *plaintextName, int length,
-	                    uint64_t *iv, char *encodedName ) const;
-    virtual int decodeName( const char *encodedName, int length,
-	                    uint64_t *iv, char *plaintextName ) const;
-private:
-    int _interface;
-    shared_ptr<CipherV1> _cipher;
+  // hack to help with static builds
+  static bool Enabled();
+
+ protected:
+  virtual int encodeName(const char *plaintextName, int length, uint64_t *iv,
+                         char *encodedName) const;
+  virtual int decodeName(const char *encodedName, int length, uint64_t *iv,
+                         char *plaintextName) const;
+
+ private:
+  int _interface;
+  shared_ptr<CipherV1> _cipher;
 };
 
 }  // namespace encfs
 
 #endif
-
