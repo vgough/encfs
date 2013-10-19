@@ -62,8 +62,6 @@ void changeBase2Inline(byte *buf, int srcLength,
 
 // inplace translation from values [0,2^6] => base64 ASCII
 void B64ToAscii(byte *buf, int length);
-// Like B64ToAscii, but uses standard characters "+" and "/" in encoding.
-void B64ToAsciiStandard(byte *buf, int length);
 // inplace translation from values [0,2^5] => base32 ASCII
 void B32ToAscii(byte *buf, int length);
 
@@ -74,6 +72,10 @@ void AsciiToB64(byte *out, const byte *in, int length);
 // inplace translation from values base32 ASCII => [0,2^5]
 void AsciiToB32(byte *buf, int length);
 void AsciiToB32(byte *out, const byte *in, int length);
+
+// Decode B64 standard into the output array.
+// The output size must be at least B64ToB256Bytes(inputLen).
+bool B64StandardDecode(byte *out, const byte *in, int inputLen);
 
 }  // namespace encfs
 

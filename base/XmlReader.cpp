@@ -121,8 +121,10 @@ bool XmlValue::readB64(const char *path, byte *data, int length) const
                << ", got " << decodedSize;
     return false;
   }
-  changeBase2((byte *)s.data(), s.size(), 6, data, length, 8);
-  B64ToAsciiStandard(data, length);
+  if (!B64StandardDecode(data, (byte*) s.data(), s.size())) {
+    LOG(ERROR) << "B64 decode failure on " << s;
+    return false;
+  }
 
   return true;
 }

@@ -21,6 +21,7 @@
 #include "base/base64.h"
 
 #include <ctype.h>
+#include <glog/logging.h>
 
 namespace encfs {
 
@@ -148,25 +149,6 @@ void B64ToAscii(byte *in, int length)
   }
 }
 
-void B64ToAsciiStandard(byte *in, int length)
-{
-  static const char LookupTable[] = "+/0123456789";
-  for(int offset=0; offset<length; ++offset)
-  {
-    int ch = in[offset];
-    if(ch > 11)
-    {
-      if(ch > 37)
-        ch += 'a' - 38;
-      else
-        ch += 'A' - 12;
-    } else
-      ch = LookupTable[ ch ];
-
-    in[offset] = ch;
-  }
-}
-
 static const byte Ascii2B64Table[] = 
        "                                            01  23456789:;       ";
     //  0123456789 123456789 123456789 123456789 123456789 123456789 1234
@@ -227,6 +209,73 @@ void AsciiToB32(byte *out, const byte *in, int length)
 
     *out++ = (byte)lch;
   }
+}
+
+
+#define WHITESPACE 64
+#define EQUALS     65
+#define INVALID    66
+ 
+static const byte d[] = {
+    66,66,66,66,66,66,66,66,66,64,
+    66,66,66,66,66,66,66,66,66,66,
+    66,66,66,66,66,66,66,66,66,66,
+    66,66,66,66,66,66,66,66,66,66,
+    66,66,66,62,66,66,66,63,52,53,
+
+    54,55,56,57,58,59,60,61,66,66, // 50-59
+    66,65,66,66,66, 0, 1, 2, 3, 4,
+     5, 6, 7, 8, 9,10,11,12,13,14,
+    15,16,17,18,19,20,21,22,23,24,
+    25,66,66,66,66,66,66,26,27,28, 
+
+    29,30,31,32,33,34,35,36,37,38, // 100-109
+    39,40,41,42,43,44,45,46,47,48,
+    49,50,51
+};
+ 
+bool B64StandardDecode(byte *out, const byte *in, int inLen) { 
+  const byte *end = in + inLen;
+  size_t buf = 1;
+ 
+  while (in < end) {
+    byte v = *in++;
+    if (v > 'z') {
+      LOG(ERROR) << "Invalid character: " << (unsigned int)v;
+      return false;
+    }
+    byte c = d[v];
+
+    switch (c) {
+    case WHITESPACE: continue;   /* skip whitespace */
+    case INVALID:
+      LOG(ERROR) << "Invalid character: " << (unsigned int)v;
+      return false; /* invalid input, return error */
+    case EQUALS:                 /* pad character, end of data */
+      in = end;
+      continue;
+    default:
+      buf = buf << 6 | c;
+ 
+      /* If the buffer is full, split it into bytes */
+      if (buf & 0x1000000) {
+        *out++ = buf >> 16;
+        *out++ = buf >> 8;
+        *out++ = buf;
+        buf = 1;
+      }   
+    }
+  }
+
+  if (buf & 0x40000) {
+    *out++ = buf >> 10;
+    *out++ = buf >> 2;
+  }
+  else if (buf & 0x1000) {
+    *out++ = buf >> 4;
+  }
+
+  return true;
 }
 
 }  // namespace encfs
