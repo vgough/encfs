@@ -53,10 +53,6 @@
 extern "C" void fuse_unmount_compat22(const char *mountpoint);
 #define fuse_unmount fuse_unmount_compat22
 
-#ifndef MAX
-inline static int MAX(int a, int b) { return (a > b) ? a : b; }
-#endif
-
 using namespace encfs;
 using gnu::autosprintf;
 using std::cerr;
@@ -84,7 +80,7 @@ struct EncFS_Args {
   // In case someone sends me a log dump, I want to know how what options are
   // in effect.  Not internationalized, since it is something that is mostly
   // useful for me!
-  string toString() {
+  string toString() const {
     ostringstream ss;
     ss << (isDaemon ? "(daemon) " : "(fg) ");
     ss << (isThreaded ? "(threaded) " : "(UP) ");
@@ -102,7 +98,17 @@ struct EncFS_Args {
     return ss.str();
   }
 
-  EncFS_Args() : opts(new EncFS_Opts()) {}
+  EncFS_Args()
+      : isDaemon(false),
+        isThreaded(false),
+        isVerbose(false),
+        idleTimeout(0),
+        fuseArgc(0),
+        opts(new EncFS_Opts()) {
+    for (int i = 0; i < MaxFuseArgs; ++i) {
+      fuseArgv[i] = nullptr;
+    }
+  }
 };
 
 static int oldStderr = STDERR_FILENO;
@@ -420,7 +426,8 @@ static bool processArgs(int argc, char *argv[],
 static void *idleMonitor(void *);
 
 void *encfs_init(fuse_conn_info *conn) {
-  EncFS_Context *ctx = (EncFS_Context *)fuse_get_context()->private_data;
+  EncFS_Context *ctx =
+      static_cast<EncFS_Context *>(fuse_get_context()->private_data);
 
   // set fuse connection options
   conn->async_read = true;
@@ -448,7 +455,7 @@ void *encfs_init(fuse_conn_info *conn) {
 }
 
 void encfs_destroy(void *_ctx) {
-  EncFS_Context *ctx = (EncFS_Context *)_ctx;
+  EncFS_Context *ctx = static_cast<EncFS_Context *>(_ctx);
   if (ctx->args->idleTimeout > 0) {
     ctx->running = false;
 
@@ -667,7 +674,7 @@ const int ActivityCheckInterval = 10;
 static bool unmountFS(EncFS_Context *ctx);
 
 static void *idleMonitor(void *_arg) {
-  EncFS_Context *ctx = (EncFS_Context *)_arg;
+  EncFS_Context *ctx = static_cast<EncFS_Context *>(_arg);
   shared_ptr<EncFS_Args> arg = ctx->args;
 
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;

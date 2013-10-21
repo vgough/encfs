@@ -50,7 +50,7 @@ namespace encfs {
 
 class DirDeleter {
  public:
-  void operator()(DIR *d) { ::closedir(d); }
+  void operator()(DIR *d) const { ::closedir(d); }
 };
 
 DirTraverse::DirTraverse(const shared_ptr<DIR> &_dirPtr, uint64_t _iv,
@@ -268,7 +268,7 @@ bool DirNode::hasDirectoryNameDependency() const {
   return naming ? naming->getChainedNameIV() : false;
 }
 
-string DirNode::rootDirectory() {
+string DirNode::rootDirectory() const {
   // don't update last access here, otherwise 'du' would cause lastAccess to
   // be reset.
   // chop off '/' terminator from root dir.

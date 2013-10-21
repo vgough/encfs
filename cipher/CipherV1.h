@@ -136,10 +136,10 @@ class CipherV1 {
   CipherKey readKey(const byte *data, bool checkKey);
 
   // Encrypt and write the given key.
-  void writeKey(const CipherKey &key, byte *data);
+  void writeKey(const CipherKey &key, byte *data) const;
 
   // Encrypt and store a key as a string.
-  std::string encodeAsString(const CipherKey &key);
+  std::string encodeAsString(const CipherKey &key) const;
 
   // meta-data about the cypher
   int keySize() const;

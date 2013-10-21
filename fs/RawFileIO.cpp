@@ -39,11 +39,6 @@ namespace encfs {
 
 static Interface RawFileIO_iface = makeInterface("FileIO/Raw", 1, 0, 0);
 
-FileIO *NewRawFileIO(const Interface &iface) {
-  (void)iface;
-  return new RawFileIO();
-}
-
 inline void swap(int &x, int &y) {
   int tmp = x;
   x = y;

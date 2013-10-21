@@ -92,41 +92,6 @@ bool ConfigReader::loadFromVar(ConfigVar &in) {
   return true;
 }
 
-bool ConfigReader::save(const char *fileName) const {
-  // write everything to a ConfigVar, then output to disk
-  ConfigVar out = toVar();
-
-  int fd = ::open(fileName, O_RDWR | O_CREAT, 0640);
-  if (fd >= 0) {
-    int retVal = ::write(fd, out.buffer(), out.size());
-    close(fd);
-    if (retVal != out.size()) {
-      LOG(ERROR) << "Error writing to config file " << fileName;
-      return false;
-    }
-  } else {
-    LOG(ERROR) << "Unable to open or create file " << fileName;
-    return false;
-  }
-
-  return true;
-}
-
-ConfigVar ConfigReader::toVar() const {
-  // write everything to a ConfigVar, then output to disk
-  ConfigVar out;
-  out.writeInt(vars.size());
-  map<string, ConfigVar>::const_iterator it;
-  for (it = vars.begin(); it != vars.end(); ++it) {
-    out.writeInt(it->first.size());
-    out.write((byte *)it->first.data(), it->first.size());
-    out.writeInt(it->second.size());
-    out.write((byte *)it->second.buffer(), it->second.size());
-  }
-
-  return out;
-}
-
 ConfigVar ConfigReader::operator[](const std::string &varName) const {
   // read only
   map<string, ConfigVar>::const_iterator it = vars.find(varName);

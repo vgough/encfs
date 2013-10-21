@@ -121,7 +121,7 @@ class BotanBlockCipher : public BlockCipher {
   shared_ptr<Pipe> decryptor;
 
  public:
-  BotanBlockCipher() {}
+  BotanBlockCipher() : encryption(nullptr), decryption(nullptr) {}
   virtual ~BotanBlockCipher() {}
 
   bool rekey(const CipherKey& key, const string& cipherMode) {

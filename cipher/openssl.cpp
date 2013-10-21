@@ -97,9 +97,9 @@ class OpenSSLCipher : public BlockCipher {
   static bool randomize(CipherKey *key) {
     int result = RAND_bytes(key->data(), key->size());
     if (result != 1) {
-      char errStr[120];  // specs require string at least 120 bytes long..
       unsigned long errVal = 0;
       if ((errVal = ERR_get_error()) != 0)
+        char errStr[120];  // specs require string at least 120 bytes long..
         LOG(ERROR) << "openssl error: " << ERR_error_string(errVal, errStr);
 
       return false;
@@ -118,9 +118,9 @@ class OpenSSLCipher : public BlockCipher {
 #endif
     int result = RAND_pseudo_bytes(out, length);
     if (result != 1) {
-      char errStr[120];  // specs require string at least 120 bytes long..
       unsigned long errVal = 0;
       if ((errVal = ERR_get_error()) != 0)
+        char errStr[120];  // specs require string at least 120 bytes long..
         LOG(ERROR) << "openssl error: " << ERR_error_string(errVal, errStr);
 
       return false;

@@ -51,9 +51,7 @@ class ConfigReader {
   ~ConfigReader();
 
   bool load(const char *fileName);
-  bool save(const char *fileName) const;
 
-  ConfigVar toVar() const;
   bool loadFromVar(ConfigVar &var);
 
   ConfigVar operator[](const std::string &varName) const;

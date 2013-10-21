@@ -48,7 +48,7 @@ class EncFS_Context {
   EncFS_Context();
   ~EncFS_Context();
 
-  shared_ptr<FileNode> getNode(void *ptr);
+  static shared_ptr<FileNode> getNode(void *ptr);
   shared_ptr<FileNode> lookupNode(const char *path);
 
   int getAndResetUsageCounter();
@@ -62,7 +62,7 @@ class EncFS_Context {
 
   void setRoot(const shared_ptr<DirNode> &root);
   shared_ptr<DirNode> getRoot(int *err);
-  bool isMounted();
+  bool isMounted() const;
 
   shared_ptr<EncFS_Args> args;
   shared_ptr<EncFS_Opts> opts;

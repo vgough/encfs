@@ -29,11 +29,6 @@ namespace encfs {
 
 static Interface MemFileIO_iface = makeInterface("FileIO/Mem", 1, 0, 0);
 
-MemFileIO* NewMemFileIO(const Interface& iface) {
-  (void)iface;
-  return new MemFileIO(0);
-}
-
 MemFileIO::MemFileIO(int size) : writable(false) { buf.resize(size); }
 
 MemFileIO::~MemFileIO() {}

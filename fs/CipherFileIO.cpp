@@ -254,8 +254,8 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
   int maxReadSize = req.dataLen;
   readSize = base->read(tmpReq);
 
-  bool ok;
   if (readSize > 0) {
+    bool ok;
     if (headerLen != 0 && fileIV == 0)
       const_cast<CipherFileIO *>(this)->initHeader();
 

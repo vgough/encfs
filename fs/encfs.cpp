@@ -79,7 +79,7 @@ namespace encfs {
 #define GET_FN(ctx, finfo) ctx->getNode((void *)(uintptr_t)finfo->fh)
 
 static EncFS_Context *context() {
-    return (EncFS_Context *)fuse_get_context()->private_data;
+    return static_cast<EncFS_Context *>(fuse_get_context()->private_data);
 }
 
 /*

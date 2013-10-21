@@ -38,7 +38,7 @@ class CipherKey {
   CipherKey(const CipherKey &src);
   ~CipherKey();
 
-  void operator=(const CipherKey &src);
+  CipherKey &operator=(const CipherKey &src);
 
   byte *data() const;
   int size() const;

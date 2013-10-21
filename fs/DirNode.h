@@ -84,7 +84,7 @@ class DirNode {
   ~DirNode();
 
   // return the path to the root directory
-  std::string rootDirectory();
+  std::string rootDirectory() const;
 
   // find files
   shared_ptr<FileNode> lookupNode(const char *plaintextName,

@@ -231,7 +231,7 @@ shared_ptr<CipherV1> CipherV1::New(const Interface &iface, int keyLen) {
   return result;
 }
 
-CipherV1::CipherV1() {}
+CipherV1::CipherV1() : _keySize(0), _ivLength(0), _keySet(false) {}
 
 bool CipherV1::initCiphers(const Interface &iface, const Interface &realIface,
                            int keyLength) {
@@ -471,7 +471,7 @@ CipherKey CipherV1::readKey(const byte *data, bool checkKey) {
   return key;
 }
 
-void CipherV1::writeKey(const CipherKey &ckey, byte *out) {
+void CipherV1::writeKey(const CipherKey &ckey, byte *out) const {
   rAssert(_keySet);
 
   SecureMem tmpBuf(ckey.size());
@@ -490,7 +490,7 @@ void CipherV1::writeKey(const CipherKey &ckey, byte *out) {
   memcpy(out + KEY_CHECKSUM_BYTES, tmpBuf.data(), tmpBuf.size());
 }
 
-std::string CipherV1::encodeAsString(const CipherKey &key) {
+std::string CipherV1::encodeAsString(const CipherKey &key) const {
   rAssert(_keySet);
   int encodedSize = encodedKeySize();
   vector<byte> buf(encodedSize);

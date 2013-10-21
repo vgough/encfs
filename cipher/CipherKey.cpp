@@ -43,9 +43,10 @@ CipherKey::CipherKey(const CipherKey &src)
 
 CipherKey::~CipherKey() {}
 
-void CipherKey::operator=(const CipherKey &src) {
+CipherKey &CipherKey::operator=(const CipherKey &src) {
   _mem = src._mem;
   _valid = src._valid;
+  return *this;
 }
 
 byte *CipherKey::data() const { return !_mem ? NULL : _mem->data(); }

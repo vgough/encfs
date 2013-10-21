@@ -27,7 +27,7 @@
 
 namespace encfs {
 
-EncFS_Context::EncFS_Context() {
+EncFS_Context::EncFS_Context() : publicFilesystem(false), running(false) {
 #ifdef CMAKE_USE_PTHREADS_INIT
   pthread_cond_init(&wakeupCond, 0);
 #endif
@@ -72,7 +72,7 @@ void EncFS_Context::setRoot(const shared_ptr<DirNode> &r) {
   if (r) rootCipherDir = r->rootDirectory();
 }
 
-bool EncFS_Context::isMounted() { return root; }
+bool EncFS_Context::isMounted() const { return root; }
 
 int EncFS_Context::getAndResetUsageCounter() {
   Lock lock(contextMutex);
@@ -114,7 +114,7 @@ void EncFS_Context::renameNode(const char *from, const char *to) {
 }
 
 shared_ptr<FileNode> EncFS_Context::getNode(void *pl) {
-  Placeholder *ph = (Placeholder *)pl;
+  Placeholder *ph = static_cast<Placeholder *>(pl);
   return ph->node;
 }
 
@@ -130,7 +130,7 @@ void *EncFS_Context::putNode(const char *path,
 void EncFS_Context::eraseNode(const char *path, void *pl) {
   Lock lock(contextMutex);
 
-  Placeholder *ph = (Placeholder *)pl;
+  Placeholder *ph = static_cast<Placeholder *>(pl);
 
   FileMap::iterator it = openFiles.find(std::string(path));
   rAssert(it != openFiles.end());
