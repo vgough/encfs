@@ -276,6 +276,9 @@ string DirNode::rootDirectory() const {
 }
 
 string DirNode::cipherPath(const char *plaintextPath) {
+  if (plaintextPath[0] == '/') {
+    ++plaintextPath;
+  }
   return rootDir + naming->encodePath(plaintextPath);
 }
 
@@ -308,7 +311,7 @@ string DirNode::relativeCipherPath(const char *plaintextPath) {
 }
 
 DirTraverse DirNode::openDir(const char *plaintextPath) {
-  string cyName = rootDir + naming->encodePath(plaintextPath);
+  string cyName = cipherPath(plaintextPath);
   // rDebug("openDir on %s", cyName.c_str() );
 
   DIR *dir = ::opendir(cyName.c_str());
@@ -449,7 +452,7 @@ shared_ptr<RenameOp> DirNode::newRenameOp(const char *fromP, const char *toP) {
 
 int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
                    gid_t gid) {
-  string cyName = rootDir + naming->encodePath(plaintextPath);
+  string cyName = cipherPath(plaintextPath);
   rAssert(!cyName.empty());
 
   VLOG(1) << "mkdir on " << cyName;
@@ -479,8 +482,8 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
 int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
   Lock _lock(mutex);
 
-  string fromCName = rootDir + naming->encodePath(fromPlaintext);
-  string toCName = rootDir + naming->encodePath(toPlaintext);
+  string fromCName = cipherPath(fromPlaintext);
+  string toCName = cipherPath(toPlaintext);
   rAssert(!fromCName.empty());
   rAssert(!toCName.empty());
 
@@ -540,8 +543,8 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
 int DirNode::link(const char *from, const char *to) {
   Lock _lock(mutex);
 
-  string fromCName = rootDir + naming->encodePath(from);
-  string toCName = rootDir + naming->encodePath(to);
+  string fromCName = cipherPath(from);
+  string toCName = cipherPath(to);
 
   rAssert(!fromCName.empty());
   rAssert(!toCName.empty());
@@ -599,6 +602,9 @@ shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
 
   if (!node) {
     uint64_t iv = 0;
+    if (plainName[0] == '/') {
+      ++plainName;
+    }
     string cipherName = naming->encodePath(plainName, &iv);
     node.reset(new FileNode(this, fsConfig, plainName,
                             (rootDir + cipherName).c_str()));
@@ -642,7 +648,7 @@ shared_ptr<FileNode> DirNode::openNode(const char *plainName,
 }
 
 int DirNode::unlink(const char *plaintextName) {
-  string cyName = naming->encodePath(plaintextName);
+  string cyName = cipherPath(plaintextName);
   VLOG(1) << "unlink " << cyName;
 
   Lock _lock(mutex);
@@ -656,8 +662,7 @@ int DirNode::unlink(const char *plaintextName) {
                  << ", hard_remove option is probably in effect";
     res = -EBUSY;
   } else {
-    string fullName = rootDir + cyName;
-    res = ::unlink(fullName.c_str());
+    res = ::unlink(cyName.c_str());
     if (res == -1) {
       res = -errno;
       VLOG(1) << "unlink error: " << strerror(errno);
