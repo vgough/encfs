@@ -32,7 +32,7 @@ namespace encfs {
 // compatibility.  Even if A.implements(B) is true, B > A may also be
 // true, meaning B is a newer revision of the interface then A.
 bool implements(const Interface &a, const Interface &b);
-Interface makeInterface(const char *name, int major, int minor, int age);
+Interface makeInterface(const std::string &name, int major, int minor, int age);
 
 // Read operation
 class ConfigVar;

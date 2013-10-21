@@ -23,8 +23,11 @@
 #include "fs/NullNameIO.h"
 
 #include <cstring>
+#include <string>
 
 namespace encfs {
+
+using std::string;
 
 static shared_ptr<NameIO> NewNNIO(const Interface &,
                                   const shared_ptr<CipherV1> &) {
@@ -51,16 +54,12 @@ int NullNameIO::maxDecodedNameLen(int encodedNameLen) const {
   return encodedNameLen;
 }
 
-int NullNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
-                           char *encodedName) const {
-  memcpy(encodedName, plaintextName, length);
-  return length;
+string NullNameIO::encodeName(const string &plaintextName, uint64_t *iv) const {
+  return plaintextName;
 }
 
-int NullNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
-                           char *plaintextName) const {
-  memcpy(plaintextName, encodedName, length);
-  return length;
+string NullNameIO::decodeName(const string &encodedName, uint64_t *iv) const {
+  return encodedName;
 }
 
 bool NullNameIO::Enabled() { return true; }

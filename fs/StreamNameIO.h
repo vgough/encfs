@@ -34,19 +34,19 @@ class StreamNameIO : public NameIO {
   StreamNameIO(const Interface &iface, const shared_ptr<CipherV1> &cipher);
   virtual ~StreamNameIO();
 
-  virtual Interface interface() const;
+  virtual Interface interface() const override;
 
-  virtual int maxEncodedNameLen(int plaintextNameLen) const;
-  virtual int maxDecodedNameLen(int encodedNameLen) const;
+  virtual int maxEncodedNameLen(int plaintextNameLen) const override;
+  virtual int maxDecodedNameLen(int encodedNameLen) const override;
 
   // hack to help with static builds
   static bool Enabled();
 
  protected:
-  virtual int encodeName(const char *plaintextName, int length, uint64_t *iv,
-                         char *encodedName) const;
-  virtual int decodeName(const char *encodedName, int length, uint64_t *iv,
-                         char *plaintextName) const;
+  virtual std::string encodeName(const std::string &plaintextName,
+                                 uint64_t *iv) const override;
+  virtual std::string decodeName(const std::string &encodedName,
+                                 uint64_t *iv) const override;
 
  private:
   int _interface;

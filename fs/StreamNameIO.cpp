@@ -27,8 +27,13 @@
 #include <glog/logging.h>
 
 #include <cstring>
+#include <string>
+#include <vector>
 
 namespace encfs {
+
+using std::string;
+using std::vector;
 
 static shared_ptr<NameIO> NewStreamNameIO(const Interface &iface,
                                           const shared_ptr<CipherV1> &cipher) {
@@ -60,10 +65,12 @@ static bool StreamIO_registered = NameIO::Register(
       bits.
 
     - Version 2.1 adds support for version 0 for EncFS 0.x compatibility.
+
+    - Version 3.0 drops Encfs 0.x support.
 */
 Interface StreamNameIO::CurrentInterface() {
-  // implement major version 2, 1, and 0
-  return makeInterface("nameio/stream", 2, 1, 2);
+  // implements support for version 3, 2, and 1.
+  return makeInterface("nameio/stream", 3, 0, 2);
 }
 
 StreamNameIO::StreamNameIO(const Interface &iface,
@@ -84,92 +91,73 @@ int StreamNameIO::maxDecodedNameLen(int encodedStreamLen) const {
   return decLen256 - 2;
 }
 
-int StreamNameIO::encodeName(const char *plaintextName, int length,
-                             uint64_t *iv, char *encodedName) const {
+string StreamNameIO::encodeName(const string &plaintextName,
+                                uint64_t *iv) const {
   uint64_t tmpIV = 0;
+  int length = plaintextName.length();
   if (iv && _interface >= 2) tmpIV = *iv;
 
-  unsigned int mac = _cipher->reduceMac16(
-      _cipher->MAC_64((const byte *)plaintextName, length, iv));
+  unsigned int mac = _cipher->reduceMac16(_cipher->MAC_64(
+      reinterpret_cast<const byte *>(plaintextName.data()), length, iv));
+  tmpIV ^= (uint64_t)mac;
 
-  // add on checksum bytes
-  unsigned char *encodeBegin;
-  if (_interface >= 1) {
-    // current versions store the checksum at the beginning
-    encodedName[0] = (mac >> 8) & 0xff;
-    encodedName[1] = (mac) & 0xff;
-    encodeBegin = (unsigned char *)encodedName + 2;
-  } else {
-    // encfs 0.x stored checksums at the end.
-    encodedName[length] = (mac >> 8) & 0xff;
-    encodedName[length + 1] = (mac) & 0xff;
-    encodeBegin = (unsigned char *)encodedName;
-  }
-
-  // stream encode the plaintext bytes
-  memcpy(encodeBegin, plaintextName, length);
-  _cipher->streamEncode(encodeBegin, length, (uint64_t)mac ^ tmpIV);
-
-  // convert the entire thing to base 64 ascii..
   int encodedStreamLen = length + 2;
   int encLen64 = B256ToB64Bytes(encodedStreamLen);
 
-  changeBase2Inline((unsigned char *)encodedName, encodedStreamLen, 8, 6, true);
-  B64ToAscii((unsigned char *)encodedName, encLen64);
+  // add on checksum bytes
+  vector<byte> encoded(encLen64);
+  encoded[0] = static_cast<byte>((mac >> 8) & 0xff);
+  encoded[1] = static_cast<byte>((mac) & 0xff);
 
-  return encLen64;
+  // stream encode the plaintext bytes
+  memcpy(&encoded[2], plaintextName.data(), length);
+  _cipher->streamEncode(&encoded[2], length, tmpIV);
+
+  // convert the entire thing to base 64 ascii..
+  changeBase2Inline(encoded.data(), encodedStreamLen, 8, 6, true);
+  B64ToAscii(encoded.data(), encLen64);
+
+  return string(encoded.begin(), encoded.end());
 }
 
-int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
-                             char *plaintextName) const {
+string StreamNameIO::decodeName(const string &encodedName,
+                                uint64_t *iv) const {
+  int length = encodedName.length();
   rAssert(length > 2);
   int decLen256 = B64ToB256Bytes(length);
   int decodedStreamLen = decLen256 - 2;
 
   if (decodedStreamLen <= 0) throw Error("Filename too small to decode");
 
-  BUFFER_INIT(tmpBuf, 32, (unsigned int)length);
+  vector<byte> tmpBuf(length, 0);
 
   // decode into tmpBuf, because this step produces more data then we can fit
   // into the result buffer..
-  AsciiToB64((unsigned char *)tmpBuf, (unsigned char *)encodedName, length);
-  changeBase2Inline((unsigned char *)tmpBuf, length, 6, 8, false);
+  memcpy(tmpBuf.data(), encodedName.data(), length);
+  AsciiToB64(tmpBuf.data(), length);
+  changeBase2Inline(tmpBuf.data(), length, 6, 8, false);
 
   // pull out the checksum value which is used as an initialization vector
   uint64_t tmpIV = 0;
-  unsigned int mac;
-  if (_interface >= 1) {
-    // current versions store the checksum at the beginning
-    mac = ((unsigned int)((unsigned char)tmpBuf[0])) << 8 |
-          ((unsigned int)((unsigned char)tmpBuf[1]));
+  unsigned int mac = ((unsigned int)tmpBuf[0]) << 8 | ((unsigned int)tmpBuf[1]);
 
-    // version 2 adds support for IV chaining..
-    if (iv && _interface >= 2) tmpIV = *iv;
+  // version 2 adds support for IV chaining..
+  if (iv && _interface >= 2) tmpIV = *iv;
 
-    memcpy(plaintextName, tmpBuf + 2, decodedStreamLen);
-  } else {
-    // encfs 0.x stored checksums at the end.
-    mac = ((unsigned int)((unsigned char)tmpBuf[decodedStreamLen])) << 8 |
-          ((unsigned int)((unsigned char)tmpBuf[decodedStreamLen + 1]));
-
-    memcpy(plaintextName, tmpBuf, decodedStreamLen);
-  }
-
-  _cipher->streamDecode((unsigned char *)plaintextName, decodedStreamLen,
-                        (uint64_t)mac ^ tmpIV);
+  tmpIV ^= (uint64_t)mac;
+  _cipher->streamDecode(&tmpBuf.at(2), decodedStreamLen, tmpIV);
 
   // compute MAC to check with stored value
   unsigned int mac2 = _cipher->reduceMac16(
-      _cipher->MAC_64((const byte *)plaintextName, decodedStreamLen, iv));
+      _cipher->MAC_64(&tmpBuf.at(2), decodedStreamLen, iv));
 
-  BUFFER_RESET(tmpBuf);
   if (mac2 != mac) {
     VLOG(1) << "checksum mismatch: expected " << mac << ", got " << mac2
             << "on decode of " << decodedStreamLen << " bytes";
     throw Error("checksum mismatch in filename decode");
   }
 
-  return decodedStreamLen;
+  return string(reinterpret_cast<char*>(&tmpBuf.at(2)), decodedStreamLen);
 }
 
 bool StreamNameIO::Enabled() { return true; }

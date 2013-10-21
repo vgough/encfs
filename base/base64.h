@@ -54,19 +54,22 @@ void changeBase2Inline(byte *buf, int srcLength, int srcPow2, int dst2Pow,
                        bool outputPartialLastByte);
 
 // inplace translation from values [0,2^6] => base64 ASCII
+// This is a nonstandard B64 encoding, which uses ',' and '-' as
+// non-alphanumeric chars.
 void B64ToAscii(byte *buf, int length);
 // inplace translation from values [0,2^5] => base32 ASCII
 void B32ToAscii(byte *buf, int length);
 
 // inplace translation from values base64 ASCII => [0,2^6]
+// This is a nonstandard B64 encoding, which uses ',' and '-' as
+// non-alphanumeric chars.
 void AsciiToB64(byte *buf, int length);
-void AsciiToB64(byte *out, const byte *in, int length);
 
 // inplace translation from values base32 ASCII => [0,2^5]
 void AsciiToB32(byte *buf, int length);
-void AsciiToB32(byte *out, const byte *in, int length);
 
-// Decode B64 standard into the output array.
+// Decode standard B64 into the output array.
+// Used only to decode legacy Boost XML serialized config format.
 // The output size must be at least B64ToB256Bytes(inputLen).
 bool B64StandardDecode(byte *out, const byte *in, int inputLen);
 

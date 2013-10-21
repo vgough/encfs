@@ -27,7 +27,10 @@
 
 namespace encfs {
 
-std::ostream &operator<<(std::ostream &out, const Interface &iface) {
+using std::string;
+using std::ostream;
+
+ostream &operator<<(ostream &out, const Interface &iface) {
   out << iface.name() << "(" << iface.major() << ":" << iface.minor() << ":"
       << iface.age() << ")";
   return out;
@@ -42,7 +45,7 @@ bool implements(const Interface &A, const Interface &B) {
   return (currentDiff >= 0 && currentDiff <= (int)A.age());
 }
 
-Interface makeInterface(const char *name, int major, int minor, int age) {
+Interface makeInterface(const string &name, int major, int minor, int age) {
   Interface iface;
   iface.set_name(name);
   iface.set_major(major);

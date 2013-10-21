@@ -41,12 +41,14 @@ if (GTEST_FOUND)
     link_directories (${PROJECT_BINARY_DIR}/cipher)
 
     include_directories (${GTEST_INCLUDE_DIR})
+
+    file (GLOB TEST_FILES "*_test.cpp")
+
     add_executable (fs-tests
         MemBlockFileIO.cpp
         MemFileIO.cpp
         testing.cpp
-        test_IO.cpp
-        test_BlockIO.cpp
+        ${TEST_FILES}
     )
 
     target_link_libraries (fs-tests
@@ -58,5 +60,5 @@ if (GTEST_FOUND)
     )
 
     add_test (FSTests fs-tests)
-    GTEST_ADD_TESTS (fs-tests "${FSTestArgs}" test_IO.cpp test_BlockIO.cpp)
+    GTEST_ADD_TESTS (fs-tests "${FSTestArgs}" ${TEST_FILES})
 endif (GTEST_FOUND)

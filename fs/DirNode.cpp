@@ -288,13 +288,7 @@ string DirNode::plainPath(const char *cipherPath_) {
     if (!strncmp(cipherPath_, rootDir.c_str(), rootDir.length())) {
       return naming->decodePath(cipherPath_ + rootDir.length());
     } else {
-      if (cipherPath_[0] == '+') {
-        // decode as fully qualified path
-        return string("/") +
-               naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
-      } else {
-        return naming->decodePath(cipherPath_);
-      }
+      return naming->decodePath(cipherPath_);
     }
   }
   catch (Error &err) {
@@ -305,13 +299,7 @@ string DirNode::plainPath(const char *cipherPath_) {
 
 string DirNode::relativeCipherPath(const char *plaintextPath) {
   try {
-    if (plaintextPath[0] == '/') {
-      // mark with '+' to indicate special decoding..
-      return string("+") +
-             naming->encodeName(plaintextPath + 1, strlen(plaintextPath + 1));
-    } else {
-      return naming->encodePath(plaintextPath);
-    }
+    return naming->encodePath(plaintextPath);
   }
   catch (Error &err) {
     LOG(ERROR) << "encode err: " << err.what();

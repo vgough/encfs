@@ -28,6 +28,7 @@
 
 #include "base/Interface.h"
 #include "base/shared_ptr.h"
+#include "base/types.h"
 
 namespace encfs {
 
@@ -67,66 +68,38 @@ class NameIO {
   void setReverseEncryption(bool enable);
   bool getReverseEncryption() const;
 
-  std::string encodePath(const char *plaintextPath) const;
-  std::string decodePath(const char *encodedPath) const;
+  std::string encodePath(const std::string &plaintextPath) const;
+  std::string decodePath(const std::string &encodedPath) const;
 
-  std::string encodePath(const char *plaintextPath, uint64_t *iv) const;
-  std::string decodePath(const char *encodedPath, uint64_t *iv) const;
+  std::string encodePath(const std::string &plaintextPath, uint64_t *iv) const;
+  std::string decodePath(const std::string &encodedPath, uint64_t *iv) const;
 
   virtual int maxEncodedNameLen(int plaintextNameLen) const = 0;
   virtual int maxDecodedNameLen(int encodedNameLen) const = 0;
 
-  std::string encodeName(const char *plaintextName, int length) const;
-  std::string decodeName(const char *encodedName, int length) const;
+  std::string encodeName(const std::string &plaintextName) const;
+  std::string decodeName(const std::string &encodedName) const;
 
  protected:
-  virtual int encodeName(const char *plaintextName, int length,
-                         char *encodedName) const;
-  virtual int decodeName(const char *encodedName, int length,
-                         char *plaintextName) const;
-
-  virtual int encodeName(const char *plaintextName, int length, uint64_t *iv,
-                         char *encodedName) const = 0;
-  virtual int decodeName(const char *encodedName, int length, uint64_t *iv,
-                         char *plaintextName) const = 0;
+  // Encode & decode methods implemented by derived classes.
+  virtual std::string encodeName(const std::string &name,
+                                 uint64_t *iv) const = 0;
+  virtual std::string decodeName(const std::string &name,
+                                 uint64_t *iv) const = 0;
 
  private:
-  std::string recodePath(const char *path, int (NameIO::*codingLen)(int) const,
-                         int (NameIO::*codingFunc)(const char *, int,
-                                                   uint64_t *, char *) const,
+  std::string recodePath(const std::string &path,
+                         int (NameIO::*codingLen)(int) const,
+                         std::string (NameIO::*codingFunc)(const std::string &,
+                                                           uint64_t *) const,
                          uint64_t *iv) const;
 
-  std::string _encodePath(const char *plaintextPath, uint64_t *iv) const;
-  std::string _decodePath(const char *encodedPath, uint64_t *iv) const;
-  std::string _encodeName(const char *plaintextName, int length) const;
-  std::string _decodeName(const char *encodedName, int length) const;
+  std::string _encodePath(const std::string &plaintextPath, uint64_t *iv) const;
+  std::string _decodePath(const std::string &encodedPath, uint64_t *iv) const;
 
   bool chainedNameIV;
   bool reverseEncryption;
 };
-
-/*
-   Helper macros for creating temporary buffers with an optimization that
-   below a given size (OptimizedSize) is allocated on the stack, and when a
-   larger size is requested it is allocated on the heap.
-
-   BUFFER_RESET should be called for the same name as BUFFER_INIT
- */
-#define BUFFER_INIT(Name, OptimizedSize, Size) \
-  char Name##_Raw[OptimizedSize];              \
-  char *Name = Name##_Raw;                     \
-  if (sizeof(Name##_Raw) < Size) {             \
-    Name = new char[Size];                     \
-  }                                            \
-  memset(Name, 0, Size)
-
-#define BUFFER_RESET(Name)    \
-  do {                        \
-    if (Name != Name##_Raw) { \
-      delete[] Name;          \
-      Name = Name##_Raw;      \
-    }                         \
-  } while (0)
 
 }  // namespace encfs
 

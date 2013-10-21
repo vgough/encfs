@@ -24,27 +24,28 @@
 
 #include <glog/logging.h>
 
-#include <map>
+#include <algorithm>
 #include <cstring>
+#include <map>
+#include <vector>
 
 // for static build.  Need to reference the modules which are registered at
 // run-time, to ensure that the linker doesn't optimize them away.
-#include <iostream>
 #include "fs/BlockNameIO.h"
 #include "fs/StreamNameIO.h"
 #include "fs/NullNameIO.h"
 
-using std::cerr;
 using std::list;
 using std::make_pair;
 using std::multimap;
 using std::string;
+using std::vector;
 
 namespace encfs {
 
-#define REF_MODULE(TYPE)                                                    \
-  do {                                                                      \
-    if (!TYPE::Enabled()) cerr << "referenceModule: should never happen\n"; \
+#define REF_MODULE(TYPE)                                              \
+  do {                                                                \
+    CHECK(TYPE::Enabled()) << "referenceModule: should never happen"; \
   } while (0)
 
 static void AddSymbolReferences() {
@@ -62,7 +63,7 @@ struct NameIOAlg {
 };
 
 typedef multimap<string, NameIOAlg> NameIOMap_t;
-static NameIOMap_t *gNameIOMap = 0;
+static NameIOMap_t *gNameIOMap = nullptr;
 
 list<NameIO::Algorithm> NameIO::GetAlgorithmList(bool includeHidden) {
   AddSymbolReferences();
@@ -145,136 +146,84 @@ void NameIO::setReverseEncryption(bool enable) { reverseEncryption = enable; }
 
 bool NameIO::getReverseEncryption() const { return reverseEncryption; }
 
-std::string NameIO::recodePath(const char *path,
-                               int (NameIO::*_length)(int) const,
-                               int (NameIO::*_code)(const char *, int,
-                                                    uint64_t *, char *) const,
-                               uint64_t *iv) const {
+string NameIO::recodePath(const string &path, int (NameIO::*_length)(int) const,
+                          string (NameIO::*_code)(const string &,
+                                                  uint64_t *) const,
+                          uint64_t *iv) const {
   string output;
 
-  while (*path) {
-    if (*path == '/') {
-      if (!output.empty())  // don't start the string with '/'
-        output += '/';
-      ++path;
-    } else {
-      bool isDotFile = (*path == '.');
-      const char *next = strchr(path, '/');
-      int len = next ? next - path : strlen(path);
+  for (auto it = path.begin(); it != path.end();) {
+    bool isDotFile = (*it == '.');
+    auto next = std::find(it, path.end(), '/');
+    int len = std::distance(it, next);
 
-      // at this point we know that len > 0
-      if (isDotFile && (path[len - 1] == '.') && (len <= 2)) {
+    if (*it == '/') {
+      // don't start the string with '/'
+      output += output.empty() ? '+' : '/';
+      len = 1;
+    } else if (*it == '+' && output.empty()) {
+      output += '/';
+      len = 1;
+    } else if (isDotFile && (len <= 2) && (it[len - 1] == '.')) {
         output.append(len, '.');  // append [len] copies of '.'
-        path += len;
-        continue;
-      }
-
-      // figure out buffer sizes
+    } else {
       int approxLen = (this->*_length)(len);
       if (approxLen <= 0) throw Error("Filename too small to decode");
 
-      BUFFER_INIT(codeBuf, 32, (unsigned int)approxLen + 1);
-
       // code the name
-      int codedLen = (this->*_code)(path, len, iv, codeBuf);
-      rAssert(codedLen <= approxLen);
-      rAssert(codeBuf[codedLen] == '\0');
-      path += len;
+      string input(it, it + len);
+      string coded = (this->*_code)(input, iv);
 
       // append result to string
-      output += (char *)codeBuf;
-
-      BUFFER_RESET(codeBuf);
+      output.append(coded);
     }
+
+    it += len;
   }
 
   return output;
 }
 
-std::string NameIO::encodePath(const char *plaintextPath) const {
+string NameIO::encodePath(const string &plaintextPath) const {
   uint64_t iv = 0;
   return encodePath(plaintextPath, &iv);
 }
 
-std::string NameIO::decodePath(const char *cipherPath) const {
+string NameIO::decodePath(const string &cipherPath) const {
   uint64_t iv = 0;
   return decodePath(cipherPath, &iv);
 }
 
-std::string NameIO::_encodePath(const char *plaintextPath, uint64_t *iv) const {
+string NameIO::_encodePath(const string &plaintextPath, uint64_t *iv) const {
   // if chaining is not enabled, then the iv pointer is not used..
-  if (!chainedNameIV) iv = 0;
+  if (!chainedNameIV) iv = nullptr;
   return recodePath(plaintextPath, &NameIO::maxEncodedNameLen,
                     &NameIO::encodeName, iv);
 }
 
-std::string NameIO::_decodePath(const char *cipherPath, uint64_t *iv) const {
+string NameIO::_decodePath(const string &cipherPath, uint64_t *iv) const {
   // if chaining is not enabled, then the iv pointer is not used..
-  if (!chainedNameIV) iv = 0;
+  if (!chainedNameIV) iv = nullptr;
   return recodePath(cipherPath, &NameIO::maxDecodedNameLen, &NameIO::decodeName,
                     iv);
 }
 
-std::string NameIO::encodePath(const char *path, uint64_t *iv) const {
+string NameIO::encodePath(const string &path, uint64_t *iv) const {
   return getReverseEncryption() ? _decodePath(path, iv) : _encodePath(path, iv);
 }
 
-std::string NameIO::decodePath(const char *path, uint64_t *iv) const {
+string NameIO::decodePath(const string &path, uint64_t *iv) const {
   return getReverseEncryption() ? _encodePath(path, iv) : _decodePath(path, iv);
 }
 
-int NameIO::encodeName(const char *input, int length, char *output) const {
-  return encodeName(input, length, (uint64_t *)0, output);
+string NameIO::encodeName(const string &name) const {
+  return getReverseEncryption() ? decodeName(name, nullptr)
+                                : encodeName(name, nullptr);
 }
 
-int NameIO::decodeName(const char *input, int length, char *output) const {
-  return decodeName(input, length, (uint64_t *)0, output);
-}
-
-std::string NameIO::_encodeName(const char *plaintextName, int length) const {
-  int approxLen = maxEncodedNameLen(length);
-
-  BUFFER_INIT(codeBuf, 32, (unsigned int)approxLen + 1);
-
-  // code the name
-  int codedLen = encodeName(plaintextName, length, 0, codeBuf);
-  rAssert(codedLen <= approxLen);
-  rAssert(codeBuf[codedLen] == '\0');
-
-  // append result to string
-  std::string result = (char *)codeBuf;
-
-  BUFFER_RESET(codeBuf);
-
-  return result;
-}
-
-std::string NameIO::_decodeName(const char *encodedName, int length) const {
-  int approxLen = maxDecodedNameLen(length);
-
-  BUFFER_INIT(codeBuf, 32, (unsigned int)approxLen + 1);
-
-  // code the name
-  int codedLen = decodeName(encodedName, length, 0, codeBuf);
-  rAssert(codedLen <= approxLen);
-  rAssert(codeBuf[codedLen] == '\0');
-
-  // append result to string
-  std::string result = (char *)codeBuf;
-
-  BUFFER_RESET(codeBuf);
-
-  return result;
-}
-
-std::string NameIO::encodeName(const char *path, int length) const {
-  return getReverseEncryption() ? _decodeName(path, length)
-                                : _encodeName(path, length);
-}
-
-std::string NameIO::decodeName(const char *path, int length) const {
-  return getReverseEncryption() ? _encodeName(path, length)
-                                : _decodeName(path, length);
+string NameIO::decodeName(const string &name) const {
+  return getReverseEncryption() ? encodeName(name, nullptr)
+                                : decodeName(name, nullptr);
 }
 
 }  // namespace encfs

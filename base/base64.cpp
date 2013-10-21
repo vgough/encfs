@@ -132,11 +132,9 @@ static const byte Ascii2B64Table[] =
     "                                            01  23456789:;       ";
 //  0123456789 123456789 123456789 123456789 123456789 123456789 1234
 //  0         1         2         3         4         5         6
-void AsciiToB64(byte *in, int length) { return AsciiToB64(in, in, length); }
-
-void AsciiToB64(byte *out, const byte *in, int length) {
+void AsciiToB64(byte *buf, int length) {
   while (length--) {
-    byte ch = *in++;
+    byte ch = *buf;
     if (ch >= 'A') {
       if (ch >= 'a')
         ch += 38 - 'a';
@@ -145,7 +143,7 @@ void AsciiToB64(byte *out, const byte *in, int length) {
     } else
       ch = Ascii2B64Table[ch] - '0';
 
-    *out++ = ch;
+    *buf++ = ch;
   }
 }
 
@@ -161,18 +159,16 @@ void B32ToAscii(byte *buf, int len) {
   }
 }
 
-void AsciiToB32(byte *in, int length) { return AsciiToB32(in, in, length); }
-
-void AsciiToB32(byte *out, const byte *in, int length) {
+void AsciiToB32(byte *buf, int length) {
   while (length--) {
-    byte ch = *in++;
+    byte ch = *buf;
     int lch = toupper(ch);
     if (lch >= 'A')
       lch -= 'A';
     else
       lch += 26 - '2';
 
-    *out++ = (byte)lch;
+    *buf++ = (byte)lch;
   }
 }
 
