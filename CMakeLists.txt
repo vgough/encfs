@@ -53,6 +53,9 @@ include_directories (${FUSE_INCLUDE_DIR})
 add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 if (APPLE)
     add_definitions (-D__FreeBSD__=10)
+    # XXX: Fall back to stdc++, due to clang 5.0.1 header file issues
+    # (missing sys/endian.h, needed by standard c++ header files).
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.7")
 endif (APPLE)
 
 # Packaging config.
