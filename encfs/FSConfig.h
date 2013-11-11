@@ -38,7 +38,7 @@ enum ConfigType
     Config_V6
 };
 
-class EncFS_Opts;
+struct EncFS_Opts;
 class Cipher;
 class NameIO;
 

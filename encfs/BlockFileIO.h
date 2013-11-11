@@ -46,7 +46,7 @@ public:
 
 protected:
 
-    int truncate( off_t size, FileIO *base );
+    int truncateBase( off_t size, FileIO *base );
     void padFile( off_t oldSize, off_t newSize, bool forceWrite );
 
     // same as read(), except that the request.offset field is guarenteed to be

@@ -365,7 +365,7 @@ void BlockFileIO::padFile( off_t oldSize, off_t newSize, bool forceWrite )
 	MemoryPool::release( mb );
 }
 
-int BlockFileIO::truncate( off_t size, FileIO *base )
+int BlockFileIO::truncateBase( off_t size, FileIO *base )
 {
     int partialBlock = size % _blockSize;
     int res = 0;

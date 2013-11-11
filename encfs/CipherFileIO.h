@@ -78,7 +78,6 @@ private:
     // if haveHeader is true, then we have a transparent file header which
     // contains a 64 bit initialization vector.
     bool haveHeader;
-    bool externalIVChaining;
     uint64_t externalIV;
     uint64_t fileIV;
     int lastFlags;

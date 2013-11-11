@@ -297,6 +297,7 @@ static RootPtr initRootInfo(const char* crootDir)
 
 static int cmd_showKey( int argc, char **argv )
 {
+    (void)argc;
     RootPtr rootInfo = initRootInfo(argv[1]);
     
     if(!rootInfo)

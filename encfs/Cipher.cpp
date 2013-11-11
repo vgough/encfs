@@ -216,13 +216,12 @@ string Cipher::encodeAsString(const CipherKey &key,
     unsigned char *keyBuf = new unsigned char[ encodedKeySize ];
 
     // write the key, encoding it with itself.
-    this->writeKey( key, keyBuf, key );
+    this->writeKey( key, keyBuf, encodingKey );
 
     int b64Len = B256ToB64Bytes( encodedKeySize );
     unsigned char *b64Key = new unsigned char[ b64Len + 1 ];
 
-    changeBase2( keyBuf, encodedKeySize, 8, b64Key,
-            b64Len, 6 );
+    changeBase2( keyBuf, encodedKeySize, 8, b64Key, b64Len, 6 );
     B64ToAscii( b64Key, b64Len );
     b64Key[ b64Len - 1 ] = '\0';
 

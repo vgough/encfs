@@ -71,6 +71,7 @@ int NullNameIO::maxDecodedNameLen( int encodedNameLen ) const
 int NullNameIO::encodeName( const char *plaintextName, int length,
 	uint64_t *iv, char *encodedName ) const
 {
+    (void)iv;
     memcpy( encodedName, plaintextName, length );
 
     return length;
@@ -79,6 +80,7 @@ int NullNameIO::encodeName( const char *plaintextName, int length,
 int NullNameIO::decodeName( const char *encodedName, int length,
 	uint64_t *iv, char *plaintextName ) const
 {
+    (void)iv;
     memcpy( plaintextName, encodedName, length );
 
     return length;

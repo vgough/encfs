@@ -292,6 +292,7 @@ int FileNode::sync(bool datasync)
 	else
 	    res = fsync( fh );
 #else
+  (void)datasync;
 	// no fdatasync support
 	// TODO: use autoconfig to check for it..
 	res = fsync(fh);
