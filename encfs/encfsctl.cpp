@@ -39,9 +39,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#ifdef __FreeBSD__
-#include <libintl.h>
-#endif
 
 #include "i18n.h"
 
@@ -802,7 +799,7 @@ int main(int argc, char **argv)
 {
     RLogInit( argc, argv );
 
-#ifdef LOCALEDIR
+#if defined(ENABLE_NLS) && defined(LOCALEDIR)
     setlocale( LC_ALL, "" );
     bindtextdomain( PACKAGE, LOCALEDIR );
     textdomain( PACKAGE );

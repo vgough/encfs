@@ -509,7 +509,7 @@ int main(int argc, char *argv[])
     // initialize the logging library
     RLogInit( argc, argv );
 
-#ifdef LOCALEDIR
+#if defined(ENABLE_NLS) && defined(LOCALEDIR)
     setlocale( LC_ALL, "" );
     bindtextdomain( PACKAGE, LOCALEDIR );
     textdomain( PACKAGE );

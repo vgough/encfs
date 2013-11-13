@@ -1,6 +1,17 @@
+Sun Nov 12 2013 Valient Gough <vgough@pobox.com>
+	* fix compiler warnings on OSX 10.9
+	* allow building with NLS disabled (configure --disable-nls)
+
+Wed Oct 2 2013 Valient Gough <vgough@pobox.com>
+	* adds delaymount option which delays initial mount.  Patch by Jeff King.
+	* fixes encfsctl cat command when iv chaining is enabled (issue #132)
+	* fix to POD documentation
+
+Sun Oct 21 2012 Valient Gough <vgough@pobox.com>
+	* apply license change to lgpl
+
 Wed Dec 28 2011 Valient Gough <vgough@pobox.com>
 	* remove m4-local
-	* bump version to 1.7.5
 
 Tue Dec 27 2011 Valient Gough <vgough@pobox.com>
 	* remove auto-generated libtool, add new m4 macros
@@ -22,7 +33,7 @@ Sun Sep 5 2010 Valient Gough <vgough@pobox.com>
 	  option passing mechanism in 1.7
 	* allow per-block random bytes to be configured independently of
 	  per-block MAC.
-	* bundle as version 1.7.2
+	* release versions 1.7.2 - 1.7.4
 
 Sun Aug 29 2010 Valient Gough <vgough@pobox.com>
 	* new IV initialization

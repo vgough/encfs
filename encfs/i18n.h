@@ -21,7 +21,13 @@
 #ifndef _i18n_incl_
 #define _i18n_incl_
 
-#if defined(LOCALEDIR)
+#include "config.h"
+
+#if defined(ENABLE_NLS) && defined(LOCALEDIR)
+
+#ifdef __FreeBSD__
+#include <libintl.h>
+#endif
 
 #  include "gettext.h"
 // make shortcut for gettext
@@ -36,6 +42,7 @@ using gnu::autosprintf;
 #  define gettext_noop(STR) (STR)
 #  define _(STR) (STR)
 #  define N_(STR) (STR)
+#  define ngettext(STR1, STR2, N) ((N) == 1 ? (STR1) : (STR2))
 
 #endif
 
