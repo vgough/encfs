@@ -27,9 +27,7 @@ dnl make /usr/local the default for the installation
 AC_PREFIX_DEFAULT(/usr/local)
 
 AM_GNU_GETTEXT([external])
-AM_GNU_GETTEXT_VERSION([0.17])
-dnl AC_LIB_LINKFLAGS([asprintf]) # use internal copy
-LIBINTL=-lgettextlib
+AM_GNU_GETTEXT_VERSION([0.18.3])
 
 dnl create only shared libtool-libraries
 dnl These can be overridden by command line arguments

@@ -18,7 +18,6 @@
 
 #include "encfs.h"
 
-#include "autosprintf.h"
 #include "config.h"
 
 #include "FileUtils.h"
@@ -42,6 +41,7 @@
 
 #include "i18n.h"
 
+#include <boost/format.hpp>
 #include <boost/scoped_array.hpp>
 
 #ifdef HAVE_SSL
@@ -51,9 +51,8 @@
 
 using namespace rlog;
 using namespace std;
-using namespace gnu;
 using namespace boost;
-
+using boost::format;
 
 static int showInfo( int argc, char **argv );
 static int showVersion( int argc, char **argv );
@@ -117,12 +116,12 @@ struct CommandOpts
 static
 void usage(const char *name)
 {
-    cerr << autosprintf(_("encfsctl version %s"), VERSION) << "\n"
+    cerr << format(_("encfsctl version %s")) % VERSION << "\n"
 	<< _("Usage:\n") 
 	// displays usage commands, eg "./encfs (root dir) ..."
 	// xgroup(usage)
-	<< autosprintf(_("%s (root dir)\n"
-	"  -- displays information about the filesystem, or \n"), name);
+	<< format(_("%s (root dir)\n"
+	"  -- displays information about the filesystem, or \n")) % name;
 
     int offset = 0;
     while(commands[offset].name != 0)
@@ -138,7 +137,7 @@ void usage(const char *name)
 
     cerr << "\n"
 	// xgroup(usage)
-	<< autosprintf(_("Example: \n%s info ~/.crypt\n"), name)
+	<< format(_("Example: \n%s info ~/.crypt\n")) % name
 	<< "\n";
 }
 
@@ -146,8 +145,8 @@ static bool checkDir( string &rootDir )
 {
     if( !isDirectory( rootDir.c_str() ))
     {
-	cerr << autosprintf(_("directory %s does not exist.\n"),
-		rootDir.c_str());
+	cerr << format(_("directory %s does not exist.\n")) %
+		rootDir.c_str();
 	return false;
     }
     if(rootDir[ rootDir.length()-1 ] != '/')
@@ -161,7 +160,7 @@ static int showVersion( int argc, char **argv )
     (void)argc;
     (void)argv;
     // xgroup(usage)
-    cerr << autosprintf(_("encfsctl version %s"), VERSION) << "\n";
+    cerr << format(_("encfsctl version %s")) % VERSION << "\n";
 
     return EXIT_SUCCESS;
 }
@@ -190,25 +189,25 @@ static int showInfo( int argc, char **argv )
 	return EXIT_FAILURE;
     case Config_V3:
 	// xgroup(diag)
-	cout << "\n" << autosprintf(_("Version 3 configuration; "
-            "created by %s\n"), config->creator.c_str());
+	cout << "\n" << format(_("Version 3 configuration; "
+            "created by %s\n")) % config->creator.c_str();
 	break;
     case Config_V4:
 	// xgroup(diag)
-	cout << "\n" << autosprintf(_("Version 4 configuration; "
-            "created by %s\n"), config->creator.c_str());
+	cout << "\n" << format(_("Version 4 configuration; "
+            "created by %s\n")) % config->creator.c_str();
 	break;
     case Config_V5:
 	// xgroup(diag)
-	cout << "\n" << autosprintf(_("Version 5 configuration; "
-            "created by %s (revision %i)\n"), config->creator.c_str(),
-                config->subVersion);
+	cout << "\n" << format(_("Version 5 configuration; "
+            "created by %s (revision %i)\n")) % config->creator %
+                config->subVersion;
 	break;
     case Config_V6:
 	// xgroup(diag)
-	cout << "\n" << autosprintf(_("Version 6 configuration; "
-            "created by %s (revision %i)\n"), config->creator.c_str(),
-                config->subVersion);
+	cout << "\n" << format(_("Version 6 configuration; "
+            "created by %s (revision %i)\n")) % config->creator %
+                config->subVersion;
 	break;
     }
 
@@ -638,7 +637,7 @@ int showcruft( const shared_ptr<EncFS_Root> &rootInfo, const char *dirName )
 	    if(!showedDir)
 	    {
 		// just before showing a list of files in a directory
-		cout << autosprintf(_("In directory %s: \n"), dirName);
+		cout << format(_("In directory %s: \n")) % dirName;
 		showedDir = true;
 	    }
 	    ++found;
@@ -685,9 +684,9 @@ static int cmd_showcruft( int argc, char **argv )
 
     int filesFound = showcruft( rootInfo, "/" );
 
-    cerr << autosprintf(
+    cerr << format(
 	    ngettext("Found %i invalid file.", "Found %i invalid files.", 
-		filesFound), filesFound) << "\n";
+		filesFound)) % filesFound << "\n";
 
     return EXIT_SUCCESS;
 }
@@ -713,8 +712,8 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
             config->cipherIface, config->keySize );
     if(!cipher)
     {
-	cout << autosprintf(_("Unable to find specified cipher \"%s\"\n"),
-                config->cipherIface.name().c_str());
+	cout << format(_("Unable to find specified cipher \"%s\"\n")) %
+                config->cipherIface.name();
 	return EXIT_FAILURE;
     }
 
@@ -841,15 +840,15 @@ int main(int argc, char **argv)
 
 	if(commands[offset].name == 0)
 	{
-	    cerr << autosprintf(_("invalid command: \"%s\""), argv[1]) << "\n";
+	    cerr << format(_("invalid command: \"%s\"")) % argv[1] << "\n";
 	} else
 	{
 	    if((argc-2 < commands[offset].minOptions) || 
 		    (argc-2 > commands[offset].maxOptions))
 	    {
-		cerr << autosprintf(
-			_("Incorrect number of arguments for command \"%s\""), 
-			argv[1]) << "\n";
+		cerr << format(
+			_("Incorrect number of arguments for command \"%s\"")) % 
+			argv[1] << "\n";
 	    } else
 		return (*commands[offset].func)( argc-1, argv+1 );
 	}

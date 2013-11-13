@@ -28,7 +28,6 @@
 #include "config.h"
 
 #include "readpassphrase.h"
-#include "autosprintf.h"
 
 #include "FileUtils.h"
 #include "ConfigReader.h"
@@ -63,6 +62,7 @@
 
 #include <boost/version.hpp>
 #include <boost/filesystem/fstream.hpp>
+#include <boost/format.hpp>
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
 #include <boost/serialization/split_free.hpp>
@@ -75,9 +75,9 @@
 using namespace rel;
 using namespace rlog;
 using namespace std;
-using namespace gnu;
 namespace fs = boost::filesystem;
 namespace serial = boost::serialization;
+using boost::format;
 
 static const int DefaultBlockSize = 1024;
 // The maximum length of text passwords.  If longer are needed,
@@ -327,7 +327,7 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode )
     // TODO: can we internationalize the y/n names?  Seems strange to prompt in
     // their own language but then have to respond 'y' or 'n'.
     // xgroup(setup)
-    cerr << autosprintf( _("The directory \"%s\" does not exist. Should it be created? (y,n) "), path );
+    cerr << format(_("The directory \"%s\" does not exist. Should it be created? (y,n) ")) % path;
     char answer[10];
     char *res;
 
@@ -676,31 +676,30 @@ Cipher::CipherAlgorithm selectCipherAlgorithm()
 	    {
 		// shown after algorithm name and description.
 		// xgroup(setup)
-		cout << autosprintf(_(" -- key length %i bits")
-			, it->keyLength.min()) << "\n";
+		cout << format(_(" -- key length %i bits")) % it->keyLength.min() << "\n";
 	    } else
 	    {
-		cout << autosprintf(
+		cout << format(
 			// shown after algorithm name and description.
 			// xgroup(setup)
-			_(" -- Supports key lengths of %i to %i bits"),
-			it->keyLength.min(), it->keyLength.max()) << "\n";
+			_(" -- Supports key lengths of %i to %i bits")) %
+			it->keyLength.min() % it->keyLength.max() << "\n";
 	    }
 
 	    if(it->blockSize.min() == it->blockSize.max())
 	    {
-		cout << autosprintf(
+		cout << format(
 			// shown after algorithm name and description.
 			// xgroup(setup)
-			_(" -- block size %i bytes"), it->blockSize.min()) 
+			_(" -- block size %i bytes")) % it->blockSize.min()
 	    	    << "\n";
 	    } else
 	    {
-		cout << autosprintf(
+		cout << format(
 			// shown after algorithm name and description.
 			// xgroup(setup)
-			_(" -- Supports block sizes of %i to %i bytes"),
-			it->blockSize.min(), it->blockSize.max()) << "\n";
+			_(" -- Supports block sizes of %i to %i bytes")) %
+			it->blockSize.min() % it->blockSize.max() << "\n";
 	    }
 	}
 
@@ -724,7 +723,7 @@ Cipher::CipherAlgorithm selectCipherAlgorithm()
 	Cipher::CipherAlgorithm alg = *it;
        	
 	// xgroup(setup)
-	cout << autosprintf(_("Selected algorithm \"%s\""), alg.name.c_str()) 
+	cout << format(_("Selected algorithm \"%s\"")) % alg.name 
 	    << "\n\n";
 
 	return alg;
@@ -767,7 +766,7 @@ Interface selectNameCoding()
 	    ++it;
 
 	// xgroup(setup)
-	cout << autosprintf(_("Selected algorithm \"%s\""), it->name.c_str()) 
+	cout << format(_("Selected algorithm \"%s\"")) % it->name
 	    << "\"\n\n";
 
 	return it->iface;
@@ -779,17 +778,17 @@ int selectKeySize( const Cipher::CipherAlgorithm &alg )
 {
     if(alg.keyLength.min() == alg.keyLength.max())
     {
-	cout << autosprintf(_("Using key size of %i bits"), 
-		alg.keyLength.min()) << "\n";
+	cout << format(_("Using key size of %i bits")) % 
+		alg.keyLength.min() << "\n";
 	return alg.keyLength.min();
     }
 
-    cout << autosprintf(
+    cout << format(
 	// xgroup(setup)
 	_("Please select a key size in bits.  The cipher you have chosen\n"
 	  "supports sizes from %i to %i bits in increments of %i bits.\n"
-	  "For example: "), alg.keyLength.min(), alg.keyLength.max(), 
-	  alg.keyLength.inc()) << "\n";
+	  "For example: ")) % alg.keyLength.min() % alg.keyLength.max() % 
+	  alg.keyLength.inc() << "\n";
 
     int numAvail = (alg.keyLength.max() - alg.keyLength.min()) 
 	/ alg.keyLength.inc();
@@ -826,7 +825,7 @@ int selectKeySize( const Cipher::CipherAlgorithm &alg )
     keySize = alg.keyLength.closest( keySize );
 
     // xgroup(setup)
-    cout << autosprintf(_("Using key size of %i bits"), keySize) << "\n\n";
+    cout << format(_("Using key size of %i bits")) % keySize << "\n\n";
 
     return keySize;
 }
@@ -836,20 +835,20 @@ int selectBlockSize( const Cipher::CipherAlgorithm &alg )
 {
     if(alg.blockSize.min() == alg.blockSize.max())
     {
-	cout << autosprintf(
+	cout << format(
 		// xgroup(setup)
-		_("Using filesystem block size of %i bytes"),
-		alg.blockSize.min()) << "\n";
+		_("Using filesystem block size of %i bytes")) %
+		alg.blockSize.min() << "\n";
 	return alg.blockSize.min();
     }
 
-    cout << autosprintf(
+    cout << format(
 	    // xgroup(setup)
 	    _("Select a block size in bytes.  The cipher you have chosen\n"
 	      "supports sizes from %i to %i bytes in increments of %i.\n"
-	      "Or just hit enter for the default (%i bytes)\n"),
-	      alg.blockSize.min(), alg.blockSize.max(), alg.blockSize.inc(),
-	      DefaultBlockSize);
+	      "Or just hit enter for the default (%i bytes)\n")) %
+	      alg.blockSize.min() % alg.blockSize.max() % alg.blockSize.inc() %
+	      DefaultBlockSize;
 
     // xgroup(setup)
     cout << "\n" << _("filesystem block size: ");
@@ -865,8 +864,8 @@ int selectBlockSize( const Cipher::CipherAlgorithm &alg )
     blockSize = alg.blockSize.closest( blockSize );
 
     // xgroup(setup)
-    cout << autosprintf(_("Using filesystem block size of %i bytes"), 
-	    blockSize) << "\n\n";
+    cout << format(_("Using filesystem block size of %i bytes")) % 
+	    blockSize << "\n\n";
 
     return blockSize;
 }
@@ -1267,11 +1266,13 @@ void showFSInfo( const boost::shared_ptr<EncFSConfig> &config )
 {
     shared_ptr<Cipher> cipher = Cipher::New( config->cipherIface, -1 );
     {
-	cout << autosprintf(
+	cout << format(
 		// xgroup(diag)
-		_("Filesystem cipher: \"%s\", version %i:%i:%i"),
-                config->cipherIface.name().c_str(), config->cipherIface.current(),
-                config->cipherIface.revision(), config->cipherIface.age());
+		_("Filesystem cipher: \"%s\", version %i:%i:%i")) %
+                config->cipherIface.name().c_str() %
+                config->cipherIface.current() %
+                config->cipherIface.revision() %
+                config->cipherIface.age();
 	// check if we support this interface..
 	if(!cipher)
 	    cout << _(" (NOT supported)\n");
@@ -1282,17 +1283,19 @@ void showFSInfo( const boost::shared_ptr<EncFSConfig> &config )
 	    {
 		Interface iface = cipher->interface();
 		// xgroup(diag)
-		cout << autosprintf(_(" (using %i:%i:%i)\n"),
-			iface.current(), iface.revision(), iface.age());
+		cout << format(_(" (using %i:%i:%i)\n")) %
+			iface.current() % iface.revision() % iface.age();
 	    } else
 		cout << "\n";
 	}
     }
     {
 	// xgroup(diag)
-	cout << autosprintf(_("Filename encoding: \"%s\", version %i:%i:%i"),
-                config->nameIface.name().c_str(), config->nameIface.current(),
-                config->nameIface.revision(), config->nameIface.age());
+	cout << format(_("Filename encoding: \"%s\", version %i:%i:%i")) %
+                config->nameIface.name().c_str() % 
+                config->nameIface.current() %
+                config->nameIface.revision() %
+                config->nameIface.age();
 	    
 	// check if we support the filename encoding interface..
         shared_ptr<NameIO> nameCoder = NameIO::New( config->nameIface,
@@ -1307,14 +1310,14 @@ void showFSInfo( const boost::shared_ptr<EncFSConfig> &config )
             if( config->nameIface != nameCoder->interface() )
 	    {
 		Interface iface = nameCoder->interface();
-		cout << autosprintf(_(" (using %i:%i:%i)\n"),
-			iface.current(), iface.revision(), iface.age());
+		cout << format(_(" (using %i:%i:%i)\n")) %
+			iface.current() % iface.revision() % iface.age();
 	    } else
 		cout << "\n";
 	}
     }
     {
-        cout << autosprintf(_("Key Size: %i bits"), config->keySize);
+        cout << format(_("Key Size: %i bits")) % config->keySize;
         cipher = config->getCipher();
 	if(!cipher)
 	{
@@ -1325,33 +1328,33 @@ void showFSInfo( const boost::shared_ptr<EncFSConfig> &config )
     }
     if(config->kdfIterations > 0 && config->salt.size() > 0)
     {
-	cout << autosprintf(_("Using PBKDF2, with %i iterations"), 
-                              config->kdfIterations) << "\n";
-	cout << autosprintf(_("Salt Size: %i bits"), 
-                8*(int)config->salt.size()) << "\n";
+	cout << format(_("Using PBKDF2, with %i iterations")) % 
+                              config->kdfIterations << "\n";
+	cout << format(_("Salt Size: %i bits")) % 
+                (8*config->salt.size()) << "\n";
     }
     if(config->blockMACBytes || config->blockMACRandBytes)
     {
         if(config->subVersion < 20040813)
 	{
-	    cout << autosprintf(
+	    cout << format(
 		    // xgroup(diag)
-		    _("Block Size: %i bytes + %i byte MAC header"),
-                    config->blockSize,
-                    config->blockMACBytes + config->blockMACRandBytes) << endl;
+		    _("Block Size: %i bytes + %i byte MAC header")) %
+                    config->blockSize %
+                    (config->blockMACBytes + config->blockMACRandBytes) << endl;
 	} else
 	{
 	    // new version stores the header as part of that block size..
-	    cout << autosprintf(
+	    cout << format(
 		    // xgroup(diag)
-		    _("Block Size: %i bytes, including %i byte MAC header"),
-                    config->blockSize,
-                    config->blockMACBytes + config->blockMACRandBytes) << endl;
+		    _("Block Size: %i bytes, including %i byte MAC header")) %
+                    config->blockSize %
+                    (config->blockMACBytes + config->blockMACRandBytes) << endl;
 	}
     } else
     {
 	// xgroup(diag)
-        cout << autosprintf(_("Block Size: %i bytes"), config->blockSize);
+        cout << format(_("Block Size: %i bytes")) % config->blockSize;
 	cout << "\n";
     }
 

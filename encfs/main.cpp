@@ -18,7 +18,6 @@
 
 #include "encfs.h"
 #include "config.h"
-#include "autosprintf.h"
 
 #include <iostream>
 #include <string>
@@ -33,6 +32,7 @@
 
 #include <getopt.h>
 
+#include <boost/format.hpp>
 #include <boost/scoped_ptr.hpp>
 #include <boost/shared_ptr.hpp>
 
@@ -70,7 +70,7 @@ inline static int MAX(int a, int b)
 using namespace std;
 using namespace rlog;
 using namespace rel;
-using namespace gnu;
+using boost::format;
 using boost::shared_ptr;
 using boost::scoped_ptr;
 
@@ -126,10 +126,10 @@ static
 void usage(const char *name)
 {
     // xgroup(usage)
-    cerr << autosprintf( _("Build: encfs version %s"), VERSION ) 
+    cerr << format( _("Build: encfs version %s")) % VERSION
 	<< "\n\n"
 	// xgroup(usage)
-	<< autosprintf(_("Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"), name) << "\n\n"
+	<< format(_("Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]")) % name << "\n\n"
 	// xgroup(usage)
 	<< _("Common Options:\n"
 	"  -H\t\t\t"       "show optional FUSE Mount Options\n"
@@ -325,7 +325,7 @@ bool processArgs(int argc, char *argv[], const shared_ptr<EncFS_Args> &out)
 	    break;
 	case 'V':
 	    // xgroup(usage)
-	    cerr << autosprintf(_("encfs version %s"), VERSION) << endl;
+	    cerr << format(_("encfs version %s")) % VERSION << endl;
 	    exit(EXIT_SUCCESS);
 	    break;
 	case 'H':
