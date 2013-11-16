@@ -21,8 +21,6 @@
 #ifndef _Context_incl_
 #define _Context_incl_
 
-#include "encfs.h"
-#include <boost/shared_ptr.hpp>
 #include <set>
 
 #ifdef USE_HASHMAP
@@ -31,7 +29,9 @@
 #include <map>
 #endif
 
-using boost::shared_ptr;
+#include "encfs.h"
+#include "shared_ptr.h"
+
 struct EncFS_Args;
 struct EncFS_Opts;
 class FileNode;

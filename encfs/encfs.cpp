@@ -130,7 +130,7 @@ static int withFileNode( const char *opName,
 	else
 	    fnode = FSRoot->lookupNode( path, opName );
 
-	rAssert(fnode != NULL);
+	rAssert(fnode.get() != NULL);
 	rLog(Info, "%s %s", opName, fnode->cipherName());
 	res = op( fnode.get(), data );
 

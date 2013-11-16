@@ -52,8 +52,6 @@ using namespace std;
 using namespace rel;
 using namespace rlog;
 
-using boost::shared_ptr;
-    
 const int FSBlockSize = 256;
 
 static

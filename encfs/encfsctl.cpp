@@ -26,6 +26,7 @@
 #include "Context.h"
 #include "FileNode.h"
 #include "DirNode.h"
+#include "shared_ptr.h"
 
 #include <rlog/rlog.h>
 #include <rlog/StdioNode.h>
@@ -51,8 +52,8 @@
 
 using namespace rlog;
 using namespace std;
-using namespace boost;
 using boost::format;
+using boost::scoped_array;
 
 static int showInfo( int argc, char **argv );
 static int showVersion( int argc, char **argv );
@@ -172,7 +173,7 @@ static int showInfo( int argc, char **argv )
     if( !checkDir( rootDir ))
 	return EXIT_FAILURE;
 
-    boost::shared_ptr<EncFSConfig> config(new EncFSConfig);
+    shared_ptr<EncFSConfig> config(new EncFSConfig);
     ConfigType type = readConfig( rootDir, config );
 
     // show information stored in config..
@@ -698,7 +699,7 @@ static int do_chpasswd( bool useStdin, bool annotate, int argc, char **argv )
     if( !checkDir( rootDir ))
 	return EXIT_FAILURE;
 
-    boost::shared_ptr<EncFSConfig> config(new EncFSConfig);
+    shared_ptr<EncFSConfig> config(new EncFSConfig);
     ConfigType cfgType = readConfig( rootDir, config );
 
     if(cfgType == Config_None)

@@ -31,8 +31,6 @@
 #include <list>
 #include <inttypes.h>
 
-using boost::shared_ptr;
-
 /*
     Mostly pure virtual interface defining operations on a cipher.
 
@@ -44,8 +42,8 @@ class Cipher
 public:
     // if no key length was indicated when cipher was registered, then keyLen
     // <= 0 will be used.
-    typedef boost::shared_ptr<Cipher> (*CipherConstructor)( const rel::Interface &iface,
-	                                      int keyLenBits );
+    typedef shared_ptr<Cipher> (*CipherConstructor)( const rel::Interface &iface,
+                                                    int keyLenBits );
 
     struct CipherAlgorithm
     {
@@ -61,9 +59,9 @@ public:
     static AlgorithmList GetAlgorithmList( bool includeHidden = false );
 
 
-    static boost::shared_ptr<Cipher> New( const rel::Interface &iface, 
+    static shared_ptr<Cipher> New( const rel::Interface &iface, 
 	                                  int keyLen = -1);
-    static boost::shared_ptr<Cipher> New( const std::string &cipherName, 
+    static shared_ptr<Cipher> New( const std::string &cipherName, 
 	                                  int keyLen = -1 );
 
 

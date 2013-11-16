@@ -21,12 +21,12 @@
 #ifndef _FSConfig_incl_
 #define _FSConfig_incl_
 
+#include <vector>
+
 #include "encfs.h"
 #include "Interface.h"
 #include "CipherKey.h"
-
-#include <vector>
-#include <boost/shared_ptr.hpp>
+#include "shared_ptr.h"
 
 enum ConfigType
 {
@@ -93,7 +93,7 @@ struct EncFSConfig
                          const std::string &rootDir);
     CipherKey getNewUserKey();
     
-    boost::shared_ptr<Cipher> getCipher() const;
+    shared_ptr<Cipher> getCipher() const;
 
     // deprecated
     void assignKeyData(const std::string &in);
@@ -113,12 +113,12 @@ std::istream &operator >> (std::istream &os, EncFSConfig &cfg);
 
 struct FSConfig
 {
-    boost::shared_ptr<EncFSConfig> config;
-    boost::shared_ptr<EncFS_Opts> opts;
+    shared_ptr<EncFSConfig> config;
+    shared_ptr<EncFS_Opts> opts;
 
-    boost::shared_ptr<Cipher> cipher;
+    shared_ptr<Cipher> cipher;
     CipherKey key;
-    boost::shared_ptr<NameIO> nameCoding;
+    shared_ptr<NameIO> nameCoding;
 
     bool forceDecode; // force decode on MAC block failures
     bool reverseEncryption; // reverse encryption operation
@@ -126,7 +126,7 @@ struct FSConfig
     bool idleTracking; // turn on idle monitoring of filesystem
 };
 
-typedef boost::shared_ptr<FSConfig> FSConfigPtr;
+typedef shared_ptr<FSConfig> FSConfigPtr;
 
 #endif
 

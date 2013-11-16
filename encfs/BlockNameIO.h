@@ -23,8 +23,7 @@
 
 #include "NameIO.h"
 #include "CipherKey.h"
-
-#include <boost/shared_ptr.hpp>
+#include "shared_ptr.h"
 
 class Cipher;
 
@@ -39,7 +38,7 @@ public:
     static rel::Interface CurrentInterface(bool caseSensitive = false);
 
     BlockNameIO( const rel::Interface &iface,
-	         const boost::shared_ptr<Cipher> &cipher, 
+	         const shared_ptr<Cipher> &cipher, 
 	         const CipherKey &key, int blockSize,
            bool caseSensitiveEncoding = false );
     virtual ~BlockNameIO();
@@ -60,7 +59,7 @@ protected:
 private:
     int _interface;
     int _bs;
-    boost::shared_ptr<Cipher> _cipher;
+    shared_ptr<Cipher> _cipher;
     CipherKey _key;
     bool _caseSensitive;
 };

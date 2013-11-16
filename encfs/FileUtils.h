@@ -47,15 +47,15 @@ class DirNode;
 
 struct EncFS_Root
 {
-    boost::shared_ptr<Cipher> cipher;
+    shared_ptr<Cipher> cipher;
     CipherKey volumeKey;
-    boost::shared_ptr<DirNode> root;
+    shared_ptr<DirNode> root;
 
     EncFS_Root();
     ~EncFS_Root();
 };
 
-typedef boost::shared_ptr<EncFS_Root> RootPtr;
+typedef shared_ptr<EncFS_Root> RootPtr;
 
 enum ConfigMode
 {
@@ -105,40 +105,40 @@ struct EncFS_Opts
     Read existing config file.  Looks for any supported configuration version.
 */
 ConfigType readConfig( const std::string &rootDir, 
-        const boost::shared_ptr<EncFSConfig> &config ); 
+        const shared_ptr<EncFSConfig> &config ); 
 
 /*
     Save the configuration.  Saves back as the same configuration type as was
     read from.
 */
 bool saveConfig( ConfigType type, const std::string &rootdir, 
-	const boost::shared_ptr<EncFSConfig> &config );
+	const shared_ptr<EncFSConfig> &config );
 
 class EncFS_Context;
 
-RootPtr initFS( EncFS_Context *ctx, const boost::shared_ptr<EncFS_Opts> &opts );
+RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts );
 
 RootPtr createV6Config( EncFS_Context *ctx, 
-                        const boost::shared_ptr<EncFS_Opts> &opts );
+                        const shared_ptr<EncFS_Opts> &opts );
 
-void showFSInfo( const boost::shared_ptr<EncFSConfig> &config );
+void showFSInfo( const shared_ptr<EncFSConfig> &config );
 
 bool readV4Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
+        const shared_ptr<EncFSConfig> &config,
 	struct ConfigInfo *);
 bool writeV4Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config);
+        const shared_ptr<EncFSConfig> &config);
 
 bool readV5Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
+        const shared_ptr<EncFSConfig> &config,
 	struct ConfigInfo *);
 bool writeV5Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config);
+        const shared_ptr<EncFSConfig> &config);
 
 bool readV6Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
+        const shared_ptr<EncFSConfig> &config,
 	struct ConfigInfo *);
 bool writeV6Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config);
+        const shared_ptr<EncFSConfig> &config);
 
 #endif

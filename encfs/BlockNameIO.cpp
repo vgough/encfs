@@ -32,7 +32,6 @@
 
 using namespace rlog;
 using namespace rel;
-using namespace boost;
 
 static RLogChannel * Info = DEF_CHANNEL( "info/nameio", Log_Info );
 

@@ -140,7 +140,7 @@ shared_ptr<FileNode> EncFS_Context::getNode(void *pl)
 }
 
 void *EncFS_Context::putNode(const char *path, 
-	const boost::shared_ptr<FileNode> &node)
+	const shared_ptr<FileNode> &node)
 {
     Lock lock( contextMutex );
     Placeholder *pl = new Placeholder( node );

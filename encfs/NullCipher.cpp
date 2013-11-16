@@ -18,22 +18,19 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
 #include "NullCipher.h"
+
+#include <cstring>
+#include <rlog/rlog.h>
 
 #include "Range.h"
 #include "Interface.h"
-
-#include <boost/shared_ptr.hpp>
-#include <rlog/rlog.h>
-
-#include <cstring>
+#include "shared_ptr.h"
 
 using namespace std;
 using namespace rel;
 using namespace rlog;
-using boost::shared_ptr;
-using boost::dynamic_pointer_cast;
-
 
 static Interface NullInterface( "nullCipher", 1, 0, 0 );
 static Range NullKeyRange(0);

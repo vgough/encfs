@@ -5,14 +5,7 @@ ALL_INCLUDES = @RLOG_CFLAGS@ @OPENSSL_CFLAGS@ @BOOST_CPPFLAGS@
 ALL_LDFLAGS = @RLOG_LIBS@ @OPENSSL_LIBS@ @BOOST_LDFLAGS@
 ALL_LDFLAGS += @BOOST_SERIALIZATION_LIB@ @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
 
-INCLUDES = $(all_includes) -I../intl
-
-AM_CXXFLAGS = -DRLOG_COMPONENT="encfs" $(ALL_INCLUDES) 
-
-if DARWIN
-# needed to select correct API in fuse.h
-AM_CXXFLAGS += -D__FreeBSD__=10
-endif
+AM_CXXFLAGS = -DRLOG_COMPONENT="encfs" $(ALL_INCLUDES) -I../intl
 
 if BUILD_NLS
 # define a C macro LOCALEDIR indicating where catalogs will be installed

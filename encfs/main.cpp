@@ -16,9 +16,6 @@
  *
  */
 
-#include "encfs.h"
-#include "config.h"
-
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -34,7 +31,6 @@
 
 #include <boost/format.hpp>
 #include <boost/scoped_ptr.hpp>
-#include <boost/shared_ptr.hpp>
 
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
@@ -43,13 +39,15 @@
 #include <rlog/StdioNode.h>
 
 #include "ConfigReader.h"
+#include "Context.h"
+#include "DirNode.h"
+#include "FileUtils.h"
 #include "Interface.h"
 #include "MemoryPool.h"
-#include "FileUtils.h"
-#include "DirNode.h"
-#include "Context.h"
-
+#include "config.h"
+#include "encfs.h"
 #include "openssl.h"
+#include "shared_ptr.h"
 
 #include <locale.h>
 
@@ -71,7 +69,6 @@ using namespace std;
 using namespace rlog;
 using namespace rel;
 using boost::format;
-using boost::shared_ptr;
 using boost::scoped_ptr;
 
 // Maximum number of arguments that we're going to pass on to fuse.  Doesn't
@@ -592,7 +589,7 @@ int main(int argc, char *argv[])
     encfs_oper.utimens = encfs_utimens;
     //encfs_oper.bmap = encfs_bmap;
 
-#if (__FreeBSD__ >= 10)
+#if (__FreeBSD__ >= 10) || defined(__APPLE__)
     // encfs_oper.setvolname
     // encfs_oper.exchange
     // encfs_oper.getxtimes

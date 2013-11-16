@@ -37,7 +37,6 @@
 
 using namespace std;
 using namespace rel;
-using boost::shared_ptr;
 
 #define REF_MODULE(TYPE)  \
     if( !TYPE::Enabled() ) \

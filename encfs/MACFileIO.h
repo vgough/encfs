@@ -24,8 +24,6 @@
 #include "BlockFileIO.h"
 #include "Cipher.h"
 
-using boost::shared_ptr;
-
 class MACFileIO : public BlockFileIO
 {
 public:

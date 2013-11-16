@@ -35,8 +35,6 @@
 #include "CipherKey.h"
 #include "FSConfig.h"
 
-using boost::shared_ptr;
-
 class Cipher;
 class RenameOp;
 struct RenameEl;
@@ -73,7 +71,7 @@ private:
     uint64_t iv; 
     shared_ptr<NameIO> naming;
 };
-inline bool DirTraverse::valid() const { return dir != 0; }
+inline bool DirTraverse::valid() const { return dir.get() != 0; }
 
 #ifdef USE_HASHMAP
 namespace __gnu_cxx

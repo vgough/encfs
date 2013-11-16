@@ -110,10 +110,10 @@ struct ConfigInfo
     ConfigType type;
     const char *environmentOverride;
     bool (*loadFunc)(const char *fileName, 
-            const boost::shared_ptr<EncFSConfig> &config,
+            const shared_ptr<EncFSConfig> &config,
 	    ConfigInfo *cfg);
     bool (*saveFunc)(const char *fileName, 
-            const boost::shared_ptr<EncFSConfig> &config);
+            const shared_ptr<EncFSConfig> &config);
     int currentSubVersion;
     int defaultSubVersion;
 } ConfigFileMapping[] = {
@@ -362,7 +362,7 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode )
 }
 
 ConfigType readConfig_load( ConfigInfo *nm, const char *path, 
-	const boost::shared_ptr<EncFSConfig> &config )
+	const shared_ptr<EncFSConfig> &config )
 {
     if( nm->loadFunc )
     {
@@ -389,7 +389,7 @@ ConfigType readConfig_load( ConfigInfo *nm, const char *path,
 }
 
 ConfigType readConfig( const string &rootDir, 
-        const boost::shared_ptr<EncFSConfig> &config )
+        const shared_ptr<EncFSConfig> &config )
 {
     ConfigInfo *nm = ConfigFileMapping;
     while(nm->fileName)
@@ -413,7 +413,7 @@ ConfigType readConfig( const string &rootDir,
 }
 
 bool readV6Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
+        const shared_ptr<EncFSConfig> &config,
 	ConfigInfo *info)
 {
     (void)info;
@@ -440,7 +440,7 @@ bool readV6Config( const char *configFile,
 }
 
 bool readV5Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
+        const shared_ptr<EncFSConfig> &config,
 	ConfigInfo *info)
 {
     bool ok = false;
@@ -498,7 +498,7 @@ bool readV5Config( const char *configFile,
 }
 
 bool readV4Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config,
+        const shared_ptr<EncFSConfig> &config,
 	ConfigInfo *info)
 {
     bool ok = false;
@@ -539,7 +539,7 @@ bool readV4Config( const char *configFile,
 }
 
 bool saveConfig( ConfigType type, const string &rootDir,
-	const boost::shared_ptr<EncFSConfig> &config )
+	const shared_ptr<EncFSConfig> &config )
 {
     bool ok = false;
 
@@ -574,7 +574,7 @@ bool saveConfig( ConfigType type, const string &rootDir,
 }
 
 bool writeV6Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config )
+        const shared_ptr<EncFSConfig> &config )
 {
     fs::ofstream st( configFile );
     if(!st.is_open())
@@ -601,7 +601,7 @@ std::istream &operator >> (std::istream &st, EncFSConfig &cfg)
 }
 
 bool writeV5Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config )
+        const shared_ptr<EncFSConfig> &config )
 {
     ConfigReader cfg;
 
@@ -624,7 +624,7 @@ bool writeV5Config( const char *configFile,
 }
 
 bool writeV4Config( const char *configFile, 
-        const boost::shared_ptr<EncFSConfig> &config )
+        const shared_ptr<EncFSConfig> &config )
 {
     ConfigReader cfg;
 
@@ -1262,7 +1262,7 @@ RootPtr createV6Config( EncFS_Context *ctx,
     return rootInfo;
 }
 
-void showFSInfo( const boost::shared_ptr<EncFSConfig> &config )
+void showFSInfo( const shared_ptr<EncFSConfig> &config )
 {
     shared_ptr<Cipher> cipher = Cipher::New( config->cipherIface, -1 );
     {
@@ -1615,7 +1615,7 @@ CipherKey EncFSConfig::getNewUserKey()
 RootPtr initFS( EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts )
 {
     RootPtr rootInfo;
-    boost::shared_ptr<EncFSConfig> config(new EncFSConfig);
+    shared_ptr<EncFSConfig> config(new EncFSConfig);
 
     if(readConfig( opts->rootDir, config ) != Config_None)
     {

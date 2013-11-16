@@ -29,7 +29,6 @@
 #include "Interface.h"
 #include "CipherKey.h"
 
-using boost::shared_ptr;
 class Cipher;
 
 class NameIO
