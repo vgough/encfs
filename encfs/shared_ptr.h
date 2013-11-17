@@ -24,7 +24,7 @@
 
 #include "config.h"
 
-#ifdef HAVE_STD_SHARED_PTR
+#if HAVE_STD_SHARED_PTR
 #include <memory>
 using std::shared_ptr;
 using std::dynamic_pointer_cast;
