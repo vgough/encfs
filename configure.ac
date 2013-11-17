@@ -50,6 +50,20 @@ AX_BOOST_SYSTEM
 AX_BOOST_SERIALIZATION
 AX_BOOST_FILESYSTEM
 
+AC_MSG_CHECKING([for std::shared_ptr])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+  [[#include <memory>]]
+  [[std::shared_ptr<int> have_shared_ptr;]])
+], [
+  AC_MSG_RESULT([yes])
+  AC_DEFINE_UNQUOTED([HAVE_STD_SHARED_PTR], 1, 
+                     [Define to 1 if you have the 'std::shared_ptr' class.])
+], [
+  AC_MSG_RESULT([no])
+  AC_DEFINE_UNQUOTED([HAVE_STD_SHARED_PTR], 0, 
+                     [Define to 1 if you have the 'std::shared_ptr' class.])
+])
+
 dnl Need to include any user specified flags in the tests below, as they might
 dnl specify required include directories..
 FUSE_FLAGS="-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26"
