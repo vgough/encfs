@@ -1,4 +1,4 @@
-# EncFS - and Encrypted Filesystem for FUSE
+# EncFS - an Encrypted Filesystem
 
 ## About
 
