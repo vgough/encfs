@@ -108,7 +108,7 @@ password.  If this succeeds, then the filesystem becomes available again.
 
 =item B<--delaymount>
 
-Do not mount the filesystem when encfs starts; instead, delay mounting until
+Do not mount the filesystem when B<EncFS> starts; instead, delay mounting until
 first use.  This option only makes sense with B<--ondemand>.
 
 =item B<--reverse>
@@ -469,9 +469,9 @@ originally encoded.
 
 =item I<File-hole pass-through>
 
-Make encfs leave holes in files.  If a block is read as all zeros, it will be
+Make B<EncFS> leave holes in files.  If a block is read as all zeros, it will be
 assumed to be a hole and will be left as 0's when read (not deciphered).  This
-is required if accessing encfs using the SMB protocol.
+is required if accessing B<EncFS> using the SMB protocol.
 
 Enabled by default.  Can be disabled in expert mode.
 
