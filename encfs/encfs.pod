@@ -272,7 +272,7 @@ to decode filenames if desired.
 B<EncFS> is not a true filesystem.  It does not deal with any of the actual
 storage or maintenance of files.  It translates requests (encrypting or
 decrypting as necessary) and passes the requests through to the underlying
-host filesystem.  Therefor any limitations of the host filesystem will be
+host filesystem.  Therefore any limitations of the host filesystem will be
 inherited by B<EncFS> (or possibly be further limited).
 
 One such limitation is filename length.  If your underlying filesystem limits
@@ -328,7 +328,7 @@ in the keying function is selected based on wall clock time to generate the
 key.  In standard mode, a target time of 0.5 seconds is used, and in paranoia
 mode a target of 3.0 seconds is used.
 
-On a 1.6Ghz AMD 64 system, it rougly 64k iterations of the key derivation
+On a 1.6Ghz AMD 64 system, roughly 64k iterations of the key derivation
 function can be handled in half a second.  The exact number of iterations to
 use is stored in the configuration file, as it is needed to remount the
 filesystem.
