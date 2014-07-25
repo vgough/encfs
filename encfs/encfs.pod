@@ -317,6 +317,7 @@ I<Standard> mode uses the following settings:
     Filesystem Block Size: 1024 bytes
     Filename Encoding: Block encoding with IV chaining
     Unique initialization vector file headers
+    File holes passed through
 
 I<Paranoia> mode uses the following settings:
     Cipher: AES
@@ -327,6 +328,7 @@ I<Paranoia> mode uses the following settings:
     Unique initialization vector file headers
     Message Authentication Code block headers
     External IV Chaining
+    File holes passed through
 
 In the expert / manual configuration mode, each of the above options is
 configurable.  Here is a list of current options with some notes about what
@@ -480,6 +482,14 @@ mode.
 When this is not enabled and if B<EncFS> is asked to read modified or corrupted
 data, it will have no way to verify that the decoded data is what was
 originally encoded.
+
+=item I<File-hole pass-through>
+
+Make encfs leave holes in files.  If a block is read as all zeros, it will be
+assumed to be a hole and will be left as 0's when read (not deciphered).  This
+is required if accessing encfs using the SMB protocol.
+
+Enabled by default.  Can be disabled in expert mode.
 
 =back
 
