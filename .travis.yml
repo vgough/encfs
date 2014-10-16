@@ -1,0 +1,12 @@
+language: cpp
+
+before_install:
+ - sudo apt-get update -qq
+ - sudo apt-get install -qq autopoint libfuse-dev libboost-all-dev
+   librlog-dev
+
+script:
+ - autoreconf -if
+ - ./configure
+ - make
+ - ./encfs/test

@@ -1,5 +1,7 @@
 # EncFS - an Encrypted Filesystem
 
+[![Build Status](https://travis-ci.org/rfjakob/encfs.svg)](https://travis-ci.org/rfjakob/encfs)
+
 ## About
 
 EncFS provides an encrypted filesystem in user-space. It runs in userspace, 
