@@ -206,12 +206,18 @@ ssize_t MACFileIO::readOneBlock( const IORequest &req ) const
             uint64_t mac = cipher->MAC_64( tmp.data + macBytes, 
                     readSize - macBytes, key );
 
+            // Constant time comparision to prevent timing attacks
+            unsigned char fail = 0;
             for(int i=0; i<macBytes; ++i, mac >>= 8)
             {
                 int test = mac & 0xff;
                 int stored = tmp.data[i];
-                if(test != stored)
-                {
+
+                fail |= (test ^ stored);
+            }
+
+            if( fail > 0 )
+            {
                     // uh oh.. 
                     long blockNum = req.offset / bs;
                     rWarning(_("MAC comparison failure in block %li"), 
@@ -222,8 +228,6 @@ ssize_t MACFileIO::readOneBlock( const IORequest &req ) const
                         throw ERROR(
                                 _("MAC comparison failure, refusing to read"));
                     }
-                    break;
-                }
             }
         }
 
