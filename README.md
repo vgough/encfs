@@ -4,7 +4,7 @@
 
 ## About
 
-EncFS provides an encrypted filesystem in user-space. It runs in userspace, 
+EncFS provides an encrypted filesystem in user-space. It runs in userspace,
 using the FUSE library for the filesystem interface. EncFS is open source
 software, licensed under the LGPL.
 
@@ -15,7 +15,7 @@ use and released the first version to Open Source in 2003.
 
 EncFS encrypts individual files, by translating all requests for the virtual
 EncFS filesystem into the equivalent encrypted operations on the raw
-filesystem. 
+filesystem.
 
 ## Status
 
@@ -38,8 +38,11 @@ more complete, introduction page at http://www.arg0.net/encfs
 
 ## Development
 
-Development is ongoing in the [dev](https://github.com/vgough/encfs/tree/dev)
-branch.  The code there is not guaranteed to be stable, and there is no
-guarantee of backward compatibility.
+The master branch contains the latest stable codebase.  This is where bug fixes
+and improvments should go.
 
+The [dev](https://github.com/vgough/encfs/tree/dev) branch contains experimental
+work, some of which may be back-ported to the master branch when it is stable. The
+dev branch is not stable, and there is no guarantee of backward compatibility
+between changes.
 
