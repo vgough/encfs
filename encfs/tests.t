@@ -193,6 +193,7 @@ sub mount
 sub cleanup
 {
     my $fusermount = qx(which fusermount);
+    chomp($fusermount);
     if(-f $fusermount)
     {
         qx($fusermount -u "$crypt");
