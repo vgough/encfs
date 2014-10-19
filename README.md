@@ -1,6 +1,6 @@
 # EncFS - an Encrypted Filesystem
 
-[![Build Status](https://travis-ci.org/rfjakob/encfs.svg)](https://travis-ci.org/rfjakob/encfs)
+[![Build Status](https://travis-ci.org/vgough/encfs.svg)](https://travis-ci.org/vgough/encfs)
 
 ## About
 
