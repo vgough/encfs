@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -55,9 +55,9 @@ typedef struct evp_cipher_st EVP_CIPHER;
     as:
         1. shuffle
         2. encrypt
-	3. reverse
-	4. shuffle
-	5. encrypt
+        3. reverse
+        4. shuffle
+        5. encrypt
     The reason for the shuffle and reverse steps (and the second encrypt pass)
     is to try and propogate any changed bits to a larger set.  If only a single
     pass was made with the stream cipher in CFB mode, then a change to one byte
@@ -68,83 +68,78 @@ typedef struct evp_cipher_st EVP_CIPHER;
     initial value vector to randomize the output.  But it makes the code
     simpler to reuse the encryption algorithm as is.
 */
-class SSL_Cipher : public Cipher
-{
-    rel::Interface iface;
-    rel::Interface realIface;
-    const EVP_CIPHER *_blockCipher;
-    const EVP_CIPHER *_streamCipher;
-    unsigned int _keySize; // in bytes
-    unsigned int _ivLength;
+class SSL_Cipher : public Cipher {
+  rel::Interface iface;
+  rel::Interface realIface;
+  const EVP_CIPHER *_blockCipher;
+  const EVP_CIPHER *_streamCipher;
+  unsigned int _keySize;  // in bytes
+  unsigned int _ivLength;
 
-public:
-    SSL_Cipher(const rel::Interface &iface, const rel::Interface &realIface,
-	    const EVP_CIPHER *blockCipher, const EVP_CIPHER *streamCipher,
-	    int keyLength);
-    virtual ~SSL_Cipher();
+ public:
+  SSL_Cipher(const rel::Interface &iface, const rel::Interface &realIface,
+             const EVP_CIPHER *blockCipher, const EVP_CIPHER *streamCipher,
+             int keyLength);
+  virtual ~SSL_Cipher();
 
-    // returns the real interface, not the one we're emulating (if any)..
-    virtual rel::Interface interface() const;
+  // returns the real interface, not the one we're emulating (if any)..
+  virtual rel::Interface interface() const;
 
-    // create a new key based on a password
-    virtual CipherKey newKey(const char *password, int passwdLength,
-            int &iterationCount, long desiredDuration,
-            const unsigned char *salt, int saltLen);
-    // deprecated - for backward compatibility
-    virtual CipherKey newKey(const char *password, int passwdLength);
-    // create a new random key
-    virtual CipherKey newRandomKey();
+  // create a new key based on a password
+  virtual CipherKey newKey(const char *password, int passwdLength,
+                           int &iterationCount, long desiredDuration,
+                           const unsigned char *salt, int saltLen);
+  // deprecated - for backward compatibility
+  virtual CipherKey newKey(const char *password, int passwdLength);
+  // create a new random key
+  virtual CipherKey newRandomKey();
 
-    // data must be len keySize()
-    virtual CipherKey readKey(const unsigned char *data, 
-	                      const CipherKey &encodingKey,
-			      bool checkKey);
-    virtual void writeKey(const CipherKey &key, unsigned char *data, 
-	          const CipherKey &encodingKey); 
-    virtual bool compareKey( const CipherKey &A, 
-	                     const CipherKey &B ) const;
+  // data must be len keySize()
+  virtual CipherKey readKey(const unsigned char *data,
+                            const CipherKey &encodingKey, bool checkKey);
+  virtual void writeKey(const CipherKey &key, unsigned char *data,
+                        const CipherKey &encodingKey);
+  virtual bool compareKey(const CipherKey &A, const CipherKey &B) const;
 
-    // meta-data about the cypher
-    virtual int keySize() const;
-    virtual int encodedKeySize() const;
-    virtual int cipherBlockSize() const;
+  // meta-data about the cypher
+  virtual int keySize() const;
+  virtual int encodedKeySize() const;
+  virtual int cipherBlockSize() const;
 
-    virtual bool randomize( unsigned char *buf, int len,
-            bool strongRandom ) const;
+  virtual bool randomize(unsigned char *buf, int len, bool strongRandom) const;
 
-    virtual uint64_t MAC_64( const unsigned char *src, int len,
-	    const CipherKey &key, uint64_t *augment ) const;
+  virtual uint64_t MAC_64(const unsigned char *src, int len,
+                          const CipherKey &key, uint64_t *augment) const;
 
-    // functional interfaces
-    /*
-	Stream encoding in-place.
-    */
-    virtual bool streamEncode(unsigned char *in, int len, 
-	    uint64_t iv64, const CipherKey &key) const;
-    virtual bool streamDecode(unsigned char *in, int len, 
-	    uint64_t iv64, const CipherKey &key) const;
+  // functional interfaces
+  /*
+      Stream encoding in-place.
+  */
+  virtual bool streamEncode(unsigned char *in, int len, uint64_t iv64,
+                            const CipherKey &key) const;
+  virtual bool streamDecode(unsigned char *in, int len, uint64_t iv64,
+                            const CipherKey &key) const;
 
-    /*
-	Block encoding is done in-place.  Partial blocks are supported, but
-	blocks are always expected to begin on a block boundary.  See
-	blockSize().
-    */
-    virtual bool blockEncode(unsigned char *buf, int size, 
-	             uint64_t iv64, const CipherKey &key) const;
-    virtual bool blockDecode(unsigned char *buf, int size, 
-	             uint64_t iv64, const CipherKey &key) const;
+  /*
+      Block encoding is done in-place.  Partial blocks are supported, but
+      blocks are always expected to begin on a block boundary.  See
+      blockSize().
+  */
+  virtual bool blockEncode(unsigned char *buf, int size, uint64_t iv64,
+                           const CipherKey &key) const;
+  virtual bool blockDecode(unsigned char *buf, int size, uint64_t iv64,
+                           const CipherKey &key) const;
 
-    // hack to help with static builds
-    static bool Enabled();
-private:
-    void setIVec( unsigned char *ivec, uint64_t seed,
-	    const shared_ptr<SSLKey> &key ) const;
+  // hack to help with static builds
+  static bool Enabled();
 
-    // deprecated - for backward compatibility
-    void setIVec_old( unsigned char *ivec, unsigned int seed,
-            const shared_ptr<SSLKey> &key ) const;
+ private:
+  void setIVec(unsigned char *ivec, uint64_t seed,
+               const shared_ptr<SSLKey> &key) const;
+
+  // deprecated - for backward compatibility
+  void setIVec_old(unsigned char *ivec, unsigned int seed,
+                   const shared_ptr<SSLKey> &key) const;
 };
 
-
 #endif
-

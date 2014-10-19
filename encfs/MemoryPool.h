@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -21,20 +21,15 @@
 #ifndef _MemoryPool_incl_
 #define _MemoryPool_incl_
 
+struct MemBlock {
+  unsigned char *data;
 
-struct MemBlock
-{
-    unsigned char *data;
+  void *internalData;
 
-    void *internalData;
-
-    MemBlock();
+  MemBlock();
 };
 
-inline MemBlock::MemBlock()
-    : data(0), internalData(0)
-{
-}
+inline MemBlock::MemBlock() : data(0), internalData(0) {}
 
 /*
     Memory Pool for fixed sized objects.
@@ -45,12 +40,10 @@ inline MemBlock::MemBlock()
     unsigned char *buffer = mb.data;
     MemoryPool::release( mb );
 */
-namespace MemoryPool
-{
-    MemBlock allocate( int size );
-    void release( const MemBlock &el );
-    void destroyAll();
+namespace MemoryPool {
+MemBlock allocate(int size);
+void release(const MemBlock &el);
+void destroyAll();
 }
 
 #endif
-

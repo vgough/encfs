@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -30,60 +30,54 @@
 class Cipher;
 
 /*
-    Implement the FileIO interface encrypting data in blocks. 
-    
+    Implement the FileIO interface encrypting data in blocks.
+
     Uses BlockFileIO to handle the block scatter / gather issues.
 */
-class CipherFileIO : public BlockFileIO
-{
-public:
-    CipherFileIO( const shared_ptr<FileIO> &base, 
-                  const FSConfigPtr &cfg);
-    virtual ~CipherFileIO();
+class CipherFileIO : public BlockFileIO {
+ public:
+  CipherFileIO(const shared_ptr<FileIO> &base, const FSConfigPtr &cfg);
+  virtual ~CipherFileIO();
 
-    virtual rel::Interface interface() const;
+  virtual rel::Interface interface() const;
 
-    virtual void setFileName( const char *fileName );
-    virtual const char *getFileName() const;
-    virtual bool setIV( uint64_t iv );
+  virtual void setFileName(const char *fileName);
+  virtual const char *getFileName() const;
+  virtual bool setIV(uint64_t iv);
 
-    virtual int open( int flags );
+  virtual int open(int flags);
 
-    virtual int getAttr( struct stat *stbuf ) const;
-    virtual off_t getSize() const;
+  virtual int getAttr(struct stat *stbuf) const;
+  virtual off_t getSize() const;
 
-    virtual int truncate( off_t size );
+  virtual int truncate(off_t size);
 
-    virtual bool isWritable() const;
+  virtual bool isWritable() const;
 
-private:
-    virtual ssize_t readOneBlock( const IORequest &req ) const;
-    virtual bool writeOneBlock( const IORequest &req );
+ private:
+  virtual ssize_t readOneBlock(const IORequest &req) const;
+  virtual bool writeOneBlock(const IORequest &req);
 
-    void initHeader();
-    bool writeHeader();
-    bool blockRead( unsigned char *buf, int size, 
-	             uint64_t iv64 ) const;
-    bool streamRead( unsigned char *buf, int size, 
-	             uint64_t iv64 ) const;
-    bool blockWrite( unsigned char *buf, int size, 
-	             uint64_t iv64 ) const;
-    bool streamWrite( unsigned char *buf, int size, 
-	             uint64_t iv64 ) const;
+  void initHeader();
+  bool writeHeader();
+  bool blockRead(unsigned char *buf, int size, uint64_t iv64) const;
+  bool streamRead(unsigned char *buf, int size, uint64_t iv64) const;
+  bool blockWrite(unsigned char *buf, int size, uint64_t iv64) const;
+  bool streamWrite(unsigned char *buf, int size, uint64_t iv64) const;
 
-    shared_ptr<FileIO> base;
+  shared_ptr<FileIO> base;
 
-    FSConfigPtr fsConfig;
+  FSConfigPtr fsConfig;
 
-    // if haveHeader is true, then we have a transparent file header which
-    // contains a 64 bit initialization vector.
-    bool haveHeader;
-    uint64_t externalIV;
-    uint64_t fileIV;
-    int lastFlags;
+  // if haveHeader is true, then we have a transparent file header which
+  // contains a 64 bit initialization vector.
+  bool haveHeader;
+  uint64_t externalIV;
+  uint64_t fileIV;
+  int lastFlags;
 
-    shared_ptr<Cipher> cipher;
-    CipherKey key;
+  shared_ptr<Cipher> cipher;
+  CipherKey key;
 };
 
 #endif

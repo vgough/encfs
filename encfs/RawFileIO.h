@@ -7,7 +7,7 @@
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU Lesser General Public License as published by the
  * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.  
+ * option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -25,40 +25,38 @@
 
 #include <string>
 
-class RawFileIO : public FileIO
-{
-public:
-    RawFileIO();
-    RawFileIO( const std::string &fileName );
-    virtual ~RawFileIO();
+class RawFileIO : public FileIO {
+ public:
+  RawFileIO();
+  RawFileIO(const std::string &fileName);
+  virtual ~RawFileIO();
 
-    virtual rel::Interface interface() const;
+  virtual rel::Interface interface() const;
 
-    virtual void setFileName( const char *fileName );
-    virtual const char *getFileName() const;
+  virtual void setFileName(const char *fileName);
+  virtual const char *getFileName() const;
 
-    virtual int open( int flags );
-    
-    virtual int getAttr( struct stat *stbuf ) const;
-    virtual off_t getSize() const;
+  virtual int open(int flags);
 
-    virtual ssize_t read( const IORequest & req ) const;
-    virtual bool write( const IORequest &req );
+  virtual int getAttr(struct stat *stbuf) const;
+  virtual off_t getSize() const;
 
-    virtual int truncate( off_t size );
+  virtual ssize_t read(const IORequest &req) const;
+  virtual bool write(const IORequest &req);
 
-    virtual bool isWritable() const;
-protected:
+  virtual int truncate(off_t size);
 
-    std::string name;
+  virtual bool isWritable() const;
 
-    bool knownSize;
-    off_t fileSize;
+ protected:
+  std::string name;
 
-    int fd;
-    int oldfd;
-    bool canWrite;
+  bool knownSize;
+  off_t fileSize;
+
+  int fd;
+  int oldfd;
+  bool canWrite;
 };
 
 #endif
-
