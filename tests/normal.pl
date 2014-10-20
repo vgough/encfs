@@ -3,13 +3,11 @@
 use Test::More qw( no_plan );
 use File::Path;
 use File::Copy;
+use File::Temp;
 use IO::Handle;
 use Digest::MD5 qw(md5_hex);
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
-
-my $raw = "$tempDir/crypt-raw-$$";
-my $crypt = "$tempDir/crypt-$$";
 
 # test filesystem in standard config mode
 &runTests('standard');
@@ -17,11 +15,12 @@ my $crypt = "$tempDir/crypt-$$";
 # test in paranoia mode
 &runTests('paranoia');
 
-
 # Wrapper function - runs all tests in the specified mode
 sub runTests
 {
     my $mode = shift;
+
+    &newWorkingDir;
 
     my $hardlinks = 1;
     if($mode eq 'standard')
@@ -48,6 +47,17 @@ sub runTests
     &cleanup;
 }
 
+# Helper function
+# Create a new empty working directory
+sub newWorkingDir
+{
+    our $workingDir = mkdtemp("$tempDir/encfs-tests-XXXX")
+        || BAIL_OUT("Could not create temporary directory");
+
+    our $raw = "$workingDir/raw";
+    our $crypt = "$workingDir/crypt";
+}
+
 # Test Corruption
 # Modify the encrypted file and verify that the MAC check detects it
 sub corruption
@@ -71,7 +81,7 @@ sub corruption
 # (like a database would do)
 sub internalModification
 {
-    $ofile = "$tempDir/crypt-internal-$$";
+    $ofile = "$workingDir/crypt-internal-$$";
     qx(dd if=/dev/urandom of=$ofile bs=2k count=2 2> /dev/null);
     ok(copy($ofile, "$crypt/internal"), "copying crypt-internal file");
 
@@ -177,7 +187,7 @@ sub fileCreation
     # create a file
     qx(df -ah > "$crypt/df.txt");
     ok( -f "$crypt/df.txt", "file created" );
-    
+
     # ensure there is an encrypted version.
     my $c = encName("df.txt");
     cmp_ok( length($c), '>', 8, "encrypted name ok" );
@@ -196,7 +206,7 @@ sub fileCreation
 sub grow
 {
     open(my $fh_a, "+>$crypt/grow");
-    open(my $fh_b, "+>$tempDir/grow");
+    open(my $fh_b, "+>$workingDir/grow");
 
     my $d = "1234567"; # Length 7 so we are not aligned to the block size
     my $len = 7;
@@ -248,7 +258,7 @@ sub checkContents
 sub encName
 {
     my $plain = shift;
-    my $enc = qx(./encfsctl encode --extpass="echo test" $raw $plain);
+    my $enc = qx(./encfs/encfsctl encode --extpass="echo test" $raw $plain);
     chomp($enc);
     return $enc;
 }
@@ -285,7 +295,7 @@ sub links
 
     SKIP: {
         skip "No hardlink support" unless $hardlinkTests;
-        
+
         ok( link("$crypt/data", "$crypt/data.2"), "hard link");
         checkContents("$crypt/data.2", $contents, "hardlink read");
     };
@@ -297,15 +307,11 @@ sub mount
 {
     my $args = shift;
 
-    ok( ! -d $raw, "no existing dir");
-    ok( ! -d $crypt, "no existing dir");
+    # When these fail, the rest of the tests makes no sense
+    mkdir($raw) || BAIL_OUT("Could not create $raw: $!");
+    mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
 
-    mkdir $raw;
-    ok( -d $raw, "created dir" );
-    mkdir $crypt;
-    ok( -d $crypt, "created dir" );
-
-    qx(./encfs --extpass="echo test" $args $raw $crypt);
+    qx(./encfs/encfs --extpass="echo test" $args $raw $crypt);
 
     ok( -f "$raw/.encfs6.xml",  "created control file");
 }
@@ -327,10 +333,7 @@ sub cleanup
     rmdir $crypt;
     ok( ! -d $crypt, "unmount ok, mount point removed");
 
-    if(-d $raw)
-    {
-        rmtree($raw);
-    }
-    ok( ! -d $raw, "encrypted directory removed");
+    rmtree($workingDir);
+    ok( ! -d $workingDir, "working dir removed");
 }
 
