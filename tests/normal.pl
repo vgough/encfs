@@ -1,5 +1,7 @@
 #!/usr/bin/perl -w
 
+# Test EncFS normal and paranoid mode
+
 use Test::More qw( no_plan );
 use File::Path;
 use File::Copy;
