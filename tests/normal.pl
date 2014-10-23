@@ -1,15 +1,18 @@
 #!/usr/bin/perl -w
 
+# Test EncFS normal and paranoid mode
+
 use Test::More qw( no_plan );
 use File::Path;
+use File::Copy;
+use File::Temp;
 use IO::Handle;
-use Digest::MD5;
+use Digest::MD5 qw(md5_hex);
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
-my $raw = "$tempDir/crypt-raw-$$";
-my $crypt = "$tempDir/crypt-$$";
-
+# run unit tests
+ok( system("./encfs/test 2> /dev/null") == 0, "unit tests");
 
 # test filesystem in standard config mode
 &runTests('standard');
@@ -17,11 +20,12 @@ my $crypt = "$tempDir/crypt-$$";
 # test in paranoia mode
 &runTests('paranoia');
 
-
-
+# Wrapper function - runs all tests in the specified mode
 sub runTests
 {
     my $mode = shift;
+
+    &newWorkingDir;
 
     my $hardlinks = 1;
     if($mode eq 'standard')
@@ -31,6 +35,7 @@ sub runTests
     {
         &mount("--paranoia");
         $hardlinks = 0; # no hardlinks in paranoia mode
+        &corruption;
     } else
     {
         die "invalid test mode";
@@ -41,10 +46,77 @@ sub runTests
     &links($hardlinks);
     &truncate;
     &renames;
+    &internalModification;
+    &grow;
 
     &cleanup;
 }
 
+# Helper function
+# Create a new empty working directory
+sub newWorkingDir
+{
+    our $workingDir = mkdtemp("$tempDir/encfs-tests-XXXX")
+        || BAIL_OUT("Could not create temporary directory");
+
+    our $raw = "$workingDir/raw";
+    our $crypt = "$workingDir/crypt";
+}
+
+# Test Corruption
+# Modify the encrypted file and verify that the MAC check detects it
+sub corruption
+{
+    ok( open(OUT, "+> $crypt/corrupt") && print(OUT "12345678901234567890")
+        && close(OUT), "create corruption-test file" );
+
+
+    $e = encName("corrupt");
+    ok( open(OUT, ">> $raw/$e") && print(OUT "garbage") && close(OUT),
+        "corrupting raw file");
+
+    ok( open(IN, "< $crypt/corrupt"), "open corrupted file");
+    my $content;
+    $result = read(IN, $content, 20);
+    ok(! defined $result, "corrupted file with MAC returns read error: $!");
+}
+
+# Test internal modification
+# Create a file of fixed size and overwrite data at different offsets
+# (like a database would do)
+sub internalModification
+{
+    $ofile = "$workingDir/crypt-internal-$$";
+    qx(dd if=/dev/urandom of=$ofile bs=2k count=2 2> /dev/null);
+    ok(copy($ofile, "$crypt/internal"), "copying crypt-internal file");
+
+    open(my $out1, "+<", "$crypt/internal");
+    open(my $out2, "+<", $ofile);
+
+    @fhs = ($out1, $out2);
+
+    $ori = md5fh($out1);
+    $b = md5fh($out2);
+
+    ok( $ori eq $b, "random file md5 matches");
+
+    my @offsets = (10, 30, 1020, 1200);
+    foreach my $o (@offsets)
+    {
+        foreach my $fh(@fhs) {
+            seek($fh, $o, 0);
+            print($fh "garbagegarbagegarbagegarbagegarbage");
+        }
+        $a=md5fh($out1);
+        $b=md5fh($out2);
+        ok( ($a eq $b) && ($a ne $ori), "internal modification at $o");
+    }
+
+    close($out1);
+    close($out2);
+}
+
+# Test renames
 sub renames
 {
     ok( open(F, ">$crypt/orig-name") && close F, "create file for rename test");
@@ -73,6 +145,7 @@ sub renames
     is( (stat "$crypt/3rd-name")[9], $olderTime, "time unchanged by rename");
 }
 
+# Test truncate and grow
 sub truncate
 {
     # write to file, then truncate it
@@ -95,35 +168,33 @@ sub truncate
     print OUT "12345";
     is( -s "$crypt/trunc", 35, "truncated file size");
 
-    seek(OUT, 0, 0);
-    is( Digest::MD5->new->addfile(*OUT)->hexdigest, 
-        "5f170cc34b1944d75d86cc01496292df", "content digest");
+    is( md5fh(*OUT), "5f170cc34b1944d75d86cc01496292df",
+        "content digest");
 
     # try crossing block boundaries
     seek(OUT, 10000,0);
     print OUT "abcde";
-    seek(OUT, 0, 0);
-    is( Digest::MD5->new->addfile(*OUT)->hexdigest, 
-        "117a51c980b64dcd21df097d02206f98", "content digest");
+
+    is( md5fh(*OUT), "117a51c980b64dcd21df097d02206f98",
+        "content digest");
 
     # then truncate back to 35 chars
     truncate(OUT, 35);
-    seek(OUT, 0, 0);
-    is( Digest::MD5->new->addfile(*OUT)->hexdigest, 
-        "5f170cc34b1944d75d86cc01496292df", "content digest");
+    is( md5fh(*OUT), "5f170cc34b1944d75d86cc01496292df",
+        "content digest");
 
     close OUT;
 }
 
+# Test file creation and removal
 sub fileCreation
 {
     # create a file
     qx(df -ah > "$crypt/df.txt");
     ok( -f "$crypt/df.txt", "file created" );
-    
+
     # ensure there is an encrypted version.
-    my $c = qx(./encfsctl encode --extpass="echo test" $raw df.txt);
-    chomp($c);
+    my $c = encName("df.txt");
     cmp_ok( length($c), '>', 8, "encrypted name ok" );
     ok( -f "$raw/$c", "encrypted file created" );
 
@@ -136,6 +207,46 @@ sub fileCreation
     ok( ! -f "$raw/$c", "file removal" );
 }
 
+# Test file growth
+sub grow
+{
+    open(my $fh_a, "+>$crypt/grow");
+    open(my $fh_b, "+>$workingDir/grow");
+
+    my $d = "1234567"; # Length 7 so we are not aligned to the block size
+    my $len = 7;
+
+    my $old = "";
+    my $errs = 0;
+
+    my $i;
+    for($i=1; $i<1000; $i++)
+    {
+        print($fh_a $d);
+        print($fh_b $d);
+
+        my $a = md5fh($fh_a);
+        my $b = md5fh($fh_b);
+
+        my $size = $len * $i;
+
+        # md5sums must be identical but must have changed
+        if($a ne $b || $a eq $old)
+        {
+            $errs++;
+        }
+
+        $old = $a;
+    }
+
+    ok($errs == 0, "grow file by $len bytes, $i times");
+
+    close($fh_a);
+    close($fh_b);
+}
+
+# Helper function
+# Check a file's content
 sub checkContents
 {
     my ($file, $expected, $testName) = @_;
@@ -147,6 +258,28 @@ sub checkContents
     close IN;
 }
 
+# Helper function
+# Convert plain-text filename to encrypted filename
+sub encName
+{
+    my $plain = shift;
+    my $enc = qx(./encfs/encfsctl encode --extpass="echo test" $raw $plain);
+    chomp($enc);
+    return $enc;
+}
+
+# Helper function
+# Get the MD5 sum of the file open at the filehandle
+sub md5fh
+{
+    my $fh_orig = shift;
+    open(my $fh, "<&", $fh_orig); # Duplicate the file handle so the seek
+    seek($fh, 0, 0);              # does not affect the caller
+    return Digest::MD5->new->addfile($fh)->hexdigest;
+    close($fh);
+}
+
+# Test symlinks & hardlinks
 sub links
 {
     my $hardlinkTests = shift;
@@ -167,32 +300,33 @@ sub links
 
     SKIP: {
         skip "No hardlink support" unless $hardlinkTests;
-        
+
         ok( link("$crypt/data", "$crypt/data.2"), "hard link");
         checkContents("$crypt/data.2", $contents, "hardlink read");
     };
 }
 
+# Test mount
+# Leaves the filesystem mounted - also used as a helper function
 sub mount
 {
     my $args = shift;
 
-    ok( ! -d $raw, "no existing dir");
-    ok( ! -d $crypt, "no existing dir");
+    # When these fail, the rest of the tests makes no sense
+    mkdir($raw) || BAIL_OUT("Could not create $raw: $!");
+    mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
 
-    mkdir $raw;
-    ok( -d $raw, "created dir" );
-    mkdir $crypt;
-    ok( -d $crypt, "created dir" );
-
-    qx(./encfs --extpass="echo test" $args $raw $crypt);
+    qx(./encfs/encfs --extpass="echo test" $args $raw $crypt);
 
     ok( -f "$raw/.encfs6.xml",  "created control file");
 }
 
+# Helper function
+# Unmount and delete mountpoint
 sub cleanup
 {
     my $fusermount = qx(which fusermount);
+    chomp($fusermount);
     if(-f $fusermount)
     {
         qx($fusermount -u "$crypt");
@@ -204,10 +338,7 @@ sub cleanup
     rmdir $crypt;
     ok( ! -d $crypt, "unmount ok, mount point removed");
 
-    if(-d $raw)
-    {
-        rmtree($raw);
-    }
-    ok( ! -d $raw, "encrypted directory removed");
+    rmtree($workingDir);
+    ok( ! -d $workingDir, "working dir removed");
 }
 

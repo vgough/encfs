@@ -31,6 +31,20 @@ depends upon community interest.  In order to make it easier for anyone to
 contribute, it is moving a new home on Github.  So if you're interested in
 EncFS, please dive in!
 
+EncFS still has a few unique features that may be interesing to you:
+
+*   `--reverse` mode: Provides an encrypted view of an unencrypted folder.
+    This enables encrypted remote backups using standard tools like
+    rsync.
+*   EncFS is typically faster than ecryptfs for stat()-heavy workloads
+    when the backing device is a classical hard disk.
+    This is because ecryptfs has to to read each file header to determine
+    the file size - EncFS does not. This is one additional seek for each
+    stat. On SSDs that have virtually no seek time, that difference may
+    disappear.
+*   EncFS works on network file systems (NFS, CIFS...), while ecryptfs
+    is known to still have [problems][1].
+
 ## GitHub Transition
 
 GitHub hosting for EncFS is a work in progress.  See also the original, and
@@ -46,3 +60,5 @@ work, some of which may be back-ported to the master branch when it is stable. T
 dev branch is not stable, and there is no guarantee of backward compatibility
 between changes.
 
+
+[1]: https://bugs.launchpad.net/ecryptfs/+bug/277578
