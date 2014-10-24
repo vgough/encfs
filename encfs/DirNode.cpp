@@ -360,6 +360,18 @@ DirNode::plainPath( const char *cipherPath_ )
 {
     try
     {
+	// bjw 2012/12/2
+	//
+	// In --reverse mode, absolute "plain" paths need special "+" format encoding just like
+	//    relativeCipherPath's do in forward mode.
+	//
+	if (fsConfig->reverseEncryption)
+	{
+	    if ( cipherPath_[0] == '/' )
+		return string("+") + naming->decodeName( cipherPath_+1, 
+			strlen(cipherPath_+1) );
+	}
+	// end bjw mod
 	if( !strncmp( cipherPath_, rootDir.c_str(), 
 		    rootDir.length() ) )
 	{
