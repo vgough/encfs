@@ -40,10 +40,10 @@ sub cleanup
 # Directory structure: plain -[encrypt]-> ciphertext -[decrypt]-> decrypted
 sub mount
 {
-    my $r=system("encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse > /dev/null");
+    my $r=system("./encfs/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse > /dev/null");
     ok($r == 0, "mounted ciphertext file system");
 
-    $r=system("ENCFS6_CONFIG=$plain/.encfs6.xml encfs --extpass=\"echo test\" $ciphertext $decrypted");
+    $r=system("ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfs --extpass=\"echo test\" $ciphertext $decrypted");
     ok($r == 0, "mounted decrypting file system");
 }
 

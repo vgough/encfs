@@ -22,16 +22,8 @@
 #ifndef _SHARED_PTR_incl_
 #define _SHARED_PTR_incl_
 
-#include "config.h"
-
-#if HAVE_STD_SHARED_PTR
 #include <memory>
 using std::shared_ptr;
 using std::dynamic_pointer_cast;
-#else
-#include <boost/shared_ptr.hpp>
-using boost::shared_ptr;
-using boost::dynamic_pointer_cast;
-#endif
 
 #endif

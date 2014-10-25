@@ -18,13 +18,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "FileNode.h"
-#include "Context.h"
-#include "Mutex.h"
-#include "FileUtils.h"
-#include "DirNode.h"
-
 #include <rlog/rlog.h>
+
+#include "Context.h"
+#include "DirNode.h"
+#include "FileNode.h"
+#include "FileUtils.h"
+#include "Mutex.h"
 
 using namespace rel;
 using namespace rlog;
@@ -74,7 +74,7 @@ void EncFS_Context::setRoot(const shared_ptr<DirNode> &r) {
   if (r) rootCipherDir = r->rootDirectory();
 }
 
-bool EncFS_Context::isMounted() { return root; }
+bool EncFS_Context::isMounted() { return root.get() != nullptr; }
 
 int EncFS_Context::getAndResetUsageCounter() {
   Lock lock(contextMutex);

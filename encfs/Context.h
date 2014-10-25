@@ -28,6 +28,7 @@
 #else
 #include <map>
 #endif
+#include <string>
 
 #include "encfs.h"
 #include "shared_ptr.h"

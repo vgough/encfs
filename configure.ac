@@ -19,7 +19,7 @@ unset CDPATH
 
 AC_LANG_CPLUSPLUS
 AC_PROG_CXX
-    
+
 dnl almost the same like KDE_SET_PEFIX but the path is /usr/local
 dnl
 unset CDPATH
@@ -46,23 +46,7 @@ AC_PROG_LIBTOOL
 AX_PTHREAD
 
 AX_BOOST_BASE([1.34])
-AX_BOOST_SYSTEM
 AX_BOOST_SERIALIZATION
-AX_BOOST_FILESYSTEM
-
-AC_MSG_CHECKING([for std::shared_ptr])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
-  [[#include <memory>]]
-  [[std::shared_ptr<int> have_shared_ptr;]])
-], [
-  AC_MSG_RESULT([yes])
-  AC_DEFINE_UNQUOTED([HAVE_STD_SHARED_PTR], 1, 
-                     [Define to 1 if you have the 'std::shared_ptr' class.])
-], [
-  AC_MSG_RESULT([no])
-  AC_DEFINE_UNQUOTED([HAVE_STD_SHARED_PTR], 0, 
-                     [Define to 1 if you have the 'std::shared_ptr' class.])
-])
 
 dnl Need to include any user specified flags in the tests below, as they might
 dnl specify required include directories..
@@ -84,7 +68,10 @@ AX_EXT_HAVE_LIB(/usr/lib /usr/local/lib /opt/lib /opt/local/lib, osxfuse,
 
 if test "$GXX" = "yes"; then
     CXXFLAGS="-W -Wall -Wpointer-arith -Wwrite-strings $CXXFLAGS"
+    CXXFLAGS="-std=c++11 $CXXFLAGS"
     dnl CXXFLAGS="$CXXFLAGS -Wformat=2 -Wconversion"
+elif test -z "${DARWIN_TRUE}"; then
+    CXXFLAGS="-std=c++11 -stdlib=libc++ $CXXFLAGS"
 fi
 
 if test -z "${DARWIN_TRUE}"; then
@@ -99,7 +86,7 @@ fi
 
 # check for a supported FUSE_MAJOR_VERSION.
 AC_MSG_CHECKING([For supported FUSE API version])
-AC_RUN_IFELSE([ 
+AC_RUN_IFELSE([
     AC_LANG_PROGRAM([[#include "fuse.h"]],
 [[
     if(FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 5)
@@ -107,7 +94,7 @@ AC_RUN_IFELSE([
 	return 0;
     } else
 	return -1;
-]])], 
+]])],
     [AC_MSG_RESULT([yes])],
     [AC_MSG_RESULT([no])
     AC_MSG_FAILURE([
@@ -122,7 +109,7 @@ dnl only enable it if setxattr function is found..
 AC_CHECK_HEADERS([attr/xattr.h sys/xattr.h])
 
 dnl xattr functions take additional arguments on some systems (eg Darwin).
-AC_CACHE_CHECK([whether xattr interface takes additional options], 
+AC_CACHE_CHECK([whether xattr interface takes additional options],
         smb_attr_cv_xattr_add_opt, [
             old_LIBS=$LIBS
             LIBS="$LIBS $ACL_LIBS"
@@ -156,7 +143,7 @@ AC_ARG_ENABLE(openssl,
 		   [disables openssl library usage.]),
 	with_openssl=$enableval, with_openssl="yes" )
 
-# try checking for openssl using 
+# try checking for openssl using
 if test "x$with_openssl" = "xyes"; then
     # look for openssl using pkg-config first..
     PKG_CHECK_MODULES(OPENSSL, openssl >= 0.9.7,
@@ -189,7 +176,7 @@ if test "x$with_openssl" = "xyes"; then
 	    AC_MSG_WARN([New SSL cipher code only enabled for OpenSSL 0.9.7 or later]))
 	AC_CHECK_FUNCS(HMAC_Init_ex,
 	    AC_DEFINE(HAVE_HMAC_INIT_EX, [1], [Have HMAC_Init_ex function]))
-	
+
 	CXXFLAGS="$oldflags"
 	LIBS="$oldlibs"
 

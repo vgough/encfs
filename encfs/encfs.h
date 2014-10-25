@@ -25,6 +25,8 @@
 #include <fuse.h>
 #include <unistd.h>
 
+#include <rlog/rlog.h>
+
 #if defined(HAVE_SYS_XATTR_H) | defined(HAVE_ATTR_XATTR_H)
 #define HAVE_XATTR
 #endif
@@ -35,9 +37,10 @@
 static __inline int setfsuid(uid_t uid) {
   uid_t olduid = geteuid();
 
-  seteuid(uid);
-
-  if (errno != EINVAL) errno = 0;
+  if (seteuid(uid) != 0) {
+    // ignore error.
+    rDebug("seteuid error: %i", errno);
+  }
 
   return olduid;
 }
@@ -45,9 +48,10 @@ static __inline int setfsuid(uid_t uid) {
 static __inline int setfsgid(gid_t gid) {
   gid_t oldgid = getegid();
 
-  setegid(gid);
-
-  if (errno != EINVAL) errno = 0;
+  if (setegid(gid) != 0) {
+    // ignore error.
+    rDebug("setfsgid error: %i", errno);
+  }
 
   return oldgid;
 }

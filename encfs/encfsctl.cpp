@@ -17,42 +17,35 @@
 
 #include "encfs.h"
 
-#include "config.h"
-
-#include "FileUtils.h"
-#include "Cipher.h"
-
-#include "Context.h"
-#include "FileNode.h"
-#include "DirNode.h"
-#include "shared_ptr.h"
+#include <fcntl.h>
+#include <getopt.h>
+#include <iostream>
+#include <string>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include <rlog/rlog.h>
 #include <rlog/StdioNode.h>
 #include <rlog/RLogChannel.h>
-
-#include <iostream>
-#include <string>
-
-#include <getopt.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-
-#include "i18n.h"
-
-#include <boost/format.hpp>
-#include <boost/scoped_array.hpp>
 
 #ifdef HAVE_SSL
 #define NO_DES
 #include <openssl/ssl.h>
 #endif
 
+#include "Cipher.h"
+#include "Context.h"
+#include "DirNode.h"
+#include "FileNode.h"
+#include "FileUtils.h"
+#include "autosprintf.h"
+#include "config.h"
+#include "i18n.h"
+#include "shared_ptr.h"
+
 using namespace rlog;
 using namespace std;
-using boost::format;
-using boost::scoped_array;
+using gnu::autosprintf;
 
 static int showInfo(int argc, char **argv);
 static int showVersion(int argc, char **argv);
@@ -112,13 +105,14 @@ struct CommandOpts {
       {0, 0, 0, 0, 0, 0}};
 
 static void usage(const char *name) {
-  cerr << format(_("encfsctl version %s")) % VERSION << "\n" << _("Usage:\n")
+  cerr << autosprintf(_("encfsctl version %s"), VERSION) << "\n"
+       << _("Usage:\n")
        // displays usage commands, eg "./encfs (root dir) ..."
        // xgroup(usage)
-       << format(
+       << autosprintf(
               _("%s (root dir)\n"
-                "  -- displays information about the filesystem, or \n")) %
-              name;
+                "  -- displays information about the filesystem, or \n"),
+              name);
 
   int offset = 0;
   while (commands[offset].name != 0) {
@@ -132,12 +126,12 @@ static void usage(const char *name) {
 
   cerr << "\n"
        // xgroup(usage)
-       << format(_("Example: \n%s info ~/.crypt\n")) % name << "\n";
+       << autosprintf(_("Example: \n%s info ~/.crypt\n"), name) << "\n";
 }
 
 static bool checkDir(string &rootDir) {
   if (!isDirectory(rootDir.c_str())) {
-    cerr << format(_("directory %s does not exist.\n")) % rootDir.c_str();
+    cerr << autosprintf(_("directory %s does not exist.\n"), rootDir.c_str());
     return false;
   }
   if (rootDir[rootDir.length() - 1] != '/') rootDir.append("/");
@@ -149,7 +143,7 @@ static int showVersion(int argc, char **argv) {
   (void)argc;
   (void)argv;
   // xgroup(usage)
-  cerr << format(_("encfsctl version %s")) % VERSION << "\n";
+  cerr << autosprintf(_("encfsctl version %s"), VERSION) << "\n";
 
   return EXIT_SUCCESS;
 }
@@ -170,36 +164,33 @@ static int showInfo(int argc, char **argv) {
       return EXIT_FAILURE;
     case Config_Prehistoric:
       // xgroup(diag)
-      cout << _("A really old EncFS filesystem was found. \n"
-                "It is not supported in this EncFS build.\n");
+      cout << _(
+          "A really old EncFS filesystem was found. \n"
+          "It is not supported in this EncFS build.\n");
       return EXIT_FAILURE;
     case Config_V3:
       // xgroup(diag)
-      cout << "\n" << format(
-                          _("Version 3 configuration; "
-                            "created by %s\n")) %
-                          config->creator.c_str();
+      cout << "\n" << autosprintf(_("Version 3 configuration; "
+                                    "created by %s\n"),
+                                  config->creator.c_str());
       break;
     case Config_V4:
       // xgroup(diag)
-      cout << "\n" << format(
-                          _("Version 4 configuration; "
-                            "created by %s\n")) %
-                          config->creator.c_str();
+      cout << "\n" << autosprintf(_("Version 4 configuration; "
+                                    "created by %s\n"),
+                                  config->creator.c_str());
       break;
     case Config_V5:
       // xgroup(diag)
-      cout << "\n" << format(
-                          _("Version 5 configuration; "
-                            "created by %s (revision %i)\n")) %
-                          config->creator % config->subVersion;
+      cout << "\n" << autosprintf(_("Version 5 configuration; "
+                                    "created by %s (revision %i)\n"),
+                                  config->creator.c_str(), config->subVersion);
       break;
     case Config_V6:
       // xgroup(diag)
-      cout << "\n" << format(
-                          _("Version 6 configuration; "
-                            "created by %s (revision %i)\n")) %
-                          config->creator % config->subVersion;
+      cout << "\n" << autosprintf(_("Version 6 configuration; "
+                                    "created by %s (revision %i)\n"),
+                                  config->creator.c_str(), config->subVersion);
       break;
   }
 
@@ -419,15 +410,15 @@ static int cmd_cat(int argc, char **argv) {
 static int copyLink(const struct stat &stBuf,
                     const shared_ptr<EncFS_Root> &rootInfo, const string &cpath,
                     const string &destName) {
-  scoped_array<char> buf(new char[stBuf.st_size + 1]);
-  int res = ::readlink(cpath.c_str(), buf.get(), stBuf.st_size);
+  std::vector<char> buf(stBuf.st_size + 1, '\0');
+  int res = ::readlink(cpath.c_str(), buf.data(), stBuf.st_size);
   if (res == -1) {
     cerr << "unable to readlink of " << cpath << "\n";
     return EXIT_FAILURE;
   }
 
   buf[res] = '\0';
-  string decodedLink = rootInfo->root->plainPath(buf.get());
+  string decodedLink = rootInfo->root->plainPath(buf.data());
 
   res = ::symlink(decodedLink.c_str(), destName.c_str());
   if (res == -1) {
@@ -458,7 +449,11 @@ static int copyContents(const shared_ptr<EncFS_Root> &rootInfo,
         cerr << "unable to read link " << encfsName << "\n";
         return EXIT_FAILURE;
       }
-      symlink(rootInfo->root->plainPath(linkContents).c_str(), targetName);
+      if (symlink(rootInfo->root->plainPath(linkContents).c_str(),
+                                            targetName) != 0) {
+        cerr << "unable to create symlink " << targetName << "\n";
+        return EXIT_FAILURE;
+      }
     } else {
       int outfd = creat(targetName, st.st_mode);
 
@@ -552,7 +547,7 @@ int showcruft(const shared_ptr<EncFS_Root> &rootInfo, const char *dirName) {
 
       if (!showedDir) {
         // just before showing a list of files in a directory
-        cout << format(_("In directory %s: \n")) % dirName;
+        cout << autosprintf(_("In directory %s: \n"), dirName);
         showedDir = true;
       }
       ++found;
@@ -594,9 +589,9 @@ static int cmd_showcruft(int argc, char **argv) {
 
   int filesFound = showcruft(rootInfo, "/");
 
-  cerr << format(ngettext("Found %i invalid file.", "Found %i invalid files.",
-                          filesFound)) %
-              filesFound << "\n";
+  cerr << autosprintf(ngettext("Found %i invalid file.",
+                               "Found %i invalid files.", filesFound),
+                      filesFound) << "\n";
 
   return EXIT_SUCCESS;
 }
@@ -617,8 +612,8 @@ static int do_chpasswd(bool useStdin, bool annotate, int argc, char **argv) {
   // instanciate proper cipher
   shared_ptr<Cipher> cipher = Cipher::New(config->cipherIface, config->keySize);
   if (!cipher) {
-    cout << format(_("Unable to find specified cipher \"%s\"\n")) %
-                config->cipherIface.name();
+    cout << autosprintf(_("Unable to find specified cipher \"%s\"\n"),
+                        config->cipherIface.name().c_str());
     return EXIT_FAILURE;
   }
 
@@ -725,12 +720,13 @@ int main(int argc, char **argv) {
     }
 
     if (commands[offset].name == 0) {
-      cerr << format(_("invalid command: \"%s\"")) % argv[1] << "\n";
+      cerr << autosprintf(_("invalid command: \"%s\""), argv[1]) << "\n";
     } else {
       if ((argc - 2 < commands[offset].minOptions) ||
           (argc - 2 > commands[offset].maxOptions)) {
-        cerr << format(_("Incorrect number of arguments for command \"%s\"")) %
-                    argv[1] << "\n";
+        cerr << autosprintf(
+                    _("Incorrect number of arguments for command \"%s\""),
+                    argv[1]) << "\n";
       } else
         return (*commands[offset].func)(argc - 1, argv + 1);
     }

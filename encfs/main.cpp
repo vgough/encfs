@@ -17,6 +17,7 @@
  */
 
 #include <iostream>
+#include <memory>
 #include <string>
 #include <sstream>
 
@@ -29,15 +30,13 @@
 
 #include <getopt.h>
 
-#include <boost/format.hpp>
-#include <boost/scoped_ptr.hpp>
-
 #include <rlog/rlog.h>
 #include <rlog/Error.h>
 #include <rlog/RLogChannel.h>
 #include <rlog/SyslogNode.h>
 #include <rlog/StdioNode.h>
 
+#include "autosprintf.h"
 #include "ConfigReader.h"
 #include "Context.h"
 #include "DirNode.h"
@@ -58,15 +57,10 @@
 extern "C" void fuse_unmount_compat22(const char *mountpoint);
 #define fuse_unmount fuse_unmount_compat22
 
-#ifndef MAX
-inline static int MAX(int a, int b) { return (a > b) ? a : b; }
-#endif
-
 using namespace std;
 using namespace rlog;
 using namespace rel;
-using boost::format;
-using boost::scoped_ptr;
+using gnu::autosprintf;
 
 // Maximum number of arguments that we're going to pass on to fuse.  Doesn't
 // affect how many arguments we can handle, just how many we can pass on..
@@ -111,12 +105,12 @@ static int oldStderr = STDERR_FILENO;
 
 static void usage(const char *name) {
   // xgroup(usage)
-  cerr << format(_("Build: encfs version %s")) % VERSION << "\n\n"
+  cerr << autosprintf(_("Build: encfs version %s"), VERSION) << "\n\n"
        // xgroup(usage)
-       << format(
+       << autosprintf(
               _("Usage: %s [options] rootDir mountPoint [-- [FUSE Mount "
-                "Options]]")) %
-              name << "\n\n"
+                "Options]]"),
+              name) << "\n\n"
        // xgroup(usage)
        << _("Common Options:\n"
             "  -H\t\t\t"
@@ -219,10 +213,10 @@ static bool processArgs(int argc, char *argv[],
       {"stdinpass", 0, 0, 'S'},  // read password from stdin
       {"annotate", 0, 0, 513},   // Print annotation lines to stderr
       {"verbose", 0, 0, 'v'},    // verbose mode
-      {"version", 0, 0, 'V'},  // version
-      {"reverse", 0, 0, 'r'},   // reverse encryption
-      {"standard", 0, 0, '1'},  // standard configuration
-      {"paranoia", 0, 0, '2'},  // standard configuration
+      {"version", 0, 0, 'V'},    // version
+      {"reverse", 0, 0, 'r'},    // reverse encryption
+      {"standard", 0, 0, '1'},   // standard configuration
+      {"paranoia", 0, 0, '2'},   // standard configuration
       {0, 0, 0, 0}};
 
   while (1) {
@@ -310,7 +304,7 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 'V':
         // xgroup(usage)
-        cerr << format(_("encfs version %s")) % VERSION << endl;
+        cerr << autosprintf(_("encfs version %s"), VERSION) << endl;
         exit(EXIT_SUCCESS);
         break;
       case 'H':
@@ -477,8 +471,8 @@ int main(int argc, char *argv[]) {
 #endif
 
   // log to stderr by default..
-  scoped_ptr<StdioNode> slog(new StdioNode(STDERR_FILENO));
-  scoped_ptr<SyslogNode> logNode;
+  std::unique_ptr<StdioNode> slog(new StdioNode(STDERR_FILENO));
+  std::unique_ptr<SyslogNode> logNode;
 
   // show error and warning output
   slog->subscribeTo(GetGlobalChannel("error"));
@@ -637,17 +631,15 @@ int main(int argc, char *argv[]) {
         // few words in libfuse's memory..
         FILE *out = fdopen(oldStderr, "a");
         // xgroup(usage)
-        fprintf(out, _("fuse failed.  Common problems:\n"
-                       " - fuse kernel module not installed (modprobe fuse)\n"
-                       " - invalid options -- see usage message\n"));
+        fputs(_("fuse failed.  Common problems:\n"
+                " - fuse kernel module not installed (modprobe fuse)\n"
+                " - invalid options -- see usage message\n"), out);
         fclose(out);
       }
-    }
-    catch (std::exception &ex) {
+    } catch (std::exception &ex) {
       rError(_("Internal error: Caught exception from main loop: %s"),
              ex.what());
-    }
-    catch (...) {
+    } catch (...) {
       rError(_("Internal error: Caught unexpected exception"));
     }
   }

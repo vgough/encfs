@@ -3,7 +3,7 @@ include $(top_srcdir)/Makefile.common
 
 ALL_INCLUDES = @RLOG_CFLAGS@ @OPENSSL_CFLAGS@ @BOOST_CPPFLAGS@
 ALL_LDFLAGS = @RLOG_LIBS@ @OPENSSL_LIBS@ @BOOST_LDFLAGS@
-ALL_LDFLAGS += @BOOST_SERIALIZATION_LIB@ @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
+ALL_LDFLAGS += @BOOST_SERIALIZATION_LIB@
 
 AM_CXXFLAGS = -DRLOG_COMPONENT="encfs" $(ALL_INCLUDES) -I../intl
 
@@ -43,7 +43,7 @@ endif
 libencfs_la_LDFLAGS = -version-info 6:2:0
 libencfs_la_LIBADD = @RLOG_LIBS@ \
 	@OPENSSL_LIBS@ \
-	@BOOST_SERIALIZATION_LIB@ @BOOST_FILESYSTEM_LIB@ @BOOST_SYSTEM_LIB@
+	@BOOST_SERIALIZATION_LIB@
 
 EXTRASRC =
 if BUILD_OPENSSL
@@ -53,6 +53,7 @@ endif
 endif
 
 libencfs_la_SOURCES = \
+	  autosprintf.cpp \
     readpassphrase.cpp \
     base64.cpp \
     ConfigReader.cpp \

@@ -103,8 +103,7 @@ std::string DirTraverse::nextPlaintextName(int *fileType, ino_t *inode) {
     try {
       uint64_t localIv = iv;
       return naming->decodePath(de->d_name, &localIv);
-    }
-    catch (rlog::Error &ex) {
+    } catch (rlog::Error &ex) {
       // .. .problem decoding, ignore it and continue on to next name..
       rDebug("error decoding filename: %s", de->d_name);
     }
@@ -121,8 +120,7 @@ std::string DirTraverse::nextInvalid() {
       uint64_t localIv = iv;
       naming->decodePath(de->d_name, &localIv);
       continue;
-    }
-    catch (rlog::Error &ex) {
+    } catch (rlog::Error &ex) {
       return string(de->d_name);
     }
   }
@@ -159,7 +157,7 @@ class RenameOp {
 
   ~RenameOp();
 
-  operator bool() const { return renameList; }
+  operator bool() const { return renameList.get() != nullptr; }
 
   bool apply();
   void undo();
@@ -209,8 +207,7 @@ bool RenameOp::apply() {
     }
 
     return true;
-  }
-  catch (rlog::Error &err) {
+  } catch (rlog::Error &err) {
     err.log(_RLWarningChannel);
     return false;
   }
@@ -238,8 +235,7 @@ void RenameOp::undo() {
     ::rename(it->newCName.c_str(), it->oldCName.c_str());
     try {
       dn->renameNode(it->newPName.c_str(), it->oldPName.c_str(), false);
-    }
-    catch (rlog::Error &err) {
+    } catch (rlog::Error &err) {
       err.log(_RLWarningChannel);
       // continue on anyway...
     }
@@ -291,17 +287,18 @@ string DirNode::plainPath(const char *cipherPath_) {
   try {
     if (!strncmp(cipherPath_, rootDir.c_str(), rootDir.length())) {
       return naming->decodePath(cipherPath_ + rootDir.length());
-    } else {
-      if (cipherPath_[0] == '+') {
-        // decode as fully qualified path
-        return string("/") +
-               naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
-      } else {
-        return naming->decodePath(cipherPath_);
-      }
     }
-  }
-  catch (rlog::Error &err) {
+
+    // Handle special absolute path encodings.
+    char mark = fsConfig->reverseEncryption ? '/' : '+';
+    if (cipherPath_[0] == mark) {
+      return string(fsConfig->reverseEncryption ? "+" : "/") +
+             naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
+    }
+
+    // Default.
+    return naming->decodePath(cipherPath_);
+  } catch (rlog::Error &err) {
     rError("decode err: %s", err.message());
     err.log(_RLWarningChannel);
 
@@ -311,15 +308,15 @@ string DirNode::plainPath(const char *cipherPath_) {
 
 string DirNode::relativeCipherPath(const char *plaintextPath) {
   try {
-    if (plaintextPath[0] == '/') {
-      // mark with '+' to indicate special decoding..
-      return string("+") +
+    // use '+' prefix to indicate special decoding.
+    char mark = fsConfig->reverseEncryption ? '+' : '/';
+    if (plaintextPath[0] == mark) {
+      return string(fsConfig->reverseEncryption ? "/" : "+") +
              naming->encodeName(plaintextPath + 1, strlen(plaintextPath + 1));
-    } else {
-      return naming->encodePath(plaintextPath);
     }
-  }
-  catch (rlog::Error &err) {
+
+    return naming->encodePath(plaintextPath);
+  } catch (rlog::Error &err) {
     rError("encode err: %s", err.message());
     err.log(_RLWarningChannel);
 
@@ -343,8 +340,7 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
     // directory level..
     try {
       if (naming->getChainedNameIV()) naming->encodePath(plaintextPath, &iv);
-    }
-    catch (rlog::Error &err) {
+    } catch (rlog::Error &err) {
       rError("encode err: %s", err.message());
       err.log(_RLWarningChannel);
     }
@@ -387,8 +383,7 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
 
     try {
       plainName = naming->decodePath(de->d_name, &localIV);
-    }
-    catch (rlog::Error &ex) {
+    } catch (rlog::Error &ex) {
       // if filename can't be decoded, then ignore it..
       continue;
     }
@@ -433,8 +428,7 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
       rDebug("adding file %s to rename list", oldFull.c_str());
 
       renameList.push_back(ren);
-    }
-    catch (rlog::Error &err) {
+    } catch (rlog::Error &err) {
       // We can't convert this name, because we don't have a valid IV for
       // it (or perhaps a valid key).. It will be inaccessible..
       rWarning("Aborting rename: error on file: %s",
@@ -544,8 +538,7 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
       ut.modtime = st.st_mtime;
       ::utime(toCName.c_str(), &ut);
     }
-  }
-  catch (rlog::Error &err) {
+  } catch (rlog::Error &err) {
     // exception from renameNode, just show the error and continue..
     err.log(_RLWarningChannel);
     res = -EIO;
