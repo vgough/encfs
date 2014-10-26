@@ -412,15 +412,19 @@ int main(int argc, char *argv[]) {
       shared_ptr<Cipher> cipher = Cipher::New(it->name, keySize);
       if (!cipher) {
         cerr << "FAILED TO CREATE\n";
+        return 1;
       } else {
         try {
-          if (runTests(cipher, false))
+          if (runTests(cipher, false)) {
             cerr << "OK\n";
-          else
+          } else {
             cerr << "FAILED\n";
+            return 1;
+          }
         }
         catch (rlog::Error &er) {
           cerr << "Error: " << er.what() << "\n";
+          return 1;
         }
       }
     }
