@@ -2,7 +2,7 @@ language: cpp
 
 before_install:
  - sudo apt-get update -qq
- - sudo apt-get install -qq autopoint libfuse-dev libboost-all-dev
+ - sudo apt-get install -qq autopoint libfuse-dev libboost-serialization-dev
    librlog-dev
 
 script:
