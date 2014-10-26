@@ -55,6 +55,8 @@ CPPFLAGS="$CPPFLAGS $USER_INCLUDES $FUSE_FLAGS -D__STDC_FORMAT_MACROS"
 CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS $USER_INCLUDES"
 LDFLAGS="$LDFLAGS $PTHREAD_LIBS $USER_LDFLAGS $FUSE_LIBS"
 
+AX_CXX_COMPILE_STDCXX_11
+
 dnl Look for fuse headers.
 AX_EXT_HAVE_HEADER(fuse.h, /usr/include/fuse /usr/local/include/fuse \
                    /opt/include/fuse /opt/local/include/fuse \
@@ -68,10 +70,7 @@ AX_EXT_HAVE_LIB(/usr/lib /usr/local/lib /opt/lib /opt/local/lib, osxfuse,
 
 if test "$GXX" = "yes"; then
     CXXFLAGS="-W -Wall -Wpointer-arith -Wwrite-strings $CXXFLAGS"
-    CXXFLAGS="-std=c++11 $CXXFLAGS"
     dnl CXXFLAGS="$CXXFLAGS -Wformat=2 -Wconversion"
-elif test -z "${DARWIN_TRUE}"; then
-    CXXFLAGS="-std=c++11 -stdlib=libc++ $CXXFLAGS"
 fi
 
 if test -z "${DARWIN_TRUE}"; then
