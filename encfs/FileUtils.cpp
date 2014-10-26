@@ -1167,7 +1167,7 @@ void showFSInfo(const shared_ptr<EncFSConfig> &config) {
   if (config->kdfIterations > 0 && config->salt.size() > 0) {
     cout << autosprintf(_("Using PBKDF2, with %i iterations"),
                 config->kdfIterations) << "\n";
-    cout << autosprintf(_("Salt Size: %i bits"), 8 * config->salt.size()) << "\n";
+    cout << autosprintf(_("Salt Size: %i bits"), (int)(8 * config->salt.size())) << "\n";
   }
   if (config->blockMACBytes || config->blockMACRandBytes) {
     if (config->subVersion < 20040813) {
