@@ -363,6 +363,30 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose) {
   return true;
 }
 
+static bool testCipherSize(const string &name, int keySize, int blockSize,
+                           bool verbose) {
+  cerr << name << ", key length " << keySize << ", block size " << blockSize << ":  ";
+
+  shared_ptr<Cipher> cipher = Cipher::New(name, keySize);
+  if (!cipher) {
+    cerr << "FAILED TO CREATE\n";
+    return false;
+  } else {
+    try {
+      if (runTests(cipher, verbose)) {
+        cerr << "OK\n";
+      } else {
+        cerr << "FAILED\n";
+        return false;
+      }
+    } catch (rlog::Error &er) {
+      cerr << "Error: " << er.what() << "\n";
+      return false;
+    }
+  }
+  return true;
+}
+
 int main(int argc, char *argv[]) {
   RLogInit(argc, argv);
 
@@ -406,26 +430,10 @@ int main(int argc, char *argv[]) {
     int blockSize = it->blockSize.closest(256);
     for (int keySize = it->keyLength.min(); keySize <= it->keyLength.max();
          keySize += it->keyLength.inc()) {
-      cerr << it->name << ", key length " << keySize << ", block size "
-           << blockSize << ":  ";
-
-      shared_ptr<Cipher> cipher = Cipher::New(it->name, keySize);
-      if (!cipher) {
-        cerr << "FAILED TO CREATE\n";
+      if (!testCipherSize(it->name, keySize, blockSize, false)) {
+        // Run again in verbose mode, then exit with error.
+        testCipherSize(it->name, keySize, blockSize, true);
         return 1;
-      } else {
-        try {
-          if (runTests(cipher, false)) {
-            cerr << "OK\n";
-          } else {
-            cerr << "FAILED\n";
-            return 1;
-          }
-        }
-        catch (rlog::Error &er) {
-          cerr << "Error: " << er.what() << "\n";
-          return 1;
-        }
       }
     }
   }
