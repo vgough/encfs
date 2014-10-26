@@ -89,18 +89,13 @@ AC_MSG_CHECKING([For supported FUSE API version])
 AC_RUN_IFELSE([
     AC_LANG_PROGRAM([[#include "fuse.h"]],
 [[
-    if(FUSE_MAJOR_VERSION == 2 && FUSE_MINOR_VERSION >= 5)
-    {
-	return 0;
-    } else
-	return -1;
+    if (FUSE_MAJOR_VERSION < 2) return -1;
+    if (FUSE_MAJOR_VERSION > 2) return 0;
+    return FUSE_MINOR_VERSION >= 5 ? 0 : -1;
 ]])],
     [AC_MSG_RESULT([yes])],
     [AC_MSG_RESULT([no])
-    AC_MSG_FAILURE([
-Encfs 1.3 requires FUSE 2.5 or newer.  Please check config.log for errors.  If
-you cannot determine the problem, mail encfs-users@lists.sourceforge.net
-and include the config.log file])
+     AC_MSG_FAILURE([Encfs 1.3 requires FUSE 2.5 or newer.])
     ]
 )
 
