@@ -1,4 +1,4 @@
-# ============================================================================
+ ============================================================================
 #  http://www.gnu.org/software/autoconf-archive/ax_cxx_compile_stdcxx_11.html
 # ============================================================================
 #
@@ -37,30 +37,26 @@
 #serial 4
 
 m4_define([_AX_CXX_COMPILE_STDCXX_11_testbody], [[
-  template <typename T>
-    struct check
-    {
-      static_assert(sizeof(int) <= sizeof(T), "not big enough");
-    };
+  // Checks that standard libraries are available.
+  #include <functional>
+  #include <memory>
+  #include <string>
 
-    struct Base {
-    virtual void f() {}
-    };
-    struct Child : public Base {
-    virtual void f() override {}
-    };
+  using namespace std::placeholders;
 
-    typedef check<check<bool>> right_angle_brackets;
+  bool testFn(std::function<bool(int)> op) {
+    return op(42);
+  }
 
-    int a;
-    decltype(a) b;
+  bool lenCheck(const std::shared_ptr<std::string> &str, int len) {
+    return str->size() > len;
+  }
 
-    typedef check<int> check_type;
-    check_type c;
-    check_type&& cr = static_cast<check_type&&>(c);
+  void check() {
+    std::shared_ptr<std::string> str(new std::string("hello world"));
 
-    auto d = a;
-    auto l = [](){};
+    testFn(std::bind(lenCheck, str, _1));
+  }
 ]])
 
 AC_DEFUN([AX_CXX_COMPILE_STDCXX_11], [dnl
