@@ -432,7 +432,9 @@ int main(int argc, char *argv[]) {
          keySize += it->keyLength.inc()) {
       if (!testCipherSize(it->name, keySize, blockSize, false)) {
         // Run again in verbose mode, then exit with error.
-        testCipherSize(it->name, keySize, blockSize, true);
+        if (testCipherSize(it->name, keySize, blockSize, true)) {
+	  cerr << "Inconsistent test results!\n";
+	}
         return 1;
       }
     }
