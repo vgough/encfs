@@ -109,10 +109,10 @@ AC_CACHE_CHECK([whether xattr interface takes additional options],
             LIBS="$LIBS $ACL_LIBS"
             AC_TRY_COMPILE([
                 #include <sys/types.h>
-                #if HAVE_ATTR_XATTR_H
-                #include <attr/xattr.h>
-                #elif HAVE_SYS_XATTR_H
+                #if HAVE_SYS_XATTR_H
                 #include <sys/xattr.h>
+                #elif HAVE_ATTR_XATTR_H
+                #include <attr/xattr.h>
                 #endif
             ],[
                getxattr(0, 0, 0, 0, 0, 0);
