@@ -334,8 +334,8 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
       err.log(_RLWarningChannel);
     }
 
-    rError(_("Found config file %s, but failed to load"), path);
-    return Config_None;
+    rError(_("Found config file %s, but failed to load - exiting"), path);
+    exit(1);
   } else {
     // No load function - must be an unsupported type..
     config->cfgType = nm->type;
