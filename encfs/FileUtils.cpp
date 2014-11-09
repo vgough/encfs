@@ -116,6 +116,7 @@ struct ConfigInfo {
   int currentSubVersion;
   int defaultSubVersion;
 } ConfigFileMapping[] = {
+      // current format
       {".encfs6.xml", Config_V6, "ENCFS6_CONFIG", readV6Config, writeV6Config,
        V6SubVersion, 0},
       // backward compatible support for older versions
@@ -326,6 +327,9 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
   }
 }
 
+/**
+ * Load config file by calling the load function on the filename
+ */
 ConfigType readConfig_load(ConfigInfo *nm, const char *path,
                            const shared_ptr<EncFSConfig> &config) {
   if (nm->loadFunc) {
@@ -348,6 +352,10 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
   }
 }
 
+/**
+ * Try to locate the config file
+ * Tries the most recent format first, then looks for older versions
+ */
 ConfigType readConfig(const string &rootDir,
                       const shared_ptr<EncFSConfig> &config) {
   ConfigInfo *nm = ConfigFileMapping;
@@ -368,6 +376,10 @@ ConfigType readConfig(const string &rootDir,
   return Config_None;
 }
 
+/**
+ * Read config file in current "V6" XML format, normally named ".encfs6.xml"
+ * This format is in use since Apr 13, 2008 (commit 6d081f5c)
+ */
 bool readV6Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
                   ConfigInfo *info) {
   (void)info;
@@ -390,6 +402,10 @@ bool readV6Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
   }
 }
 
+/**
+ * Read config file in deprecated "V5" format, normally named ".encfs5"
+ * This format has been used before Apr 13, 2008
+ */
 bool readV5Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
                   ConfigInfo *info) {
   bool ok = false;
@@ -442,6 +458,10 @@ bool readV5Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
   return ok;
 }
 
+/**
+ * Read config file in deprecated "V4" format, normally named ".encfs4"
+ * This format has been used before Jan 7, 2008
+ */
 bool readV4Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
                   ConfigInfo *info) {
   bool ok = false;
