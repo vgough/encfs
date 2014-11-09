@@ -601,6 +601,9 @@ static Cipher::CipherAlgorithm findCipherAlgorithm(const char *name,
   return result;
 }
 
+/**
+ * Ask the user which cipher to use
+ */
 static Cipher::CipherAlgorithm selectCipherAlgorithm() {
   for (;;) {
     // figure out what cipher they want to use..
@@ -664,6 +667,9 @@ static Cipher::CipherAlgorithm selectCipherAlgorithm() {
   }
 }
 
+/**
+ * Ask the user which encoding to use for file names
+ */
 static Interface selectNameCoding() {
   for (;;) {
     // figure out what cipher they want to use..
@@ -701,6 +707,9 @@ static Interface selectNameCoding() {
   }
 }
 
+/**
+ * Ask the user which key size to use
+ */
 static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
   if (alg.keyLength.min() == alg.keyLength.max()) {
     cout << autosprintf(_("Using key size of %i bits"), alg.keyLength.min())
@@ -751,6 +760,9 @@ static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
   return keySize;
 }
 
+/**
+ * Ask the user which block size to use
+ */
 static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
   if (alg.blockSize.min() == alg.blockSize.max()) {
     cout << autosprintf(
@@ -802,6 +814,9 @@ static bool boolDefaultNo(const char *prompt) {
     return false;
 }
 
+/**
+ * Ask the user whether to enable block MAC and random header bytes
+ */
 static void selectBlockMAC(int *macBytes, int *macRandBytes) {
   // xgroup(setup)
   bool addMAC = boolDefaultNo(
@@ -852,6 +867,9 @@ static bool boolDefaultYes(const char *prompt) {
     return true;
 }
 
+/**
+ * Ask the user if per-file unique IVs should be used
+ */
 static bool selectUniqueIV() {
   // xgroup(setup)
   return boolDefaultYes(
@@ -861,6 +879,9 @@ static bool selectUniqueIV() {
         "which rely on block-aligned file io for performance."));
 }
 
+/**
+ * Ask the user if the filename IV should depend on the complete path
+ */
 static bool selectChainedIV() {
   // xgroup(setup)
   return boolDefaultYes(
@@ -869,6 +890,9 @@ static bool selectChainedIV() {
         "rather then encoding each path element individually."));
 }
 
+/**
+ * Ask the user if the file IV should depend on the file path
+ */
 static bool selectExternalChainedIV() {
   // xgroup(setup)
   return boolDefaultNo(
@@ -880,6 +904,9 @@ static bool selectExternalChainedIV() {
         "in the filesystem."));
 }
 
+/**
+ * Ask the user if file holes should be passed through
+ */
 static bool selectZeroBlockPassThrough() {
   // xgroup(setup)
   return boolDefaultYes(
@@ -920,16 +947,17 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     cout << "\n";
   }
 
-  int keySize = 0;
-  int blockSize = 0;
-  Cipher::CipherAlgorithm alg;
-  Interface nameIOIface;
-  int blockMACBytes = 0;
-  int blockMACRandBytes = 0;
-  bool uniqueIV = false;
-  bool chainedIV = false;
-  bool externalIV = false;
-  bool allowHoles = true;
+  //                          documented in ...
+  int keySize = 0; //                       selectKeySize()
+  int blockSize = 0; //                     selectBlockSize()
+  Cipher::CipherAlgorithm alg; //           selectCipherAlgorithm()
+  Interface nameIOIface; //                 selectNameCoding()
+  int blockMACBytes = 0;   //               selectBlockMAC()
+  int blockMACRandBytes = 0; //             selectBlockMAC()
+  bool uniqueIV = false;   //               selectUniqueIV()
+  bool chainedIV = false;  //               selectChainedIV()
+  bool externalIV = false; //               selectExternalChainedIV()
+  bool allowHoles = true;  //               selectZeroBlockPassThrough()
   long desiredKDFDuration = NormalKDFDuration;
 
   if (reverseEncryption) {
