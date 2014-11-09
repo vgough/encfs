@@ -99,6 +99,11 @@ static int V5SubVersionDefault = 0;
 // 20080813 was really made on 20080413 -- typo on date..
 // const int V6SubVersion = 20080813; // switch to v6/XML, add allowHoles option
 // const int V6SubVersion = 20080816; // add salt and iteration count
+/*
+ * In boost 1.42+, serial numbers change to 8 bit, which means the date
+ * numbering scheme does not work any longer.
+ * boost-versioning.h implements a workaround that sets the version to
+ * 20 for boost 1.42+. */
 const int V6SubVersion = 20100713;  // add version field for boost 1.42+
 
 struct ConfigInfo {
