@@ -93,7 +93,7 @@ static int withCipherPath(const char *opName, const char *path,
     } else if (!passReturnCode)
       res = ESUCCESS;
   } catch (rlog::Error &err) {
-    rError("error caught in %s", opName);
+    rError("withCipherPath: error caught in %s: %s", opName, err.message());
     err.log(_RLWarningChannel);
   }
   return res;
@@ -123,7 +123,7 @@ static int withFileNode(const char *opName, const char *path,
 
     if (res < 0) rInfo("%s error: %s", opName, strerror(-res));
   } catch (rlog::Error &err) {
-    rError("error caught in %s", opName);
+    rError("withFileNode: error caught in %s: %s", opName, err.message());
     err.log(_RLWarningChannel);
   }
   return res;
