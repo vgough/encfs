@@ -1008,11 +1008,11 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     blockMACBytes = 0;
     externalIV = false;
     nameIOIface = BlockNameIO::CurrentInterface();
+    uniqueIV = true;
 
     if (reverseEncryption) {
-      cout << _("--reverse specified, not using unique/chained IV") << "\n";
+      cout << _("--reverse specified, not using chained IV") << "\n";
     } else {
-      uniqueIV = true;
       chainedIV = true;
     }
   }
@@ -1480,7 +1480,7 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   if (readConfig(opts->rootDir, config) != Config_None) {
     if (opts->reverseEncryption) {
       if (config->blockMACBytes != 0 || config->blockMACRandBytes != 0 ||
-          config->uniqueIV || config->externalIVChaining ||
+          config->externalIVChaining ||
           config->chainedNameIV) {
         cout
             << _("The configuration loaded is not compatible with --reverse\n");

@@ -23,9 +23,16 @@ sub readSize
 {
    my $fh = shift;
    seek($fh, 0, 0);
-   my $s = read($fh, my $data, 10240);
-   $data = 0;
-   return $s;
+   my $block = 4*1024;
+   my $s;
+   my $data;
+   my $sum = read($fh, $data, $block);
+   while ( $s = read($fh, $data, $block) )
+   {
+        $sum += $s;
+   }
+   $data = "";
+   return $sum;
 }
 
 # Verify that the size of the file passed by filehandle matches the target size s0

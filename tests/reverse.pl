@@ -89,43 +89,59 @@ sub symlink_test
 # * check that the decrypted length is correct (stat + read)
 # * check that plaintext and decrypted are identical
 sub grow {
-	# pfh ... plaintext file handle
-	open(my $pfh, ">", "$plain/grow");
-	# vfh ... verification file handle
-	open(my $vfh, "<", "$plain/grow");
-	$pfh->autoflush;
-	# ciphertext file name
-	my $cname = encName("grow");
-	# cfh ... ciphertext file handle
-	ok(open(my $cfh, "<", "$ciphertext/$cname"), "open ciphertext grow file");
-	# dfh ... decrypted file handle
-	ok(open(my $dfh, "<", "$decrypted/grow"), "open decrypted grow file");
+    # pfh ... plaintext file handle
+    open(my $pfh, ">", "$plain/grow");
+    # vfh ... verification file handle
+    open(my $vfh, "<", "$plain/grow");
+    $pfh->autoflush;
+    # ciphertext file name
+    my $cname = encName("grow");
+    # cfh ... ciphertext file handle
+    ok(open(my $cfh, "<", "$ciphertext/$cname"), "open ciphertext grow file");
+    # dfh ... decrypted file handle
+    ok(open(my $dfh, "<", "$decrypted/grow"), "open decrypted grow file");
 
-	# csz ... ciphertext size
-	ok(sizeVerify($cfh, 0), "ciphertext of empty file is empty");
-	ok(sizeVerify($dfh, 0), "decrypted empty file is empty");
+    # csz ... ciphertext size
+    ok(sizeVerify($cfh, 0), "ciphertext of empty file is empty");
+    ok(sizeVerify($dfh, 0), "decrypted empty file is empty");
 
-	my $ok = 1;
-	for($i=1; $i < 20; $i++)
-	{
-		print($pfh "w") or die("write failed");
-		# autoflush should make sure the write goes to the kernel
-		# immediately. Just to be sure, check it here.
-		sizeVerify($vfh, $i) or die("unexpected plain file size");
-		sizeVerify($cfh, $i) or $ok = 0;
+    my $ok = 1;
+    my $max = 9000;
+    for($i=5; $i < $max; $i += 5)
+    {
+        print($pfh "wwwww") or die("write failed");
+        # autoflush should make sure the write goes to the kernel
+        # immediately. Just to be sure, check it here.
+        sizeVerify($vfh, $i) or die("unexpected plain file size");
+        sizeVerify($cfh, $i+8) or $ok = 0;
         sizeVerify($dfh, $i) or $ok = 0;
-	}
-	ok($ok, "ciphertext and decrypted size of file grown to $i bytes");
+
+        last unless $ok;
+    }
+    ok($ok, "ciphertext and decrypted size of file grown to $i bytes");
 }
 
+sub largeRead {
+    system("dd if=/dev/zero of=$plain/largeRead bs=1M count=1 2> /dev/null");
+    # ciphertext file name
+    my $cname = encName("largeRead");
+    # cfh ... ciphertext file handle
+    ok(open(my $cfh, "<", "$ciphertext/$cname"), "open ciphertext largeRead file");
+    ok(sizeVerify($cfh, 1024*1024+8), "1M file size");
+}
+
+# Setup mounts
 newWorkingDir();
 mount();
 
+# Actual tests
+grow();
+largeRead();
 copy_test();
 symlink_test("/"); # absolute
 symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
 symlink_test("!§\$%&/()\\<>#+="); # special characters
-grow();
 
+# Umount and delete files
 cleanup();
