@@ -9,6 +9,8 @@ use File::Temp;
 use IO::Handle;
 use Digest::MD5 qw(md5_hex);
 
+require("tests/common.inc");
+
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
 # run unit tests
@@ -266,17 +268,6 @@ sub encName
     my $enc = qx(./encfs/encfsctl encode --extpass="echo test" $raw $plain);
     chomp($enc);
     return $enc;
-}
-
-# Helper function
-# Get the MD5 sum of the file open at the filehandle
-sub md5fh
-{
-    my $fh_orig = shift;
-    open(my $fh, "<&", $fh_orig); # Duplicate the file handle so the seek
-    seek($fh, 0, 0);              # does not affect the caller
-    return Digest::MD5->new->addfile($fh)->hexdigest;
-    close($fh);
 }
 
 # Test symlinks & hardlinks
