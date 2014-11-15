@@ -363,7 +363,13 @@ ConfigType readConfig(const string &rootDir,
     // allow environment variable to override default config path
     if (nm->environmentOverride != NULL) {
       char *envFile = getenv(nm->environmentOverride);
-      if (envFile != NULL) return readConfig_load(nm, envFile, config);
+      if (envFile != NULL) {
+        if (! fileExists(envFile)) {
+          rError("fatal: config file specified by environment does not exist: %s", envFile);
+          exit(1);
+        }
+        return readConfig_load(nm, envFile, config);
+      }
     }
     // the standard place to look is in the root directory
     string path = rootDir + nm->fileName;
