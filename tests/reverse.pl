@@ -6,6 +6,8 @@ use Test::More qw( no_plan );
 use File::Path;
 use File::Temp;
 
+require("tests/common.inc");
+
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
 # Helper function
@@ -40,11 +42,24 @@ sub cleanup
 # Directory structure: plain -[encrypt]-> ciphertext -[decrypt]-> decrypted
 sub mount
 {
-    my $r=system("./encfs/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse > /dev/null");
-    ok($r == 0, "mounted ciphertext file system");
+    qx(./encfs/encfs --extpass="echo test" --standard $plain $ciphertext --reverse > /dev/null);
+    ok(-f "$plain/.encfs6.xml", "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
+    $e = encName(".encfs6.xml");
+    ok(-f "$ciphertext/$e", "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
 
-    $r=system("ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfs --extpass=\"echo test\" $ciphertext $decrypted");
-    ok($r == 0, "mounted decrypting file system");
+    qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfs --extpass="echo test" $ciphertext $decrypted);
+    ok(-f "$decrypted/.encfs6.xml", "decrypted .encfs6.xml exists") or BAIL_OUT("'$decrypted/.encfs6.xml'");
+}
+
+# Helper function
+#
+# Get encrypted name for file
+sub encName
+{
+	my $name = shift;
+	my $enc = qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfsctl encode --extpass="echo test" $ciphertext $name);
+	chomp($enc);
+	return $enc;
 }
 
 # Copy a directory tree and verify that the decrypted data is identical
