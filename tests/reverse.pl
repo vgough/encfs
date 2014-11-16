@@ -2,9 +2,11 @@
 
 # Test EncFS --reverse mode
 
+use warnings;
 use Test::More qw( no_plan );
 use File::Path;
 use File::Temp;
+use IO::Handle;
 
 require("tests/common.inc");
 
@@ -31,7 +33,7 @@ sub cleanup
 {
     system("fusermount -u $decrypted");
     system("fusermount -u $ciphertext");
-
+    our $workingDir;
     rmtree($workingDir);
     ok( ! -d $workingDir, "working dir removed");
 }
@@ -42,13 +44,12 @@ sub cleanup
 # Directory structure: plain -[encrypt]-> ciphertext -[decrypt]-> decrypted
 sub mount
 {
-    qx(./encfs/encfs --extpass="echo test" --standard $plain $ciphertext --reverse > /dev/null);
-    ok(-f "$plain/.encfs6.xml", "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
-    $e = encName(".encfs6.xml");
-    ok(-f "$ciphertext/$e", "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
-
-    qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfs --extpass="echo test" $ciphertext $decrypted);
-    ok(-f "$decrypted/.encfs6.xml", "decrypted .encfs6.xml exists") or BAIL_OUT("'$decrypted/.encfs6.xml'");
+    system("./encfs/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse");
+    ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
+    my $e = encName(".encfs6.xml");
+    ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
+    system("ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfs -o attr_timeout=0 --extpass=\"echo test\" $ciphertext $decrypted");
+    ok(waitForFile("$decrypted/.encfs6.xml"), "decrypted .encfs6.xml exists") or BAIL_OUT("'$decrypted/.encfs6.xml'");
 }
 
 # Helper function
@@ -83,6 +84,40 @@ sub symlink_test
     unlink("$plain/symlink");
 }
 
+# Grow a file from 0 to x kB and
+# * check the ciphertext length is correct (stat + read)
+# * check that the decrypted length is correct (stat + read)
+# * check that plaintext and decrypted are identical
+sub grow {
+	# pfh ... plaintext file handle
+	open(my $pfh, ">", "$plain/grow");
+	# vfh ... verification file handle
+	open(my $vfh, "<", "$plain/grow");
+	$pfh->autoflush;
+	# ciphertext file name
+	my $cname = encName("grow");
+	# cfh ... ciphertext file handle
+	ok(open(my $cfh, "<", "$ciphertext/$cname"), "open ciphertext grow file");
+	# dfh ... decrypted file handle
+	ok(open(my $dfh, "<", "$decrypted/grow"), "open decrypted grow file");
+
+	# csz ... ciphertext size
+	ok(sizeVerify($cfh, 0), "ciphertext of empty file is empty");
+	ok(sizeVerify($dfh, 0), "decrypted empty file is empty");
+
+	my $ok = 1;
+	for($i=1; $i < 20; $i++)
+	{
+		print($pfh "w") or die("write failed");
+		# autoflush should make sure the write goes to the kernel
+		# immediately. Just to be sure, check it here.
+		sizeVerify($vfh, $i) or die("unexpected plain file size");
+		sizeVerify($cfh, $i) or $ok = 0;
+        sizeVerify($dfh, $i) or $ok = 0;
+	}
+	ok($ok, "ciphertext and decrypted size of file grown to $i bytes");
+}
+
 newWorkingDir();
 mount();
 
@@ -91,5 +126,6 @@ symlink_test("/"); # absolute
 symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
 symlink_test("!§\$%&/()\\<>#+="); # special characters
+grow();
 
 cleanup();
