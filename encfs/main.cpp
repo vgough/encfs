@@ -274,6 +274,22 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 'r':
         out->opts->reverseEncryption = true;
+        /* By default, the kernel caches file metadata for one second.
+         * This is fine for EncFS' normal mode, but for --reverse, this
+         * means that the encrypted view will be up to one second out of
+         * date.
+         * Quoting Goswin von Brederlow:
+         * "Caching only works correctly if you implement a disk based
+         * filesystem, one where only the fuse process can alter
+         * metadata and all access goes only through fuse. Any overlay
+         * filesystem where something can change the underlying
+         * filesystem without going through fuse can run into
+         * inconsistencies."
+         * Disable caching so the encrypted view stays consistent with
+         * the backing files. */
+        PUSHARG("-oattr_timeout=0"); // Causes reverse grow tests to fail
+                                     // because stale stat() data is returned
+        PUSHARG("-oentry_timeout=0"); // Fallout unknown, disabling for safety
         break;
       case 'm':
         out->opts->mountOnDemand = true;
