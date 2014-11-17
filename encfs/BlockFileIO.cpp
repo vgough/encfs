@@ -55,12 +55,17 @@ BlockFileIO::~BlockFileIO() {
  * returned data as neccessary.
  */
 ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
-  // we can satisfy the request even if _cache.dataLen is too short, because
-  // we always request a full block during reads..
+
+  rAssert(req.dataLen <= _blockSize);
+  rAssert(req.offset % _blockSize == 0);
+
+  /* we can satisfy the request even if _cache.dataLen is too short, because
+   * we always request a full block during reads. This just means we are
+   * in the last block of a file, which may be smaller than the blocksize. */
   if ((req.offset == _cache.offset) && (_cache.dataLen != 0)) {
     // satisfy request from cache
     int len = req.dataLen;
-    if (_cache.dataLen < len) len = _cache.dataLen;
+    if (_cache.dataLen < len) len = _cache.dataLen; // Don't read past EOF
     memcpy(req.data, _cache.data, len);
     return len;
   } else {
