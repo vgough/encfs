@@ -212,6 +212,7 @@ static bool processArgs(int argc, char *argv[],
       // {"single-thread", 0, 0, 's'}, // single-threaded mode
       {"stdinpass", 0, 0, 'S'},  // read password from stdin
       {"annotate", 0, 0, 513},   // Print annotation lines to stderr
+      {"nocache", 0, 0, 514},    // disable caching
       {"verbose", 0, 0, 'v'},    // verbose mode
       {"version", 0, 0, 'V'},    // version
       {"reverse", 0, 0, 'r'},    // reverse encryption
@@ -272,24 +273,32 @@ static bool processArgs(int argc, char *argv[],
       case 'D':
         out->opts->forceDecode = true;
         break;
+      /* By default, the kernel caches file metadata for one second.
+       * This is fine for EncFS' normal mode, but for --reverse, this
+       * means that the encrypted view will be up to one second out of
+       * date.
+       * Quoting Goswin von Brederlow:
+       * "Caching only works correctly if you implement a disk based
+       * filesystem, one where only the fuse process can alter
+       * metadata and all access goes only through fuse. Any overlay
+       * filesystem where something can change the underlying
+       * filesystem without going through fuse can run into
+       * inconsistencies."
+       * Enabling reverse automatically enables noCache. */
       case 'r':
         out->opts->reverseEncryption = true;
-        /* By default, the kernel caches file metadata for one second.
-         * This is fine for EncFS' normal mode, but for --reverse, this
-         * means that the encrypted view will be up to one second out of
-         * date.
-         * Quoting Goswin von Brederlow:
-         * "Caching only works correctly if you implement a disk based
-         * filesystem, one where only the fuse process can alter
-         * metadata and all access goes only through fuse. Any overlay
-         * filesystem where something can change the underlying
-         * filesystem without going through fuse can run into
-         * inconsistencies."
-         * Disable caching so the encrypted view stays consistent with
-         * the backing files. */
-        PUSHARG("-oattr_timeout=0"); // Causes reverse grow tests to fail
-                                     // because stale stat() data is returned
-        PUSHARG("-oentry_timeout=0"); // Fallout unknown, disabling for safety
+      case 514:
+        /* Disable EncFS block cache
+         * Causes reverse grow tests to fail because short reads
+         * are returned */
+        out->opts->noCache = true;
+        /* Disable kernel stat() cache
+         * Causes reverse grow tests to fail because stale stat() data
+         * is returned */
+        PUSHARG("-oattr_timeout=0");
+        /* Disable kernel dentry cache
+         * Fallout unknown, disabling for safety */
+        PUSHARG("-oentry_timeout=0");
         break;
       case 'm':
         out->opts->mountOnDemand = true;

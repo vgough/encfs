@@ -48,7 +48,7 @@ sub mount
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
     my $e = encName(".encfs6.xml");
     ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
-    system("ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfs -o attr_timeout=0 --extpass=\"echo test\" $ciphertext $decrypted");
+    system("ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfs --nocache --extpass=\"echo test\" $ciphertext $decrypted");
     ok(waitForFile("$decrypted/.encfs6.xml"), "decrypted .encfs6.xml exists") or BAIL_OUT("'$decrypted/.encfs6.xml'");
 }
 

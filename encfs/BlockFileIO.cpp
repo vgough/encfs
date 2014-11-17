@@ -27,6 +27,8 @@
 
 #include "i18n.h"
 
+#include "FileUtils.h"
+
 template <typename Type>
 inline Type min(Type A, Type B) {
   return (B < A) ? B : A;
@@ -41,6 +43,7 @@ BlockFileIO::BlockFileIO(int blockSize, const FSConfigPtr &cfg)
     : _blockSize(blockSize), _allowHoles(cfg->config->allowHoles) {
   rAssert(_blockSize > 1);
   _cache.data = new unsigned char[_blockSize];
+  _noCache = cfg->opts->noCache;
 }
 
 BlockFileIO::~BlockFileIO() {
@@ -61,8 +64,11 @@ ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
 
   /* we can satisfy the request even if _cache.dataLen is too short, because
    * we always request a full block during reads. This just means we are
-   * in the last block of a file, which may be smaller than the blocksize. */
-  if ((req.offset == _cache.offset) && (_cache.dataLen != 0)) {
+   * in the last block of a file, which may be smaller than the blocksize.
+   * For reverse encryption, the cache must not be used at all, because
+   * the lower file may have changed behind our back. */
+  if ( (_noCache == false) && (req.offset == _cache.offset) &&
+       (_cache.dataLen != 0)) {
     // satisfy request from cache
     int len = req.dataLen;
     if (_cache.dataLen < len) len = _cache.dataLen; // Don't read past EOF
