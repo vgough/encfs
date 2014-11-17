@@ -31,10 +31,10 @@
 #include <sys/fsuid.h>
 #endif
 
-#ifdef HAVE_ATTR_XATTR_H
-#include <attr/xattr.h>
-#elif HAVE_SYS_XATTR_H
+#if HAVE_SYS_XATTR_H
 #include <sys/xattr.h>
+#elif HAVE_ATTR_XATTR_H
+#include <attr/xattr.h>
 #endif
 
 #include <functional>

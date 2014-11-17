@@ -23,6 +23,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <limits.h>
 
 #include <rlog/rlog.h>
 #include <rlog/StdioNode.h>
