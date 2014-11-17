@@ -38,40 +38,16 @@
 <a name="about" class="anchor" href="#about"><span class="octicon octicon-link"></span></a>About</h2>
 
 <p>EncFS provides an encrypted filesystem in user-space.  It runs with regular user
-permissions using the <a href="http://fuse.sourceforge.net/">FUSE</a> library to act as a filesystem.
-EncFS is open source software, licensed under the LGPL.</p>
-
-<p>EncFS was written due to necessity over a decade ago.  At the time,
-older NFS-loopback based encrypted filesystems such as CFS had not kept pace with Linux
-development.  When FUSE became available, I wrote a CFS replacement for my own
-use and released the first version to Open Source in 2003.</p>
-
-<p>As with most encrypted filesystems, EncFS was meant to provide security against
-off-line attacks; ie your notebook or backups are left in a taxi by mistake, stolen, etc.
-In order to avoid having a dedicated partition size, EncFS encrypts individual files,
-by translating all requests for the virtual EncFS filesystem into the equivalent
-encrypted operations on the raw filesystem. </p>
-
-<h2>
-<a name="status" class="anchor" href="#status"><span class="octicon octicon-link"></span></a>Status</h2>
-
-<p>Over the last decade, a number of good alternatives have grown up.  Computing
-power has increased to the point where it is reasonable to encrypt the entire
-filesystem of personal computers.  On Linux, <a href="http://ecryptfs.org/">ecryptfs</a>
-provides a nice dynamically mountable encrypted home directory, and is well
-integrated in distributions I use, such as <a href="http://www.ubuntu.com/">Ubuntu</a>.
-Every compute I use, including my mobile phones, use full-disk encryption.<br>
-However there always seem to be new use cases for userspace file-by-file encryption,
-so EncFS remains useful.</p>
-
-<p>EncFS has been dormant for a while.  I've started cleaning up in order to try
-and provide a better base for a version 2, but whether EncFS flowers again
-depends upon community interest.  In order to make it easier for anyone to
-contribute, I'm looking at Github as the next home for EncFS.  So if you're
-interested in EncFS, please dive in!</p>
+permissions using the <a href="http://fuse.sourceforge.net/">FUSE</a> library.
+EncFS is <a href="http://opensource.org/">Open Source software</a>.
+The EncFS library is licensed under the
+<a href="http://opensource.org/licenses/lgpl-license">LGPL</a>.</p>
 
 <h2>
 <a name="github-page" class="anchor" href="#github-page"><span class="octicon octicon-link"></span></a>GitHub page</h2>
+
+<p>To submit changes to EncFS, or to submit a bug ticket, see the
+<a href="https://github.com/vgough/encfs">EncFS GitHub page</a>.
 
 <p>GitHub hosting for EncFS is in progress.  Until the transition is complete,
 see also the original, and more complete, introduction page at
