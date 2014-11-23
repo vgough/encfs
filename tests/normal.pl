@@ -191,7 +191,7 @@ sub truncate
 sub fileCreation
 {
     # create a file
-    qx(df -ah > "$crypt/df.txt");
+    qx(df -ah > "$crypt/df.txt" 2> /dev/null);
     ok( -f "$crypt/df.txt", "file created" );
 
     # ensure there is an encrypted version.
