@@ -49,14 +49,14 @@ using namespace rel;
 using namespace rlog;
 
 const int MAX_KEYLENGTH = 32;  // in bytes (256 bit)
-const int MAX_IVLENGTH = 16;
+const int MAX_IVLENGTH = 16; // 128 bit (AES block size, Blowfish has 64)
 const int KEY_CHECKSUM_BYTES = 4;
 
 #ifndef MIN
 inline int MIN(int a, int b) { return (a < b) ? a : b; }
 #endif
 
-/*
+/**
     This produces the same result as OpenSSL's EVP_BytesToKey.  The difference
     is that here we can explicitly specify the key size, instead of relying on
     the state of EVP_CIPHER struct.  EVP_BytesToKey will only produce 128 bit
@@ -348,7 +348,7 @@ SSL_Cipher::~SSL_Cipher() {}
 
 Interface SSL_Cipher::interface() const { return realIface; }
 
-/*
+/**
     create a key from the password.
     Use SHA to distribute entropy from the password into the key.
 
@@ -413,7 +413,7 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength) {
   return key;
 }
 
-/*
+/**
     Create a random key.
     We use the OpenSSL library to generate random bytes, then take the hash of
     those bytes to use as the key.
@@ -447,7 +447,7 @@ CipherKey SSL_Cipher::newRandomKey() {
   return key;
 }
 
-/*
+/**
     compute a 64-bit check value for the data using HMAC.
 */
 static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
@@ -487,6 +487,11 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
   return value;
 }
 
+/**
+ * Write "len" bytes of random data into "buf"
+ *
+ * See "man 3 RAND_bytes" for the effect of strongRandom
+ */
 bool SSL_Cipher::randomize(unsigned char *buf, int len,
                            bool strongRandom) const {
   // to avoid warnings of uninitialized data from valgrind
@@ -604,6 +609,22 @@ int SSL_Cipher::cipherBlockSize() const {
   return EVP_CIPHER_block_size(_blockCipher);
 }
 
+/**
+ * Generate the initialization vector that will actually be used for
+ * AES/Blowfish encryption and decryption in {stream,block}{Encode,Decode}
+ *
+ * It is derived from
+ *  1) a "seed" value that is passed from the higher layer, for the default
+ *     configuration it is "block_number XOR per_file_IV_header" from
+ *     CipherFileIO
+ *  2) The IV that is used for encrypting the master key, "IVData(key)"
+ *  3) The master key
+ * using
+ *  ivec = HMAC(master_key, IVData(key) CONCAT seed)
+ *
+ * As an HMAC is unpredictable as long as the key is secret, the only
+ * requirement for "seed" is that is must be unique.
+ */
 void SSL_Cipher::setIVec(unsigned char *ivec, uint64_t seed,
                          const shared_ptr<SSLKey> &key) const {
   if (iface.current() >= 3) {
@@ -695,7 +716,7 @@ static void unshuffleBytes(unsigned char *buf, int size) {
   for (int i = size - 1; i; --i) buf[i] ^= buf[i - 1];
 }
 
-/* Partial blocks are encoded with a stream cipher.  We make multiple passes on
+/** Partial blocks are encoded with a stream cipher.  We make multiple passes on
  the data to ensure that the ends of the data depend on each other.
 */
 bool SSL_Cipher::streamEncode(unsigned char *buf, int size, uint64_t iv64,
