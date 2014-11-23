@@ -30,6 +30,8 @@
 #include <cerrno>
 #include <string.h>
 
+#include <openssl/sha.h>
+
 /*
     - Version 2:0 adds support for a per-file initialization vector with a
       fixed 8 byte header.  The headers are enabled globally within a
@@ -265,24 +267,52 @@ bool CipherFileIO::writeHeader() {
 }
 
 /**
- * Generate the file IV header bytes in reverse mode
+ * Generate the file IV header bytes for reverse mode
+ * (truncated SHA1 hash of the inode number)
+ *
+ * The kernel guarantees that the inode number is unique for one file
+ * system. SHA1 spreads out the values over the whole 64-bit space.
+ * Without this step, the XOR with the block number (see readOneBlock)
+ * may lead to duplicate IVs.
+ * SSL_Cipher::setIVec does an additional HMAC before using
+ * the IV. This guarantees unpredictability and prevents watermarking
+ * attacks.
  */
-void CipherFileIO::generateReverseHeader(unsigned char* buf) {
-  rDebug("generating file IV header (reverse mode)");
+void CipherFileIO::generateReverseHeader(unsigned char* headerBuf) {
 
-  // TODO derive from inode
-  for (int i = 0; i < HEADER_SIZE; ++i) {
-    buf[i]=i;
+  struct stat stbuf;
+  int res = getAttr(&stbuf);
+  rAssert( res == 0 );
+  ino_t ino = stbuf.st_ino;
+  rAssert( ino != 0 );
+
+  rDebug("generating reverse file IV header from ino=%lu", (unsigned long)ino);
+
+  // Serialize the inode number into inoBuf
+  unsigned char inoBuf[sizeof(ino_t)];
+  for (unsigned int i = 0; i < sizeof(ino_t); ++i) {
+    inoBuf[i] = (unsigned char)(ino & 0xff);
+    ino >>= 8;
   }
 
-  // Save plain-text IV
+  /* Take the SHA1 hash of the inode number so the values are spread out
+   * over the whole 64-bit space. Otherwise, the XOR with the block number
+   * may lead to duplicate IVs (see readOneBlock) */
+  unsigned char md[20];
+  SHA1(inoBuf, sizeof(ino), md);
+  rAssert( HEADER_SIZE <= 20 );
+  memcpy(headerBuf, md, HEADER_SIZE);
+
+  // Save the IV in fileIV for internal use
   fileIV = 0;
   for (int i = 0; i < HEADER_SIZE; ++i) {
-    fileIV = (fileIV << 8) | (uint64_t)buf[i];
+    fileIV = (fileIV << 8) | (uint64_t)headerBuf[i];
   }
 
+  rDebug("fileIV=%" PRIx64, fileIV);
+
   // Encrypt externally-visible header
-  cipher->streamEncode(buf, HEADER_SIZE, externalIV, key);
+  cipher->streamEncode(headerBuf, HEADER_SIZE, externalIV, key);
 }
 
 /**
