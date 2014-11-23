@@ -1,5 +1,6 @@
 # Helper function
 # Get the MD5 sum of the file open at the filehandle
+use Digest::MD5 qw(md5_hex);
 sub md5fh
 {
     my $fh_orig = shift;

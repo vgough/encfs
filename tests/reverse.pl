@@ -109,12 +109,19 @@ sub grow {
     my $max = 9000;
     for($i=5; $i < $max; $i += 5)
     {
-        print($pfh "wwwww") or die("write failed");
+        print($pfh "abcde") or die("write failed");
         # autoflush should make sure the write goes to the kernel
         # immediately. Just to be sure, check it here.
         sizeVerify($vfh, $i) or die("unexpected plain file size");
         sizeVerify($cfh, $i+8) or $ok = 0;
         sizeVerify($dfh, $i) or $ok = 0;
+        
+        if(md5fh($vfh) ne md5fh($dfh))
+        {
+            $ok = 0;
+            print("# content is different, unified diff:\n");
+            system("diff -u $plain/grow $decrypted/grow");
+        }
 
         last unless $ok;
     }

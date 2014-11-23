@@ -7,7 +7,6 @@ use File::Path;
 use File::Copy;
 use File::Temp;
 use IO::Handle;
-use Digest::MD5 qw(md5_hex);
 
 require("tests/common.inc");
 
