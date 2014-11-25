@@ -76,6 +76,11 @@ struct EncFS_Opts {
 
   bool reverseEncryption;  // Reverse encryption
 
+  bool noCache; /* Disable block cache (in EncFS) and stat cache (in kernel).
+                 * This is needed if the backing files may be modified
+                 * behind the back of EncFS (for example, in reverse mode).
+                 * See main.cpp for a longer explaination. */
+
   ConfigMode configMode;
 
   EncFS_Opts() {
@@ -90,6 +95,7 @@ struct EncFS_Opts {
     ownerCreate = false;
     reverseEncryption = false;
     configMode = Config_Prompt;
+    noCache = false;
   }
 };
 

@@ -99,6 +99,11 @@ static int V5SubVersionDefault = 0;
 // 20080813 was really made on 20080413 -- typo on date..
 // const int V6SubVersion = 20080813; // switch to v6/XML, add allowHoles option
 // const int V6SubVersion = 20080816; // add salt and iteration count
+/*
+ * In boost 1.42+, serial numbers change to 8 bit, which means the date
+ * numbering scheme does not work any longer.
+ * boost-versioning.h implements a workaround that sets the version to
+ * 20 for boost 1.42+. */
 const int V6SubVersion = 20100713;  // add version field for boost 1.42+
 
 struct ConfigInfo {
@@ -111,6 +116,7 @@ struct ConfigInfo {
   int currentSubVersion;
   int defaultSubVersion;
 } ConfigFileMapping[] = {
+      // current format
       {".encfs6.xml", Config_V6, "ENCFS6_CONFIG", readV6Config, writeV6Config,
        V6SubVersion, 0},
       // backward compatible support for older versions
@@ -321,6 +327,9 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
   }
 }
 
+/**
+ * Load config file by calling the load function on the filename
+ */
 ConfigType readConfig_load(ConfigInfo *nm, const char *path,
                            const shared_ptr<EncFSConfig> &config) {
   if (nm->loadFunc) {
@@ -334,8 +343,8 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
       err.log(_RLWarningChannel);
     }
 
-    rError(_("Found config file %s, but failed to load"), path);
-    return Config_None;
+    rError(_("Found config file %s, but failed to load - exiting"), path);
+    exit(1);
   } else {
     // No load function - must be an unsupported type..
     config->cfgType = nm->type;
@@ -343,6 +352,10 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
   }
 }
 
+/**
+ * Try to locate the config file
+ * Tries the most recent format first, then looks for older versions
+ */
 ConfigType readConfig(const string &rootDir,
                       const shared_ptr<EncFSConfig> &config) {
   ConfigInfo *nm = ConfigFileMapping;
@@ -350,7 +363,13 @@ ConfigType readConfig(const string &rootDir,
     // allow environment variable to override default config path
     if (nm->environmentOverride != NULL) {
       char *envFile = getenv(nm->environmentOverride);
-      if (envFile != NULL) return readConfig_load(nm, envFile, config);
+      if (envFile != NULL) {
+        if (! fileExists(envFile)) {
+          rError("fatal: config file specified by environment does not exist: %s", envFile);
+          exit(1);
+        }
+        return readConfig_load(nm, envFile, config);
+      }
     }
     // the standard place to look is in the root directory
     string path = rootDir + nm->fileName;
@@ -363,6 +382,10 @@ ConfigType readConfig(const string &rootDir,
   return Config_None;
 }
 
+/**
+ * Read config file in current "V6" XML format, normally named ".encfs6.xml"
+ * This format is in use since Apr 13, 2008 (commit 6d081f5c)
+ */
 bool readV6Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
                   ConfigInfo *info) {
   (void)info;
@@ -385,6 +408,10 @@ bool readV6Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
   }
 }
 
+/**
+ * Read config file in deprecated "V5" format, normally named ".encfs5"
+ * This format has been used before Apr 13, 2008
+ */
 bool readV5Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
                   ConfigInfo *info) {
   bool ok = false;
@@ -437,6 +464,10 @@ bool readV5Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
   return ok;
 }
 
+/**
+ * Read config file in deprecated "V4" format, normally named ".encfs4"
+ * This format has been used before Jan 7, 2008
+ */
 bool readV4Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
                   ConfigInfo *info) {
   bool ok = false;
@@ -576,6 +607,9 @@ static Cipher::CipherAlgorithm findCipherAlgorithm(const char *name,
   return result;
 }
 
+/**
+ * Ask the user which cipher to use
+ */
 static Cipher::CipherAlgorithm selectCipherAlgorithm() {
   for (;;) {
     // figure out what cipher they want to use..
@@ -639,6 +673,9 @@ static Cipher::CipherAlgorithm selectCipherAlgorithm() {
   }
 }
 
+/**
+ * Ask the user which encoding to use for file names
+ */
 static Interface selectNameCoding() {
   for (;;) {
     // figure out what cipher they want to use..
@@ -676,6 +713,9 @@ static Interface selectNameCoding() {
   }
 }
 
+/**
+ * Ask the user which key size to use
+ */
 static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
   if (alg.keyLength.min() == alg.keyLength.max()) {
     cout << autosprintf(_("Using key size of %i bits"), alg.keyLength.min())
@@ -726,6 +766,9 @@ static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
   return keySize;
 }
 
+/**
+ * Ask the user which block size to use
+ */
 static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
   if (alg.blockSize.min() == alg.blockSize.max()) {
     cout << autosprintf(
@@ -777,6 +820,9 @@ static bool boolDefaultNo(const char *prompt) {
     return false;
 }
 
+/**
+ * Ask the user whether to enable block MAC and random header bytes
+ */
 static void selectBlockMAC(int *macBytes, int *macRandBytes) {
   // xgroup(setup)
   bool addMAC = boolDefaultNo(
@@ -827,6 +873,9 @@ static bool boolDefaultYes(const char *prompt) {
     return true;
 }
 
+/**
+ * Ask the user if per-file unique IVs should be used
+ */
 static bool selectUniqueIV() {
   // xgroup(setup)
   return boolDefaultYes(
@@ -836,6 +885,9 @@ static bool selectUniqueIV() {
         "which rely on block-aligned file io for performance."));
 }
 
+/**
+ * Ask the user if the filename IV should depend on the complete path
+ */
 static bool selectChainedIV() {
   // xgroup(setup)
   return boolDefaultYes(
@@ -844,6 +896,9 @@ static bool selectChainedIV() {
         "rather then encoding each path element individually."));
 }
 
+/**
+ * Ask the user if the file IV should depend on the file path
+ */
 static bool selectExternalChainedIV() {
   // xgroup(setup)
   return boolDefaultNo(
@@ -855,6 +910,9 @@ static bool selectExternalChainedIV() {
         "in the filesystem."));
 }
 
+/**
+ * Ask the user if file holes should be passed through
+ */
 static bool selectZeroBlockPassThrough() {
   // xgroup(setup)
   return boolDefaultYes(
@@ -895,16 +953,17 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     cout << "\n";
   }
 
-  int keySize = 0;
-  int blockSize = 0;
-  Cipher::CipherAlgorithm alg;
-  Interface nameIOIface;
-  int blockMACBytes = 0;
-  int blockMACRandBytes = 0;
-  bool uniqueIV = false;
-  bool chainedIV = false;
-  bool externalIV = false;
-  bool allowHoles = true;
+  //                          documented in ...
+  int keySize = 0; //                       selectKeySize()
+  int blockSize = 0; //                     selectBlockSize()
+  Cipher::CipherAlgorithm alg; //           selectCipherAlgorithm()
+  Interface nameIOIface; //                 selectNameCoding()
+  int blockMACBytes = 0;   //               selectBlockMAC()
+  int blockMACRandBytes = 0; //             selectBlockMAC()
+  bool uniqueIV = false;   //               selectUniqueIV()
+  bool chainedIV = false;  //               selectChainedIV()
+  bool externalIV = false; //               selectExternalChainedIV()
+  bool allowHoles = true;  //               selectZeroBlockPassThrough()
   long desiredKDFDuration = NormalKDFDuration;
 
   if (reverseEncryption) {
@@ -949,11 +1008,11 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     blockMACBytes = 0;
     externalIV = false;
     nameIOIface = BlockNameIO::CurrentInterface();
+    uniqueIV = true;
 
     if (reverseEncryption) {
-      cout << _("--reverse specified, not using unique/chained IV") << "\n";
+      cout << _("--reverse specified, not using chained IV") << "\n";
     } else {
-      uniqueIV = true;
       chainedIV = true;
     }
   }
@@ -1421,7 +1480,7 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   if (readConfig(opts->rootDir, config) != Config_None) {
     if (opts->reverseEncryption) {
       if (config->blockMACBytes != 0 || config->blockMACRandBytes != 0 ||
-          config->uniqueIV || config->externalIVChaining ||
+          config->externalIVChaining ||
           config->chainedNameIV) {
         cout
             << _("The configuration loaded is not compatible with --reverse\n");

@@ -184,7 +184,11 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
   int decodedStreamLen = decLen256 - 2;
 
   // don't bother trying to decode files which are too small
-  if (decodedStreamLen < _bs) throw ERROR("Filename too small to decode");
+  if (decodedStreamLen < _bs)
+  {
+    rDebug("Rejecting filename '%s'", encodedName);
+    throw ERROR("Filename too small to decode");
+  }
 
   BUFFER_INIT(tmpBuf, 32, (unsigned int)length);
 

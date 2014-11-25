@@ -27,6 +27,8 @@
 
 #include "i18n.h"
 
+#include "FileUtils.h"
+
 template <typename Type>
 inline Type min(Type A, Type B) {
   return (B < A) ? B : A;
@@ -41,6 +43,7 @@ BlockFileIO::BlockFileIO(int blockSize, const FSConfigPtr &cfg)
     : _blockSize(blockSize), _allowHoles(cfg->config->allowHoles) {
   rAssert(_blockSize > 1);
   _cache.data = new unsigned char[_blockSize];
+  _noCache = cfg->opts->noCache;
 }
 
 BlockFileIO::~BlockFileIO() {
@@ -48,13 +51,27 @@ BlockFileIO::~BlockFileIO() {
   delete[] _cache.data;
 }
 
+/**
+ * Serve a read request for the size of one block or less,
+ * at block-aligned offsets.
+ * Always requests full blocks form the lower layer, truncates the
+ * returned data as neccessary.
+ */
 ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
-  // we can satisfy the request even if _cache.dataLen is too short, because
-  // we always request a full block during reads..
-  if ((req.offset == _cache.offset) && (_cache.dataLen != 0)) {
+
+  rAssert(req.dataLen <= _blockSize);
+  rAssert(req.offset % _blockSize == 0);
+
+  /* we can satisfy the request even if _cache.dataLen is too short, because
+   * we always request a full block during reads. This just means we are
+   * in the last block of a file, which may be smaller than the blocksize.
+   * For reverse encryption, the cache must not be used at all, because
+   * the lower file may have changed behind our back. */
+  if ( (_noCache == false) && (req.offset == _cache.offset) &&
+       (_cache.dataLen != 0)) {
     // satisfy request from cache
     int len = req.dataLen;
-    if (_cache.dataLen < len) len = _cache.dataLen;
+    if (_cache.dataLen < len) len = _cache.dataLen; // Don't read past EOF
     memcpy(req.data, _cache.data, len);
     return len;
   } else {
@@ -88,6 +105,13 @@ bool BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
   return ok;
 }
 
+/**
+ * Serve a read request of arbitrary size at an arbitrary offset.
+ * Stitches together multiple blocks to serve large requests, drops
+ * data from the front of the first block if the request is not aligned.
+ * Always requests aligned data of the size of one block or less from the
+ * lower layer.
+ */
 ssize_t BlockFileIO::read(const IORequest &req) const {
   rAssert(_blockSize != 0);
 
@@ -97,7 +121,7 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
 
   if (partialOffset == 0 && req.dataLen <= _blockSize) {
     // read completely within a single block -- can be handled as-is by
-    // readOneBloc().
+    // readOneBlock().
     return cacheReadOneBlock(req);
   } else {
     size_t size = req.dataLen;
