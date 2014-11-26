@@ -1,5 +1,8 @@
-2013-11-12  gettextize  <bug-gnu-gettext@gnu.org>
+Sun Nov 23 2014 Jakob Unterwurzacher <jakobunt@gmail.com>
+	* add per-file IVs to reverse mode
+	* add --nocache option
 
+Tue Nov 12 2013 gettextize  <bug-gnu-gettext@gnu.org>
 	* m4/gettext.m4: Upgrade to gettext-0.18.3.
 	* m4/iconv.m4: Upgrade to gettext-0.18.3.
 	* m4/lib-ld.m4: Upgrade to gettext-0.18.3.
