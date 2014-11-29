@@ -88,7 +88,7 @@ sub corruption
 sub internalModification
 {
     $ofile = "$workingDir/crypt-internal-$$";
-    qx(dd if=/dev/urandom of=$ofile bs=2k count=2 2> /dev/null);
+    writeZeroes($ofile, 2*1024);
     ok(copy($ofile, "$crypt/internal"), "copying crypt-internal file");
 
     open(my $out1, "+<", "$crypt/internal");

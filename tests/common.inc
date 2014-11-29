@@ -72,5 +72,26 @@ sub waitForFile
 	return 0;
 }
 
+# writeZeroes($filename, $size)
+# Write zeroes of size $size to file $filename
+sub writeZeroes
+{
+        my $filename = shift;
+        my $size = shift;
+        open(my $fh, ">", $filename);
+        my $bs = 4096; # 4 KiB
+        my $block = "\0" x $bs;
+        my $remain;
+        for($remain = $size; $remain >= $bs; $remain -= $bs)
+        {
+                print($fh $block) or BAIL_OUT("Could not write to $filename: $!");
+        }
+        if($remain > 0)
+        {
+                $block = "\0" x $remain;
+                print($fh $block) or BAIL_OUT("Could not write to $filename: $!");
+        }
+}
+
 # As this file will be require()'d, it needs to return true
 return 1;

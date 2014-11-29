@@ -129,7 +129,7 @@ sub grow {
 }
 
 sub largeRead {
-    system("dd if=/dev/zero of=$plain/largeRead bs=1M count=1 2> /dev/null");
+    writeZeroes("$plain/largeRead", 1024*1024);
     # ciphertext file name
     my $cname = encName("largeRead");
     # cfh ... ciphertext file handle
