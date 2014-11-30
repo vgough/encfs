@@ -361,7 +361,10 @@ int encfs_readlink(const char *path, char *buf, size_t size) {
                         bind(_do_readlink, _1, _2, buf, size));
 }
 
-int encfs_symlink(const char *from, const char *to) {
+/**
+ * Create a symbolic link pointing to "to" named "from"
+ */
+int encfs_symlink(const char *to, const char *from) {
   EncFS_Context *ctx = context();
 
   if (isReadOnly(ctx)) return -EROFS;
@@ -372,8 +375,8 @@ int encfs_symlink(const char *from, const char *to) {
 
   try {
     // allow fully qualified names in symbolic links.
-    string fromCName = FSRoot->relativeCipherPath(from);
-    string toCName = FSRoot->cipherPath(to);
+    string fromCName = FSRoot->cipherPath(from);
+    string toCName = FSRoot->relativeCipherPath(to);
 
     rLog(Info, "symlink %s -> %s", fromCName.c_str(), toCName.c_str());
 
@@ -386,7 +389,7 @@ int encfs_symlink(const char *from, const char *to) {
       olduid = setfsuid(context->uid);
       oldgid = setfsgid(context->gid);
     }
-    res = ::symlink(fromCName.c_str(), toCName.c_str());
+    res = ::symlink(toCName.c_str(), fromCName.c_str());
     if (olduid >= 0) setfsuid(olduid);
     if (oldgid >= 0) setfsgid(oldgid);
 
