@@ -78,9 +78,11 @@ sub copy_test
 # Parameter: symlink target
 sub symlink_test
 {
-    my $target = shift(@_);
+    my $target = shift;
     symlink($target, "$plain/symlink");
-    ok( readlink("$decrypted/symlink") eq "$target", "symlink to '$target'");
+    $dec = readlink("$decrypted/symlink");
+    ok( $dec eq $target, "symlink to '$target'") or
+        print("# (original) $target' != '$dec' (decrypted)\n");
     unlink("$plain/symlink");
 }
 
@@ -175,6 +177,7 @@ symlink_test("/"); # absolute
 symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
 symlink_test("!§\$%&/()\\<>#+="); # special characters
+symlink_test("$plain/foo");
 writesDenied();
 
 # Umount and delete files
