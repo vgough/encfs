@@ -65,6 +65,12 @@ using gnu::autosprintf;
 // Maximum number of arguments that we're going to pass on to fuse.  Doesn't
 // affect how many arguments we can handle, just how many we can pass on..
 const int MaxFuseArgs = 32;
+/**
+ * EncFS_Args stores the parsed command-line arguments
+ *
+ * See also: struct EncFS_Opts (FileUtils.h), stores internal settings that are
+ * derived from the arguments
+ */
 struct EncFS_Args {
   string mountPoint;  // where to make filesystem visible
   bool isDaemon;      // true == spawn in background, log to syslog
@@ -273,20 +279,23 @@ static bool processArgs(int argc, char *argv[],
       case 'D':
         out->opts->forceDecode = true;
         break;
-      /* By default, the kernel caches file metadata for one second.
-       * This is fine for EncFS' normal mode, but for --reverse, this
-       * means that the encrypted view will be up to one second out of
-       * date.
-       * Quoting Goswin von Brederlow:
-       * "Caching only works correctly if you implement a disk based
-       * filesystem, one where only the fuse process can alter
-       * metadata and all access goes only through fuse. Any overlay
-       * filesystem where something can change the underlying
-       * filesystem without going through fuse can run into
-       * inconsistencies."
-       * Enabling reverse automatically enables noCache. */
       case 'r':
         out->opts->reverseEncryption = true;
+        /* Reverse encryption does not support writing unless uniqueIV
+         * is disabled (expert mode) */
+        out->opts->readOnly = true;
+        /* By default, the kernel caches file metadata for one second.
+         * This is fine for EncFS' normal mode, but for --reverse, this
+         * means that the encrypted view will be up to one second out of
+         * date.
+         * Quoting Goswin von Brederlow:
+         * "Caching only works correctly if you implement a disk based
+         * filesystem, one where only the fuse process can alter
+         * metadata and all access goes only through fuse. Any overlay
+         * filesystem where something can change the underlying
+         * filesystem without going through fuse can run into
+         * inconsistencies."
+         * Enabling reverse automatically enables noCache */
       case 514:
         /* Disable EncFS block cache
          * Causes reverse grow tests to fail because short reads

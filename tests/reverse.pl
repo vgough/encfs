@@ -3,10 +3,11 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More qw( no_plan );
+use Test::More tests => 25;
 use File::Path;
 use File::Temp;
 use IO::Handle;
+use Errno qw(EROFS);
 
 require("tests/common.inc");
 
@@ -68,7 +69,6 @@ sub copy_test
 {
     ok(system("cp -a encfs $plain")==0, "copying files to plain");
     ok(system("diff -r -q $plain $decrypted")==0, "decrypted files are identical");
-
     ok(-f "$plain/encfs/encfs.cpp", "file exists");
     unlink("$plain/encfs/encfs.cpp");
     ok(! -f "$decrypted/encfs.cpp", "file deleted");
@@ -137,6 +137,32 @@ sub largeRead {
     ok(sizeVerify($cfh, 1024*1024+8), "1M file size");
 }
 
+# Check that the reverse mount is read-only
+# (writing is not supported in reverse mode because of the added
+#  complexity and the marginal use case)
+sub writesDenied {
+    $fn = "$plain/writesDenied";
+    writeZeroes($fn, 1024);
+    my $efn = $ciphertext . "/" . encName("writesDenied");
+    open(my $fh, ">", $efn);
+    if( ok( $! == EROFS, "open for write denied, EROFS")) {
+        ok( 1, "writing denied, filhandle not open");
+    }
+    else {
+        print($fh "foo");
+        ok( $! == EROFS, "writing denied, EROFS");
+    }
+    $target = $ciphertext . "/" . encName("writesDenied2");
+    rename($efn, $target);
+    ok( $! == EROFS, "rename denied, EROFS") or die();
+    unlink($efn);
+    ok( $! == EROFS, "unlink denied, EROFS");
+    utime(undef, undef, $efn) ;
+    ok( $! == EROFS, "touch denied, EROFS");
+    truncate($efn, 10);
+    ok( $! == EROFS, "truncate denied, EROFS");
+}
+
 # Setup mounts
 newWorkingDir();
 mount();
@@ -149,6 +175,7 @@ symlink_test("/"); # absolute
 symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
 symlink_test("!§\$%&/()\\<>#+="); # special characters
+writesDenied();
 
 # Umount and delete files
 cleanup();

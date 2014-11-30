@@ -1036,6 +1036,8 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     if (reverseEncryption) {
       cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
       uniqueIV = selectUniqueIV();
+      if (uniqueIV == 0)
+        opts->readOnly = 0; // Reverse supports rw mode only if uniqueIV is disabled
     } else {
       chainedIV = selectChainedIV();
       uniqueIV = selectUniqueIV();

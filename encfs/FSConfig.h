@@ -41,6 +41,9 @@ struct EncFS_Opts;
 class Cipher;
 class NameIO;
 
+/**
+ * Persistent configuration (stored in config file .encfs6.xml)
+ */
 struct EncFSConfig {
   ConfigType cfgType;
 
