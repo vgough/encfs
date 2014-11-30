@@ -374,8 +374,8 @@ int encfs_symlink(const char *to, const char *from) {
   if (!FSRoot) return res;
 
   try {
-    // allow fully qualified names in symbolic links.
     string fromCName = FSRoot->cipherPath(from);
+    // allow fully qualified names in symbolic links.
     string toCName = FSRoot->relativeCipherPath(to);
 
     rLog(Info, "symlink %s -> %s", fromCName.c_str(), toCName.c_str());
