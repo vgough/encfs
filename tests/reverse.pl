@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 25;
+use Test::More tests => 26;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -45,6 +45,7 @@ sub cleanup
 # Directory structure: plain -[encrypt]-> ciphertext -[decrypt]-> decrypted
 sub mount
 {
+    delete $ENV{"ENCFS6_CONFIG"};
     system("./encfs/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse");
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
     my $e = encName(".encfs6.xml");
@@ -148,7 +149,7 @@ sub writesDenied {
     my $efn = $ciphertext . "/" . encName("writesDenied");
     open(my $fh, ">", $efn);
     if( ok( $! == EROFS, "open for write denied, EROFS")) {
-        ok( 1, "writing denied, filhandle not open");
+        ok( 1, "writing denied, filehandle not open");
     }
     else {
         print($fh "foo");
