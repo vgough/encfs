@@ -304,10 +304,14 @@ string DirNode::cipherPathWithoutRoot(const char *plaintextPath) {
 string DirNode::plainPath(const char *cipherPath_) {
   try {
     // Handle special absolute path encodings.
-    char mark = fsConfig->reverseEncryption ? '/' : '+';
+    char mark = '+';
+    string prefix = "/";
+    if (fsConfig->reverseEncryption) {
+      mark = '/';
+      prefix = "+";
+    }
     if (cipherPath_[0] == mark) {
-      return string(fsConfig->reverseEncryption ? "+" : "/") +
-             naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
+      return prefix + naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
     }
 
     // Default.
