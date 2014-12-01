@@ -1036,8 +1036,11 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     if (reverseEncryption) {
       cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
       uniqueIV = selectUniqueIV();
-      if (uniqueIV == 0)
-        opts->readOnly = 0; // Reverse supports rw mode only if uniqueIV is disabled
+      /* Reverse mounts are read-only by default (set in main.cpp).
+       * If uniqueIV is off, writing can be allowed, because there
+       * is no header that could be overwritten */
+      if (uniqueIV == false)
+        opts->readOnly = false;
     } else {
       chainedIV = selectChainedIV();
       uniqueIV = selectUniqueIV();

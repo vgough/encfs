@@ -83,7 +83,6 @@ int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
 int encfs_statfs(const char *, struct statvfs *fst);
 int encfs_flush(const char *, struct fuse_file_info *info);
 int encfs_fsync(const char *path, int flags, struct fuse_file_info *info);
-int encfs_readonly_error(...);
 
 #ifdef HAVE_XATTR
 
