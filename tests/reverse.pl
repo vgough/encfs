@@ -3,10 +3,11 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More qw( no_plan );
+use Test::More tests => 26;
 use File::Path;
 use File::Temp;
 use IO::Handle;
+use Errno qw(EROFS);
 
 require("tests/common.inc");
 
@@ -44,6 +45,7 @@ sub cleanup
 # Directory structure: plain -[encrypt]-> ciphertext -[decrypt]-> decrypted
 sub mount
 {
+    delete $ENV{"ENCFS6_CONFIG"};
     system("./encfs/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse");
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
     my $e = encName(".encfs6.xml");
@@ -68,7 +70,6 @@ sub copy_test
 {
     ok(system("cp -a encfs $plain")==0, "copying files to plain");
     ok(system("diff -r -q $plain $decrypted")==0, "decrypted files are identical");
-
     ok(-f "$plain/encfs/encfs.cpp", "file exists");
     unlink("$plain/encfs/encfs.cpp");
     ok(! -f "$decrypted/encfs.cpp", "file deleted");
@@ -78,9 +79,11 @@ sub copy_test
 # Parameter: symlink target
 sub symlink_test
 {
-    my $target = shift(@_);
+    my $target = shift;
     symlink($target, "$plain/symlink");
-    ok( readlink("$decrypted/symlink") eq "$target", "symlink to '$target'");
+    $dec = readlink("$decrypted/symlink");
+    ok( $dec eq $target, "symlink to '$target'") or
+        print("# (original) $target' != '$dec' (decrypted)\n");
     unlink("$plain/symlink");
 }
 
@@ -129,12 +132,38 @@ sub grow {
 }
 
 sub largeRead {
-    system("dd if=/dev/zero of=$plain/largeRead bs=1M count=1 2> /dev/null");
+    writeZeroes("$plain/largeRead", 1024*1024);
     # ciphertext file name
     my $cname = encName("largeRead");
     # cfh ... ciphertext file handle
     ok(open(my $cfh, "<", "$ciphertext/$cname"), "open ciphertext largeRead file");
     ok(sizeVerify($cfh, 1024*1024+8), "1M file size");
+}
+
+# Check that the reverse mount is read-only
+# (writing is not supported in reverse mode because of the added
+#  complexity and the marginal use case)
+sub writesDenied {
+    $fn = "$plain/writesDenied";
+    writeZeroes($fn, 1024);
+    my $efn = $ciphertext . "/" . encName("writesDenied");
+    open(my $fh, ">", $efn);
+    if( ok( $! == EROFS, "open for write denied, EROFS")) {
+        ok( 1, "writing denied, filehandle not open");
+    }
+    else {
+        print($fh "foo");
+        ok( $! == EROFS, "writing denied, EROFS");
+    }
+    $target = $ciphertext . "/" . encName("writesDenied2");
+    rename($efn, $target);
+    ok( $! == EROFS, "rename denied, EROFS") or die();
+    unlink($efn);
+    ok( $! == EROFS, "unlink denied, EROFS");
+    utime(undef, undef, $efn) ;
+    ok( $! == EROFS, "touch denied, EROFS");
+    truncate($efn, 10);
+    ok( $! == EROFS, "truncate denied, EROFS");
 }
 
 # Setup mounts
@@ -149,6 +178,8 @@ symlink_test("/"); # absolute
 symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
 symlink_test("!§\$%&/()\\<>#+="); # special characters
+symlink_test("$plain/foo");
+writesDenied();
 
 # Umount and delete files
 cleanup();

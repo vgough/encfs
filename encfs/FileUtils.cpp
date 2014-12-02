@@ -967,7 +967,6 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   long desiredKDFDuration = NormalKDFDuration;
 
   if (reverseEncryption) {
-    uniqueIV = false;
     chainedIV = false;
     externalIV = false;
     blockMACBytes = 0;
@@ -976,7 +975,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
 
   if (configMode == Config_Paranoia || answer[0] == 'p') {
     if (reverseEncryption) {
-      rError(_("Paranoia configuration not supported for --reverse"));
+      rError(_("Paranoia configuration not supported for reverse encryption"));
       return rootInfo;
     }
 
@@ -1011,7 +1010,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     uniqueIV = true;
 
     if (reverseEncryption) {
-      cout << _("--reverse specified, not using chained IV") << "\n";
+      cout << _("reverse encryption - chained IV disabled") << "\n";
     } else {
       chainedIV = true;
     }
@@ -1035,7 +1034,13 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     blockSize = selectBlockSize(alg);
     nameIOIface = selectNameCoding();
     if (reverseEncryption) {
-      cout << _("--reverse specified, not using unique/chained IV") << "\n";
+      cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
+      uniqueIV = selectUniqueIV();
+      /* Reverse mounts are read-only by default (set in main.cpp).
+       * If uniqueIV is off, writing can be allowed, because there
+       * is no header that could be overwritten */
+      if (uniqueIV == false)
+        opts->readOnly = false;
     } else {
       chainedIV = selectChainedIV();
       uniqueIV = selectUniqueIV();

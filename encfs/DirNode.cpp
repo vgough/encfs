@@ -275,25 +275,43 @@ string DirNode::rootDirectory() {
   return string(rootDir, 0, rootDir.length() - 1);
 }
 
+/**
+ * Encrypt a plain-text file path to the ciphertext path with the
+ * ciphertext root directory name prefixed.
+ *
+ * Example:
+ * $ encfs -f -v cipher plain
+ * $ cd plain
+ * $ touch foobar
+ * cipherPath: /foobar encoded to cipher/NKAKsn2APtmquuKPoF4QRPxS
+ */
 string DirNode::cipherPath(const char *plaintextPath) {
   return rootDir + naming->encodePath(plaintextPath);
 }
 
+/**
+ * Same as cipherPath(), but does not prefix the ciphertext root directory
+ */
 string DirNode::cipherPathWithoutRoot(const char *plaintextPath) {
   return naming->encodePath(plaintextPath);
 }
 
+/**
+ * Return the decrypted version of cipherPath
+ *
+ * In reverse mode, returns the encrypted version of cipherPath
+ */
 string DirNode::plainPath(const char *cipherPath_) {
   try {
-    if (!strncmp(cipherPath_, rootDir.c_str(), rootDir.length())) {
-      return naming->decodePath(cipherPath_ + rootDir.length());
-    }
-
     // Handle special absolute path encodings.
-    char mark = fsConfig->reverseEncryption ? '/' : '+';
+    char mark = '+';
+    string prefix = "/";
+    if (fsConfig->reverseEncryption) {
+      mark = '/';
+      prefix = "+";
+    }
     if (cipherPath_[0] == mark) {
-      return string(fsConfig->reverseEncryption ? "+" : "/") +
-             naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
+      return prefix + naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
     }
 
     // Default.

@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More qw( no_plan );
+use Test::More tests => 101;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -88,7 +88,7 @@ sub corruption
 sub internalModification
 {
     $ofile = "$workingDir/crypt-internal-$$";
-    qx(dd if=/dev/urandom of=$ofile bs=2k count=2 2> /dev/null);
+    writeZeroes($ofile, 2*1024);
     ok(copy($ofile, "$crypt/internal"), "copying crypt-internal file");
 
     open(my $out1, "+<", "$crypt/internal");
@@ -289,7 +289,7 @@ sub links
     is( readlink("$crypt/data-rel"), "data", "read rel symlink");
 
     SKIP: {
-        skip "No hardlink support" unless $hardlinkTests;
+        skip "No hardlink support", 2 unless $hardlinkTests;
 
         ok( link("$crypt/data", "$crypt/data.2"), "hard link");
         checkContents("$crypt/data.2", $contents, "hardlink read");
@@ -306,6 +306,7 @@ sub mount
     mkdir($raw) || BAIL_OUT("Could not create $raw: $!");
     mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
 
+    delete $ENV{"ENCFS6_CONFIG"};
     qx(./encfs/encfs --extpass="echo test" $args $raw $crypt);
 
     ok( -f "$raw/.encfs6.xml",  "created control file");

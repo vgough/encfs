@@ -58,6 +58,11 @@ typedef shared_ptr<EncFS_Root> RootPtr;
 
 enum ConfigMode { Config_Prompt, Config_Standard, Config_Paranoia };
 
+/**
+ * EncFS_Opts stores internal settings
+ *
+ * See struct EncFS_Args (main.cpp) for the parsed command line arguments
+ */
 struct EncFS_Opts {
   std::string rootDir;
   bool createIfNotFound;  // create filesystem if not found
@@ -81,6 +86,8 @@ struct EncFS_Opts {
                  * behind the back of EncFS (for example, in reverse mode).
                  * See main.cpp for a longer explaination. */
 
+  bool readOnly; // Mount read-only
+
   ConfigMode configMode;
 
   EncFS_Opts() {
@@ -96,6 +103,7 @@ struct EncFS_Opts {
     reverseEncryption = false;
     configMode = Config_Prompt;
     noCache = false;
+    readOnly = false;
   }
 };
 

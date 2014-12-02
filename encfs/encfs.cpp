@@ -70,6 +70,18 @@ static EncFS_Context *context() {
   return (EncFS_Context *)fuse_get_context()->private_data;
 }
 
+/**
+ * Helper function - determine if the filesystem is read-only
+ * Optionally takes a pointer to the EncFS_Context, will get it from FUSE
+ * if the argument is NULL.
+ */
+static bool isReadOnly(EncFS_Context *ctx) {
+  if (ctx == NULL)
+    ctx = (EncFS_Context *)fuse_get_context()->private_data;
+
+  return ctx->opts->readOnly;
+}
+
 // helper function -- apply a functor to a cipher path, given the plain path
 static int withCipherPath(const char *opName, const char *path,
                           function<int(EncFS_Context *, const string &)> op,
@@ -130,10 +142,9 @@ static int withFileNode(const char *opName, const char *path,
 }
 
 /*
-    The rLog messages below always print out encrypted filenames, not
+    The rLog messages below always prints out encrypted filenames, not
     plaintext.  The reason is so that it isn't possible to leak information
     about the encrypted data through rlog interfaces.
-
 
     The purpose of this layer of code is to take the FUSE request and dispatch
     to the internal interfaces.  Any marshaling of arguments and return types
@@ -215,6 +226,8 @@ int encfs_getdir(const char *path, fuse_dirh_t h, fuse_dirfil_t filler) {
 int encfs_mknod(const char *path, mode_t mode, dev_t rdev) {
   EncFS_Context *ctx = context();
 
+  if (isReadOnly(ctx)) return -EROFS;
+
   int res = -EIO;
   shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) return res;
@@ -255,6 +268,8 @@ int encfs_mkdir(const char *path, mode_t mode) {
   fuse_context *fctx = fuse_get_context();
   EncFS_Context *ctx = context();
 
+  if (isReadOnly(ctx)) return -EROFS;
+
   int res = -EIO;
   shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) return res;
@@ -287,6 +302,8 @@ int encfs_mkdir(const char *path, mode_t mode) {
 int encfs_unlink(const char *path) {
   EncFS_Context *ctx = context();
 
+  if (isReadOnly(ctx)) return -EROFS;
+
   int res = -EIO;
   shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) return res;
@@ -307,6 +324,7 @@ int _do_rmdir(EncFS_Context *, const string &cipherPath) {
 }
 
 int encfs_rmdir(const char *path) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withCipherPath("rmdir", path, bind(_do_rmdir, _1, _2));
 }
 
@@ -343,17 +361,22 @@ int encfs_readlink(const char *path, char *buf, size_t size) {
                         bind(_do_readlink, _1, _2, buf, size));
 }
 
-int encfs_symlink(const char *from, const char *to) {
+/**
+ * Create a symbolic link pointing to "to" named "from"
+ */
+int encfs_symlink(const char *to, const char *from) {
   EncFS_Context *ctx = context();
+
+  if (isReadOnly(ctx)) return -EROFS;
 
   int res = -EIO;
   shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) return res;
 
   try {
+    string fromCName = FSRoot->cipherPath(from);
     // allow fully qualified names in symbolic links.
-    string fromCName = FSRoot->relativeCipherPath(from);
-    string toCName = FSRoot->cipherPath(to);
+    string toCName = FSRoot->relativeCipherPath(to);
 
     rLog(Info, "symlink %s -> %s", fromCName.c_str(), toCName.c_str());
 
@@ -366,7 +389,7 @@ int encfs_symlink(const char *from, const char *to) {
       olduid = setfsuid(context->uid);
       oldgid = setfsgid(context->gid);
     }
-    res = ::symlink(fromCName.c_str(), toCName.c_str());
+    res = ::symlink(toCName.c_str(), fromCName.c_str());
     if (olduid >= 0) setfsuid(olduid);
     if (oldgid >= 0) setfsgid(oldgid);
 
@@ -384,6 +407,8 @@ int encfs_symlink(const char *from, const char *to) {
 int encfs_link(const char *from, const char *to) {
   EncFS_Context *ctx = context();
 
+  if (isReadOnly(ctx)) return -EROFS;
+
   int res = -EIO;
   shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) return res;
@@ -399,6 +424,8 @@ int encfs_link(const char *from, const char *to) {
 
 int encfs_rename(const char *from, const char *to) {
   EncFS_Context *ctx = context();
+
+  if (isReadOnly(ctx)) return -EROFS;
 
   int res = -EIO;
   shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
@@ -418,6 +445,7 @@ int _do_chmod(EncFS_Context *, const string &cipherPath, mode_t mode) {
 }
 
 int encfs_chmod(const char *path, mode_t mode) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withCipherPath("chmod", path, bind(_do_chmod, _1, _2, mode));
 }
 
@@ -427,16 +455,19 @@ int _do_chown(EncFS_Context *, const string &cyName, uid_t u, gid_t g) {
 }
 
 int encfs_chown(const char *path, uid_t uid, gid_t gid) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withCipherPath("chown", path, bind(_do_chown, _1, _2, uid, gid));
 }
 
 int _do_truncate(FileNode *fnode, off_t size) { return fnode->truncate(size); }
 
 int encfs_truncate(const char *path, off_t size) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withFileNode("truncate", path, NULL, bind(_do_truncate, _1, size));
 }
 
 int encfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withFileNode("ftruncate", path, fi, bind(_do_truncate, _1, size));
 }
 
@@ -446,6 +477,7 @@ int _do_utime(EncFS_Context *, const string &cyName, struct utimbuf *buf) {
 }
 
 int encfs_utime(const char *path, struct utimbuf *buf) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withCipherPath("utime", path, bind(_do_utime, _1, _2, buf));
 }
 
@@ -462,11 +494,15 @@ int _do_utimens(EncFS_Context *, const string &cyName,
 }
 
 int encfs_utimens(const char *path, const struct timespec ts[2]) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withCipherPath("utimens", path, bind(_do_utimens, _1, _2, ts));
 }
 
 int encfs_open(const char *path, struct fuse_file_info *file) {
   EncFS_Context *ctx = context();
+
+  if (isReadOnly(ctx) && (file->flags & O_WRONLY || file->flags & O_RDWR))
+    return -EROFS;
 
   int res = -EIO;
   shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
@@ -508,6 +544,7 @@ int _do_flush(FileNode *fnode) {
   return res;
 }
 
+// Called on each close() of a file descriptor
 int encfs_flush(const char *path, struct fuse_file_info *fi) {
   return withFileNode("flush", path, fi, bind(_do_flush, _1));
 }
@@ -545,6 +582,7 @@ int _do_fsync(FileNode *fnode, int dataSync) {
 }
 
 int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withFileNode("fsync", path, file, bind(_do_fsync, _1, dataSync));
 }
 
@@ -557,6 +595,7 @@ int _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
                 struct fuse_file_info *file) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withFileNode("write", path, file,
                       bind(_do_write, _1, (unsigned char *)buf, size, offset));
 }
@@ -595,6 +634,7 @@ int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags, uint32_t position) {
+  if (isReadOnly(NULL)) return -EROFS;
   (void)flags;
   return withCipherPath("setxattr", path, bind(_do_setxattr, _1, _2, name,
                                                value, size, position));
@@ -606,6 +646,7 @@ int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags) {
+  if (isReadOnly(NULL)) return -EROFS;
   return withCipherPath("setxattr", path,
                         bind(_do_setxattr, _1, _2, name, value, size, flags));
 }
@@ -663,6 +704,8 @@ int _do_removexattr(EncFS_Context *, const string &cyName, const char *name) {
 }
 
 int encfs_removexattr(const char *path, const char *name) {
+  if (isReadOnly(NULL)) return -EROFS;
+
   return withCipherPath("removexattr", path,
                         bind(_do_removexattr, _1, _2, name));
 }
