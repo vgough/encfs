@@ -9,7 +9,7 @@ use File::Temp;
 use IO::Handle;
 use Errno qw(EROFS);
 
-require("tests/common.inc");
+require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
