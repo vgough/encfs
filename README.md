@@ -17,6 +17,8 @@ EncFS encrypts individual files, by translating all requests for the virtual
 EncFS filesystem into the equivalent encrypted operations on the raw
 filesystem.
 
+For more technical details and a usage overview, see [DESIGN.md](DESIGN.md).
+
 ## Status
 
 Over the last 10 years, a number of good alternatives have grown up.  Computing
