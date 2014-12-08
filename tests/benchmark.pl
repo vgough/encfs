@@ -136,8 +136,8 @@ sub tabulate {
     $r = shift;
     my @ecryptfs = @{$r};
 
-    print "Test            | EncFS        | eCryptfs     | EncFS advantage\n";
-    print "----------------|--------------|--------------|----------------\n";
+    print " Test           | EncFS        | eCryptfs     | EncFS advantage\n";
+    print ":---------------|-------------:|-------------:|---------------:\n";
 
     for ( my $i = 0 ; $i <= $#encfs ; $i++ ) {
         my $test = $encfs[$i][0];
