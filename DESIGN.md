@@ -1,4 +1,3 @@
-
 For notes about internationalization, see README-NLS.
 
 EncFS is a program which provides an encrypted virtual filesystem for Linux
@@ -7,7 +6,8 @@ download the latest version of FUSE ).  FUSE provides a loadable kernel module
 which exports a filesystem interface to user-mode.  EncFS runs entirely in
 user-mode and acts as a transparent encrypted filesystem.
 
-Usage:
+Usage
+-----
 
  - To see command line options, see the man page for encfs and encfsctl, or for
    brief usage message, run the programs without an argument (or '-h'):
@@ -33,7 +33,8 @@ Usage:
    created.
 
 
-Technology:
+Technology
+----------
 
  - Encfs uses algorithms from third-party libraries (OpenSSL is the default) to
    encrypt data and filenames.
@@ -92,7 +93,8 @@ Technology:
    file has a unique initialization vector.  This makes it infeasible to copy a
    whole block from one file to another. 
 
-Backward Compatibility:
+Backward Compatibility
+----------------------
 
    At the top level of the raw (encrypted) storage for an EncFS filesystem is a
    configuration file, created automatically by EncFS when a new filesystem is
@@ -109,7 +111,8 @@ Backward Compatibility:
    newer versions use algorithms and/or new options which were not previously
    available.
 
-Utility:
+Utility
+-------
 
    In addition to the "encfs" main program, a utility "encfsctl" has been
    provided which can perform some operations on encfs filesystems.  Encfsctl
@@ -117,7 +120,8 @@ Utility:
    algorithm used, key length, block size), and more importantly it can also
    change the user-supplied password used to encrypt the volume key.
 
-Dependencies:
+Dependencies
+------------
 
    Encfs uses the OpenSSL toolkit (http://www.openssl.org) by default.
    OpenSSL is not covered by the GPL, and some people are concerned about the
