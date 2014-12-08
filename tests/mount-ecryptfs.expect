@@ -1,0 +1,22 @@
+#!/bin/expect -f
+
+# Passed by controlling process via "-c" 
+#spawn mount -t ecryptfs ecryptfs_ciphertext ecryptfs_plaintext
+
+expect "Selection: "
+send "1\n"
+expect "Passphrase: "
+send "test\n"
+expect "Selection \\\[aes\\\]: "
+send "aes\n"
+expect "Selection \\\[16\\\]: "
+send "16\n"
+expect "Enable plaintext passthrough (y/n) \\\[n\\\]: "
+send "n\n"
+expect "Enable filename encryption (y/n) \\\[n\\\]: "
+send "y\n"
+# Filename Encryption Key (FNEK) Signature [d395309aaad4de06]: 
+expect "\\\]: "
+send "\n"
+expect "Mounted eCryptfs"
+send_user "\n"
