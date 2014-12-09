@@ -17,8 +17,8 @@ ACLOCAL_AMFLAGS = -I m4
 
 .PHONY: test
 test:
-	perl -MTest::Harness -e '$$Test::Harness::verbose=0; runtests @ARGV;' tests/*.pl
+	perl -MTest::Harness -e '$$Test::Harness::verbose=0; runtests @ARGV;' tests/*.t.pl
 
 .PHONY: test-verbose
 test-verbose:
-	perl -MTest::Harness -e '$$Test::Harness::verbose=1; runtests @ARGV;' tests/*.pl
+	perl -MTest::Harness -e '$$Test::Harness::verbose=1; runtests @ARGV;' tests/*.t.pl

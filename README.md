@@ -17,6 +17,8 @@ EncFS encrypts individual files, by translating all requests for the virtual
 EncFS filesystem into the equivalent encrypted operations on the raw
 filesystem.
 
+For more technical details and a usage overview, see [DESIGN.md](DESIGN.md).
+
 ## Status
 
 Over the last 10 years, a number of good alternatives have grown up.  Computing
@@ -31,19 +33,30 @@ depends upon community interest.  In order to make it easier for anyone to
 contribute, it is moving a new home on Github.  So if you're interested in
 EncFS, please dive in!
 
-EncFS still has a few unique features that may be interesing to you:
+## Unique Features
 
-*   `--reverse` mode: Provides an encrypted view of an unencrypted folder.
-    This enables encrypted remote backups using standard tools like
-    rsync.
-*   EncFS is typically faster than ecryptfs for stat()-heavy workloads
-    when the backing device is a classical hard disk.
-    This is because ecryptfs has to to read each file header to determine
-    the file size - EncFS does not. This is one additional seek for each
-    stat. On SSDs that have virtually no seek time, that difference may
-    disappear.
-*   EncFS works on network file systems (NFS, CIFS...), while ecryptfs
-    is known to still have [problems][1].
+EncFS has a few features still not found anywhere else (as of Dec 2014)
+that may be interesing to you:
+
+### Reverse mode
+
+`encfs --reverse` provides an encrypted view of an unencrypted folder.
+This enables encrypted remote backups using standard tools like rsync.
+
+### Fast on classical HDDs
+
+EncFS is typically *much* faster than ecryptfs for stat()-heavy workloads
+when the backing device is a classical hard disk.
+This is because ecryptfs has to to read each file header to determine
+the file size - EncFS does not. This is one additional seek for each
+stat.
+See [PERFORMANCE.md](PERFORMANCE.md) for detailed benchmarks on
+HDD, SSD and ramdisk.
+
+### Works on top of network filesystems
+
+EncFS works on network file systems (NFS, CIFS...), while ecryptfs
+is known to still have [problems][1].
 
 ## GitHub Transition
 

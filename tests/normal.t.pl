@@ -8,7 +8,7 @@ use File::Copy;
 use File::Temp;
 use IO::Handle;
 
-require("tests/common.inc");
+require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
