@@ -60,11 +60,12 @@ to `de_DE' (German as spoken in Germany), and `pt' to `pt_PT'
 Translating
 ===========
 
-EncFS is registered with Rosetta - an online interface for supplying
-translations.  See https://launchpad.ubuntu.com/rosetta/products/encfs
+EncFS is registered with Launchpad Translations - an online interface
+for supplying translations.
+See https://translations.launchpad.net/encfs/main/+pots/encfs
 
 If your language is not included in this distribution, you may want
-to check if translated text is already available online in Rosetta.
+to check if translated text is already available online in Launchpad.
 If not, consider translating some of the strings, which will then be
 included in the next EncFS release.
 
