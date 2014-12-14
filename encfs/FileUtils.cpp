@@ -805,19 +805,51 @@ static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
   return blockSize;
 }
 
-static bool boolDefaultNo(const char *prompt) {
-  cout << prompt << "\n";
-  cout << _("The default here is No.\n"
-            "Any response that does not begin with 'y' will mean No: ");
+/**
+ * Prompt the user for a "y" or "n" answer.
+ * An empty answer returns defaultValue.
+ */
+static bool boolDefault(const char *prompt, bool defaultValue) {
 
-  char answer[10];
-  char *res = fgets(answer, sizeof(answer), stdin);
+  cout << prompt;
   cout << "\n";
 
-  if (res != 0 && tolower(answer[0]) == 'y')
-    return true;
+  string yesno;
+
+  if (defaultValue == true)
+    yesno = "[y]/n: ";
   else
-    return false;
+    yesno = "y/[n]: ";
+
+  string response;
+  bool value;
+
+  while(true) {
+    cout << yesno;
+    getline(cin, response);
+
+    if (cin.fail() || response == "") {
+      value = defaultValue;
+      break;
+    } else if (response == "y") {
+      value = true;
+      break;
+    } else if (response == "n") {
+      value = false;
+      break;
+    }
+  }
+
+  cout << "\n";
+  return value;
+}
+
+static bool boolDefaultNo(const char *prompt) {
+  return boolDefault(prompt, false);
+}
+
+static bool boolDefaultYes(const char *prompt) {
+  return boolDefault(prompt, true);
 }
 
 /**
@@ -856,21 +888,6 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes) {
   if (randSize > 8) randSize = 8;
 
   *macRandBytes = randSize;
-}
-
-static bool boolDefaultYes(const char *prompt) {
-  cout << prompt << "\n";
-  cout << _("The default here is Yes.\n"
-            "Any response that does not begin with 'n' will mean Yes: ");
-
-  char answer[10];
-  char *res = fgets(answer, sizeof(answer), stdin);
-  cout << "\n";
-
-  if (res != 0 && tolower(answer[0]) == 'n')
-    return false;
-  else
-    return true;
 }
 
 /**
