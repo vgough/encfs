@@ -28,19 +28,17 @@ if [ ! -z "$2" ]; then
 	    mount_public=true
 	fi
     done
+    [ -d "$unenc_dir" ] || mkdir $unenc_dir
+    unenc_dir=$(canonicalize "$unenc_dir")
 else
-    unenc_dir=.$RANDOM.$RANDOM
+    unenc_dir=$(mktemp -p $PWD .XXXXXXXX)
 fi
 
 if [ ! -d "$enc_dir" ]; then
     mkdir $enc_dir
 fi
-if [ ! -d "$unenc_dir" ]; then
-    mkdir $unenc_dir
-fi
 
 enc_dir=$(canonicalize "$enc_dir")
-unenc_dir=$(canonicalize "$unenc_dir")
 
 options=""
 if $unenc_dir_given; then
