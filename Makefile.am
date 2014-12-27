@@ -22,3 +22,7 @@ test:
 .PHONY: test-verbose
 test-verbose:
 	perl -MTest::Harness -e '$$Test::Harness::verbose=1; runtests @ARGV;' tests/*.t.pl
+
+.PHONY: benchmark
+benchmark:
+	sudo tests/benchmark.pl /var/tmp

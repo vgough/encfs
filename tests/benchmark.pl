@@ -11,8 +11,8 @@ require("tests/common.pl");
 
 # Download linux-3.0.tar.gz unless it already exists ("-c" flag)
 sub dl {
-    our $linuxgz = "/tmp/linux-3.0.tar.gz";
-    print "# downloading linux-3.0.tar.gz... ";
+    our $linuxgz = "/var/tmp/linux-3.0.tar.gz";
+    print "# downloading linux-3.0.tar.gz (92MiB)... ";
     system("wget -nv -c https://www.kernel.org/pub/linux/kernel/v3.x/linux-3.0.tar.gz -O $linuxgz");
     print "done\n";
 }
@@ -138,7 +138,7 @@ sub benchmark {
 
     system("echo 3 > /proc/sys/vm/drop_caches");
     stopwatch_start("rsync");
-        system("rsync -an $dir /tmp");
+        system("rsync -an $dir $dir/empty-rsync-target");
     stopwatch_stop(\@results);
 
     system("echo 3 > /proc/sys/vm/drop_caches");
@@ -188,7 +188,15 @@ sub tabulate {
 
 sub main {
     if ( $#ARGV < 0 ) {
-        print "Usage: test/benchmark.pl MOUNTPOINT [MOUNTPOINT] [...]\n";
+        print "Usage: test/benchmark.pl DIR1 [DIR2] [...]\n";
+        print "\n";
+        print "Arguments:\n";
+        print "  DIRn ... Working directory. This is where the encrypted files\n";
+        print "           are stored. Specifying multiple directories will run\n";
+        print "           the benchmark in each.\n";
+        print "\n";
+        print "For details about the testcases see PERFORMANCE.md.\n";
+
         exit(1);
     }
 
