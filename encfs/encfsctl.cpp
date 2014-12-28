@@ -44,6 +44,10 @@
 #include "i18n.h"
 #include "shared_ptr.h"
 
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+
 using namespace rlog;
 using namespace std;
 using gnu::autosprintf;

@@ -5,13 +5,14 @@
 use Time::HiRes qw( time );
 use File::Temp;
 use warnings;
+use feature 'state';
 
 require("tests/common.pl");
 
 # Download linux-3.0.tar.gz unless it already exists ("-c" flag)
 sub dl {
-    our $linuxgz = "/tmp/linux-3.0.tar.gz";
-    print "# downloading linux-3.0.tar.gz... ";
+    our $linuxgz = "/var/tmp/linux-3.0.tar.gz";
+    print "# downloading linux-3.0.tar.gz (92MiB)... ";
     system("wget -nv -c https://www.kernel.org/pub/linux/kernel/v3.x/linux-3.0.tar.gz -O $linuxgz");
     print "done\n";
 }
@@ -53,6 +54,12 @@ sub mount_encfs {
 }
 
 sub mount_ecryptfs {
+
+    if(system("which mount.ecryptfs > /dev/null") != 0) {
+        print "skipping ecryptfs\n";
+        return "";
+    }
+
     my $workingDir = shift;
 
     my $c = "$workingDir/ecryptfs_ciphertext";
@@ -76,54 +83,70 @@ sub ms {
     return $milliseconds;
 }
 
+# stopwatch_start($name)
+# start the stopwatch for test "$name"
+sub stopwatch_start {
+    stopwatch(1, shift);
+}
+
+# stopwatch_stop(\@results)
+# stop the stopwatch, save time into @results
+sub stopwatch_stop {
+    stopwatch(0, shift);
+}
+
+sub stopwatch {
+    state $start_time;
+    state $name;
+    my $start = shift;
+
+    if($start) {
+        $name = shift;
+        print("# $name... ");
+        $start_time = time();
+    } else {
+        my $delta = ms(time() - $start_time);
+        print("$delta ms\n");
+        my $results = shift;
+        push( $results, [ $name, $delta, 'ms' ] );
+    }
+}
+
 sub benchmark {
     my $dir = shift;
-    my $start;
     our $linuxgz;
-    my $delta;
-    my $line;
 
     my @results = ();
 
     system("sync");
-    print("# stream_write... ");
-    $start = time();
-    writeZeroes( "$dir/zero", 1024 * 1024 * 100 );
-    system("sync");
-    $delta = time() - $start;
-    push( @results, [ 'stream_write', int( 100 / $delta ), "MiB/s" ] );
-    printf("done\n");
+    stopwatch_start("stream_write");
+        writeZeroes( "$dir/zero", 1024 * 1024 * 100 );
+        system("sync");
+    stopwatch_stop(\@results);
     unlink("$dir/zero");
 
     system("sync");
     system("cat $linuxgz > /dev/null");
-    print("# extract... ");
-    $start = time();
-    system("tar xzf $linuxgz -C $dir");
-    system("sync");
-    $delta = ms( time() - $start );
-    push( @results, [ 'extract', $delta, "ms" ] );
-    print("done\n");
+    stopwatch_start("extract");
+        system("tar xzf $linuxgz -C $dir");
+        system("sync");
+    stopwatch_stop(\@results);
 
     $du = qx(du -sm $dir | cut -f1);
-    push( @results, [ 'du', $du, 'MB' ] );
-    printf( "# disk space used: %d MB\n", $du );
+    push( @results, [ 'du', $du, 'MiB' ] );
+    printf( "# disk space used: %d MiB\n", $du );
 
     system("echo 3 > /proc/sys/vm/drop_caches");
-    $start = time();
-    system("rsync -an $dir /tmp");
-    $delta = time() - $start;
-    push( @results, [ 'rsync', ms($delta), 'ms' ] );
-    printf( "# rsync took %d ms\n", ms($delta) );
+    stopwatch_start("rsync");
+        system("rsync -an $dir $dir/empty-rsync-target");
+    stopwatch_stop(\@results);
 
     system("echo 3 > /proc/sys/vm/drop_caches");
     system("sync");
-    $start = time();
-    system("rm -Rf $dir/*");
-    system("sync");
-    $delta = time() - $start;
-    push( @results, [ 'delete', ms($delta), 'ms' ] );
-    printf( "# delete took %d ms\n", ms($delta) );
+    stopwatch_start("rm");
+        system("rm -Rf $dir/*");
+        system("sync");
+    stopwatch_stop(\@results);
 
     return \@results;
 }
@@ -134,7 +157,10 @@ sub tabulate {
     $r = shift;
     my @encfs = @{$r};
     $r = shift;
-    my @ecryptfs = @{$r};
+    my @ecryptfs;
+    if($r) {
+        @ecryptfs = @{$r};
+    }
 
     print " Test           | EncFS        | eCryptfs     | EncFS advantage\n";
     print ":---------------|-------------:|-------------:|---------------:\n";
@@ -144,12 +170,17 @@ sub tabulate {
         my $unit = $encfs[$i][2];
 
         my $en = $encfs[$i][1];
-        my $ec = $ecryptfs[$i][1];
+        my $ec = 0;
+        my $ratio = 0;
 
-        my $ratio = $ec / $en;
-        if ( $unit =~ m!/s! ) {
-            $ratio = $en / $ec;
+        if( @ecryptfs ) {
+            $ec = $ecryptfs[$i][1];
+            $ratio = $ec / $en;
+            if ( $unit =~ m!/s! ) {
+                $ratio = $en / $ec;
+            }
         }
+
         printf( "%-15s | %6d %-5s | %6d %-5s | %2.2f\n",
             $test, $en, $unit, $ec, $unit, $ratio );
     }
@@ -157,7 +188,15 @@ sub tabulate {
 
 sub main {
     if ( $#ARGV < 0 ) {
-        print "Usage: test/benchmark.pl MOUNTPOINT [MOUNTPOINT] [...]\n";
+        print "Usage: test/benchmark.pl DIR1 [DIR2] [...]\n";
+        print "\n";
+        print "Arguments:\n";
+        print "  DIRn ... Working directory. This is where the encrypted files\n";
+        print "           are stored. Specifying multiple directories will run\n";
+        print "           the benchmark in each.\n";
+        print "\n";
+        print "For details about the testcases see PERFORMANCE.md.\n";
+
         exit(1);
     }
 
@@ -180,7 +219,10 @@ sub main {
 
         print "# mounting ecryptfs\n";
         $mountpoint = mount_ecryptfs($workingDir);
-        my $ecryptfs_results = benchmark($mountpoint);
+        my $ecryptfs_results;
+        if($mountpoint) {
+            $ecryptfs_results = benchmark($mountpoint);
+        }
 
         cleanup($workingDir);
 
