@@ -32,8 +32,8 @@ sub newWorkingDir
 # Unmount and delete mountpoint
 sub cleanup
 {
-    system("fusermount -u $decrypted");
-    system("fusermount -u $ciphertext");
+    portable_unmount($decrypted);
+    portable_unmount($ciphertext);
     our $workingDir;
     rmtree($workingDir);
     ok( ! -d $workingDir, "working dir removed");
