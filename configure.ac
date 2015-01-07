@@ -60,13 +60,14 @@ AX_CXX_COMPILE_STDCXX_11
 dnl Look for fuse headers.
 AX_EXT_HAVE_HEADER(fuse.h, /usr/include/fuse /usr/local/include/fuse \
                    /opt/include/fuse /opt/local/include/fuse \
-                   /usr/include/osxfuse /usr/local/include/osxfuse)
+                   /usr/include/osxfuse /usr/local/include/osxfuse \
+                   /opt/local/include/osxfuse)
 
 dnl Ensure the necessary paths are added to LDPATH
 AX_EXT_HAVE_LIB(/usr/lib /usr/local/lib /opt/lib /opt/local/lib, fuse,
-                fuse_new, [])
+                fuse_mount, [])
 AX_EXT_HAVE_LIB(/usr/lib /usr/local/lib /opt/lib /opt/local/lib, osxfuse,
-                fuse_new, [])
+                fuse_mount, [])
 
 if test "$GXX" = "yes"; then
     CXXFLAGS="-W -Wall -Wpointer-arith -Wwrite-strings $CXXFLAGS"
