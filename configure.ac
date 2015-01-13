@@ -14,6 +14,12 @@ dnl without this order in this file, automake will be confused!
 dnl
 AM_CONFIG_HEADER(config.h)
 
+dnl If the string "PKG_CHECK_MODULES" appears in the output,
+dnl the macro was not substituted, probably because pkg-config is
+dnl not installed. Catch that right here instead of creating a
+dnl broken configure script.
+m4_pattern_forbid([PKG_CHECK_MODULES])
+
 dnl This ksh/zsh feature conflicts with `cd blah ; pwd`
 unset CDPATH
 
