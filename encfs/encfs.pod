@@ -138,7 +138,7 @@ the encrypted data.  You must also keep a copy of the file /home/me/.encfs5
 which contains the filesystem information.  Together, the two can be used to
 reproduce the unencrypted data:
 
-    ENCFS5_CONFIG=/home/me/.encfs5 encfs /tmp/crypt-view /tmp/plain-view
+    ENCFS6_CONFIG=/home/me/.encfs6.xml encfs /tmp/crypt-view /tmp/plain-view
 
 Now /tmp/plain-view contains the same data as /home/me
 
@@ -229,6 +229,24 @@ was, as the other passwords rely on an invalid decoding of the volume key,
 which will not remain the same if the primary password is changed.
 
 B<Warning>: Use this option at your own risk.
+
+=back
+
+=head1 ENVIRONMENT VARIABLES
+
+=over 4
+
+=item B<ENCFS6_CONFIG>
+
+Which config file (typically named .encfs6.xml) to use.
+By default, the config file is read from the encrypted directory.
+Using this option allows to store the config file separated from the
+encrypted files.
+
+Warning: If you lose the config file, the encrypted file contents are
+irrecoverably lost. It contains the master key encrypted with your
+password. Without the master key, recovery is impossible, even if you
+know the password.
 
 =back
 

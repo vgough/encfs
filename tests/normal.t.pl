@@ -316,15 +316,7 @@ sub mount
 # Unmount and delete mountpoint
 sub cleanup
 {
-    my $fusermount = qx(which fusermount);
-    chomp($fusermount);
-    if(-f $fusermount)
-    {
-        qx($fusermount -u "$crypt");
-    } else
-    {
-        qx(umount "$crypt");
-    }
+    portable_unmount($crypt);
 
     rmdir $crypt;
     ok( ! -d $crypt, "unmount ok, mount point removed");

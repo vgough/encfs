@@ -1,3 +1,16 @@
+# Portable FUSE unmount
+# works on Linux AND OSX
+sub portable_unmount {
+    my $crypt = shift;
+    my $fusermount = qx(which fusermount);
+    chomp($fusermount);
+    if(-f $fusermount) {
+        qx($fusermount -u "$crypt");
+    } else {
+        qx(umount "$crypt");
+    }
+}
+
 # Helper function
 # Get the MD5 sum of the file open at the filehandle
 use Digest::MD5 qw(md5_hex);

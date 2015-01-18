@@ -9,7 +9,8 @@ user-mode and acts as a transparent encrypted filesystem.
 Usage
 -----
 
- - To see command line options, see the man page for encfs and encfsctl, or for
+ - To see command line options, see the man page for [encfs](encfs/encfs.pod)
+   and [encfsctl](encfs/encfsctl.pod), or for
    brief usage message, run the programs without an argument (or '-h'):
    % encfs -h
    % man encfs
