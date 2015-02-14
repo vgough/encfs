@@ -1,4 +1,4 @@
-For notes about internationalization, see README-NLS.
+For notes about internationalization, see [README-NLS](README-NLS).
 
 EncFS is a program which provides an encrypted virtual filesystem for Linux
 using the FUSE kernel module ( see http://sourceforge.net/projects/avf to
@@ -9,24 +9,27 @@ user-mode and acts as a transparent encrypted filesystem.
 Usage
 -----
 
- - To see command line options, see the man page for [encfs](encfs/encfs.pod)
-   and [encfsctl](encfs/encfsctl.pod), or for
-   brief usage message, run the programs without an argument (or '-h'):
-   % encfs -h
-   % man encfs
+ - To see command line options, see the man page for `[encfs](encfs/encfs.pod)`
+   and `[encfsctl](encfs/encfsctl.pod)`, or for
+   brief usage message, run the programs without an argument (or `-h`):
+
+     encfs -h
+     man encfs
 
  - To create a new encrypted filesystem:
-   % encfs [source dir] [destination mount point]
+   
+     encfs [source dir] [destination mount point]
 
-   eg.: "encfs ~/.crypt ~/crypt".  Both directories should already exist,
+   eg.: `encfs ~/.crypt ~/crypt`.  Both directories should already exist,
    although Encfs will ask if it can create them if they do not.  If the
-   "~/.crypt" directory does not already contain encrypted filesystem data,
+   `~/.crypt` directory does not already contain encrypted filesystem data,
    then the user is prompted for a password for the new encryption directory.
-   The encrypted files will be stored in ~/.crypt, and plaintext access will be
-   through ~/crypt
+   The encrypted files will be stored in `~/.crypt`, and plaintext access will be
+   through `~/crypt`
 
  - To mount an existing filesystem:
-   % encfs [source dir] [destination mount point]
+
+     encfs [source dir] [destination mount point]
 
    This works just like creating a new filesystem.  If the Encfs control file
    is found in the directory, then an attempt is made to mount an existing
@@ -40,7 +43,7 @@ Technology
  - Encfs uses algorithms from third-party libraries (OpenSSL is the default) to
    encrypt data and filenames.
 
- - a user supplied password is used to decrypt a volume key, and the volume key
+ - A user supplied password is used to decrypt a volume key, and the volume key
    is used for encrypting all file names and contents.  This makes it possible
    to change the password without needing to re-encrypt all files.
 
@@ -115,7 +118,7 @@ Backward Compatibility
 Utility
 -------
 
-   In addition to the "encfs" main program, a utility "encfsctl" has been
+   In addition to the `encfs` main program, a utility `encfsctl` has been
    provided which can perform some operations on encfs filesystems.  Encfsctl
    can display information about the filesystem for the curious (the encryption
    algorithm used, key length, block size), and more importantly it can also
