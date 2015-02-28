@@ -61,11 +61,6 @@ HDD, SSD and ramdisk.
 EncFS works on network file systems (NFS, CIFS...), while ecryptfs
 is known to still have [problems][1].
 
-## GitHub Transition
-
-GitHub hosting for EncFS is a work in progress.  See also the original, and
-more complete, introduction page at http://www.arg0.net/encfs
-
 ## Development
 
 The master branch contains the latest stable codebase.  This is where bug fixes
