@@ -57,6 +57,11 @@
 extern "C" void fuse_unmount_compat22(const char *mountpoint);
 #define fuse_unmount fuse_unmount_compat22
 
+/* Arbitrary identifiers for long options that do
+ * not have a short version */
+#define LONG_OPT_ANNOTATE 513
+#define LONG_OPT_NOCACHE  514
+
 using namespace std;
 using namespace rlog;
 using namespace rel;
@@ -215,10 +220,10 @@ static bool processArgs(int argc, char *argv[],
       {"delaymount", 0, 0, 'M'},        // delay initial mount until use
       {"public", 0, 0, 'P'},            // public mode
       {"extpass", 1, 0, 'p'},           // external password program
-      // {"single-thread", 0, 0, 's'}, // single-threaded mode
-      {"stdinpass", 0, 0, 'S'},  // read password from stdin
-      {"annotate", 0, 0, 513},   // Print annotation lines to stderr
-      {"nocache", 0, 0, 514},    // disable caching
+      // {"single-thread", 0, 0, 's'},  // single-threaded mode
+      {"stdinpass", 0, 0, 'S'},         // read password from stdin
+      {"annotate", 0, 0, LONG_OPT_ANNOTATE},  // Print annotation lines to stderr
+      {"nocache", 0, 0, LONG_OPT_NOCACHE},    // disable caching
       {"verbose", 0, 0, 'v'},    // verbose mode
       {"version", 0, 0, 'V'},    // version
       {"reverse", 0, 0, 'r'},    // reverse encryption
@@ -255,7 +260,7 @@ static bool processArgs(int argc, char *argv[],
       case 'S':
         out->opts->useStdin = true;
         break;
-      case 513:
+      case LONG_OPT_ANNOTATE:
         out->opts->annotate = true;
         break;
       case 'f':
@@ -295,8 +300,11 @@ static bool processArgs(int argc, char *argv[],
          * filesystem where something can change the underlying
          * filesystem without going through fuse can run into
          * inconsistencies."
-         * Enabling reverse automatically enables noCache */
-      case 514:
+         * However, disabling the caches causes a factor 3
+         * slowdown. If you are concerned about inconsistencies,
+         * please use --nocache. */
+         break;
+      case LONG_OPT_NOCACHE:
         /* Disable EncFS block cache
          * Causes reverse grow tests to fail because short reads
          * are returned */

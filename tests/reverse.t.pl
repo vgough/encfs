@@ -46,7 +46,7 @@ sub cleanup
 sub mount
 {
     delete $ENV{"ENCFS6_CONFIG"};
-    system("./encfs/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse");
+    system("./encfs/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse --nocache");
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
     my $e = encName(".encfs6.xml");
     ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
