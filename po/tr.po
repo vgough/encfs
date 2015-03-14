@@ -1,0 +1,814 @@
+# Turkish translation for encfs
+# Copyright (c) (c) 2005 Canonical Ltd, and Rosetta Contributors 2005
+# This file is distributed under the same license as the encfs package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2005.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: encfs\n"
+"Report-Msgid-Bugs-To: https://translations.launchpad.net/encfs/main/+pots/"
+"encfs\n"
+"POT-Creation-Date: 2015-03-13 21:26-0700\n"
+"PO-Revision-Date: 2009-10-15 22:35+0000\n"
+"Last-Translator: celil aydin <Unknown>\n"
+"Language-Team: Turkish <tr@li.org>\n"
+"Language: tr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+"X-Launchpad-Export-Date: 2015-03-14 00:04+0000\n"
+"X-Generator: Launchpad (build 17389)\n"
+"X-Rosetta-Version: 0.1\n"
+
+#: encfs/BlockFileIO.cpp:385
+#, c-format
+msgid "truncate failure: read %i bytes, partial block of %i"
+msgstr "kısaltma başarısız: %i bayt okunan, %i nin kısmi bölümü engellendi"
+
+#: encfs/encfsctl.cpp:77
+msgid "  -- show information (Default command)"
+msgstr "  --bilgi göster (Öntanımlı komut)"
+
+#: encfs/encfsctl.cpp:80
+msgid "  -- show key"
+msgstr ""
+
+#: encfs/encfsctl.cpp:83
+msgid "  -- change password for volume"
+msgstr "  -- bölümün parolasını değiştir"
+
+#: encfs/encfsctl.cpp:87
+msgid ""
+"  -- change password for volume, taking password from standard input.\n"
+"\tNo prompts are issued."
+msgstr ""
+"  --standart giriş aygıtından parolayı alarak, bölümün parolasını değiştir.\n"
+"\tİstekte bulunmadan alınacak."
+
+#: encfs/encfsctl.cpp:92
+msgid "  -- show undecodable filenames in the volume"
+msgstr "  -- bölümdeki çözümlenemeyen dosya adlarını göster"
+
+#: encfs/encfsctl.cpp:95
+msgid "  -- decodes the file and cats it to standard out"
+msgstr "  -- dosyayı çözümler ve içeriğini standart çıkışa yazar"
+
+#: encfs/encfsctl.cpp:99
+msgid "  -- decodes name and prints plaintext version"
+msgstr "  -- adı çözümler ve düz metin olarak basar"
+
+#: encfs/encfsctl.cpp:103
+msgid "  -- encodes a filename and print result"
+msgstr "  -- dosya adını şifreleyip ekrana basar"
+
+#: encfs/encfsctl.cpp:106
+msgid "  -- decrypts a volume and writes results to path"
+msgstr "  -- bölümün şifresini çözer ve sonucu yola yazar."
+
+#: encfs/encfsctl.cpp:109
+msgid "  -- print version number and exit"
+msgstr "  -- sürüm numarasını bas ve çık"
+
+#: encfs/encfsctl.cpp:113 encfs/encfsctl.cpp:151
+#, c-format
+msgid "encfsctl version %s"
+msgstr "encfsctl sürüm %s"
+
+#: encfs/encfsctl.cpp:114
+msgid "Usage:\n"
+msgstr "Kullanım:\n"
+
+#: encfs/encfsctl.cpp:118
+#, c-format
+msgid ""
+"%s (root dir)\n"
+"  -- displays information about the filesystem, or \n"
+msgstr ""
+"%s (kök dizin)\n"
+"  -- dosya sistemi hakkında bilgi gösterir, veya \n"
+
+#: encfs/encfsctl.cpp:134
+#, c-format
+msgid ""
+"Example: \n"
+"%s info ~/.crypt\n"
+msgstr ""
+"Örnek: \n"
+"%s info ~/.crypt\n"
+
+#: encfs/encfsctl.cpp:139
+#, c-format
+msgid "directory %s does not exist.\n"
+msgstr "%s dizini yok.\n"
+
+#: encfs/encfsctl.cpp:168 encfs/encfsctl.cpp:613
+msgid "Unable to load or parse config file\n"
+msgstr "Yapılandırma dosyası yüklenemiyor veya çözümlenemiyor\n"
+
+#: encfs/encfsctl.cpp:173
+msgid ""
+"A really old EncFS filesystem was found. \n"
+"It is not supported in this EncFS build.\n"
+msgstr ""
+"Bu dosya sistemi EncFS'in çok eski bir sürümüyle yaratılmış. \n"
+"Bu sürüm tarafından desteklenmiyor.\n"
+
+#: encfs/encfsctl.cpp:178
+#, c-format
+msgid "Version 3 configuration; created by %s\n"
+msgstr "%s tarafından oluşturulan Sürüm 3 yapılandırması\n"
+
+#: encfs/encfsctl.cpp:184
+#, c-format
+msgid "Version 4 configuration; created by %s\n"
+msgstr "%s tarafından oluşturulan sürüm 4 yapılandırması\n"
+
+#: encfs/encfsctl.cpp:190
+#, c-format
+msgid "Version 5 configuration; created by %s (revision %i)\n"
+msgstr "%s  (revizyon %i) tarafından oluşturulan sürüm 5 yapılandırması\n"
+
+#: encfs/encfsctl.cpp:196
+#, c-format
+msgid "Version 6 configuration; created by %s (revision %i)\n"
+msgstr "%s  (revizyon %i) tarafından oluşturulan sürüm 6 yapılandırması\n"
+
+#: encfs/encfsctl.cpp:226 encfs/main.cpp:355
+#, c-format
+msgid "getopt error: %i"
+msgstr "getopt hatası: %i"
+
+#: encfs/encfsctl.cpp:235
+msgid "Incorrect number of arguments"
+msgstr ""
+
+#: encfs/encfsctl.cpp:245 encfs/encfsctl.cpp:264
+msgid "Unable to initialize encrypted filesystem - check path.\n"
+msgstr "Şifreli dosya sistemi ilklendirilemedi. Yolu kontrol edin.\n"
+
+#: encfs/encfsctl.cpp:555
+#, c-format
+msgid "In directory %s: \n"
+msgstr "%s dizininde: \n"
+
+#: encfs/encfsctl.cpp:597
+#, c-format
+msgid "Found %i invalid file."
+msgid_plural "Found %i invalid files."
+msgstr[0] "%i adet geçersiz dosya bulundu."
+msgstr[1] "%i adet geçersiz dosya bulundu."
+
+#: encfs/encfsctl.cpp:620
+#, c-format
+msgid "Unable to find specified cipher \"%s\"\n"
+msgstr "Belirtilen şifreleme yöntemi \"%s\" bulunamadı\n"
+
+#: encfs/encfsctl.cpp:626
+msgid "Enter current Encfs password\n"
+msgstr "Geçerli Encfs parolasını girin\n"
+
+#: encfs/encfsctl.cpp:636
+msgid "Invalid password\n"
+msgstr "Geçersiz parola\n"
+
+#: encfs/encfsctl.cpp:642
+msgid "Enter new Encfs password\n"
+msgstr "Yeni Encfs parolanızı girin\n"
+
+#: encfs/encfsctl.cpp:667
+msgid "Volume Key successfully updated.\n"
+msgstr "Bölüm anahtarı başarıyla güncellendi.\n"
+
+#: encfs/encfsctl.cpp:670
+msgid "Error saving modified config file.\n"
+msgstr "Değiştirilmiş yapılandırma dosyası kaydedilirken bir hata oluştu.\n"
+
+#: encfs/encfsctl.cpp:673
+msgid "Error creating key\n"
+msgstr ""
+
+#: encfs/encfsctl.cpp:728
+#, c-format
+msgid "invalid command: \"%s\""
+msgstr "geçersiz komut: \"%s\""
+
+#: encfs/encfsctl.cpp:733
+#, c-format
+msgid "Incorrect number of arguments for command \"%s\""
+msgstr "\"%s\" komutu için yanlış sayıda parametre verilmiş"
+
+#: encfs/FileUtils.cpp:299
+#, c-format
+msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
+msgstr "\"%s\" dizini mevcut değil. Yaratılmasını ister misiniz? (e,h) "
+
+#: encfs/FileUtils.cpp:319
+msgid "Unable to create directory: "
+msgstr "Dizin yaratılamıyor: "
+
+#: encfs/FileUtils.cpp:325
+msgid "Directory not created."
+msgstr "Dizin yaratılmadı."
+
+#: encfs/FileUtils.cpp:346
+#, fuzzy, c-format
+msgid "Found config file %s, but failed to load - exiting"
+msgstr "%s yapılandırma dosyası bulundu fakat yüklenemedi"
+
+#: encfs/FileUtils.cpp:428
+#, c-format
+msgid ""
+"Config subversion %i found, but this version of encfs only supports up to "
+"version %i."
+msgstr ""
+"Bulunan yapılandırma altsürümü %i, ancak encfs'in bu sürümü %i altsürümüne "
+"kadar olan dosyaları destekliyor."
+
+#: encfs/FileUtils.cpp:435
+msgid ""
+"This version of EncFS doesn't support filesystems created before 2004-08-13"
+msgstr ""
+"EncFS'nin bu sürümü 13-08-2004 tarihinden önce yaratılmış dosya sistemlerini "
+"desteklemiyor."
+
+#: encfs/FileUtils.cpp:617
+msgid "The following cipher algorithms are available:"
+msgstr "Aşağıdaki şifreleme algoritmaları mevcuttur:"
+
+#: encfs/FileUtils.cpp:627
+#, c-format
+msgid " -- key length %i bits"
+msgstr " -- anahtar uzunluğu %i bit"
+
+#: encfs/FileUtils.cpp:633
+#, c-format
+msgid " -- Supports key lengths of %i to %i bits"
+msgstr " -- %i bitten %i bite kadar olan anahtar uzunluklarını destekler"
+
+#: encfs/FileUtils.cpp:641
+#, c-format
+msgid " -- block size %i bytes"
+msgstr " -- blok boyutu %i bayt"
+
+#: encfs/FileUtils.cpp:646
+#, c-format
+msgid " -- Supports block sizes of %i to %i bytes"
+msgstr " --%i bayttan %i bayta kadar blok boyutunu destekler"
+
+#: encfs/FileUtils.cpp:652 encfs/FileUtils.cpp:694
+msgid "Enter the number corresponding to your choice: "
+msgstr "Seçiminize karşılık gelen sayıyı giriniz: "
+
+#: encfs/FileUtils.cpp:659 encfs/FileUtils.cpp:701
+msgid "Invalid selection."
+msgstr "Geçersiz seçim."
+
+#: encfs/FileUtils.cpp:670 encfs/FileUtils.cpp:710
+#, c-format
+msgid "Selected algorithm \"%s\""
+msgstr "Seçilen algoritma \"%s\""
+
+#: encfs/FileUtils.cpp:683
+msgid "The following filename encoding algorithms are available:"
+msgstr "Aşağıdaki dosya adı şifreleme algoritmaları mevcuttur:"
+
+#: encfs/FileUtils.cpp:721 encfs/FileUtils.cpp:764
+#, c-format
+msgid "Using key size of %i bits"
+msgstr "%i bit boyutundaki anahtarlar kullanılıyor"
+
+#: encfs/FileUtils.cpp:729
+#, c-format
+msgid ""
+"Please select a key size in bits.  The cipher you have chosen\n"
+"supports sizes from %i to %i bits in increments of %i bits.\n"
+"For example: "
+msgstr ""
+"Lütfen bit olarak bir anahtar boyutu seçiniz. Seçtiğiniz şifreleme \n"
+"algoritması %i den %i bite kadar boyutları %i bit artırmalı olarak "
+"destekliyor.\n"
+"Örneğin: "
+
+#: encfs/FileUtils.cpp:754
+msgid "Selected key size: "
+msgstr "Seçilen anahtar boyutu: "
+
+#: encfs/FileUtils.cpp:776 encfs/FileUtils.cpp:802
+#, c-format
+msgid "Using filesystem block size of %i bytes"
+msgstr "Kullanılan dosya sistemi blok boyutu %i bayt"
+
+#: encfs/FileUtils.cpp:783
+#, c-format
+msgid ""
+"Select a block size in bytes.  The cipher you have chosen\n"
+"supports sizes from %i to %i bytes in increments of %i.\n"
+"Or just hit enter for the default (%i bytes)\n"
+msgstr ""
+"Bayt olarak bir blok boyutu seçiniz. Seçtiğiniz şifreleme algoritması\n"
+"%i den %i ye kadar boyutları %i artırmalı olarak destekliyor.\n"
+"Veya ön tanımlı değer (%i bayt) için \"enter\" tuşuna basınız.\n"
+
+#: encfs/FileUtils.cpp:790
+msgid "filesystem block size: "
+msgstr "dosya sistemi blok boyutu: "
+
+#: encfs/FileUtils.cpp:861
+msgid ""
+"Enable block authentication code headers\n"
+"on every block in a file?  This adds about 12 bytes per block\n"
+"to the storage requirements for a file, and significantly affects\n"
+"performance but it also means [almost] any modifications or errors\n"
+"within a block will be caught and will cause a read error."
+msgstr ""
+
+#: encfs/FileUtils.cpp:873
+msgid ""
+"Add random bytes to each block header?\n"
+"This adds a performance penalty, but ensures that blocks\n"
+"have different authentication codes.  Note that you can\n"
+"have the same benefits by enabling per-file initialization\n"
+"vectors, which does not come with as great of performance\n"
+"penalty. \n"
+"Select a number of bytes, from 0 (no random bytes) to 8: "
+msgstr ""
+"Her blok başlığına rastlantısal baytlar eklensin mi?\n"
+"Bu performansta düşüşe neden olur ama her bloğun kimlik \n"
+"doğrulama kodunun farklı olmasını sağlar. Aynı faydayı \n"
+"performansta daha az düşüş yaratan, dosyaya özel başlantıcı \n"
+"vektörlerin kullanımını açarak da elde edebileceğinize dikkat ediniz. \n"
+"0'dan (hiç rastlantısal bayt ekleme) 8'e kadar bir bayt sayısı seçin: "
+
+#: encfs/FileUtils.cpp:899
+msgid ""
+"Enable per-file initialization vectors?\n"
+"This adds about 8 bytes per file to the storage requirements.\n"
+"It should not affect performance except possibly with applications\n"
+"which rely on block-aligned file io for performance."
+msgstr ""
+
+#: encfs/FileUtils.cpp:911
+msgid ""
+"Enable filename initialization vector chaining?\n"
+"This makes filename encoding dependent on the complete path, \n"
+"rather then encoding each path element individually."
+msgstr ""
+
+#: encfs/FileUtils.cpp:922
+msgid ""
+"Enable filename to IV header chaining?\n"
+"This makes file data encoding dependent on the complete file path.\n"
+"If a file is renamed, it will not decode sucessfully unless it\n"
+"was renamed by encfs with the proper key.\n"
+"If this option is enabled, then hard links will not be supported\n"
+"in the filesystem."
+msgstr ""
+
+#: encfs/FileUtils.cpp:936
+msgid ""
+"Enable file-hole pass-through?\n"
+"This avoids writing encrypted blocks when file holes are created."
+msgstr ""
+
+#: encfs/FileUtils.cpp:955
+msgid "Creating new encrypted volume."
+msgstr "Yeni şifrelenmiş alan oluşturuluyor."
+
+#: encfs/FileUtils.cpp:960
+msgid ""
+"Please choose from one of the following options:\n"
+" enter \"x\" for expert configuration mode,\n"
+" enter \"p\" for pre-configured paranoia mode,\n"
+" anything else, or an empty line will select standard mode.\n"
+"?> "
+msgstr ""
+"Lütfen aşağıdaki seçeneklerden birini seçin:\n"
+" Uzman yapılandırma kipi için \"x\",\n"
+" Önceden yapılandırılmış paranoyak kip için \"p\",\n"
+" Standart yapılandırma için diğer herhangi bir tuş veya boş satır.\n"
+"?> "
+
+#: encfs/FileUtils.cpp:995
+#, fuzzy
+msgid "Paranoia configuration not supported for reverse encryption"
+msgstr "Paranoia ayarları --reverse için desteklenmiyor"
+
+#: encfs/FileUtils.cpp:1000
+msgid "Paranoia configuration selected."
+msgstr "Paranoyak yapılandırma seçildi."
+
+#: encfs/FileUtils.cpp:1018
+msgid "Standard configuration selected."
+msgstr "Standart yapılandırma seçildi."
+
+#: encfs/FileUtils.cpp:1030
+msgid "reverse encryption - chained IV disabled"
+msgstr ""
+
+#: encfs/FileUtils.cpp:1039
+msgid ""
+"Sorry, unable to locate cipher for predefined configuration...\n"
+"Falling through to Manual configuration mode."
+msgstr ""
+"Üzgünüm, önceden tanımlı yapılandırma için gerekli şifreleme algoritması "
+"bulunamadı.\n"
+"Elle yapılandırma kipine geçiyorum."
+
+#: encfs/FileUtils.cpp:1044
+msgid "Manual configuration mode selected."
+msgstr "Elle yapılandırma kipi seçildi."
+
+#: encfs/FileUtils.cpp:1054
+msgid "reverse encryption - chained IV and MAC disabled"
+msgstr ""
+
+#: encfs/FileUtils.cpp:1068
+msgid ""
+"External chained IV disabled, as both 'IV chaining'\n"
+"and 'unique IV' features are required for this option."
+msgstr ""
+"Dışsal zincirlenmiş BV kapatıldı; çünkü bu özellik için hem \n"
+"'BV zincirlemesi'nin hem de 'eşsiz BV' özelliği gereklidir."
+
+#: encfs/FileUtils.cpp:1080
+#, c-format
+msgid "Unable to instanciate cipher %s, key size %i, block size %i"
+msgstr "%s algoritması %i anahtar boyutu ve %i blok boyutu ile yaratılamadı."
+
+#: encfs/FileUtils.cpp:1110
+msgid ""
+"Configuration finished.  The filesystem to be created has\n"
+"the following properties:"
+msgstr ""
+"Yapılandırma tamamlandı. Yaratılan dosya sistemi\n"
+"aşağıdaki özelliklere sahip:"
+
+#: encfs/FileUtils.cpp:1115
+msgid "-------------------------- WARNING --------------------------\n"
+msgstr "--------------------------- UYARI ---------------------------\n"
+
+#: encfs/FileUtils.cpp:1116
+msgid ""
+"The external initialization-vector chaining option has been\n"
+"enabled.  This option disables the use of hard links on the\n"
+"filesystem. Without hard links, some programs may not work.\n"
+"The programs 'mutt' and 'procmail' are known to fail.  For\n"
+"more information, please see the encfs mailing list.\n"
+"If you would like to choose another configuration setting,\n"
+"please press CTRL-C now to abort and start over."
+msgstr ""
+"Dışsal başlatıcı-vektör zircirleme seçeneği açıldı. Bu seçenek\n"
+"dosya sisteminde sabit bağlantıların kullanılabilmesini engeller.\n"
+"Sabit bağlantılar olmadan, bazı programlar çalışmayabilir.\n"
+"'mutt' ve 'procmail' programlarının çalışmadığı biliniyor.\n"
+"Daha fazla bilgi için, lütfen encfs e-posta listesine bakınız.\n"
+"Eğer başka yapılandırma ayarlarını seçmek isterseniz, lütfen\n"
+"CTRL-C tuşlarına basarak bunu yarıda kesip, yeniden başlatınız."
+
+#: encfs/FileUtils.cpp:1127
+msgid ""
+"Now you will need to enter a password for your filesystem.\n"
+"You will need to remember this password, as there is absolutely\n"
+"no recovery mechanism.  However, the password can be changed\n"
+"later using encfsctl.\n"
+"\n"
+msgstr ""
+"Şimdi dosya sistemi için bir şifre girmelisiniz.\n"
+"Bu şifreyi geri almak imkansız olduğu için, şifrenizi\n"
+"unutmamalısınız. İsterseniz encfsctl kullanarak\n"
+"şifrenizi daha sonra değiştirebilirsiniz.\n"
+"\n"
+
+#: encfs/FileUtils.cpp:1156
+msgid "Failure generating new volume key! Please report this error."
+msgstr ""
+"Yeni alan anahtarı üretilirken bir hata oluştu! Lütfen bu hatayı bildirin."
+
+#: encfs/FileUtils.cpp:1167
+msgid "Name coding interface not supported"
+msgstr "İsim şifreleme arayüzü desteklenmiyor"
+
+#: encfs/FileUtils.cpp:1168
+msgid "The filename encoding interface requested is not available"
+msgstr "İstenen dosya adı şifreleme arayüzü kullanılabilir değil"
+
+#: encfs/FileUtils.cpp:1199
+#, c-format
+msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
+msgstr "Dosya sistemi şifreleyicisi: \"%s\", sürüm %i:%i:%i"
+
+#: encfs/FileUtils.cpp:1205 encfs/FileUtils.cpp:1228 encfs/FileUtils.cpp:1244
+msgid " (NOT supported)\n"
+msgstr " (DESTEKLENMİYOR)\n"
+
+#: encfs/FileUtils.cpp:1211 encfs/FileUtils.cpp:1233
+#, c-format
+msgid " (using %i:%i:%i)\n"
+msgstr " (%i:%i:%i yi kullanarak)\n"
+
+#: encfs/FileUtils.cpp:1219
+#, c-format
+msgid "Filename encoding: \"%s\", version %i:%i:%i"
+msgstr "Dosya adı şifreleme: \"%s\", sürüm %i:%i:%i"
+
+#: encfs/FileUtils.cpp:1240
+#, c-format
+msgid "Key Size: %i bits"
+msgstr "Anahtar Boyutu: %i bit"
+
+#: encfs/FileUtils.cpp:1249
+#, c-format
+msgid "Using PBKDF2, with %i iterations"
+msgstr ""
+
+#: encfs/FileUtils.cpp:1251
+#, c-format
+msgid "Salt Size: %i bits"
+msgstr ""
+
+#: encfs/FileUtils.cpp:1257
+#, c-format
+msgid "Block Size: %i bytes + %i byte MAC header"
+msgstr "Blok boyutu: %i bayt + %i bayt MAC başlığı"
+
+#: encfs/FileUtils.cpp:1264
+#, c-format
+msgid "Block Size: %i bytes, including %i byte MAC header"
+msgstr "Blok Boyutu: %i bayt (%i bayt MAC başlığı dahil)"
+
+#: encfs/FileUtils.cpp:1270
+#, c-format
+msgid "Block Size: %i bytes"
+msgstr "Blok Boyutu: %i bayt"
+
+#: encfs/FileUtils.cpp:1276
+msgid "Each file contains 8 byte header with unique IV data.\n"
+msgstr "Her dosya eşsiz BV verisi ile birlikte 8 bayt tutan başlık içerir.\n"
+
+#: encfs/FileUtils.cpp:1280
+msgid "Filenames encoded using IV chaining mode.\n"
+msgstr "Dosyalar, BV zincirleme modu kullanılarak şifrelendi.\n"
+
+#: encfs/FileUtils.cpp:1284
+msgid "File data IV is chained to filename IV.\n"
+msgstr "Dosya verisi BV'ü, dosya adı BV'ne zincirlendi.\n"
+
+#: encfs/FileUtils.cpp:1288
+msgid "File holes passed through to ciphertext.\n"
+msgstr ""
+
+#: encfs/FileUtils.cpp:1333
+msgid "Error creating salt\n"
+msgstr ""
+
+#: encfs/FileUtils.cpp:1357
+msgid "EncFS Password: "
+msgstr "EncFS Parolası: "
+
+#: encfs/FileUtils.cpp:1363
+msgid "Zero length password not allowed\n"
+msgstr "Boş parola kullanılamaz\n"
+
+#: encfs/FileUtils.cpp:1404
+msgid "Internal error: socketpair() failed"
+msgstr "Dahili hata: socketpair() başarısız"
+
+#: encfs/FileUtils.cpp:1411
+msgid "Internal error: fork() failed"
+msgstr "Dahili hata: fork() başarısız"
+
+#: encfs/FileUtils.cpp:1452
+msgid "Internal error: failed to exec program"
+msgstr "Dahili hata: programın çalıştırılması başarısız"
+
+#: encfs/FileUtils.cpp:1478
+msgid "New Encfs Password: "
+msgstr "Yeni Enfcs Parolası: "
+
+#: encfs/FileUtils.cpp:1481
+msgid "Verify Encfs Password: "
+msgstr "Enfcs Parolasını doğrulayınız: "
+
+#: encfs/FileUtils.cpp:1488
+msgid "Passwords did not match, please try again\n"
+msgstr "Parolalar aynı değil, lütfen tekrar deneyin\n"
+
+#: encfs/FileUtils.cpp:1508
+msgid "The configuration loaded is not compatible with --reverse\n"
+msgstr "Yüklenen ayarlar --reverse ile uyumlu değil\n"
+
+#: encfs/FileUtils.cpp:1516
+#, c-format
+msgid "Unable to find cipher %s, version %i:%i:%i"
+msgstr "Şifreleyici %s, sürüm %i:%i:%i bulunamadı"
+
+#: encfs/FileUtils.cpp:1520
+msgid "The requested cipher interface is not available\n"
+msgstr "İstenen şifreleme arayüzü bulunamadı\n"
+
+#: encfs/FileUtils.cpp:1551
+msgid "Error decoding volume key, password incorrect\n"
+msgstr "Alan anahtarı çözülmesinde hata, şifre hatalı\n"
+
+#: encfs/FileUtils.cpp:1558
+#, c-format
+msgid "Unable to find nameio interface %s, version %i:%i:%i"
+msgstr "nameio arayüzü %s, sürüm %i:%i:%i bulunamadı"
+
+#: encfs/FileUtils.cpp:1562
+msgid "The requested filename coding interface is not available\n"
+msgstr "İstenen dosya adı şifreleme arayüzü bulunamadı\n"
+
+#: encfs/FileUtils.cpp:1602
+msgid "Remount failed"
+msgstr "Yeniden bağlama başarısız"
+
+#: encfs/MACFileIO.cpp:189
+#, c-format
+msgid "MAC comparison failure in block %li"
+msgstr "%li nolu blokta MAC karşılaştırma hatası"
+
+#: encfs/MACFileIO.cpp:192
+msgid "MAC comparison failure, refusing to read"
+msgstr "MAC karşılaştırma hatası, okuma reddediliyor."
+
+#: encfs/main.cpp:114
+#, c-format
+msgid "Build: encfs version %s"
+msgstr "Yapım: encfs sürüm %s"
+
+#: encfs/main.cpp:117
+#, c-format
+msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
+msgstr ""
+"Kullanım: %s [seçenekler] kökDizin bağlamaNoktası [-- [FUSE Bağlama "
+"Seçenekleri]]"
+
+#: encfs/main.cpp:121
+msgid ""
+"Common Options:\n"
+"  -H\t\t\tshow optional FUSE Mount Options\n"
+"  -s\t\t\tdisable multithreaded operation\n"
+"  -f\t\t\trun in foreground (don't spawn daemon).\n"
+"\t\t\tError messages will be sent to stderr\n"
+"\t\t\tinstead of syslog.\n"
+msgstr ""
+"Sık kullanılan seçenekler:\n"
+"  -H\t\t\tisteğe bağlı FUSE Bağlama Seçeneklerini göster\n"
+"  -s\t\t\tçoklu thread desteğini kapat\n"
+"  -f\t\t\tÖn planda çalış (daemon olarak değil) ve\n"
+"\t\t\tHata mesajlarını syslog yerine stderr'e gönder\n"
+
+#: encfs/main.cpp:132
+msgid ""
+"  -v, --verbose\t\tverbose: output encfs debug messages\n"
+"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
+"  --anykey\t\tDo not verify correct key is being used\n"
+"  --forcedecode\t\tdecode data even if an error is detected\n"
+"\t\t\t(for filesystems using MAC block headers)\n"
+msgstr ""
+"  -v, --verbose\t\tkonuşkan: encfs debug mesajlarını göster\n"
+"  -i, --idle=DAKİKA\t Süresince kullanılmazsa otomatik ayır.\n"
+"  --anykey\t\t Doğru anahtarın kullanıldığını doğrulama\n"
+"  --forcedecode\t\tBir hata bulunsa bile verinin şifresini çöz\n"
+"\t\t\t(MAC blok başlığı kullanan dosya sistemleri için)\n"
+
+#: encfs/main.cpp:141
+msgid ""
+"  --public\t\tact as a typical multi-user filesystem\n"
+"\t\t\t(encfs must be run as root)\n"
+msgstr ""
+"  --public \t\ttipik bir çok kullanıcılı dosya sistemi gibi davran\n"
+"\t\t\t(enfcs root olarak çalıştırılmalıdır)\n"
+
+#: encfs/main.cpp:143
+msgid "  --reverse\t\treverse encryption\n"
+msgstr "  --reverse\t\tşifrelemeyi tersine çevirir\n"
+
+#: encfs/main.cpp:147
+msgid ""
+"  --extpass=program\tUse external program for password prompt\n"
+"\n"
+"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
+"    encfs ~/.crypt ~/crypt\n"
+"\n"
+msgstr ""
+"  --extpass=program\tParola girişi için belirtilen programı kullan\n"
+"\n"
+"Örneğin, ~/.crypt 'deki çözülmemiş depoyu, ~/crypt olarak bağlamak için:\n"
+"    encfs ~/.crypt ~/crypt\n"
+"\n"
+
+#: encfs/main.cpp:153
+msgid "For more information, see the man page encfs(1)"
+msgstr "Daha fazla bilgi için, enfcs(1) man sayfasına bakın"
+
+#: encfs/main.cpp:158
+msgid ""
+"encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
+"valid FUSE Mount Options follow:\n"
+msgstr ""
+"encfs [seçenekler] kökDizin bağlamaNoktası -- [FUSE Bağlama Seçenekleri]\n"
+"geçerli FUSE Bağlama Seçenekleri aşağıdadır:\n"
+
+#: encfs/main.cpp:330
+msgid "option '--public' ignored for non-root user"
+msgstr "kullanıcı root olmadığından '--public' seçeneği gözardı edildi"
+
+#: encfs/main.cpp:341
+#, c-format
+msgid "encfs version %s"
+msgstr "encfs sürüm %s"
+
+#: encfs/main.cpp:376
+msgid "Missing one or more arguments, aborting."
+msgstr "Bir veya daha fazla argüman eksik, işlem yarıda kesiliyor."
+
+#: encfs/main.cpp:396
+msgid ""
+"When specifying daemon mode, you must use absolute paths (beginning with '/')"
+msgstr ""
+"Arkaplanda çalışmasını seçtiğinizde, tam yollar ('/' ile başlayan) "
+"kullanmalısınız"
+
+#: encfs/main.cpp:409
+msgid "The raw directory may not be a subdirectory of the mount point."
+msgstr "Ham dizin, bağlama noktasının bir alt dizini olamaz."
+
+#: encfs/main.cpp:418
+msgid "You must use mount-on-demand with delay-mount"
+msgstr ""
+
+#: encfs/main.cpp:425
+msgid "Must set password program when using mount-on-demand"
+msgstr "İstek-üzerine-bağlama kullanılırken parola programı ayarlanmalı"
+
+#: encfs/main.cpp:433
+msgid "Unable to locate root directory, aborting."
+msgstr "Kök dizin bulunamadı, işlem yarıda kesiliyor."
+
+#: encfs/main.cpp:439
+msgid "Unable to locate mount point, aborting."
+msgstr "Bağlama noktası bulunamadı, işlem yarıda kesiliyor."
+
+#: encfs/main.cpp:617
+msgid ""
+"Note: requested single-threaded mode, but an idle\n"
+"timeout was specified.  The filesystem will operate\n"
+"single-threaded, but threads will still be used to\n"
+"implement idle checking."
+msgstr ""
+"Not: Tek kanallı çalışma kipi istendiği halde beklemeye \n"
+"zaman aşımı belirtilmiş. Dosya sistemi tek kanallı çalışacak \n"
+"fakat bekleme takibi yapılması için hala çok kanallı çalışacak."
+
+#: encfs/main.cpp:668
+msgid ""
+"fuse failed.  Common problems:\n"
+" - fuse kernel module not installed (modprobe fuse)\n"
+" - invalid options -- see usage message\n"
+msgstr ""
+"fuse başarısız oldu. Olası sorunlar:\n"
+" - fuse çekirdek modülü kurulu değil (Çözüm: modprobe fuse)\n"
+" - geçersiz seçenekler belirtilmiş -- kullanım mesajına bakınız\n"
+
+#: encfs/main.cpp:674
+#, c-format
+msgid "Internal error: Caught exception from main loop: %s"
+msgstr "İçsel Hata: Ana döngüde oluşan bir istisna yakalandı: %s"
+
+#: encfs/main.cpp:677
+msgid "Internal error: Caught unexpected exception"
+msgstr "İçsel Hata: Beklenmeyen bir istisna yakalandı"
+
+#: encfs/main.cpp:757
+#, c-format
+msgid "Unmounting filesystem %s due to inactivity"
+msgstr "Dosya sistemi %s bir süredir kullanılmadıgından çözülüyor"
+
+#~ msgid "Block encoding, hides file name size somewhat"
+#~ msgstr "Blok kodlama, dosya adı boyutunu bir şekilde gizler"
+
+#~ msgid ""
+#~ "The default here is No.\n"
+#~ "Any response that does not begin with 'y' will mean No: "
+#~ msgstr ""
+#~ "Öntanımlı yanıt Hayır'dır.\n"
+#~ "'y' ile başlamayan her yanıt Hayır anlamına gelir: "
+
+#~ msgid ""
+#~ "The default here is Yes.\n"
+#~ "Any response that does not begin with 'n' will mean Yes: "
+#~ msgstr ""
+#~ "Öntanımlı yanıt Evet'tir.\n"
+#~ "'n' ile başlamayan her yanıt Evet anlamına gelir: "
+
+#~ msgid "--reverse specified, not using unique/chained IV"
+#~ msgstr "--reverse belirlendi, eşsiz/zincirlenmiş IV kullanılmıyor"
+
+#~ msgid "8 byte block cipher"
+#~ msgstr "8 bayt block şifreleme"
+
+#~ msgid "Stream encoding, keeps filenames as short as possible"
+#~ msgstr "Akış şifreleme, dosya isimlerini olabildiğince kısa tutar"
