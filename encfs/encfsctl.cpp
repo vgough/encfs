@@ -594,6 +594,8 @@ static int cmd_showcruft(int argc, char **argv) {
 
   int filesFound = showcruft(rootInfo, "/");
 
+  // TODO: the singular version should say "Found an invalid file", but all the translations
+  // depend upon this broken singular form, so it isn't easy to change.
   cerr << autosprintf(ngettext("Found %i invalid file.",
                                "Found %i invalid files.", filesFound),
                       filesFound) << "\n";
