@@ -116,7 +116,7 @@ sub grow {
         # autoflush should make sure the write goes to the kernel
         # immediately. Just to be sure, check it here.
         sizeVerify($vfh, $i) or die("unexpected plain file size");
-        sizeVerify($cfh, $i+8) or $ok = 0;
+        sizeVerify($cfh, $i) or $ok = 0;
         sizeVerify($dfh, $i) or $ok = 0;
         
         if(md5fh($vfh) ne md5fh($dfh))
@@ -137,7 +137,7 @@ sub largeRead {
     my $cname = encName("largeRead");
     # cfh ... ciphertext file handle
     ok(open(my $cfh, "<", "$ciphertext/$cname"), "open ciphertext largeRead file");
-    ok(sizeVerify($cfh, 1024*1024+8), "1M file size");
+    ok(sizeVerify($cfh, 1024*1024), "1M file size");
 }
 
 # Check that the reverse mount is read-only
