@@ -134,7 +134,7 @@ For example, the following would create an encrypted view in /tmp/crypt-view.
     encfs --reverse /home/me /tmp/crypt-view
 
 You could then copy the /tmp/crypt-view directory in order to have a copy of
-the encrypted data.  You must also keep a copy of the file /home/me/.encfs5
+the encrypted data.  You must also keep a copy of the file /home/me/.encfs6.xml
 which contains the filesystem information.  Together, the two can be used to
 reproduce the unencrypted data:
 
@@ -144,6 +144,14 @@ Now /tmp/plain-view contains the same data as /home/me
 
 Note that B<--reverse> mode only works with limited configuration options, so
 many settings may be disabled when used.
+
+=item B<--nocache>
+
+Disable the kernel's cache of file attributes.
+Setting this option makes EncFS pass "attr_timeout=0" and "entry_timeout=0" to
+FUSE. This makes sure that modifications to the backing files that occour
+outside EncFS show up immediately in the EncFS mount. The main use case
+for "--nocache" is reverse mode.
 
 =item B<--standard>
 
