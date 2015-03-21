@@ -57,6 +57,8 @@
 extern "C" void fuse_unmount_compat22(const char *mountpoint);
 #define fuse_unmount fuse_unmount_compat22
 
+#define LONG_OPT_REQUIRE_MAC 515
+
 using namespace std;
 using namespace rlog;
 using namespace rel;
@@ -190,6 +192,7 @@ static bool processArgs(int argc, char *argv[],
   out->opts->useStdin = false;
   out->opts->annotate = false;
   out->opts->reverseEncryption = false;
+  out->opts->requireMac = false;
 
   bool useDefaultFlags = true;
 
@@ -224,6 +227,7 @@ static bool processArgs(int argc, char *argv[],
       {"reverse", 0, 0, 'r'},    // reverse encryption
       {"standard", 0, 0, '1'},   // standard configuration
       {"paranoia", 0, 0, '2'},   // standard configuration
+      {"require-macs", 0, 0, LONG_OPT_REQUIRE_MAC}, // require MACs
       {0, 0, 0, 0}};
 
   while (1) {
@@ -257,6 +261,9 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 513:
         out->opts->annotate = true;
+        break;
+      case LONG_OPT_REQUIRE_MAC:
+        out->opts->requireMac = true;
         break;
       case 'f':
         out->isDaemon = false;

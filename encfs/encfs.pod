@@ -121,6 +121,15 @@ password.  If this succeeds, then the filesystem becomes available again.
 Do not mount the filesystem when encfs starts; instead, delay mounting until
 first use. This option only makes sense with B<--ondemand>.
 
+=item B<--require-macs>
+
+If creating a new filesystem, this forces block authentication code headers to
+be enabled.  When mounting an existing filesystem, this causes encfs to exit
+if block authentication code headers are not enabled.
+
+This can be used to improve security in case the ciphertext is vulnerable to
+tampering, by preventing an attacker from disabling MACs in the config file.
+
 =item B<--reverse>
 
 Normally B<EncFS> provides a plaintext view of data on demand.  Normally it

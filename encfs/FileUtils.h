@@ -88,6 +88,8 @@ struct EncFS_Opts {
 
   bool readOnly; // Mount read-only
 
+  bool requireMac; // Throw an error if MAC is disabled
+
   ConfigMode configMode;
 
   EncFS_Opts() {
@@ -104,6 +106,7 @@ struct EncFS_Opts {
     configMode = Config_Prompt;
     noCache = false;
     readOnly = false;
+    requireMac = false;
   }
 };
 
