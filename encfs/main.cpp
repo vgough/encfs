@@ -190,6 +190,7 @@ static bool processArgs(int argc, char *argv[],
   out->opts->useStdin = false;
   out->opts->annotate = false;
   out->opts->reverseEncryption = false;
+  out->opts->requireMac = false;
 
   bool useDefaultFlags = true;
 
@@ -224,6 +225,7 @@ static bool processArgs(int argc, char *argv[],
       {"reverse", 0, 0, 'r'},    // reverse encryption
       {"standard", 0, 0, '1'},   // standard configuration
       {"paranoia", 0, 0, '2'},   // standard configuration
+      {"require-mac", 0, 0, 515}, // require MACs (to address Github #14)
       {0, 0, 0, 0}};
 
   while (1) {
@@ -257,6 +259,9 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 513:
         out->opts->annotate = true;
+        break;
+      case 515:
+        out->opts->requireMac = true;
         break;
       case 'f':
         out->isDaemon = false;

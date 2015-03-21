@@ -855,14 +855,26 @@ static bool boolDefaultYes(const char *prompt) {
 /**
  * Ask the user whether to enable block MAC and random header bytes
  */
-static void selectBlockMAC(int *macBytes, int *macRandBytes) {
-  // xgroup(setup)
-  bool addMAC = boolDefaultNo(
-      _("Enable block authentication code headers\n"
-        "on every block in a file?  This adds about 12 bytes per block\n"
-        "to the storage requirements for a file, and significantly affects\n"
-        "performance but it also means [almost] any modifications or errors\n"
-        "within a block will be caught and will cause a read error."));
+static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
+  bool addMAC = false;
+  if (!forceMac) {
+    // xgroup(setup)
+    addMAC = boolDefaultNo(
+        _("Enable block authentication code headers\n"
+          "on every block in a file?  This adds about 12 bytes per block\n"
+          "to the storage requirements for a file, and significantly affects\n"
+          "performance but it also means [almost] any modifications or errors\n"
+          "within a block will be caught and will cause a read error."));
+  } else {
+    cout <<_("Enable block authentication code headers\n"
+      "on every block in a file?  This adds about 12 bytes per block\n"
+      "to the storage requirements for a file, and significantly affects\n"
+      "performance but it also means [almost] any modifications or errors\n"
+      "within a block will be caught and will cause a read error.");
+    cout << _("You specified --require-mac.  "
+              "Forcing block authentication code headers...\n");
+    addMAC = true;
+  }
 
   if (addMAC)
     *macBytes = 8;
@@ -1026,6 +1038,10 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     nameIOIface = BlockNameIO::CurrentInterface();
     uniqueIV = true;
 
+    if (opts->requireMac) {
+      blockMACBytes = 8;
+    }
+
     if (reverseEncryption) {
       cout << _("reverse encryption - chained IV disabled") << "\n";
     } else {
@@ -1070,7 +1086,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
              << "\n";
         externalIV = false;
       }
-      selectBlockMAC(&blockMACBytes, &blockMACRandBytes);
+      selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac);
       allowHoles = selectZeroBlockPassThrough();
     }
   }
@@ -1500,6 +1516,12 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   shared_ptr<EncFSConfig> config(new EncFSConfig);
 
   if (readConfig(opts->rootDir, config) != Config_None) {
+    if (config->blockMACBytes == 0 && opts->requireMac) {
+      cout
+         << _("The configuration disabled MAC, but you passed --require-mac\n");
+      return rootInfo;
+    }
+
     if (opts->reverseEncryption) {
       if (config->blockMACBytes != 0 || config->blockMACRandBytes != 0 ||
           config->externalIVChaining ||
