@@ -866,13 +866,8 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
           "performance but it also means [almost] any modifications or errors\n"
           "within a block will be caught and will cause a read error."));
   } else {
-    cout <<_("Enable block authentication code headers\n"
-      "on every block in a file?  This adds about 12 bytes per block\n"
-      "to the storage requirements for a file, and significantly affects\n"
-      "performance but it also means [almost] any modifications or errors\n"
-      "within a block will be caught and will cause a read error.");
-    cout << _("You specified --require-mac.  "
-              "Forcing block authentication code headers...\n");
+    cout << _("\n\nYou specified --require-macs.  "
+              "Enabling block authentication code headers...\n\n");
     addMAC = true;
   }
 
@@ -1518,7 +1513,7 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   if (readConfig(opts->rootDir, config) != Config_None) {
     if (config->blockMACBytes == 0 && opts->requireMac) {
       cout
-         << _("The configuration disabled MAC, but you passed --require-mac\n");
+         << _("The configuration disabled MAC, but you passed --require-macs\n");
       return rootInfo;
     }
 
