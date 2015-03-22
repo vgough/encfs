@@ -367,13 +367,6 @@ static bool processArgs(int argc, char *argv[],
 
   if (!out->isThreaded) PUSHARG("-s");
 
-  if (useDefaultFlags) {
-    PUSHARG("-o");
-    PUSHARG("use_ino");
-    PUSHARG("-o");
-    PUSHARG("default_permissions");
-  }
-
   // we should have at least 2 arguments left over - the source directory and
   // the mount point.
   if (optind + 2 <= argc) {
@@ -393,6 +386,26 @@ static bool processArgs(int argc, char *argv[],
       rAssert(out->fuseArgc < MaxFuseArgs);
       out->fuseArgv[out->fuseArgc++] = argv[optind];
       ++optind;
+    }
+  }
+
+  // Add default flags unless --no-default-flags was passed
+  if (useDefaultFlags) {
+
+    // Expose the underlying stable inode number
+    PUSHARG("-o");
+    PUSHARG("use_ino");
+
+    // "default_permissions" comes with a performance cost. Only enable
+    // it if makes sense.
+    for(int i=0; i < out->fuseArgc; i++) {
+      if ( out->fuseArgv[i] == NULL ) {
+        continue;
+      } else if (strcmp(out->fuseArgv[i], "allow_other") == 0) {
+        PUSHARG("-o");
+        PUSHARG("default_permissions");
+        break;
+      }
     }
   }
 
