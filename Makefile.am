@@ -26,3 +26,8 @@ test-verbose:
 .PHONY: benchmark
 benchmark:
 	sudo tests/benchmark.pl /var/tmp
+
+.PHONY: benchmark-reverse
+benchmark-reverse:
+	tests/benchmark-reverse.pl /var/tmp
+	tests/benchmark-reverse.pl /var/tmp --nocache

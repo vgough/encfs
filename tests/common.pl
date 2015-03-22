@@ -106,5 +106,53 @@ sub writeZeroes
         }
 }
 
+# Returns integer $milliseconds from float $seconds
+sub ms {
+    my $seconds      = shift;
+    my $milliseconds = int( $seconds * 1000 );
+    return $milliseconds;
+}
+
+# stopwatch_start($name)
+# start the stopwatch for test "$name"
+sub stopwatch_start {
+    stopwatch(1, shift);
+}
+
+# stopwatch_stop(\@results)
+# stop the stopwatch, save time into @results
+sub stopwatch_stop {
+    stopwatch(0, shift);
+}
+
+# See stopwatch_{start,stop} above
+use feature 'state';
+use Time::HiRes qw( time );
+sub stopwatch {
+    state $start_time;
+    state $name;
+    my $start = shift;
+
+    if($start) {
+        $name = shift;
+        print("* $name... ");
+        $start_time = time();
+    } else {
+        my $delta = ms(time() - $start_time);
+        print("$delta ms\n");
+        my $results = shift;
+        push( $results, [ $name, $delta, 'ms' ] );
+    }
+}
+
+# Download linux-3.0.tar.gz unless it already exists ("-c" flag)
+sub dl_linuxgz {
+    our $linuxgz = "/var/tmp/linux-3.0.tar.gz";
+    if ( -e $linuxgz ) { return; }
+    print "downloading linux-3.0.tar.gz (92MiB)... ";
+    system("wget -nv -c https://www.kernel.org/pub/linux/kernel/v3.x/linux-3.0.tar.gz -O $linuxgz");
+    print "done\n";
+}
+
 # As this file will be require()'d, it needs to return true
 return 1;
