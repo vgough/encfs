@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 101;
+use Test::More tests => 103;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -307,9 +307,11 @@ sub mount
     mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
 
     delete $ENV{"ENCFS6_CONFIG"};
-    qx(./encfs/encfs --extpass="echo test" $args $raw $crypt);
-
-    ok( -f "$raw/.encfs6.xml",  "created control file");
+    my $cmdline = "./encfs/encfs --extpass=\"echo test\" $args $raw $crypt 2>&1";
+    #                                  This makes sure we get to see stderr ^
+    my $status = system($cmdline);
+    ok( $status == 0, "encfs command returns 0") || BAIL_OUT("");
+    ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
 }
 
 # Helper function

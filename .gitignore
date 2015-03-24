@@ -34,6 +34,8 @@ Makefile.in
 /po/remove-potcdate.sed
 /po/Makefile.in.in
 /po/Rules-quot
+/po/*.gmo
+/po/stamp-po
 
 /m4/*.m4
 !/m4/ax_boost_base.m4

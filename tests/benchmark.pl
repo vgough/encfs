@@ -2,20 +2,10 @@
 
 # Benchmark EncFS against eCryptfs
 
-use Time::HiRes qw( time );
 use File::Temp;
 use warnings;
-use feature 'state';
 
 require("tests/common.pl");
-
-# Download linux-3.0.tar.gz unless it already exists ("-c" flag)
-sub dl {
-    our $linuxgz = "/var/tmp/linux-3.0.tar.gz";
-    print "# downloading linux-3.0.tar.gz (92MiB)... ";
-    system("wget -nv -c https://www.kernel.org/pub/linux/kernel/v3.x/linux-3.0.tar.gz -O $linuxgz");
-    print "done\n";
-}
 
 # Create a new empty working directory
 sub newWorkingDir {
@@ -74,42 +64,6 @@ sub mount_ecryptfs {
     print "# ecryptfs mounted on $p\n";
 
     return $p;
-}
-
-# Returns integer $milliseconds from float $seconds
-sub ms {
-    my $seconds      = shift;
-    my $milliseconds = int( $seconds * 1000 );
-    return $milliseconds;
-}
-
-# stopwatch_start($name)
-# start the stopwatch for test "$name"
-sub stopwatch_start {
-    stopwatch(1, shift);
-}
-
-# stopwatch_stop(\@results)
-# stop the stopwatch, save time into @results
-sub stopwatch_stop {
-    stopwatch(0, shift);
-}
-
-sub stopwatch {
-    state $start_time;
-    state $name;
-    my $start = shift;
-
-    if($start) {
-        $name = shift;
-        print("# $name... ");
-        $start_time = time();
-    } else {
-        my $delta = ms(time() - $start_time);
-        print("$delta ms\n");
-        my $results = shift;
-        push( $results, [ $name, $delta, 'ms' ] );
-    }
 }
 
 sub benchmark {
@@ -205,7 +159,7 @@ sub main {
         exit(2);
     }
 
-    dl();
+    dl_linuxgz();
     my $workingDir;
     my $mountpoint;
     my $prefix;

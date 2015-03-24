@@ -1,3 +1,23 @@
+Sun Mar 22 2015 Jakob Unterwurzacher <jakobunt@gmail.com>
+	* release version 1.8.1
+	* reverse: re-enable kernel cache (bug #60)
+	* reverse mode: disable unique IV by default
+	* add "make benchmark-reverse"
+	* remove "-o default_permissions" to improve performance
+
+Fri Mar 20 2015 Eric Swanson <eswanson@alloscomp.com>
+	* add option "--require-macs" (bug #14)
+
+Fri Mar 13 2015 Valient Gough <vgough@pobox.com>
+	* add po files to git (bug #63)
+
+Mon Mar 9 2015 Jakob Unterwurzacher <jakobunt@gmail.com>
+	* release version 1.8
+	* improve automatic test converage: also test reverse mode (make test)
+	* add automatic benchmark (make benchmark)
+	* compare MAC in constant time ( fixes bug #12 )
+	* lots of fixes to make building on OSX easier
+
 Sun Nov 23 2014 Jakob Unterwurzacher <jakobunt@gmail.com>
 	* add per-file IVs to reverse mode
 	* add --nocache option

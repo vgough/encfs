@@ -855,14 +855,21 @@ static bool boolDefaultYes(const char *prompt) {
 /**
  * Ask the user whether to enable block MAC and random header bytes
  */
-static void selectBlockMAC(int *macBytes, int *macRandBytes) {
-  // xgroup(setup)
-  bool addMAC = boolDefaultNo(
-      _("Enable block authentication code headers\n"
-        "on every block in a file?  This adds about 12 bytes per block\n"
-        "to the storage requirements for a file, and significantly affects\n"
-        "performance but it also means [almost] any modifications or errors\n"
-        "within a block will be caught and will cause a read error."));
+static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
+  bool addMAC = false;
+  if (!forceMac) {
+    // xgroup(setup)
+    addMAC = boolDefaultNo(
+        _("Enable block authentication code headers\n"
+          "on every block in a file?  This adds about 12 bytes per block\n"
+          "to the storage requirements for a file, and significantly affects\n"
+          "performance but it also means [almost] any modifications or errors\n"
+          "within a block will be caught and will cause a read error."));
+  } else {
+    cout << _("\n\nYou specified --require-macs.  "
+              "Enabling block authentication code headers...\n\n");
+    addMAC = true;
+  }
 
   if (addMAC)
     *macBytes = 8;
@@ -893,13 +900,13 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes) {
 /**
  * Ask the user if per-file unique IVs should be used
  */
-static bool selectUniqueIV() {
+static bool selectUniqueIV(bool default_answer) {
   // xgroup(setup)
-  return boolDefaultYes(
+  return boolDefault(
       _("Enable per-file initialization vectors?\n"
         "This adds about 8 bytes per file to the storage requirements.\n"
         "It should not affect performance except possibly with applications\n"
-        "which rely on block-aligned file io for performance."));
+        "which rely on block-aligned file io for performance."), default_answer);
 }
 
 /**
@@ -977,8 +984,8 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   Interface nameIOIface; //                 selectNameCoding()
   int blockMACBytes = 0;   //               selectBlockMAC()
   int blockMACRandBytes = 0; //             selectBlockMAC()
-  bool uniqueIV = false;   //               selectUniqueIV()
-  bool chainedIV = false;  //               selectChainedIV()
+  bool uniqueIV = true;    //               selectUniqueIV()
+  bool chainedIV = true;   //               selectChainedIV()
   bool externalIV = false; //               selectExternalChainedIV()
   bool allowHoles = true;  //               selectZeroBlockPassThrough()
   long desiredKDFDuration = NormalKDFDuration;
@@ -986,6 +993,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   if (reverseEncryption) {
     chainedIV = false;
     externalIV = false;
+    uniqueIV = false;
     blockMACBytes = 0;
     blockMACRandBytes = 0;
   }
@@ -1009,8 +1017,6 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     nameIOIface = BlockNameIO::CurrentInterface();
     blockMACBytes = 8;
     blockMACRandBytes = 0;  // using uniqueIV, so this isn't necessary
-    uniqueIV = true;
-    chainedIV = true;
     externalIV = true;
     desiredKDFDuration = ParanoiaKDFDuration;
   } else if (configMode == Config_Standard || answer[0] != 'x') {
@@ -1021,15 +1027,10 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     keySize = 192;
     blockSize = DefaultBlockSize;
     alg = findCipherAlgorithm("AES", keySize);
-    blockMACBytes = 0;
-    externalIV = false;
     nameIOIface = BlockNameIO::CurrentInterface();
-    uniqueIV = true;
 
-    if (reverseEncryption) {
-      cout << _("reverse encryption - chained IV disabled") << "\n";
-    } else {
-      chainedIV = true;
+    if (opts->requireMac) {
+      blockMACBytes = 8;
     }
   }
 
@@ -1052,7 +1053,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     nameIOIface = selectNameCoding();
     if (reverseEncryption) {
       cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
-      uniqueIV = selectUniqueIV();
+      uniqueIV = selectUniqueIV(false);
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
@@ -1060,7 +1061,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
         opts->readOnly = false;
     } else {
       chainedIV = selectChainedIV();
-      uniqueIV = selectUniqueIV();
+      uniqueIV = selectUniqueIV(true);
       if (chainedIV && uniqueIV)
         externalIV = selectExternalChainedIV();
       else {
@@ -1070,7 +1071,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
              << "\n";
         externalIV = false;
       }
-      selectBlockMAC(&blockMACBytes, &blockMACRandBytes);
+      selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac);
       allowHoles = selectZeroBlockPassThrough();
     }
   }
@@ -1500,6 +1501,12 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   shared_ptr<EncFSConfig> config(new EncFSConfig);
 
   if (readConfig(opts->rootDir, config) != Config_None) {
+    if (config->blockMACBytes == 0 && opts->requireMac) {
+      cout
+         << _("The configuration disabled MAC, but you passed --require-macs\n");
+      return rootInfo;
+    }
+
     if (opts->reverseEncryption) {
       if (config->blockMACBytes != 0 || config->blockMACRandBytes != 0 ||
           config->externalIVChaining ||

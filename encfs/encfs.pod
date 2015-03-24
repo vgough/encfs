@@ -121,6 +121,15 @@ password.  If this succeeds, then the filesystem becomes available again.
 Do not mount the filesystem when encfs starts; instead, delay mounting until
 first use. This option only makes sense with B<--ondemand>.
 
+=item B<--require-macs>
+
+If creating a new filesystem, this forces block authentication code headers to
+be enabled.  When mounting an existing filesystem, this causes encfs to exit
+if block authentication code headers are not enabled.
+
+This can be used to improve security in case the ciphertext is vulnerable to
+tampering, by preventing an attacker from disabling MACs in the config file.
+
 =item B<--reverse>
 
 Normally B<EncFS> provides a plaintext view of data on demand.  Normally it
@@ -134,7 +143,7 @@ For example, the following would create an encrypted view in /tmp/crypt-view.
     encfs --reverse /home/me /tmp/crypt-view
 
 You could then copy the /tmp/crypt-view directory in order to have a copy of
-the encrypted data.  You must also keep a copy of the file /home/me/.encfs5
+the encrypted data.  You must also keep a copy of the file /home/me/.encfs6.xml
 which contains the filesystem information.  Together, the two can be used to
 reproduce the unencrypted data:
 
@@ -144,6 +153,14 @@ Now /tmp/plain-view contains the same data as /home/me
 
 Note that B<--reverse> mode only works with limited configuration options, so
 many settings may be disabled when used.
+
+=item B<--nocache>
+
+Disable the kernel's cache of file attributes.
+Setting this option makes EncFS pass "attr_timeout=0" and "entry_timeout=0" to
+FUSE. This makes sure that modifications to the backing files that occour
+outside EncFS show up immediately in the EncFS mount. The main use case
+for "--nocache" is reverse mode.
 
 =item B<--standard>
 

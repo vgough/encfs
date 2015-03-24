@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 
-AC_INIT([encfs], [1.8])
+AC_INIT([encfs], [1.8.1])
 AC_CONFIG_SRCDIR([encfs/encfs.h])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
