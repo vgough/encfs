@@ -6,7 +6,7 @@ endif
 SUBDIRS = encfs m4 $(NLS_DIR)
 
 
-EXTRA_DIST = encfs.spec intl/gettext.h
+EXTRA_DIST = encfs.spec intl/gettext.h tests README.md
 
 AUTOMAKE_OPTIONS = foreign 
 

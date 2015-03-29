@@ -1,4 +1,4 @@
-EXTRA_DIST = *.m4
+EXTRA_DIST = $(top_srcdir)/*.m4
 
 #\
 #	ax_pthread.m4 intl.m4 lib-ld.m4 ltsugar.m4 size_max.m4 \
