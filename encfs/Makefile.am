@@ -122,6 +122,7 @@ noinst_HEADERS = \
     Range.h \
     RawFileIO.h \
     readpassphrase.h \
+    shared_ptr.h \
     SSL_Cipher.h \
     StreamNameIO.h
 
