@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: Encrypted Filesystem for Linux\n"
 "Report-Msgid-Bugs-To: https://translations.launchpad.net/encfs/main/+pots/"
 "encfs\n"
-"POT-Creation-Date: 2015-03-13 21:26-0700\n"
+"POT-Creation-Date: 2015-03-29 18:22+0200\n"
 "PO-Revision-Date: 2011-04-21 11:27+0000\n"
 "Last-Translator: Rachid <Unknown>\n"
 "Language-Team: Dutch <nl@li.org>\n"
@@ -21,24 +21,19 @@ msgstr ""
 "X-Generator: Launchpad (build 17389)\n"
 "X-Rosetta-Version: 0.1\n"
 
-#: encfs/BlockFileIO.cpp:385
 #, c-format
 msgid "truncate failure: read %i bytes, partial block of %i"
 msgstr "Afbreek fout: %i bytes gelezen, gedeeltelijk blok van %i"
 
-#: encfs/encfsctl.cpp:77
 msgid "  -- show information (Default command)"
 msgstr "  -- toon informatie (Standaard commando)"
 
-#: encfs/encfsctl.cpp:80
 msgid "  -- show key"
 msgstr ""
 
-#: encfs/encfsctl.cpp:83
 msgid "  -- change password for volume"
 msgstr "  --verander wachtwoord voor schijf"
 
-#: encfs/encfsctl.cpp:87
 msgid ""
 "  -- change password for volume, taking password from standard input.\n"
 "\tNo prompts are issued."
@@ -47,43 +42,34 @@ msgstr ""
 "invoer\n"
 "\tEr zal niks gevraagd worden"
 
-#: encfs/encfsctl.cpp:92
 msgid "  -- show undecodable filenames in the volume"
 msgstr "  -- toont niet decodeerbare bestandsnamen op deze schijf"
 
-#: encfs/encfsctl.cpp:95
 msgid "  -- decodes the file and cats it to standard out"
 msgstr ""
 "  -- decodeer een bestand en geef het resultaat terug op het standaard "
 "uitvoerapparaat"
 
-#: encfs/encfsctl.cpp:99
 msgid "  -- decodes name and prints plaintext version"
 msgstr "  -- decodeert de naam en geeft de versie weer in platte tekst"
 
-#: encfs/encfsctl.cpp:103
 msgid "  -- encodes a filename and print result"
 msgstr "  -- codeert een bestandsnaam en geeft het resultaat terug"
 
-#: encfs/encfsctl.cpp:106
 msgid "  -- decrypts a volume and writes results to path"
 msgstr ""
 "  -- decodeert een volume en schrijft de resultaten weg naar een bestandspad"
 
-#: encfs/encfsctl.cpp:109
 msgid "  -- print version number and exit"
 msgstr "  -- toont het versie nummer en stopt"
 
-#: encfs/encfsctl.cpp:113 encfs/encfsctl.cpp:151
 #, c-format
 msgid "encfsctl version %s"
 msgstr "encfsctl versie %s"
 
-#: encfs/encfsctl.cpp:114
 msgid "Usage:\n"
 msgstr "Gebruik:\n"
 
-#: encfs/encfsctl.cpp:118
 #, c-format
 msgid ""
 "%s (root dir)\n"
@@ -92,7 +78,6 @@ msgstr ""
 "%s (hoofdmap)\n"
 "  --toont informatie over het bestandssysteem of \n"
 
-#: encfs/encfsctl.cpp:134
 #, c-format
 msgid ""
 "Example: \n"
@@ -101,16 +86,13 @@ msgstr ""
 "Voorbeeld: \n"
 "%s info ~/.crypt\n"
 
-#: encfs/encfsctl.cpp:139
 #, c-format
 msgid "directory %s does not exist.\n"
 msgstr "Map %s bestaat niet.\n"
 
-#: encfs/encfsctl.cpp:168 encfs/encfsctl.cpp:613
 msgid "Unable to load or parse config file\n"
 msgstr "Kan configuratiebestand niet laden of verwerken\n"
 
-#: encfs/encfsctl.cpp:173
 msgid ""
 "A really old EncFS filesystem was found. \n"
 "It is not supported in this EncFS build.\n"
@@ -118,112 +100,89 @@ msgstr ""
 "Er werd een erg oud EncFS bestandsysteem aangetroffen. \n"
 "Het wordt door deze EncFS versie niet ondersteund!\n"
 
-#: encfs/encfsctl.cpp:178
 #, c-format
 msgid "Version 3 configuration; created by %s\n"
 msgstr "Versie 3 configuratie; aangemaakt door %s\n"
 
-#: encfs/encfsctl.cpp:184
 #, c-format
 msgid "Version 4 configuration; created by %s\n"
 msgstr "Versie 4 configuratie; aangemaakt door %s\n"
 
-#: encfs/encfsctl.cpp:190
 #, c-format
 msgid "Version 5 configuration; created by %s (revision %i)\n"
 msgstr "Versie 5 configuratie; aangemaakt door %s (revisie %i)\n"
 
-#: encfs/encfsctl.cpp:196
 #, c-format
 msgid "Version 6 configuration; created by %s (revision %i)\n"
 msgstr ""
 
-#: encfs/encfsctl.cpp:226 encfs/main.cpp:355
 #, c-format
 msgid "getopt error: %i"
 msgstr "getopt fout: %i"
 
-#: encfs/encfsctl.cpp:235
 msgid "Incorrect number of arguments"
 msgstr "Ongeldig aantal argumenten"
 
-#: encfs/encfsctl.cpp:245 encfs/encfsctl.cpp:264
 msgid "Unable to initialize encrypted filesystem - check path.\n"
 msgstr ""
 "Kon het versleutelde bestandssysteem niet initialiseren - controleer het "
 "pad.\n"
 
-#: encfs/encfsctl.cpp:555
 #, c-format
 msgid "In directory %s: \n"
 msgstr "In map %s: \n"
 
-#: encfs/encfsctl.cpp:597
 #, c-format
 msgid "Found %i invalid file."
 msgid_plural "Found %i invalid files."
 msgstr[0] "%i ongeldig bestand gevonden."
 msgstr[1] "%i ongeldige bestanden gevonden."
 
-#: encfs/encfsctl.cpp:620
 #, c-format
 msgid "Unable to find specified cipher \"%s\"\n"
 msgstr ""
 "Het gespecificeerde versleutelalgoritme\"%s\" kon niet gevonden worden\n"
 
-#: encfs/encfsctl.cpp:626
 msgid "Enter current Encfs password\n"
 msgstr "Geef huidig wachtwoord voor Encfs\n"
 
-#: encfs/encfsctl.cpp:636
 msgid "Invalid password\n"
 msgstr "Ongeldig wachtwoord\n"
 
-#: encfs/encfsctl.cpp:642
 msgid "Enter new Encfs password\n"
 msgstr "Geef nieuw wachtwoord voor Encfs\n"
 
-#: encfs/encfsctl.cpp:667
 msgid "Volume Key successfully updated.\n"
 msgstr "Volumesleutel werd met succes bijgewerkt.\n"
 
-#: encfs/encfsctl.cpp:670
 msgid "Error saving modified config file.\n"
 msgstr "Fout bij opslaan van aangepast configuratiebestand.\n"
 
-#: encfs/encfsctl.cpp:673
 msgid "Error creating key\n"
 msgstr "Fout tijdens aanmaken van sleutel\n"
 
-#: encfs/encfsctl.cpp:728
 #, c-format
 msgid "invalid command: \"%s\""
 msgstr "ongeldig commando: \"%s\""
 
-#: encfs/encfsctl.cpp:733
 #, c-format
 msgid "Incorrect number of arguments for command \"%s\""
 msgstr "Verkeerd aantal argumenten voor commando \"%s\""
 
-#: encfs/FileUtils.cpp:299
 #, c-format
 msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
 msgstr "De map \"%s\" bestaat niet. Moet deze aangemaakt worden? (y,n) "
 
-#: encfs/FileUtils.cpp:319
 msgid "Unable to create directory: "
 msgstr "Kon map niet aanmaken: "
 
-#: encfs/FileUtils.cpp:325
 msgid "Directory not created."
 msgstr "Map niet aangemaakt."
 
-#: encfs/FileUtils.cpp:346
 #, fuzzy, c-format
 msgid "Found config file %s, but failed to load - exiting"
 msgstr "configuratiebestand %s gevonden, maar kon het niet inlezen"
 
-#: encfs/FileUtils.cpp:428
 #, c-format
 msgid ""
 "Config subversion %i found, but this version of encfs only supports up to "
@@ -232,60 +191,48 @@ msgstr ""
 "Configuratiebestand van sub-versie %i gevonden, maar deze versie van encfs "
 "ondersteunt alleen tot versie %i."
 
-#: encfs/FileUtils.cpp:435
 msgid ""
 "This version of EncFS doesn't support filesystems created before 2004-08-13"
 msgstr ""
 "Deze versie van EncFS ondersteunt geen bestandssystemen die voor 13-08-2004 "
 "zijn aangemaakt1"
 
-#: encfs/FileUtils.cpp:617
 msgid "The following cipher algorithms are available:"
 msgstr "De volgende versleutelalgoritmen zijn beschikbaar:"
 
-#: encfs/FileUtils.cpp:627
 #, c-format
 msgid " -- key length %i bits"
 msgstr " --sleutellengte %i bits"
 
-#: encfs/FileUtils.cpp:633
 #, c-format
 msgid " -- Supports key lengths of %i to %i bits"
 msgstr " -- Ondersteunt sleutellengtes van %i tot %i bits"
 
-#: encfs/FileUtils.cpp:641
 #, c-format
 msgid " -- block size %i bytes"
 msgstr " -- blok grootte %i bytes"
 
-#: encfs/FileUtils.cpp:646
 #, c-format
 msgid " -- Supports block sizes of %i to %i bytes"
 msgstr " -- Ondersteunt blok groottes van %i tot %i bytes"
 
-#: encfs/FileUtils.cpp:652 encfs/FileUtils.cpp:694
 msgid "Enter the number corresponding to your choice: "
 msgstr "Typ het gekozen getal in: "
 
-#: encfs/FileUtils.cpp:659 encfs/FileUtils.cpp:701
 msgid "Invalid selection."
 msgstr "Ongeldige keuze"
 
-#: encfs/FileUtils.cpp:670 encfs/FileUtils.cpp:710
 #, c-format
 msgid "Selected algorithm \"%s\""
 msgstr "Gekozen algoritme \"%s\""
 
-#: encfs/FileUtils.cpp:683
 msgid "The following filename encoding algorithms are available:"
 msgstr "De volgende versleutel algoritmen kunnen gekozen worden:"
 
-#: encfs/FileUtils.cpp:721 encfs/FileUtils.cpp:764
 #, c-format
 msgid "Using key size of %i bits"
 msgstr "Sleutel groote van %i bits wordt gebruikt"
 
-#: encfs/FileUtils.cpp:729
 #, c-format
 msgid ""
 "Please select a key size in bits.  The cipher you have chosen\n"
@@ -296,16 +243,13 @@ msgstr ""
 "ondersteunt groottes van %i tot %i bits in stappen van %i bits.\n"
 "Bijvoorbeeld: "
 
-#: encfs/FileUtils.cpp:754
 msgid "Selected key size: "
 msgstr "kies een sleutel grootte: "
 
-#: encfs/FileUtils.cpp:776 encfs/FileUtils.cpp:802
 #, c-format
 msgid "Using filesystem block size of %i bytes"
 msgstr "Gebuik bestandssysteem blok grootte van %i bytes"
 
-#: encfs/FileUtils.cpp:783
 #, c-format
 msgid ""
 "Select a block size in bytes.  The cipher you have chosen\n"
@@ -316,11 +260,9 @@ msgstr ""
 "ondersteunt groottes van %i tot %i bytes in stappen van %i.\n"
 "Of druk op de enter toets voor de standdaard waarde (%i bytes).\n"
 
-#: encfs/FileUtils.cpp:790
 msgid "filesystem block size: "
 msgstr "bestandssysteem blok grootte: "
 
-#: encfs/FileUtils.cpp:861
 msgid ""
 "Enable block authentication code headers\n"
 "on every block in a file?  This adds about 12 bytes per block\n"
@@ -329,7 +271,14 @@ msgid ""
 "within a block will be caught and will cause a read error."
 msgstr ""
 
-#: encfs/FileUtils.cpp:873
+msgid ""
+"\n"
+"\n"
+"You specified --require-macs.  Enabling block authentication code "
+"headers...\n"
+"\n"
+msgstr ""
+
 msgid ""
 "Add random bytes to each block header?\n"
 "This adds a performance penalty, but ensures that blocks\n"
@@ -346,7 +295,6 @@ msgstr ""
 "vectoren te activeren, wat een kleinere performance vermindering geeft. \n"
 "Kies het aantal random bytes, van 0 (geen random bytes) tot 8: "
 
-#: encfs/FileUtils.cpp:899
 msgid ""
 "Enable per-file initialization vectors?\n"
 "This adds about 8 bytes per file to the storage requirements.\n"
@@ -354,14 +302,12 @@ msgid ""
 "which rely on block-aligned file io for performance."
 msgstr ""
 
-#: encfs/FileUtils.cpp:911
 msgid ""
 "Enable filename initialization vector chaining?\n"
 "This makes filename encoding dependent on the complete path, \n"
 "rather then encoding each path element individually."
 msgstr ""
 
-#: encfs/FileUtils.cpp:922
 msgid ""
 "Enable filename to IV header chaining?\n"
 "This makes file data encoding dependent on the complete file path.\n"
@@ -371,17 +317,14 @@ msgid ""
 "in the filesystem."
 msgstr ""
 
-#: encfs/FileUtils.cpp:936
 msgid ""
 "Enable file-hole pass-through?\n"
 "This avoids writing encrypted blocks when file holes are created."
 msgstr ""
 
-#: encfs/FileUtils.cpp:955
 msgid "Creating new encrypted volume."
 msgstr "Een nieuw versleuteld volume wordt aangemaakt."
 
-#: encfs/FileUtils.cpp:960
 msgid ""
 "Please choose from one of the following options:\n"
 " enter \"x\" for expert configuration mode,\n"
@@ -395,24 +338,16 @@ msgstr ""
 " Iedere andere keuze of een lege regel kiest de standaard mode.\n"
 "?> "
 
-#: encfs/FileUtils.cpp:995
 #, fuzzy
 msgid "Paranoia configuration not supported for reverse encryption"
 msgstr "Paranoia-configuratie wordt niet ondersteund voor --reverse"
 
-#: encfs/FileUtils.cpp:1000
 msgid "Paranoia configuration selected."
 msgstr "De paranoia mode is geselecteerd."
 
-#: encfs/FileUtils.cpp:1018
 msgid "Standard configuration selected."
 msgstr "De standaard configuratie is geselecteerd."
 
-#: encfs/FileUtils.cpp:1030
-msgid "reverse encryption - chained IV disabled"
-msgstr ""
-
-#: encfs/FileUtils.cpp:1039
 msgid ""
 "Sorry, unable to locate cipher for predefined configuration...\n"
 "Falling through to Manual configuration mode."
@@ -421,15 +356,12 @@ msgstr ""
 "niet gevonden worden...\n"
 "De handmatige configuratie mode wordt opgestart."
 
-#: encfs/FileUtils.cpp:1044
 msgid "Manual configuration mode selected."
 msgstr "De handmatige configuratie is geselecteerd."
 
-#: encfs/FileUtils.cpp:1054
 msgid "reverse encryption - chained IV and MAC disabled"
 msgstr ""
 
-#: encfs/FileUtils.cpp:1068
 msgid ""
 "External chained IV disabled, as both 'IV chaining'\n"
 "and 'unique IV' features are required for this option."
@@ -437,14 +369,12 @@ msgstr ""
 "Externe chained IV uitgeschakeld, omdat 'IV chaining'\n"
 "en 'unique IV' eigenschappen nodig zijn voor deze optie."
 
-#: encfs/FileUtils.cpp:1080
 #, c-format
 msgid "Unable to instanciate cipher %s, key size %i, block size %i"
 msgstr ""
 "Het is niet mogelijk om versleutelalgoritme %s, sleutelgrootte %i en blok "
 "grootte %i voor dit geval te gebruiken"
 
-#: encfs/FileUtils.cpp:1110
 msgid ""
 "Configuration finished.  The filesystem to be created has\n"
 "the following properties:"
@@ -452,11 +382,9 @@ msgstr ""
 "De configuratie is afgelopen. Het bestandssysteem dat wordt aangemaakt \n"
 "heeft de volgende eigenschappen:"
 
-#: encfs/FileUtils.cpp:1115
 msgid "-------------------------- WARNING --------------------------\n"
 msgstr "-------------------------- WAARSCHUWING -------------------------\n"
 
-#: encfs/FileUtils.cpp:1116
 msgid ""
 "The external initialization-vector chaining option has been\n"
 "enabled.  This option disables the use of hard links on the\n"
@@ -474,7 +402,6 @@ msgstr ""
 "Als je een andere configuratie optie wilt kiezen \n"
 "druk op CNTL-C nu op te stoppen en opnieuw te beginnen."
 
-#: encfs/FileUtils.cpp:1127
 msgid ""
 "Now you will need to enter a password for your filesystem.\n"
 "You will need to remember this password, as there is absolutely\n"
@@ -488,174 +415,140 @@ msgstr ""
 "echter later wel veranderd worden met encfsctl.\n"
 "\n"
 
-#: encfs/FileUtils.cpp:1156
 msgid "Failure generating new volume key! Please report this error."
 msgstr ""
 "Aanmaken van nieuwe volumesleutel is mislukt! U wordt verzocht deze fout te "
 "rapporteren."
 
-#: encfs/FileUtils.cpp:1167
 msgid "Name coding interface not supported"
 msgstr "De naamcoderingsinterface wordt niet ondersteund"
 
-#: encfs/FileUtils.cpp:1168
 msgid "The filename encoding interface requested is not available"
 msgstr ""
 "De gevraagde interface voor het versleutelen van de bestandsnaam is niet "
 "beschikbaar."
 
-#: encfs/FileUtils.cpp:1199
 #, c-format
 msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
 msgstr "Bestandssysteem versleutelalgoritme: \"%s\", versie %i:%i:%i"
 
-#: encfs/FileUtils.cpp:1205 encfs/FileUtils.cpp:1228 encfs/FileUtils.cpp:1244
 msgid " (NOT supported)\n"
 msgstr " (NIET ondersteund)\n"
 
-#: encfs/FileUtils.cpp:1211 encfs/FileUtils.cpp:1233
 #, c-format
 msgid " (using %i:%i:%i)\n"
 msgstr " (%i:%i:%i wordt gebruikt)\n"
 
-#: encfs/FileUtils.cpp:1219
 #, c-format
 msgid "Filename encoding: \"%s\", version %i:%i:%i"
 msgstr "Bestandsnaam codering: \"%s\", versie %i:%i:%i"
 
-#: encfs/FileUtils.cpp:1240
 #, c-format
 msgid "Key Size: %i bits"
 msgstr "Sleutelgrootte: %i bits"
 
-#: encfs/FileUtils.cpp:1249
 #, c-format
 msgid "Using PBKDF2, with %i iterations"
 msgstr "PBKDF2 wordt gebruikt, met %i iteraties"
 
-#: encfs/FileUtils.cpp:1251
 #, c-format
 msgid "Salt Size: %i bits"
 msgstr "Salt-grootte: %i bits"
 
-#: encfs/FileUtils.cpp:1257
 #, c-format
 msgid "Block Size: %i bytes + %i byte MAC header"
 msgstr "Blokgrootte: %i bytes + %i byte MAC header"
 
-#: encfs/FileUtils.cpp:1264
 #, c-format
 msgid "Block Size: %i bytes, including %i byte MAC header"
 msgstr "Blokgrootte: %i bytes, inclusief %i byte MAC header"
 
-#: encfs/FileUtils.cpp:1270
 #, c-format
 msgid "Block Size: %i bytes"
 msgstr "Blokgrootte: %i bytes"
 
-#: encfs/FileUtils.cpp:1276
 msgid "Each file contains 8 byte header with unique IV data.\n"
 msgstr "Elk bestand bevat een 8 byte header met unieke IV data.\n"
 
-#: encfs/FileUtils.cpp:1280
 msgid "Filenames encoded using IV chaining mode.\n"
 msgstr "Bestandsnamen die gecodeerd zijn met een IV koppelmethode.\n"
 
-#: encfs/FileUtils.cpp:1284
 msgid "File data IV is chained to filename IV.\n"
 msgstr "Bestand data IV is gekoppeld aan bestandsnaam IV.\n"
 
-#: encfs/FileUtils.cpp:1288
 msgid "File holes passed through to ciphertext.\n"
 msgstr ""
 
-#: encfs/FileUtils.cpp:1333
 msgid "Error creating salt\n"
 msgstr "Fout tijdens aanmaken van salt\n"
 
-#: encfs/FileUtils.cpp:1357
 msgid "EncFS Password: "
 msgstr "EncFS wachtwoord: "
 
-#: encfs/FileUtils.cpp:1363
 msgid "Zero length password not allowed\n"
 msgstr "Wachtwoord van 0 karakters is niet toegestaan\n"
 
-#: encfs/FileUtils.cpp:1404
 msgid "Internal error: socketpair() failed"
 msgstr "Interne fout: socketpair() failed"
 
-#: encfs/FileUtils.cpp:1411
 msgid "Internal error: fork() failed"
 msgstr "Interne fout: fork() failed"
 
-#: encfs/FileUtils.cpp:1452
 msgid "Internal error: failed to exec program"
 msgstr "Interne fout: failed to exec program"
 
-#: encfs/FileUtils.cpp:1478
 msgid "New Encfs Password: "
 msgstr "Nieuw EncFS wachtwoord: "
 
-#: encfs/FileUtils.cpp:1481
 msgid "Verify Encfs Password: "
 msgstr "EncFS wachtwoord ter controle: "
 
-#: encfs/FileUtils.cpp:1488
 msgid "Passwords did not match, please try again\n"
 msgstr "De wachtwoorden komen niet overeen, probeer het alstublieft opnieuw\n"
 
-#: encfs/FileUtils.cpp:1508
+#, fuzzy
+msgid "The configuration disabled MAC, but you passed --require-macs\n"
+msgstr "De geladen configuratie is niet compatibel met --reverse\n"
+
 msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "De geladen configuratie is niet compatibel met --reverse\n"
 
-#: encfs/FileUtils.cpp:1516
 #, c-format
 msgid "Unable to find cipher %s, version %i:%i:%i"
 msgstr "Versleutelalgoritme %s, versie %i:%i:%i is niet gevonden."
 
-#: encfs/FileUtils.cpp:1520
 msgid "The requested cipher interface is not available\n"
 msgstr "De gevraagde versleutelinterface is niet beschikbaar\n"
 
-#: encfs/FileUtils.cpp:1551
 msgid "Error decoding volume key, password incorrect\n"
 msgstr ""
 "De volume key kan niet gedecodeerd worden, het wachtwoord is incorrect\n"
 
-#: encfs/FileUtils.cpp:1558
 #, c-format
 msgid "Unable to find nameio interface %s, version %i:%i:%i"
 msgstr "De nameio interface %s, versie %i:%i:%i is niet gevonden"
 
-#: encfs/FileUtils.cpp:1562
 msgid "The requested filename coding interface is not available\n"
 msgstr "De gevraagde bestandnaam versleutelinterface is niet beschikbaar\n"
 
-#: encfs/FileUtils.cpp:1602
 msgid "Remount failed"
 msgstr "Opnieuw mounten mislukt"
 
-#: encfs/MACFileIO.cpp:189
 #, c-format
 msgid "MAC comparison failure in block %li"
 msgstr "MAC vergelijkings fout in block %li"
 
-#: encfs/MACFileIO.cpp:192
 msgid "MAC comparison failure, refusing to read"
 msgstr "MAC vergelijkings fout, lezen geweigerd"
 
-#: encfs/main.cpp:114
 #, c-format
 msgid "Build: encfs version %s"
 msgstr "Build: encfs versie %s"
 
-#: encfs/main.cpp:117
 #, c-format
 msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
 msgstr "Gebruik: %s [opties] rootDir mountPlaats [-- [FUSE Mount Opties]]"
 
-#: encfs/main.cpp:121
 msgid ""
 "Common Options:\n"
 "  -H\t\t\tshow optional FUSE Mount Options\n"
@@ -671,7 +564,6 @@ msgstr ""
 "\t\t\tFoutmeldingen zullen naar stderr gestuurd worden\n"
 "\t\t\tin plaats van naar syslog\n"
 
-#: encfs/main.cpp:132
 msgid ""
 "  -v, --verbose\t\tverbose: output encfs debug messages\n"
 "  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
@@ -687,7 +579,6 @@ msgstr ""
 "geconstanteerd\n"
 "\t\t\t(voor bestandssystemen die MAC block headers gebruiken)\n"
 
-#: encfs/main.cpp:141
 msgid ""
 "  --public\t\tact as a typical multi-user filesystem\n"
 "\t\t\t(encfs must be run as root)\n"
@@ -695,11 +586,9 @@ msgstr ""
 "  --public\t\tact als een typisch bestandssysteem voor meerdere gebruikers\n"
 "\t\t\t(encfs moet als root draaien)\n"
 
-#: encfs/main.cpp:143
 msgid "  --reverse\t\treverse encryption\n"
 msgstr "  --reverse\t\tomgekeerde encryptie\n"
 
-#: encfs/main.cpp:147
 msgid ""
 "  --extpass=program\tUse external program for password prompt\n"
 "\n"
@@ -713,11 +602,9 @@ msgstr ""
 "    encfs ~/.crypt ~/crypt\n"
 "\n"
 
-#: encfs/main.cpp:153
 msgid "For more information, see the man page encfs(1)"
 msgstr "Voor meer informatie, zie de man pagina van encfs(1)"
 
-#: encfs/main.cpp:158
 msgid ""
 "encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
 "valid FUSE Mount Options follow:\n"
@@ -725,49 +612,39 @@ msgstr ""
 "encfs [opties] rootDir mountPoint -- [FUSE Mount Opties]\n"
 "valide FUSE Mount Opties volg:\n"
 
-#: encfs/main.cpp:330
 msgid "option '--public' ignored for non-root user"
 msgstr "optie '--public' is genegeerd voor een niet-root gebruiker"
 
-#: encfs/main.cpp:341
 #, c-format
 msgid "encfs version %s"
 msgstr "encfs versie %s"
 
-#: encfs/main.cpp:376
 msgid "Missing one or more arguments, aborting."
 msgstr "Mis een of meerdere argumenten, stop."
 
-#: encfs/main.cpp:396
 msgid ""
 "When specifying daemon mode, you must use absolute paths (beginning with '/')"
 msgstr ""
 "Wanneer je daemon mode aangeeft, moet je absolute paden gebruiken (beginnend "
 "met '/')"
 
-#: encfs/main.cpp:409
 msgid "The raw directory may not be a subdirectory of the mount point."
 msgstr ""
 "De directory waarin de versleutelde data wordt gopgeslagen, mag geen "
 "subdirectory van het koppelpunt zijn."
 
-#: encfs/main.cpp:418
 msgid "You must use mount-on-demand with delay-mount"
 msgstr ""
 
-#: encfs/main.cpp:425
 msgid "Must set password program when using mount-on-demand"
 msgstr ""
 
-#: encfs/main.cpp:433
 msgid "Unable to locate root directory, aborting."
 msgstr "De root directory kan niet gevonden worden, gestopt."
 
-#: encfs/main.cpp:439
 msgid "Unable to locate mount point, aborting."
 msgstr "Het aankoppelpunt kan niet gevonden worden, gestopt."
 
-#: encfs/main.cpp:617
 msgid ""
 "Note: requested single-threaded mode, but an idle\n"
 "timeout was specified.  The filesystem will operate\n"
@@ -779,7 +656,6 @@ msgstr ""
 "single-treaded werken, maar threads zullen gebruikt\n"
 "worden om idle checking te implementeren."
 
-#: encfs/main.cpp:668
 msgid ""
 "fuse failed.  Common problems:\n"
 " - fuse kernel module not installed (modprobe fuse)\n"
@@ -789,16 +665,13 @@ msgstr ""
 " - fuse kernel module is niet geinstalleerd (modprobe fuse)\n"
 " - ongeldige opties -- zie usage bericht\n"
 
-#: encfs/main.cpp:674
 #, c-format
 msgid "Internal error: Caught exception from main loop: %s"
 msgstr "Interne fout: Caught exception from main loop: %s"
 
-#: encfs/main.cpp:677
 msgid "Internal error: Caught unexpected exception"
 msgstr "Interne fout: Caught unexpected exception"
 
-#: encfs/main.cpp:757
 #, c-format
 msgid "Unmounting filesystem %s due to inactivity"
 msgstr "Ontkoppel bestandssysteem %s vanwege inactiviteit."
