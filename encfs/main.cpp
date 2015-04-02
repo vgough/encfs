@@ -413,6 +413,12 @@ static bool processArgs(int argc, char *argv[],
         break;
       }
     }
+
+#if defined(__APPLE__)
+    // With OSXFuse, the 'local' flag selects a local filesystem mount icon in Finder.
+    PUSHARG("-o");
+    PUSHARG("local");
+#endif
   }
 
   // sanity check
