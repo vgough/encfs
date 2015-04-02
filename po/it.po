@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: Encrypted Filesystem for Linux\n"
 "Report-Msgid-Bugs-To: https://translations.launchpad.net/encfs/main/+pots/"
 "encfs\n"
-"POT-Creation-Date: 2015-03-13 21:26-0700\n"
+"POT-Creation-Date: 2015-03-29 18:22+0200\n"
 "PO-Revision-Date: 2013-12-08 07:41+0000\n"
 "Last-Translator: Gianfranco Frisani <gfrisani@libero.it>\n"
 "Language-Team: Italian <it@li.org>\n"
@@ -21,24 +21,19 @@ msgstr ""
 "X-Generator: Launchpad (build 17389)\n"
 "X-Rosetta-Version: 0.1\n"
 
-#: encfs/BlockFileIO.cpp:385
 #, c-format
 msgid "truncate failure: read %i bytes, partial block of %i"
 msgstr "troncamento fallito: letti %i byte, blocco parziale di %i"
 
-#: encfs/encfsctl.cpp:77
 msgid "  -- show information (Default command)"
 msgstr "  -- mostra informazioni (comando predefinito)"
 
-#: encfs/encfsctl.cpp:80
 msgid "  -- show key"
 msgstr "  -- mostra la chiave"
 
-#: encfs/encfsctl.cpp:83
 msgid "  -- change password for volume"
 msgstr "  -- cambia la password per il volume"
 
-#: encfs/encfsctl.cpp:87
 msgid ""
 "  -- change password for volume, taking password from standard input.\n"
 "\tNo prompts are issued."
@@ -47,41 +42,32 @@ msgstr ""
 "input.\n"
 "\tNon viene emesso alcun prompt."
 
-#: encfs/encfsctl.cpp:92
 msgid "  -- show undecodable filenames in the volume"
 msgstr "  -- mostra nomi di file non decodificabili nel volume"
 
-#: encfs/encfsctl.cpp:95
 msgid "  -- decodes the file and cats it to standard out"
 msgstr ""
 "  -- decodifica il file e mostra il suo contenuto sullo standard output"
 
-#: encfs/encfsctl.cpp:99
 msgid "  -- decodes name and prints plaintext version"
 msgstr "  -- decodifica il nome e stampa la versione in puro testo"
 
-#: encfs/encfsctl.cpp:103
 msgid "  -- encodes a filename and print result"
 msgstr "  -- codifica un nome file e stampa il risultato"
 
-#: encfs/encfsctl.cpp:106
 msgid "  -- decrypts a volume and writes results to path"
 msgstr "  -- decifra un volume e scrive i risultati nel percorso"
 
-#: encfs/encfsctl.cpp:109
 msgid "  -- print version number and exit"
 msgstr "  -- stampa il numero della versione ed esce"
 
-#: encfs/encfsctl.cpp:113 encfs/encfsctl.cpp:151
 #, c-format
 msgid "encfsctl version %s"
 msgstr "encfsctl versione %s"
 
-#: encfs/encfsctl.cpp:114
 msgid "Usage:\n"
 msgstr "Uso:\n"
 
-#: encfs/encfsctl.cpp:118
 #, c-format
 msgid ""
 "%s (root dir)\n"
@@ -90,7 +76,6 @@ msgstr ""
 "%s (directory radice)\n"
 "  -- visualizza informazioni sul file system, oppure \n"
 
-#: encfs/encfsctl.cpp:134
 #, c-format
 msgid ""
 "Example: \n"
@@ -99,16 +84,13 @@ msgstr ""
 "Esempio: \n"
 "%s info ~/.crypt\n"
 
-#: encfs/encfsctl.cpp:139
 #, c-format
 msgid "directory %s does not exist.\n"
 msgstr "la directory %s non esiste.\n"
 
-#: encfs/encfsctl.cpp:168 encfs/encfsctl.cpp:613
 msgid "Unable to load or parse config file\n"
 msgstr "Impossibile caricare o analizzare il file di configurazione\n"
 
-#: encfs/encfsctl.cpp:173
 msgid ""
 "A really old EncFS filesystem was found. \n"
 "It is not supported in this EncFS build.\n"
@@ -116,110 +98,87 @@ msgstr ""
 "È stato trovato un file system EncFS molto vecchio. \n"
 "Non è più supportato in questa versione di EncFS.\n"
 
-#: encfs/encfsctl.cpp:178
 #, c-format
 msgid "Version 3 configuration; created by %s\n"
 msgstr "Configurazione versione 3; creata da %s\n"
 
-#: encfs/encfsctl.cpp:184
 #, c-format
 msgid "Version 4 configuration; created by %s\n"
 msgstr "Configurazione versione 4; creata da %s\n"
 
-#: encfs/encfsctl.cpp:190
 #, c-format
 msgid "Version 5 configuration; created by %s (revision %i)\n"
 msgstr "Configurazione versione 5; creata da %s (revisione %i)\n"
 
-#: encfs/encfsctl.cpp:196
 #, c-format
 msgid "Version 6 configuration; created by %s (revision %i)\n"
 msgstr "Configurazione versione 6; creata da %s (revisione %i)\n"
 
-#: encfs/encfsctl.cpp:226 encfs/main.cpp:355
 #, c-format
 msgid "getopt error: %i"
 msgstr "Errore getopt: %i"
 
-#: encfs/encfsctl.cpp:235
 msgid "Incorrect number of arguments"
 msgstr "Numero di argomenti errato"
 
-#: encfs/encfsctl.cpp:245 encfs/encfsctl.cpp:264
 msgid "Unable to initialize encrypted filesystem - check path.\n"
 msgstr ""
 "Impossibile inizializzare il file system cifrato - controllare il percorso.\n"
 
-#: encfs/encfsctl.cpp:555
 #, c-format
 msgid "In directory %s: \n"
 msgstr "Nella directory %s: \n"
 
-#: encfs/encfsctl.cpp:597
 #, c-format
 msgid "Found %i invalid file."
 msgid_plural "Found %i invalid files."
 msgstr[0] "Trovato %i file non valido."
 msgstr[1] "Trovati %i file non validi."
 
-#: encfs/encfsctl.cpp:620
 #, c-format
 msgid "Unable to find specified cipher \"%s\"\n"
 msgstr "Impossibile trovare il cifrario \"%s\" specificato\n"
 
-#: encfs/encfsctl.cpp:626
 msgid "Enter current Encfs password\n"
 msgstr "Inserire la password attuale per EncFS\n"
 
-#: encfs/encfsctl.cpp:636
 msgid "Invalid password\n"
 msgstr "Password non valida\n"
 
-#: encfs/encfsctl.cpp:642
 msgid "Enter new Encfs password\n"
 msgstr "Inserire la nuova password per EncFS\n"
 
-#: encfs/encfsctl.cpp:667
 msgid "Volume Key successfully updated.\n"
 msgstr "Chiave di volume aggiornata con successo.\n"
 
-#: encfs/encfsctl.cpp:670
 msgid "Error saving modified config file.\n"
 msgstr "Errore nel salvare il file di configurazione modificato.\n"
 
-#: encfs/encfsctl.cpp:673
 msgid "Error creating key\n"
 msgstr "Errore nel creare la chiave\n"
 
-#: encfs/encfsctl.cpp:728
 #, c-format
 msgid "invalid command: \"%s\""
 msgstr "comando non valido: \"%s\""
 
-#: encfs/encfsctl.cpp:733
 #, c-format
 msgid "Incorrect number of arguments for command \"%s\""
 msgstr "Numero di argomenti errato per il comando \"%s\""
 
-#: encfs/FileUtils.cpp:299
 #, c-format
 msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
 msgstr "La directory \"%s\" non esiste. Deve essere creata? (y/n) "
 
-#: encfs/FileUtils.cpp:319
 msgid "Unable to create directory: "
 msgstr "Impossibile creare la directory: "
 
-#: encfs/FileUtils.cpp:325
 msgid "Directory not created."
 msgstr "Directory non creata."
 
-#: encfs/FileUtils.cpp:346
 #, fuzzy, c-format
 msgid "Found config file %s, but failed to load - exiting"
 msgstr "Trovato il file di configurazione %s, ma il caricamento non è riuscito"
 
-#: encfs/FileUtils.cpp:428
 #, c-format
 msgid ""
 "Config subversion %i found, but this version of encfs only supports up to "
@@ -228,59 +187,47 @@ msgstr ""
 "Trovata una sotto-versione di configurazione %i, ma questa versione di encfs "
 "supporta solo fino alla versione %i."
 
-#: encfs/FileUtils.cpp:435
 msgid ""
 "This version of EncFS doesn't support filesystems created before 2004-08-13"
 msgstr ""
 "Questa versione di EncFS non supporta file system creati prima del 13/08/2004"
 
-#: encfs/FileUtils.cpp:617
 msgid "The following cipher algorithms are available:"
 msgstr "Sono disponibili i seguenti algoritmi di cifratura:"
 
-#: encfs/FileUtils.cpp:627
 #, c-format
 msgid " -- key length %i bits"
 msgstr " -- lunghezza chiave %i bit"
 
-#: encfs/FileUtils.cpp:633
 #, c-format
 msgid " -- Supports key lengths of %i to %i bits"
 msgstr " -- Supporta lunghezze chiave da %i a %i bit"
 
-#: encfs/FileUtils.cpp:641
 #, c-format
 msgid " -- block size %i bytes"
 msgstr " -- dimensione blocco %i byte"
 
-#: encfs/FileUtils.cpp:646
 #, c-format
 msgid " -- Supports block sizes of %i to %i bytes"
 msgstr " -- Supporta dimensioni blocco da %i a %i byte"
 
-#: encfs/FileUtils.cpp:652 encfs/FileUtils.cpp:694
 msgid "Enter the number corresponding to your choice: "
 msgstr "Inserire il numero corrispondente alla propria scelta: "
 
-#: encfs/FileUtils.cpp:659 encfs/FileUtils.cpp:701
 msgid "Invalid selection."
 msgstr "Selezione non valida."
 
-#: encfs/FileUtils.cpp:670 encfs/FileUtils.cpp:710
 #, c-format
 msgid "Selected algorithm \"%s\""
 msgstr "Selezionato l'algoritmo \"%s\""
 
-#: encfs/FileUtils.cpp:683
 msgid "The following filename encoding algorithms are available:"
 msgstr "Sono disponibili i seguenti algoritmi di codifica dei nomi file:"
 
-#: encfs/FileUtils.cpp:721 encfs/FileUtils.cpp:764
 #, c-format
 msgid "Using key size of %i bits"
 msgstr "È in uso una dimensione della chiave di %i bit"
 
-#: encfs/FileUtils.cpp:729
 #, c-format
 msgid ""
 "Please select a key size in bits.  The cipher you have chosen\n"
@@ -291,16 +238,13 @@ msgstr ""
 "supporta dimensioni da %i a %i bit a incrementi di %i bit.\n"
 "Per esempio: "
 
-#: encfs/FileUtils.cpp:754
 msgid "Selected key size: "
 msgstr "Dimensione chiave selezionata: "
 
-#: encfs/FileUtils.cpp:776 encfs/FileUtils.cpp:802
 #, c-format
 msgid "Using filesystem block size of %i bytes"
 msgstr "È in uso una dimensione del blocco di %i byte per il file system"
 
-#: encfs/FileUtils.cpp:783
 #, c-format
 msgid ""
 "Select a block size in bytes.  The cipher you have chosen\n"
@@ -311,11 +255,9 @@ msgstr ""
 "supporta dimensioni da %i a %i byte a incrementi di %i.\n"
 "Oppure premere Invio per il valore predefinito (%i byte)\n"
 
-#: encfs/FileUtils.cpp:790
 msgid "filesystem block size: "
 msgstr "dimensione del blocco per il file system: "
 
-#: encfs/FileUtils.cpp:861
 msgid ""
 "Enable block authentication code headers\n"
 "on every block in a file?  This adds about 12 bytes per block\n"
@@ -332,7 +274,14 @@ msgstr ""
 "blocco\n"
 "sono rilevati e causano un errore di lettura."
 
-#: encfs/FileUtils.cpp:873
+msgid ""
+"\n"
+"\n"
+"You specified --require-macs.  Enabling block authentication code "
+"headers...\n"
+"\n"
+msgstr ""
+
 msgid ""
 "Add random bytes to each block header?\n"
 "This adds a performance penalty, but ensures that blocks\n"
@@ -350,7 +299,6 @@ msgstr ""
 "una minore perdita di prestazioni. \n"
 "Scegliere un numero di byte, da 0 (nessun byte casuale) a 8: "
 
-#: encfs/FileUtils.cpp:899
 msgid ""
 "Enable per-file initialization vectors?\n"
 "This adds about 8 bytes per file to the storage requirements.\n"
@@ -362,7 +310,6 @@ msgstr ""
 "Non dovrebbe compromettere le prestazioni eccetto con applicazioni\n"
 "che si basano su I/O \"block-aligned\" sui file ."
 
-#: encfs/FileUtils.cpp:911
 msgid ""
 "Enable filename initialization vector chaining?\n"
 "This makes filename encoding dependent on the complete path, \n"
@@ -373,7 +320,6 @@ msgstr ""
 "In questo modo la codifica del nome del file dipende dal percorso completo \n"
 "piuttosto che dal codificare ogni elemento del percorso singolarmente."
 
-#: encfs/FileUtils.cpp:922
 msgid ""
 "Enable filename to IV header chaining?\n"
 "This makes file data encoding dependent on the complete file path.\n"
@@ -390,7 +336,6 @@ msgstr ""
 "Se questa opzione è abilitata, i collegamenti non saranno supportati\n"
 "all'interno del file system."
 
-#: encfs/FileUtils.cpp:936
 msgid ""
 "Enable file-hole pass-through?\n"
 "This avoids writing encrypted blocks when file holes are created."
@@ -399,11 +344,9 @@ msgstr ""
 "Ciò evita di scrivere blocchi criptati quando i file frammentati vengono "
 "creati."
 
-#: encfs/FileUtils.cpp:955
 msgid "Creating new encrypted volume."
 msgstr "Creazione nuovo volume cifrato."
 
-#: encfs/FileUtils.cpp:960
 msgid ""
 "Please choose from one of the following options:\n"
 " enter \"x\" for expert configuration mode,\n"
@@ -417,24 +360,16 @@ msgstr ""
 " qualsiasi altra cosa o una riga vuota selezionerà la modalità standard.\n"
 "?> "
 
-#: encfs/FileUtils.cpp:995
 #, fuzzy
 msgid "Paranoia configuration not supported for reverse encryption"
 msgstr "La configurazione paranoica non è supportata per --reverse"
 
-#: encfs/FileUtils.cpp:1000
 msgid "Paranoia configuration selected."
 msgstr "Selezionata la configurazione paranoica."
 
-#: encfs/FileUtils.cpp:1018
 msgid "Standard configuration selected."
 msgstr "Selezionata la configurazione standard."
 
-#: encfs/FileUtils.cpp:1030
-msgid "reverse encryption - chained IV disabled"
-msgstr ""
-
-#: encfs/FileUtils.cpp:1039
 msgid ""
 "Sorry, unable to locate cipher for predefined configuration...\n"
 "Falling through to Manual configuration mode."
@@ -442,15 +377,12 @@ msgstr ""
 "Impossibile localizzare il cifrario per la configurazione predefinita...\n"
 "Passaggio alla modalità di configurazione manuale."
 
-#: encfs/FileUtils.cpp:1044
 msgid "Manual configuration mode selected."
 msgstr "Selezionata la configurazione manuale."
 
-#: encfs/FileUtils.cpp:1054
 msgid "reverse encryption - chained IV and MAC disabled"
 msgstr ""
 
-#: encfs/FileUtils.cpp:1068
 msgid ""
 "External chained IV disabled, as both 'IV chaining'\n"
 "and 'unique IV' features are required for this option."
@@ -460,14 +392,12 @@ msgstr ""
 "concatenazione del vettore e il vettore di inizializzazione unico sono "
 "richieste per quest'opzione."
 
-#: encfs/FileUtils.cpp:1080
 #, c-format
 msgid "Unable to instanciate cipher %s, key size %i, block size %i"
 msgstr ""
 "Impossibile attivare il cifrario %s, chiave di dimensione %i, blocco di "
 "dimensione %i"
 
-#: encfs/FileUtils.cpp:1110
 msgid ""
 "Configuration finished.  The filesystem to be created has\n"
 "the following properties:"
@@ -475,11 +405,9 @@ msgstr ""
 "Configurazione terminata. Il file system da creare avrà\n"
 "le seguenti proprietà:"
 
-#: encfs/FileUtils.cpp:1115
 msgid "-------------------------- WARNING --------------------------\n"
 msgstr "-------------------------- ATTENZIONE --------------------------\n"
 
-#: encfs/FileUtils.cpp:1116
 msgid ""
 "The external initialization-vector chaining option has been\n"
 "enabled.  This option disables the use of hard links on the\n"
@@ -498,7 +426,6 @@ msgstr ""
 "Per scegliere un'altra configurazione,\n"
 "premere Ctrl-C per annullare e ricominciare da capo."
 
-#: encfs/FileUtils.cpp:1127
 msgid ""
 "Now you will need to enter a password for your filesystem.\n"
 "You will need to remember this password, as there is absolutely\n"
@@ -512,182 +439,148 @@ msgstr ""
 "cambiata utilizzando encfsctl.\n"
 "\n"
 
-#: encfs/FileUtils.cpp:1156
 msgid "Failure generating new volume key! Please report this error."
 msgstr ""
 "Generazione della nuova chiave d'archivio non riuscita. Segnalare questo "
 "errore."
 
-#: encfs/FileUtils.cpp:1167
 msgid "Name coding interface not supported"
 msgstr "L'interfaccia di codifica dei nomi non è supportata"
 
-#: encfs/FileUtils.cpp:1168
 msgid "The filename encoding interface requested is not available"
 msgstr ""
 "L'interfaccia richiesta per la codifica dei nomi file non è disponibile"
 
-#: encfs/FileUtils.cpp:1199
 #, c-format
 msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
 msgstr "Cifrario file system: \"%s\", versione %i:%i:%i"
 
-#: encfs/FileUtils.cpp:1205 encfs/FileUtils.cpp:1228 encfs/FileUtils.cpp:1244
 msgid " (NOT supported)\n"
 msgstr " (NON supportato)\n"
 
-#: encfs/FileUtils.cpp:1211 encfs/FileUtils.cpp:1233
 #, c-format
 msgid " (using %i:%i:%i)\n"
 msgstr " (in uso %i:%i:%i)\n"
 
-#: encfs/FileUtils.cpp:1219
 #, c-format
 msgid "Filename encoding: \"%s\", version %i:%i:%i"
 msgstr "Codifica nome dei file: \"%s\", versione %i:%i:%i"
 
-#: encfs/FileUtils.cpp:1240
 #, c-format
 msgid "Key Size: %i bits"
 msgstr "Dimensione chiave: %i bit"
 
-#: encfs/FileUtils.cpp:1249
 #, c-format
 msgid "Using PBKDF2, with %i iterations"
 msgstr "Viene utilizzato PBKDF2, con %i iterazioni"
 
-#: encfs/FileUtils.cpp:1251
 #, c-format
 msgid "Salt Size: %i bits"
 msgstr "Dimensione salt: %i bit"
 
-#: encfs/FileUtils.cpp:1257
 #, c-format
 msgid "Block Size: %i bytes + %i byte MAC header"
 msgstr "Dimensione blocco: %i byte + %i byte dell'intestazione MAC"
 
-#: encfs/FileUtils.cpp:1264
 #, c-format
 msgid "Block Size: %i bytes, including %i byte MAC header"
 msgstr "Dimensione blocco: %i byte, compresi %i byte dell'intestazione MAC"
 
-#: encfs/FileUtils.cpp:1270
 #, c-format
 msgid "Block Size: %i bytes"
 msgstr "Dimensione blocco: %i byte"
 
-#: encfs/FileUtils.cpp:1276
 msgid "Each file contains 8 byte header with unique IV data.\n"
 msgstr ""
 "Ogni file contiene 8 byte di intestazione con dati del vettore di "
 "inizializzazione unici.\n"
 
-#: encfs/FileUtils.cpp:1280
 msgid "Filenames encoded using IV chaining mode.\n"
 msgstr ""
 "Nomi dei file cifrati usando la modalità di concatenazione del vettore di "
 "inizializzazione.\n"
 
-#: encfs/FileUtils.cpp:1284
 msgid "File data IV is chained to filename IV.\n"
 msgstr ""
 "Il vettore di inizializzazione dei dati nei file è concatenato al vettore di "
 "inizializzazione dei nomi dei file.\n"
 
-#: encfs/FileUtils.cpp:1288
 msgid "File holes passed through to ciphertext.\n"
 msgstr "File frammentati inalterati per il testo cifrato\n"
 
-#: encfs/FileUtils.cpp:1333
 msgid "Error creating salt\n"
 msgstr "Errore nel creare il salt\n"
 
-#: encfs/FileUtils.cpp:1357
 msgid "EncFS Password: "
 msgstr "Password di EncFS: "
 
-#: encfs/FileUtils.cpp:1363
 msgid "Zero length password not allowed\n"
 msgstr "Non sono ammesse password di zero caratteri\n"
 
-#: encfs/FileUtils.cpp:1404
 msgid "Internal error: socketpair() failed"
 msgstr "Errore interno: socketpair() non riuscito"
 
-#: encfs/FileUtils.cpp:1411
 msgid "Internal error: fork() failed"
 msgstr "Errore interno: fork() non riuscito"
 
-#: encfs/FileUtils.cpp:1452
 msgid "Internal error: failed to exec program"
 msgstr "Errore interno: exec del programma non riuscito"
 
-#: encfs/FileUtils.cpp:1478
 msgid "New Encfs Password: "
 msgstr "Nuova password di Encfs: "
 
-#: encfs/FileUtils.cpp:1481
 msgid "Verify Encfs Password: "
 msgstr "Conferma password di Encfs: "
 
-#: encfs/FileUtils.cpp:1488
 msgid "Passwords did not match, please try again\n"
 msgstr "Le password non coincidono, riprovare\n"
 
-#: encfs/FileUtils.cpp:1508
+#, fuzzy
+msgid "The configuration disabled MAC, but you passed --require-macs\n"
+msgstr "La configurazione caricata non è compatibile con --reverse\n"
+
 msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "La configurazione caricata non è compatibile con --reverse\n"
 
-#: encfs/FileUtils.cpp:1516
 #, c-format
 msgid "Unable to find cipher %s, version %i:%i:%i"
 msgstr "Non è possibile trovare il cifrario %s, versione %i:%i:%i"
 
-#: encfs/FileUtils.cpp:1520
 msgid "The requested cipher interface is not available\n"
 msgstr "L'interfaccia di cifratura richiesta non è disponibile\n"
 
-#: encfs/FileUtils.cpp:1551
 msgid "Error decoding volume key, password incorrect\n"
 msgstr ""
 "Errore nella decodifica della chiave di volume, password non corretta\n"
 
-#: encfs/FileUtils.cpp:1558
 #, c-format
 msgid "Unable to find nameio interface %s, version %i:%i:%i"
 msgstr "Non è possibile trovare l'interfaccia \"nameio\" %s, versione %i:%i:%i"
 
-#: encfs/FileUtils.cpp:1562
 msgid "The requested filename coding interface is not available\n"
 msgstr ""
 "L'interfaccia richiesta per la codifica del nome del file non è disponibile\n"
 
-#: encfs/FileUtils.cpp:1602
 msgid "Remount failed"
 msgstr "Rimontaggio non riuscito"
 
-#: encfs/MACFileIO.cpp:189
 #, c-format
 msgid "MAC comparison failure in block %li"
 msgstr "Comparazione MAC non riuscita nel blocco %li"
 
-#: encfs/MACFileIO.cpp:192
 msgid "MAC comparison failure, refusing to read"
 msgstr "Comparazione MAC non riuscita, lettura non possibile"
 
-#: encfs/main.cpp:114
 #, c-format
 msgid "Build: encfs version %s"
 msgstr "Build: encfs versione %s"
 
-#: encfs/main.cpp:117
 #, c-format
 msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
 msgstr ""
 "Uso: %s [opzioni] DirectoryPrincipale PuntoDiMount [-- [opzioni di mount di "
 "FUSE]]"
 
-#: encfs/main.cpp:121
 msgid ""
 "Common Options:\n"
 "  -H\t\t\tshow optional FUSE Mount Options\n"
@@ -703,7 +596,6 @@ msgstr ""
 "\t\t\tI messaggi di errore saranno mandati sullo stderr\n"
 "\t\t\tinvece che al syslog.\n"
 
-#: encfs/main.cpp:132
 msgid ""
 "  -v, --verbose\t\tverbose: output encfs debug messages\n"
 "  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
@@ -717,7 +609,6 @@ msgstr ""
 "  --forcedecode\t\tdecodifica i dati anche in presenza di errori\n"
 "\t\t\t(per i file system che usano i blocchi di intestazione MAC)\n"
 
-#: encfs/main.cpp:141
 msgid ""
 "  --public\t\tact as a typical multi-user filesystem\n"
 "\t\t\t(encfs must be run as root)\n"
@@ -725,11 +616,9 @@ msgstr ""
 "  --public\t\tfunziona come un normale file system multiutente\n"
 "\t\t\t(encfs deve essere eseguito da root)\n"
 
-#: encfs/main.cpp:143
 msgid "  --reverse\t\treverse encryption\n"
 msgstr "  --reverse\t\tcifratura inversa\n"
 
-#: encfs/main.cpp:147
 msgid ""
 "  --extpass=program\tUse external program for password prompt\n"
 "\n"
@@ -744,13 +633,11 @@ msgstr ""
 "    encfs ~/.crypt ~/crypt\n"
 "\n"
 
-#: encfs/main.cpp:153
 msgid "For more information, see the man page encfs(1)"
 msgstr ""
 "Per ulteriori informazioni, consultare il manuale col comando \"man "
 "encfs(1)\""
 
-#: encfs/main.cpp:158
 msgid ""
 "encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
 "valid FUSE Mount Options follow:\n"
@@ -758,51 +645,41 @@ msgstr ""
 "encfs [opzioni] DirectoryRadice PuntoDiMount -- [Opzioni di mount FUSE]\n"
 "Opzioni di mount FUSE valide a seguire:\n"
 
-#: encfs/main.cpp:330
 msgid "option '--public' ignored for non-root user"
 msgstr "l'opzione \"--public\" viene ignorata per gli utenti non root"
 
-#: encfs/main.cpp:341
 #, c-format
 msgid "encfs version %s"
 msgstr "encfs versione %s"
 
-#: encfs/main.cpp:376
 msgid "Missing one or more arguments, aborting."
 msgstr "Mancano uno o più argomenti, terminato."
 
-#: encfs/main.cpp:396
 msgid ""
 "When specifying daemon mode, you must use absolute paths (beginning with '/')"
 msgstr ""
 "Specificando la modalità demone è necessario usare i percorsi assoluti "
 "(cominciano con \"/\")"
 
-#: encfs/main.cpp:409
 msgid "The raw directory may not be a subdirectory of the mount point."
 msgstr ""
 "La directory da decifrare non può essere una sottodirectory del punto di "
 "mount."
 
-#: encfs/main.cpp:418
 msgid "You must use mount-on-demand with delay-mount"
 msgstr ""
 
-#: encfs/main.cpp:425
 msgid "Must set password program when using mount-on-demand"
 msgstr ""
 "Deve essere impostato il programma per le password quando si usa il mount-on-"
 "demand"
 
-#: encfs/main.cpp:433
 msgid "Unable to locate root directory, aborting."
 msgstr "Impossibile localizzare la directory radice, terminato."
 
-#: encfs/main.cpp:439
 msgid "Unable to locate mount point, aborting."
 msgstr "Impossibile localizzare il punto di mount, terminato."
 
-#: encfs/main.cpp:617
 msgid ""
 "Note: requested single-threaded mode, but an idle\n"
 "timeout was specified.  The filesystem will operate\n"
@@ -814,7 +691,6 @@ msgstr ""
 "modalità singolo thread, ma i thread saranno usati per\n"
 "implementare il controllo idle."
 
-#: encfs/main.cpp:668
 msgid ""
 "fuse failed.  Common problems:\n"
 " - fuse kernel module not installed (modprobe fuse)\n"
@@ -824,16 +700,13 @@ msgstr ""
 " - il modulo fuse del kernel non è installato (modprobe fuse)\n"
 " - opzioni non valide -- controllare l'utilizzo del comando\n"
 
-#: encfs/main.cpp:674
 #, c-format
 msgid "Internal error: Caught exception from main loop: %s"
 msgstr "Errore interno: catturata un'eccezione nel ciclo principale: %s"
 
-#: encfs/main.cpp:677
 msgid "Internal error: Caught unexpected exception"
 msgstr "Errore interno: catturata un'eccezione imprevista"
 
-#: encfs/main.cpp:757
 #, c-format
 msgid "Unmounting filesystem %s due to inactivity"
 msgstr "Smontaggio del disco %s per inattività"

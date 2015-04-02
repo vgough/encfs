@@ -5,7 +5,7 @@ ALL_INCLUDES = @RLOG_CFLAGS@ @OPENSSL_CFLAGS@ @BOOST_CPPFLAGS@
 ALL_LDFLAGS = @RLOG_LIBS@ @OPENSSL_LIBS@ @BOOST_LDFLAGS@
 ALL_LDFLAGS += @BOOST_SERIALIZATION_LIB@
 
-AM_CXXFLAGS = -DRLOG_COMPONENT="encfs" $(ALL_INCLUDES) -I../intl
+AM_CXXFLAGS = -DRLOG_COMPONENT="encfs" $(ALL_INCLUDES) -I$(top_srcdir)
 
 if BUILD_NLS
 # define a C macro LOCALEDIR indicating where catalogs will be installed
@@ -122,6 +122,7 @@ noinst_HEADERS = \
     Range.h \
     RawFileIO.h \
     readpassphrase.h \
+    shared_ptr.h \
     SSL_Cipher.h \
     StreamNameIO.h
 

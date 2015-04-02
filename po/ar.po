@@ -8,7 +8,7 @@ msgstr ""
 "Project-Id-Version: encfs\n"
 "Report-Msgid-Bugs-To: https://translations.launchpad.net/encfs/main/+pots/"
 "encfs\n"
-"POT-Creation-Date: 2015-03-13 21:26-0700\n"
+"POT-Creation-Date: 2015-03-29 18:22+0200\n"
 "PO-Revision-Date: 2008-02-27 11:55+0000\n"
 "Last-Translator: Anas Husseini <anas_h_34@hotmail.com>\n"
 "Language-Team: Arabic <ar@li.org>\n"
@@ -21,24 +21,19 @@ msgstr ""
 "X-Launchpad-Export-Date: 2015-03-14 00:04+0000\n"
 "X-Generator: Launchpad (build 17389)\n"
 
-#: encfs/BlockFileIO.cpp:385
 #, c-format
 msgid "truncate failure: read %i bytes, partial block of %i"
 msgstr "فشل تقطيع: قراءة %i بايت، كتلةجزئية من %i"
 
-#: encfs/encfsctl.cpp:77
 msgid "  -- show information (Default command)"
 msgstr ""
 
-#: encfs/encfsctl.cpp:80
 msgid "  -- show key"
 msgstr ""
 
-#: encfs/encfsctl.cpp:83
 msgid "  -- change password for volume"
 msgstr ""
 
-#: encfs/encfsctl.cpp:87
 msgid ""
 "  -- change password for volume, taking password from standard input.\n"
 "\tNo prompts are issued."
@@ -46,40 +41,31 @@ msgstr ""
 "  -- غيّر كلمة المرور للمجلد، آخذا كلمة المرور من الإدخال القياسي\n"
 "\tلن يظهر محث"
 
-#: encfs/encfsctl.cpp:92
 msgid "  -- show undecodable filenames in the volume"
 msgstr "  -- أظهر أسماء الملفات المتعذر حل ترميزها في مساحة التخزين"
 
-#: encfs/encfsctl.cpp:95
 msgid "  -- decodes the file and cats it to standard out"
 msgstr "  -- تحل ترميز الملف وتخرجه إلى المخرج القياسي"
 
-#: encfs/encfsctl.cpp:99
 msgid "  -- decodes name and prints plaintext version"
 msgstr "  -- تحل ترميز الاسم و تطبع  نصه الصريح"
 
-#: encfs/encfsctl.cpp:103
 msgid "  -- encodes a filename and print result"
 msgstr "  -- ترمز اسم ملف و تطبع النتيجة"
 
-#: encfs/encfsctl.cpp:106
 msgid "  -- decrypts a volume and writes results to path"
 msgstr "  -- تظهّر مساحة تخزين وتكتب النتائج إلى المسار"
 
-#: encfs/encfsctl.cpp:109
 msgid "  -- print version number and exit"
 msgstr "  -- اطبع رقم الإصدارة و اخرج"
 
-#: encfs/encfsctl.cpp:113 encfs/encfsctl.cpp:151
 #, c-format
 msgid "encfsctl version %s"
 msgstr "encfsctl الإصدارة %s"
 
-#: encfs/encfsctl.cpp:114
 msgid "Usage:\n"
 msgstr "الاستخدام:\n"
 
-#: encfs/encfsctl.cpp:118
 #, c-format
 msgid ""
 "%s (root dir)\n"
@@ -88,7 +74,6 @@ msgstr ""
 "%s (دليل الجذر) \n"
 "  -- تعرض معلومات عن نظام الملفات أو \n"
 
-#: encfs/encfsctl.cpp:134
 #, c-format
 msgid ""
 "Example: \n"
@@ -97,16 +82,13 @@ msgstr ""
 "مثال: \n"
 "%s info ~/.crypt\n"
 
-#: encfs/encfsctl.cpp:139
 #, c-format
 msgid "directory %s does not exist.\n"
 msgstr "الدليل %s غير موجود.\n"
 
-#: encfs/encfsctl.cpp:168 encfs/encfsctl.cpp:613
 msgid "Unable to load or parse config file\n"
 msgstr "تعذّر تحميل أو تفصيل ملف التضبيطات\n"
 
-#: encfs/encfsctl.cpp:173
 msgid ""
 "A really old EncFS filesystem was found. \n"
 "It is not supported in this EncFS build.\n"
@@ -114,109 +96,86 @@ msgstr ""
 "نظام ملفات EncFS هذا قديم جدا. \n"
 "و هو غير مدعوم في هذه الإنشاءة من EncFS.\n"
 
-#: encfs/encfsctl.cpp:178
 #, c-format
 msgid "Version 3 configuration; created by %s\n"
 msgstr "تضبيطات من الإصدارة 3؛ انشأها %s\n"
 
-#: encfs/encfsctl.cpp:184
 #, c-format
 msgid "Version 4 configuration; created by %s\n"
 msgstr "تضبيطات من الإصدارة 4؛ أنشأها %s\n"
 
-#: encfs/encfsctl.cpp:190
 #, c-format
 msgid "Version 5 configuration; created by %s (revision %i)\n"
 msgstr "تضبيطات من الإصدارة 5؛ أنشأها %s (المراجعة %i)\n"
 
-#: encfs/encfsctl.cpp:196
 #, c-format
 msgid "Version 6 configuration; created by %s (revision %i)\n"
 msgstr ""
 
-#: encfs/encfsctl.cpp:226 encfs/main.cpp:355
 #, c-format
 msgid "getopt error: %i"
 msgstr "خطأ getopt: %i"
 
-#: encfs/encfsctl.cpp:235
 msgid "Incorrect number of arguments"
 msgstr ""
 
-#: encfs/encfsctl.cpp:245 encfs/encfsctl.cpp:264
 msgid "Unable to initialize encrypted filesystem - check path.\n"
 msgstr "تعذّر بدء نظام الملفات المعمّى - راجع المسار.\n"
 
-#: encfs/encfsctl.cpp:555
 #, c-format
 msgid "In directory %s: \n"
 msgstr "في الدليل %s: \n"
 
-#: encfs/encfsctl.cpp:597
 #, c-format
 msgid "Found %i invalid file."
 msgid_plural "Found %i invalid files."
 msgstr[0] ""
 msgstr[1] ""
 
-#: encfs/encfsctl.cpp:620
 #, c-format
 msgid "Unable to find specified cipher \"%s\"\n"
 msgstr "تعذّر إيجاد خوارزمية التعمية \"%s\"\n"
 
-#: encfs/encfsctl.cpp:626
 msgid "Enter current Encfs password\n"
 msgstr "أدخل كلمة مرور EncFS الحالية\n"
 
-#: encfs/encfsctl.cpp:636
 msgid "Invalid password\n"
 msgstr "كلمة مرور غير صحيحة\n"
 
-#: encfs/encfsctl.cpp:642
 msgid "Enter new Encfs password\n"
 msgstr "أدخل كلمة مرور EncFS الجديدة\n"
 
-#: encfs/encfsctl.cpp:667
 msgid "Volume Key successfully updated.\n"
 msgstr "تم بنجاح تحديث مفتاح المجلد.\n"
 
-#: encfs/encfsctl.cpp:670
 msgid "Error saving modified config file.\n"
 msgstr "حدث خطأ أثناء حفظ ملف التضبيطات المعدّل.\n"
 
-#: encfs/encfsctl.cpp:673
 msgid "Error creating key\n"
 msgstr ""
 
-#: encfs/encfsctl.cpp:728
 #, c-format
 msgid "invalid command: \"%s\""
 msgstr "أمر غير صحيح: \"%s\""
 
-#: encfs/encfsctl.cpp:733
 #, c-format
 msgid "Incorrect number of arguments for command \"%s\""
 msgstr "عدد المعطيات غير صحيح للأمر \"%s\""
 
-#: encfs/FileUtils.cpp:299
 #, c-format
 msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
 msgstr "الدليل \"%s\" غير موجود. هل ينبغي إنشاؤه؟ (y، n) "
 
-#: encfs/FileUtils.cpp:319
 msgid "Unable to create directory: "
 msgstr "تعذّر إنشاء دليل: "
 
-#: encfs/FileUtils.cpp:325
 msgid "Directory not created."
 msgstr "لم ينشأ الدليل."
 
-#: encfs/FileUtils.cpp:346
 #, fuzzy, c-format
 msgid "Found config file %s, but failed to load - exiting"
 msgstr "وجد ملف تضبيطات %s، لكن تعذّر تحميله"
 
-#: encfs/FileUtils.cpp:428
 #, c-format
 msgid ""
 "Config subversion %i found, but this version of encfs only supports up to "
@@ -225,58 +184,46 @@ msgstr ""
 "وجدت تضبيطات من الإصدارة الفرعية %i إلا أن هذه الإصدارة من encfs تدعم فقط "
 "الإصدارات حتى %i."
 
-#: encfs/FileUtils.cpp:435
 msgid ""
 "This version of EncFS doesn't support filesystems created before 2004-08-13"
 msgstr "هذه النسخة من EncFS لا تدعم أنظمة الملفات المنشأة قبل 13-08-2004"
 
-#: encfs/FileUtils.cpp:617
 msgid "The following cipher algorithms are available:"
 msgstr "خوارزميات التعمية التالية متاحة:"
 
-#: encfs/FileUtils.cpp:627
 #, c-format
 msgid " -- key length %i bits"
 msgstr " -- طول المفتاح %i بتة"
 
-#: encfs/FileUtils.cpp:633
 #, c-format
 msgid " -- Supports key lengths of %i to %i bits"
 msgstr " -- يدعم أطوال مفاتيح من %i إلى %i بتة"
 
-#: encfs/FileUtils.cpp:641
 #, c-format
 msgid " -- block size %i bytes"
 msgstr " -- حجم الكتلة %i بايت"
 
-#: encfs/FileUtils.cpp:646
 #, c-format
 msgid " -- Supports block sizes of %i to %i bytes"
 msgstr " -- يدعم حجوما للكتل من %i إلى %i بايت"
 
-#: encfs/FileUtils.cpp:652 encfs/FileUtils.cpp:694
 msgid "Enter the number corresponding to your choice: "
 msgstr "أدخل الرقم المقابل لاختيارك: "
 
-#: encfs/FileUtils.cpp:659 encfs/FileUtils.cpp:701
 msgid "Invalid selection."
 msgstr "اختيار غير صحيح."
 
-#: encfs/FileUtils.cpp:670 encfs/FileUtils.cpp:710
 #, c-format
 msgid "Selected algorithm \"%s\""
 msgstr "لقد اخترت خوارزمية \"%s\""
 
-#: encfs/FileUtils.cpp:683
 msgid "The following filename encoding algorithms are available:"
 msgstr "خوارزميات ترميز أسماء الملفات التالية متاحة:"
 
-#: encfs/FileUtils.cpp:721 encfs/FileUtils.cpp:764
 #, c-format
 msgid "Using key size of %i bits"
 msgstr "يستخدم مفتاح بطول %i بتة"
 
-#: encfs/FileUtils.cpp:729
 #, c-format
 msgid ""
 "Please select a key size in bits.  The cipher you have chosen\n"
@@ -287,16 +234,13 @@ msgstr ""
 "تدعم أطوالا من %i إلى %i بتة بمضاعفات %i بتة.\n"
 "مثلا: "
 
-#: encfs/FileUtils.cpp:754
 msgid "Selected key size: "
 msgstr "طول المفتاح المختار: "
 
-#: encfs/FileUtils.cpp:776 encfs/FileUtils.cpp:802
 #, c-format
 msgid "Using filesystem block size of %i bytes"
 msgstr "يستخدم كتل لنظام الملفات حجمها %i بايت"
 
-#: encfs/FileUtils.cpp:783
 #, c-format
 msgid ""
 "Select a block size in bytes.  The cipher you have chosen\n"
@@ -307,11 +251,9 @@ msgstr ""
 "تدعم حجوما من %i إلى %i بايت بمضاعفات %i.\n"
 "أو اضغط enter لتستعمل المبدئي (%i بايت)\n"
 
-#: encfs/FileUtils.cpp:790
 msgid "filesystem block size: "
 msgstr "حجم كتلة نظام الملفات: "
 
-#: encfs/FileUtils.cpp:861
 msgid ""
 "Enable block authentication code headers\n"
 "on every block in a file?  This adds about 12 bytes per block\n"
@@ -320,7 +262,14 @@ msgid ""
 "within a block will be caught and will cause a read error."
 msgstr ""
 
-#: encfs/FileUtils.cpp:873
+msgid ""
+"\n"
+"\n"
+"You specified --require-macs.  Enabling block authentication code "
+"headers...\n"
+"\n"
+msgstr ""
+
 msgid ""
 "Add random bytes to each block header?\n"
 "This adds a performance penalty, but ensures that blocks\n"
@@ -336,7 +285,6 @@ msgstr ""
 "على ذات النتيجة بتفعيل متجهات البدء على كل ملف\n"
 "و هي لا تقلل الأداء بذات القدر. "
 
-#: encfs/FileUtils.cpp:899
 msgid ""
 "Enable per-file initialization vectors?\n"
 "This adds about 8 bytes per file to the storage requirements.\n"
@@ -344,14 +292,12 @@ msgid ""
 "which rely on block-aligned file io for performance."
 msgstr ""
 
-#: encfs/FileUtils.cpp:911
 msgid ""
 "Enable filename initialization vector chaining?\n"
 "This makes filename encoding dependent on the complete path, \n"
 "rather then encoding each path element individually."
 msgstr ""
 
-#: encfs/FileUtils.cpp:922
 msgid ""
 "Enable filename to IV header chaining?\n"
 "This makes file data encoding dependent on the complete file path.\n"
@@ -361,17 +307,14 @@ msgid ""
 "in the filesystem."
 msgstr ""
 
-#: encfs/FileUtils.cpp:936
 msgid ""
 "Enable file-hole pass-through?\n"
 "This avoids writing encrypted blocks when file holes are created."
 msgstr ""
 
-#: encfs/FileUtils.cpp:955
 msgid "Creating new encrypted volume."
 msgstr "يجري إنشاء مجلد معمى جديد."
 
-#: encfs/FileUtils.cpp:960
 msgid ""
 "Please choose from one of the following options:\n"
 " enter \"x\" for expert configuration mode,\n"
@@ -385,24 +328,16 @@ msgstr ""
 " أي شيء آخر أو سطر خاو سيختار الطور العادي.\n"
 "؟> "
 
-#: encfs/FileUtils.cpp:995
 #, fuzzy
 msgid "Paranoia configuration not supported for reverse encryption"
 msgstr "إعدادات المهووس الأمني غير مدعومة مع --reverse"
 
-#: encfs/FileUtils.cpp:1000
 msgid "Paranoia configuration selected."
 msgstr "اختيرت التضبيطات بالغة الحذر."
 
-#: encfs/FileUtils.cpp:1018
 msgid "Standard configuration selected."
 msgstr "اختيرت التضبيطات الاعتيادية"
 
-#: encfs/FileUtils.cpp:1030
-msgid "reverse encryption - chained IV disabled"
-msgstr ""
-
-#: encfs/FileUtils.cpp:1039
 msgid ""
 "Sorry, unable to locate cipher for predefined configuration...\n"
 "Falling through to Manual configuration mode."
@@ -410,15 +345,12 @@ msgstr ""
 "تعذّر إيجاد خوارزمية تلبي الإعدادت المسبقة...\n"
 "يجري الرجوع إلى طور التضبيطات اليدوية."
 
-#: encfs/FileUtils.cpp:1044
 msgid "Manual configuration mode selected."
 msgstr "اختير طور التضبيطات اليدوية."
 
-#: encfs/FileUtils.cpp:1054
 msgid "reverse encryption - chained IV and MAC disabled"
 msgstr ""
 
-#: encfs/FileUtils.cpp:1068
 msgid ""
 "External chained IV disabled, as both 'IV chaining'\n"
 "and 'unique IV' features are required for this option."
@@ -426,12 +358,10 @@ msgstr ""
 "تم تعطيل السلسة الخارجية لمتجهات البدء حيث أن كلا من\n"
 " 'سَلسة المتجهات' و 'المتجهات الفريدة' مطلوب ليتاح هذا الخيار."
 
-#: encfs/FileUtils.cpp:1080
 #, c-format
 msgid "Unable to instanciate cipher %s, key size %i, block size %i"
 msgstr "تعذّر بدء الخوارزمية %s بفمتاح حجمه %i و كتلة حجمها %i"
 
-#: encfs/FileUtils.cpp:1110
 msgid ""
 "Configuration finished.  The filesystem to be created has\n"
 "the following properties:"
@@ -439,11 +369,9 @@ msgstr ""
 "تمت التضبيطات. نظام الملفات الذي سينشأ\n"
 "ستكون له الخصائص التالية:"
 
-#: encfs/FileUtils.cpp:1115
 msgid "-------------------------- WARNING --------------------------\n"
 msgstr "-------------------------- تحذير --------------------------\n"
 
-#: encfs/FileUtils.cpp:1116
 msgid ""
 "The external initialization-vector chaining option has been\n"
 "enabled.  This option disables the use of hard links on the\n"
@@ -461,7 +389,6 @@ msgstr ""
 "إن كنت تريد تغيير أي من خيارات التضبيطات\n"
 "فاضغط CTRL-C الآن لتجهض هذا و تبدأ من جديد."
 
-#: encfs/FileUtils.cpp:1127
 msgid ""
 "Now you will need to enter a password for your filesystem.\n"
 "You will need to remember this password, as there is absolutely\n"
@@ -475,170 +402,136 @@ msgstr ""
 "كلمة المرور في أي وقت لاحقا باستخدام encfsctl.\n"
 "\n"
 
-#: encfs/FileUtils.cpp:1156
 msgid "Failure generating new volume key! Please report this error."
 msgstr "فشل توليد مفتاح جديد للمجلد! رجاء أبلغ عن هذا الخطأ."
 
-#: encfs/FileUtils.cpp:1167
 msgid "Name coding interface not supported"
 msgstr "واجهة ترميز الأسماء غير مدعومة."
 
-#: encfs/FileUtils.cpp:1168
 msgid "The filename encoding interface requested is not available"
 msgstr "واجهة ترميز أسماء الملفات المطلوبة غير متاحة"
 
-#: encfs/FileUtils.cpp:1199
 #, c-format
 msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
 msgstr "خوارزمية تعمية نظام الملفات: \"%s\" الإصدارة %i:%i:%i"
 
-#: encfs/FileUtils.cpp:1205 encfs/FileUtils.cpp:1228 encfs/FileUtils.cpp:1244
 msgid " (NOT supported)\n"
 msgstr " (غير مدعوم)\n"
 
-#: encfs/FileUtils.cpp:1211 encfs/FileUtils.cpp:1233
 #, c-format
 msgid " (using %i:%i:%i)\n"
 msgstr " (باستخدام %i:%i:%i)\n"
 
-#: encfs/FileUtils.cpp:1219
 #, c-format
 msgid "Filename encoding: \"%s\", version %i:%i:%i"
 msgstr "ترميز أسماء اللفات: \"%s\" الإصدارة %i:%i:%i"
 
-#: encfs/FileUtils.cpp:1240
 #, c-format
 msgid "Key Size: %i bits"
 msgstr "طول المفتاح: %i بتة"
 
-#: encfs/FileUtils.cpp:1249
 #, c-format
 msgid "Using PBKDF2, with %i iterations"
 msgstr ""
 
-#: encfs/FileUtils.cpp:1251
 #, c-format
 msgid "Salt Size: %i bits"
 msgstr ""
 
-#: encfs/FileUtils.cpp:1257
 #, c-format
 msgid "Block Size: %i bytes + %i byte MAC header"
 msgstr "حجم الكتلة: %i بايت + %i بايت ترويسة MAC"
 
-#: encfs/FileUtils.cpp:1264
 #, c-format
 msgid "Block Size: %i bytes, including %i byte MAC header"
 msgstr "حجم الكتلة: %i بايت متضمنة %i بايت ترويسة MAC"
 
-#: encfs/FileUtils.cpp:1270
 #, c-format
 msgid "Block Size: %i bytes"
 msgstr "حجم الكتلة: %i بايت"
 
-#: encfs/FileUtils.cpp:1276
 msgid "Each file contains 8 byte header with unique IV data.\n"
 msgstr "كل ملف يحوي ترويسة طولها 8 بايتات من بيانات متجه البدء الفريدة.\n"
 
-#: encfs/FileUtils.cpp:1280
 msgid "Filenames encoded using IV chaining mode.\n"
 msgstr "أيماء الملفات مرمزة في طور سَلسلة متجهات البدء.\n"
 
-#: encfs/FileUtils.cpp:1284
 msgid "File data IV is chained to filename IV.\n"
 msgstr "بيانات متجهات بدء الملفات مسلسلة مع متجهات بدء أسماء الملفات.\n"
 
-#: encfs/FileUtils.cpp:1288
 msgid "File holes passed through to ciphertext.\n"
 msgstr ""
 
-#: encfs/FileUtils.cpp:1333
 msgid "Error creating salt\n"
 msgstr ""
 
-#: encfs/FileUtils.cpp:1357
 msgid "EncFS Password: "
 msgstr "كلمة مرور EncFS: "
 
-#: encfs/FileUtils.cpp:1363
 msgid "Zero length password not allowed\n"
 msgstr "كلمات المرور الخاوية غير مقبولة\n"
 
-#: encfs/FileUtils.cpp:1404
 msgid "Internal error: socketpair() failed"
 msgstr "Internal error: socketpair() failed"
 
-#: encfs/FileUtils.cpp:1411
 msgid "Internal error: fork() failed"
 msgstr "Internal error: fork() failed"
 
-#: encfs/FileUtils.cpp:1452
 msgid "Internal error: failed to exec program"
 msgstr "Internal error: failed to exec program"
 
-#: encfs/FileUtils.cpp:1478
 msgid "New Encfs Password: "
 msgstr "كلمة مرور EncFS الجديدة: "
 
-#: encfs/FileUtils.cpp:1481
 msgid "Verify Encfs Password: "
 msgstr "أكد كلمة مرور EncFS: "
 
-#: encfs/FileUtils.cpp:1488
 msgid "Passwords did not match, please try again\n"
 msgstr "لم تتطابق كلمتا المرور، رجاء حاول ثانية\n"
 
-#: encfs/FileUtils.cpp:1508
+#, fuzzy
+msgid "The configuration disabled MAC, but you passed --require-macs\n"
+msgstr "الإعدادات المحملة غير متوافقة مع --reverse\n"
+
 msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "الإعدادات المحملة غير متوافقة مع --reverse\n"
 
-#: encfs/FileUtils.cpp:1516
 #, c-format
 msgid "Unable to find cipher %s, version %i:%i:%i"
 msgstr "تعذّر إيجاد خوارزمية التعمية %s، الإصدارة %i: %i: %i"
 
-#: encfs/FileUtils.cpp:1520
 msgid "The requested cipher interface is not available\n"
 msgstr "واجهة خوارزمية التعمية المطلوبة غير متاحة\n"
 
-#: encfs/FileUtils.cpp:1551
 msgid "Error decoding volume key, password incorrect\n"
 msgstr "حدث خطأ أثناء حل ترميز مفتاح المجلد؛ كلمة المرور غير صحيحة\n"
 
-#: encfs/FileUtils.cpp:1558
 #, c-format
 msgid "Unable to find nameio interface %s, version %i:%i:%i"
 msgstr "تعذّر إيجاد واجهة ترميز أسماء الملفات %s، الإصدارة  %i: %i: %i"
 
-#: encfs/FileUtils.cpp:1562
 msgid "The requested filename coding interface is not available\n"
 msgstr "واجهة ترميز أسماء الملفات المطلوبة غير متاحة\n"
 
-#: encfs/FileUtils.cpp:1602
 msgid "Remount failed"
 msgstr "فشلت إعادة الضم"
 
-#: encfs/MACFileIO.cpp:189
 #, c-format
 msgid "MAC comparison failure in block %li"
 msgstr "فشلت مطابقة MAC للكتلة %li"
 
-#: encfs/MACFileIO.cpp:192
 msgid "MAC comparison failure, refusing to read"
 msgstr "فشلت مطابقة MAC، ترفض القراءة"
 
-#: encfs/main.cpp:114
 #, c-format
 msgid "Build: encfs version %s"
 msgstr "الإنشاءة: encfs الإصدارة %s"
 
-#: encfs/main.cpp:117
 #, c-format
 msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
 msgstr ""
 "الاستخدام:  %s  [خيارات]   مجلد الجذر   نقطة الضم   [[-- [خيارات ضم FUSE]]"
 
-#: encfs/main.cpp:121
 msgid ""
 "Common Options:\n"
 "  -H\t\t\tshow optional FUSE Mount Options\n"
@@ -648,7 +541,6 @@ msgid ""
 "\t\t\tinstead of syslog.\n"
 msgstr ""
 
-#: encfs/main.cpp:132
 msgid ""
 "  -v, --verbose\t\tverbose: output encfs debug messages\n"
 "  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
@@ -657,7 +549,6 @@ msgid ""
 "\t\t\t(for filesystems using MAC block headers)\n"
 msgstr ""
 
-#: encfs/main.cpp:141
 msgid ""
 "  --public\t\tact as a typical multi-user filesystem\n"
 "\t\t\t(encfs must be run as root)\n"
@@ -665,11 +556,9 @@ msgstr ""
 "  --public\t\tيتصرف كأنه نظام ملفات نموذجي متعدد المستخدمين\n"
 "\t\ttab](يجب تشغيل encfs كجذر)\n"
 
-#: encfs/main.cpp:143
 msgid "  --reverse\t\treverse encryption\n"
 msgstr "  --reverse\t\tتشفير عكسي\n"
 
-#: encfs/main.cpp:147
 msgid ""
 "  --extpass=program\tUse external program for password prompt\n"
 "\n"
@@ -678,11 +567,9 @@ msgid ""
 "\n"
 msgstr ""
 
-#: encfs/main.cpp:153
 msgid "For more information, see the man page encfs(1)"
 msgstr "لمزيد من المعلومات. راجع صفحة دليل encfs(1)"
 
-#: encfs/main.cpp:158
 msgid ""
 "encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
 "valid FUSE Mount Options follow:\n"
@@ -690,45 +577,35 @@ msgstr ""
 "encfs [خيارات]  مجلد الجذر  نفطة الضم  -- [خيارات ضم FUSE]\n"
 "يتبع ذلك خيارات ضم FUSE صالحة:\n"
 
-#: encfs/main.cpp:330
 msgid "option '--public' ignored for non-root user"
 msgstr "تم تجاهل الخيار '--public' للمستخدم غير الجذر"
 
-#: encfs/main.cpp:341
 #, c-format
 msgid "encfs version %s"
 msgstr "encfsالإصدارة %s"
 
-#: encfs/main.cpp:376
 msgid "Missing one or more arguments, aborting."
 msgstr "ينقص معطى واحد أو أكثر، جارٍ الإجهاض."
 
-#: encfs/main.cpp:396
 msgid ""
 "When specifying daemon mode, you must use absolute paths (beginning with '/')"
 msgstr ""
 
-#: encfs/main.cpp:409
 msgid "The raw directory may not be a subdirectory of the mount point."
 msgstr ""
 
-#: encfs/main.cpp:418
 msgid "You must use mount-on-demand with delay-mount"
 msgstr ""
 
-#: encfs/main.cpp:425
 msgid "Must set password program when using mount-on-demand"
 msgstr "يحب ضبط برتامج كلمة السر عند استخدام الضم-عند-الطلب"
 
-#: encfs/main.cpp:433
 msgid "Unable to locate root directory, aborting."
 msgstr "تعذر تحديد موقع مجلد الجذر، جارٍ الإجهاض."
 
-#: encfs/main.cpp:439
 msgid "Unable to locate mount point, aborting."
 msgstr ""
 
-#: encfs/main.cpp:617
 msgid ""
 "Note: requested single-threaded mode, but an idle\n"
 "timeout was specified.  The filesystem will operate\n"
@@ -736,23 +613,19 @@ msgid ""
 "implement idle checking."
 msgstr ""
 
-#: encfs/main.cpp:668
 msgid ""
 "fuse failed.  Common problems:\n"
 " - fuse kernel module not installed (modprobe fuse)\n"
 " - invalid options -- see usage message\n"
 msgstr ""
 
-#: encfs/main.cpp:674
 #, c-format
 msgid "Internal error: Caught exception from main loop: %s"
 msgstr ""
 
-#: encfs/main.cpp:677
 msgid "Internal error: Caught unexpected exception"
 msgstr ""
 
-#: encfs/main.cpp:757
 #, c-format
 msgid "Unmounting filesystem %s due to inactivity"
 msgstr ""
