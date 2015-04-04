@@ -20,7 +20,11 @@ bin_PROGRAMS = encfs encfsctl
 dist_bin_SCRIPTS = encfssh
 noinst_PROGRAMS = test makeKey
 
+if BUILD_MANHTML
 all-local: encfs-man.html
+else
+all-local:
+endif
 
 encfs_LDADD   = libencfs.la $(ALL_LDFLAGS)
 encfsctl_LDADD = libencfs.la $(ALL_LDFLAGS)
