@@ -49,7 +49,7 @@ static const char rcsid[] =
 #include <cctype>
 
 #include <termios.h>
-#include <readpassphrase.h>
+#include "readpassphrase.h"
 
 #ifdef TCSASOFT
 #define _T_FLUSH (TCSAFLUSH | TCSASOFT)
