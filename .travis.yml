@@ -6,11 +6,11 @@ compiler:
 
 before_install:
  - sudo apt-get update -qq
- - sudo apt-get install -qq autopoint libfuse-dev libboost-serialization-dev
+ - sudo apt-get install -qq cmake libfuse-dev libboost-serialization-dev
    librlog-dev
 
 script:
- - autoreconf -if
- - ./configure
+ - sh devmode
+ - cd build
  - make
- - ./encfs/test
+ - ./checkops

@@ -8,13 +8,13 @@ in the wiki.
 Compiling EncFS
 ===============
 
-EncFS uses the GNU autoconf / automake toolchain to create makefiles.
-Also, the configure script is automatically generated using autoreconf.
+EncFS uses the CMake toolchain to create makefiles.
 
-Compiling EncFS is a three-step process:
+Steps to build EncFS:
 
-    autoreconf -if
-    ./configure
+    mkdir build
+    cd build
+    cmake ..
     make
 
 Optional, but strongly recommended, is running the test suite
@@ -40,7 +40,7 @@ Dependencies
 
 EncFS depends on a number of libraries:
 
-    openssl fuse boost-serialization gettext libtool libintl
+    openssl fuse boost-serialization gettext libintl librlog
 
 Compiling on Debian and Ubuntu
 ==============================
