@@ -9,6 +9,7 @@ Makefile.in
 
 /ABOUT-NLS
 /autom4te.cache/
+/build
 /build-aux/
 /config.h
 /config.h.in

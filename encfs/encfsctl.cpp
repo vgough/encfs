@@ -29,10 +29,8 @@
 #include <rlog/StdioNode.h>
 #include <rlog/RLogChannel.h>
 
-#ifdef HAVE_SSL
 #define NO_DES
 #include <openssl/ssl.h>
-#endif
 
 #include "Cipher.h"
 #include "Context.h"
@@ -697,10 +695,8 @@ int main(int argc, char **argv) {
   textdomain(PACKAGE);
 #endif
 
-#ifdef HAVE_SSL
   SSL_load_error_strings();
   SSL_library_init();
-#endif
 
   StdioNode *slog = new StdioNode(STDERR_FILENO);
   slog->subscribeTo(GetGlobalChannel("error"));

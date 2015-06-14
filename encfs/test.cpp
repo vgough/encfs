@@ -39,12 +39,10 @@
 #include <rlog/StdioNode.h>
 #include <rlog/RLogChannel.h>
 
-#ifdef HAVE_SSL
 #define NO_DES
 #include <openssl/ssl.h>
 #ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
-#endif
 #endif
 
 using namespace std;
@@ -397,7 +395,6 @@ int main(int argc, char *argv[]) {
   stdLog.subscribeTo(RLOG_CHANNEL("debug"));
 #endif
 
-#ifdef HAVE_SSL
   SSL_load_error_strings();
   SSL_library_init();
 
@@ -406,7 +403,6 @@ int main(int argc, char *argv[]) {
   ENGINE_register_all_ciphers();
   ENGINE_register_all_digests();
   ENGINE_register_all_RAND();
-#endif
 #endif
 
   srand(time(0));
