@@ -113,11 +113,12 @@ target_link_libraries(encfs
   ${RLOG_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
 )
+install (TARGETS encfs DESTINATION lib)
 
 add_executable (encfs-bin encfs/main.cpp)
 target_link_libraries (encfs-bin encfs)
 set_target_properties (encfs-bin PROPERTIES OUTPUT_NAME "encfs")
-install (TARGETS encfs DESTINATION bin)
+install (TARGETS encfs-bin DESTINATION bin)
 
 add_executable (encfsctl encfs/encfsctl.cpp)
 target_link_libraries (encfsctl encfs)
@@ -129,7 +130,7 @@ target_link_libraries (makekey encfs)
 add_executable (checkops encfs/test.cpp)
 target_link_libraries (checkops encfs)
 
-install (FILES ${CMAKE_SOURCE_DIR}/encfs/encssh DESTINATION bin)
+install (FILES encfs/encfssh DESTINATION bin)
 
 # Reference all headers, to make certain IDEs happy.
 file (GLOB_RECURSE all_headers ${CMAKE_SOURCE_DIR}/*.h)

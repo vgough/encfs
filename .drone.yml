@@ -1,6 +1,7 @@
 image: encfs_worker
 script:
-  - sh devmode
+  - sh devmode -DCMAKE_INSTALL_PREFIX:PATH=/tmp/cmake
   - cd build
   - make
   - make test
+  - make install
