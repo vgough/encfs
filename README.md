@@ -1,6 +1,6 @@
 # EncFS - an Encrypted Filesystem
 
-[![Build Status](https://travis-ci.org/vgough/encfs.svg)](https://travis-ci.org/vgough/encfs)
+[![Build Status](http://104.236.164.205:8080/api/badge/github.com/vgough/encfs/status.svg?branch=cmake)](http://104.236.164.205:8080/github.com/vgough/encfs)
 
 ## About
 

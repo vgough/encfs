@@ -31,9 +31,9 @@
 #include <sys/fsuid.h>
 #endif
 
-#if HAVE_SYS_XATTR_H
+#if defined(HAVE_SYS_XATTR_H)
 #include <sys/xattr.h>
-#elif HAVE_ATTR_XATTR_H
+#elif defined(HAVE_ATTR_XATTR_H)
 #include <attr/xattr.h>
 #endif
 

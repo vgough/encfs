@@ -12,9 +12,6 @@ require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
-# run unit tests
-ok( system("./encfs/test 2> /dev/null") == 0, "unit tests");
-
 # test filesystem in standard config mode
 &runTests('standard');
 

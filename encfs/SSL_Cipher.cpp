@@ -158,7 +158,7 @@ int TimedPBKDF2(const char *pass, int passlen, const unsigned char *salt,
 static Interface BlowfishInterface("ssl/blowfish", 3, 0, 2);
 static Interface AESInterface("ssl/aes", 3, 0, 2);
 
-#if defined(HAVE_EVP_BF)
+#ifndef OPENSSL_NO_BF
 
 static Range BFKeyRange(128, 256, 32);
 static Range BFBlockRange(64, 4096, 8);
@@ -182,7 +182,7 @@ static bool BF_Cipher_registered =
                      BFKeyRange, BFBlockRange, NewBFCipher);
 #endif
 
-#if defined(HAVE_EVP_AES)
+#ifndef OPENSSL_NO_AES
 
 static Range AESKeyRange(128, 256, 64);
 static Range AESBlockRange(64, 4096, 16);

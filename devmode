@@ -1,0 +1,4 @@
+# Script which sets up the CMake build for Debug mode.
+# After running, chdir to the build subdir ane run "make"
+mkdir build
+cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug $@

@@ -1,0 +1,6 @@
+image: encfs_worker
+script:
+  - sh devmode
+  - cd build
+  - make
+  - make test
