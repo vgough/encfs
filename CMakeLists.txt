@@ -145,3 +145,14 @@ endif (POD2MAN)
 
 install (TARGETS encfs DESTINATION bin)
 install (FILES ${CMAKE_SOURCE_DIR}/encfs/encssh DESTINATION bin)
+
+# Translations
+if (GETTEXT_FOUND)
+  file(GLOB po_files "po/*.po")
+  foreach(pofile ${po_files})
+    get_filename_component(lang ${pofile} NAME_WE)
+    #message("-- Found gettext PO file for ${lang}: ${pofile}")
+
+    gettext_process_po_files(${lang} ALL PO_FILES ${pofile})
+  endforeach()
+endif (GETTEXT_FOUND)
