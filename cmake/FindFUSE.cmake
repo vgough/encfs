@@ -5,34 +5,25 @@
 #  FUSE_FOUND       - True if FUSE lib is found.
 
 # check if already in cache, be silent
-IF (FUSE_INCLUDE_DIR)
+if (FUSE_INCLUDE_DIR)
         SET (FUSE_FIND_QUIETLY TRUE)
-ENDIF (FUSE_INCLUDE_DIR)
+endif (FUSE_INCLUDE_DIR)
+
+if (APPLE)
+    set (FUSE_NAMES libosxfuse.dylib fuse)
+    set (FUSE_SUFFIXES osxfuse fuse)
+else (APPLE)
+    set (FUSE_NAMES fuse)
+    set (FUSE_SUFFIXES fuse)
+endif (APPLE)
 
 # find includes
-FIND_PATH (FUSE_INCLUDE_DIR fuse.h
-		/usr/include/fuse
-		/usr/local/include/fuse
-        /opt/include/fuse
-        /opt/local/include/fuse
-        /usr/include/osxfuse
-        /usr/local/include/osxfuse
-		/opt/local/include/osxfuse
-		/usr/pkg/include/fuse
-)
+find_path (FUSE_INCLUDE_DIR fuse.h
+        PATHS /opt /opt/local /usr/pkg
+        PATH_SUFFIXES ${FUSE_SUFFIXES})
 
 # find lib
-if (APPLE)
-    SET(FUSE_NAMES libosxfuse.dylib fuse)
-else (APPLE)
-    SET(FUSE_NAMES fuse)
-endif (APPLE)
-FIND_LIBRARY(FUSE_LIBRARIES
-        NAMES ${FUSE_NAMES}
-        PATHS /lib64 /lib /usr/lib64 /usr/lib
-              /usr/local/lib64 /usr/local/lib
-              /opt/local/lib /usr/pkg/lib
-)
+find_library (FUSE_LIBRARIES NAMES ${FUSE_NAMES})
 
 include ("FindPackageHandleStandardArgs")
 find_package_handle_standard_args ("FUSE" DEFAULT_MSG
