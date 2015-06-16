@@ -117,15 +117,19 @@ target_link_libraries(encfs
 add_executable (encfs-bin encfs/main.cpp)
 target_link_libraries (encfs-bin encfs)
 set_target_properties (encfs-bin PROPERTIES OUTPUT_NAME "encfs")
+install (TARGETS encfs DESTINATION bin)
 
 add_executable (encfsctl encfs/encfsctl.cpp)
 target_link_libraries (encfsctl encfs)
+install (TARGETS encfsctl DESTINATION bin)
 
 add_executable (makekey encfs/makeKey.cpp)
 target_link_libraries (makekey encfs)
 
 add_executable (checkops encfs/test.cpp)
 target_link_libraries (checkops encfs)
+
+install (FILES ${CMAKE_SOURCE_DIR}/encfs/encssh DESTINATION bin)
 
 # Reference all headers, to make certain IDEs happy.
 file (GLOB_RECURSE all_headers ${CMAKE_SOURCE_DIR}/*.h)
@@ -143,9 +147,6 @@ if (POD2MAN)
   install (FILES ${CMAKE_BINARY_DIR}/encfs.1 ${CMAKE_BINARY_DIR}/encfsctl.1
     DESTINATION share/man/man1)
 endif (POD2MAN)
-
-install (TARGETS encfs DESTINATION bin)
-install (FILES ${CMAKE_SOURCE_DIR}/encfs/encssh DESTINATION bin)
 
 # Translations
 if (GETTEXT_FOUND)
