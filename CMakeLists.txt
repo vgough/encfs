@@ -103,10 +103,10 @@ set(SOURCE_FILES
   encfs/SSL_Cipher.cpp
   encfs/StreamNameIO.cpp
 )
-add_library(encfs1 SHARED ${SOURCE_FILES})
-set_property(TARGET encfs1 PROPERTY VERSION ${ENCFS_VERSION})
-set_property(TARGET encfs1 PROPERTY SOVERSION ${ENCFS_SOVERSION})
-target_link_libraries(encfs1
+add_library(encfs SHARED ${SOURCE_FILES})
+set_property(TARGET encfs PROPERTY VERSION ${ENCFS_VERSION})
+set_property(TARGET encfs PROPERTY SOVERSION ${ENCFS_SOVERSION})
+target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${Boost_LIBRARIES}
@@ -114,17 +114,18 @@ target_link_libraries(encfs1
   ${CMAKE_THREAD_LIBS_INIT}
 )
 
-add_executable (encfs encfs/main.cpp)
-target_link_libraries (encfs encfs1)
+add_executable (encfs-bin encfs/main.cpp)
+target_link_libraries (encfs-bin encfs)
+set_target_properties (encfs-bin PROPERTIES OUTPUT_NAME "encfs")
 
 add_executable (encfsctl encfs/encfsctl.cpp)
-target_link_libraries (encfsctl encfs1)
+target_link_libraries (encfsctl encfs)
 
 add_executable (makekey encfs/makeKey.cpp)
-target_link_libraries (makekey encfs1)
+target_link_libraries (makekey encfs)
 
 add_executable (checkops encfs/test.cpp)
-target_link_libraries (checkops encfs1)
+target_link_libraries (checkops encfs)
 
 # Reference all headers, to make certain IDEs happy.
 file (GLOB_RECURSE all_headers ${CMAKE_SOURCE_DIR}/*.h)
