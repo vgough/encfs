@@ -158,3 +158,18 @@ if (GETTEXT_FOUND)
     gettext_process_po_files(${lang} ALL PO_FILES ${pofile})
   endforeach()
 endif (GETTEXT_FOUND)
+
+# Tests
+enable_testing()
+add_test (NAME checkops
+          COMMAND checkops)
+
+find_program (PERL_PROGRAM perl)
+if (PERL_PROGRAM)
+  file(GLOB pl_test_files "tests/*.t.pl")
+  #add_test (NAME scriptedtests
+  #          COMMAND ${PERL_PROGRAM} -I ${CMAKE_SOURCE_DIR}
+  #             -MTest::Harness
+  #             -e "$$Test::Harness::verbose=1; runtests @ARGV;"
+  #             ${pl_test_files})
+endif (PERL_PROGRAM)

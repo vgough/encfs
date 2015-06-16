@@ -3,4 +3,4 @@ script:
   - sh devmode
   - cd build
   - make
-  - ./checkops
+  - make test
