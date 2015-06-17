@@ -47,11 +47,15 @@ check_include_file_cxx (tr1/unordered_set HAVE_TR1_UNORDERED_SET)
 check_include_file_cxx (tr1/tuple HAVE_TR1_TUPLE)
 
 # Check if xattr functions take extra arguments, as they do on OSX.
+# Output error is misleading, so do this test quietly.
 include (CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_QUIET_SAVE ${CMAKE_REQUIRED_QUIET})
+set (CMAKE_REQUIRED_QUIET True)
 check_cxx_source_compiles ("#include <sys/types.h>
   #include <sys/xattr.h>
   int main() { getxattr(0,0,0,0,0,0); return 1; }
   " XATTR_ADD_OPT)
+set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
 
 # Check if we have lchmod.
 include (CheckFuncs)
