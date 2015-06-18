@@ -22,16 +22,8 @@
 #ifndef _SHARED_PTR_incl_
 #define _SHARED_PTR_incl_
 
-#include "config.h"
-
-#ifdef HAVE_TR1_MEMORY
-#include <tr1/memory>
-using std::tr1::shared_ptr;
-using std::tr1::dynamic_pointer_cast;
-#else
 #include <memory>
 using std::shared_ptr;
 using std::dynamic_pointer_cast;
-#endif
 
 #endif
