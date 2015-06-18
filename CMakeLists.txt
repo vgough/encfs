@@ -72,6 +72,7 @@ set (CPACK_SOURCE_IGNORE_FILES
   "/build/")
 include (CPack)
 
+# Compile-time configuration.
 configure_file (${CMAKE_SOURCE_DIR}/config.h.cmake
   ${CMAKE_BINARY_DIR}/config.h)
 
@@ -117,6 +118,9 @@ target_link_libraries(encfs
   ${CMAKE_THREAD_LIBS_INIT}
 )
 install (TARGETS encfs DESTINATION lib)
+
+# Set RPATH to library install path.
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 
 add_executable (encfs-bin encfs/main.cpp)
 target_link_libraries (encfs-bin encfs)
