@@ -24,8 +24,8 @@
 #include <sys/types.h>
 #include <string>
 
+#include "Interface.h"
 #include "FileIO.h"
-#include "encfs/Interface.h"
 
 class RawFileIO : public FileIO {
  public:

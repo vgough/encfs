@@ -25,9 +25,9 @@
 #include <cstring>
 
 #include "Cipher.h"
+#include "CipherKey.h"
+#include "NameIO.h"
 #include "base64.h"
-#include "encfs/CipherKey.h"
-#include "encfs/NameIO.h"
 #include "intl/gettext.h"
 
 namespace rlog {

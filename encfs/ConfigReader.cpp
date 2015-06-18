@@ -27,7 +27,7 @@
 #include <cstring>
 #include <utility>
 
-#include "encfs/ConfigVar.h"
+#include "ConfigVar.h"
 
 using namespace std;
 using namespace rlog;

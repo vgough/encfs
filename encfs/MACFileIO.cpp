@@ -26,11 +26,11 @@
 #include <sys/stat.h>
 #include <cstring>
 
+#include "BlockFileIO.h"
+#include "Cipher.h"
+#include "FileIO.h"
 #include "FileUtils.h"
 #include "MemoryPool.h"
-#include "encfs/BlockFileIO.h"
-#include "encfs/Cipher.h"
-#include "encfs/FileIO.h"
 #include "i18n.h"
 
 namespace rlog {

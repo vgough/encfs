@@ -36,14 +36,14 @@
 #include <openssl/ssl.h>
 
 #include "Cipher.h"
+#include "CipherKey.h"
 #include "DirNode.h"
+#include "FSConfig.h"
 #include "FileNode.h"
 #include "FileUtils.h"
+#include "Interface.h"
 #include "autosprintf.h"
 #include "config.h"
-#include "encfs/CipherKey.h"
-#include "encfs/FSConfig.h"
-#include "encfs/Interface.h"
 #include "i18n.h"
 #include "intl/gettext.h"
 

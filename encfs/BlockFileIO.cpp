@@ -25,10 +25,10 @@
 #include <cstring>
 #include <memory>
 
+#include "FSConfig.h"
+#include "FileIO.h"
 #include "FileUtils.h"
 #include "MemoryPool.h"
-#include "encfs/FSConfig.h"
-#include "encfs/FileIO.h"
 #include "i18n.h"
 
 template <typename Type>

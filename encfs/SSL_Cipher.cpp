@@ -32,11 +32,11 @@
 #include <cstring>
 #include <string>
 
+#include "Cipher.h"
+#include "Interface.h"
 #include "Mutex.h"
 #include "Range.h"
 #include "SSL_Cipher.h"
-#include "encfs/Cipher.h"
-#include "encfs/Interface.h"
 #include "intl/gettext.h"
 
 namespace rlog {

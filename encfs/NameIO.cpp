@@ -30,10 +30,10 @@
 #include <utility>
 
 #include "BlockNameIO.h"
+#include "CipherKey.h"
+#include "Interface.h"
 #include "NullNameIO.h"
 #include "StreamNameIO.h"
-#include "encfs/CipherKey.h"
-#include "encfs/Interface.h"
 
 using namespace std;
 using namespace rel;

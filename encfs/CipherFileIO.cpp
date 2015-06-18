@@ -29,10 +29,10 @@
 #include <sys/stat.h>
 #include <cerrno>
 
+#include "BlockFileIO.h"
 #include "Cipher.h"
-#include "encfs/BlockFileIO.h"
-#include "encfs/CipherKey.h"
-#include "encfs/FileIO.h"
+#include "CipherKey.h"
+#include "FileIO.h"
 
 /*
     - Version 2:0 adds support for a per-file initialization vector with a

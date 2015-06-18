@@ -27,10 +27,10 @@
 #include <cstdio>
 
 #include "DirNode.h"
+#include "FSConfig.h"
+#include "FileNode.h"
 #include "FileUtils.h"
-#include "encfs/FSConfig.h"
-#include "encfs/FileNode.h"
-#include "encfs/NameIO.h"
+#include "NameIO.h"
 #ifdef linux
 #include <sys/fsuid.h>
 #endif

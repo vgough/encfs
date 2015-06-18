@@ -23,8 +23,8 @@
 #include <cstring>
 #include <memory>
 
-#include "encfs/CipherKey.h"
-#include "encfs/NameIO.h"
+#include "CipherKey.h"
+#include "NameIO.h"
 
 class Cipher;
 

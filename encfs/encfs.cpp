@@ -49,8 +49,8 @@
 
 #include "Context.h"
 #include "DirNode.h"
+#include "FileNode.h"
 #include "FileUtils.h"
-#include "encfs/FileNode.h"
 #include "fuse.h"
 
 namespace rel {

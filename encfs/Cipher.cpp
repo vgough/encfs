@@ -26,6 +26,7 @@
 #include <utility>
 
 #include "Cipher.h"
+#include "CipherKey.h"
 #include "Interface.h"
 // for static build.  Need to reference the modules which are registered at
 // run-time, to ensure that the linker doesn't optimize them away.
@@ -33,7 +34,6 @@
 #include "Range.h"
 #include "SSL_Cipher.h"
 #include "base64.h"
-#include "encfs/CipherKey.h"
 
 using namespace std;
 using namespace rel;

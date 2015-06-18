@@ -27,9 +27,9 @@
 
 #include "BlockFileIO.h"
 #include "Cipher.h"
-#include "encfs/CipherKey.h"
-#include "encfs/FSConfig.h"
-#include "encfs/Interface.h"
+#include "CipherKey.h"
+#include "FSConfig.h"
+#include "Interface.h"
 
 class Cipher;
 class FileIO;

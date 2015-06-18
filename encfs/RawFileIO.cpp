@@ -29,8 +29,8 @@
 #include <cerrno>
 #include <cstring>
 
+#include "FileIO.h"
 #include "RawFileIO.h"
-#include "encfs/FileIO.h"
 
 using namespace std;
 

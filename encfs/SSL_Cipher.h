@@ -25,8 +25,8 @@
 #include <memory>
 
 #include "Cipher.h"
+#include "CipherKey.h"
 #include "Interface.h"
-#include "encfs/CipherKey.h"
 
 class SSLKey;
 #ifndef EVP_CIPHER

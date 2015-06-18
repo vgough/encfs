@@ -23,9 +23,9 @@
 #include <cstring>
 #include <memory>
 
+#include "Cipher.h"
 #include "Interface.h"
 #include "Range.h"
-#include "encfs/Cipher.h"
 
 using namespace std;
 using namespace rel;

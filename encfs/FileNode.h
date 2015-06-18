@@ -30,8 +30,8 @@
 
 #include "CipherKey.h"
 #include "FileUtils.h"
+#include "FSConfig.h"
 #include "encfs.h"
-#include "encfs/FSConfig.h"
 
 class Cipher;
 class DirNode;

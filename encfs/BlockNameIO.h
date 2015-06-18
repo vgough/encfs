@@ -25,8 +25,8 @@
 #include <memory>
 
 #include "CipherKey.h"
+#include "Interface.h"
 #include "NameIO.h"
-#include "encfs/Interface.h"
 #include "shared_ptr.h"
 
 class Cipher;

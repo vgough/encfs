@@ -23,8 +23,8 @@
 
 #include <stdint.h>
 
+#include "Interface.h"
 #include "NameIO.h"
-#include "encfs/Interface.h"
 
 class NullNameIO : public NameIO {
  public:

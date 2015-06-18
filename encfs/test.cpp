@@ -31,15 +31,15 @@
 
 #include "BlockNameIO.h"
 #include "Cipher.h"
+#include "CipherKey.h"
 #include "DirNode.h"
+#include "FSConfig.h"
 #include "FileUtils.h"
 #include "Interface.h"
 #include "MemoryPool.h"
+#include "NameIO.h"
+#include "Range.h"
 #include "StreamNameIO.h"
-#include "encfs/CipherKey.h"
-#include "encfs/FSConfig.h"
-#include "encfs/NameIO.h"
-#include "encfs/Range.h"
 
 #define NO_DES
 #include <openssl/ssl.h>
