@@ -3,10 +3,7 @@ Quick configuration advice
 ==========================
 
 The configuration script will automatically find and make use of your installed
-'gettext' package.  If you do not have gettext installed, or do not want
-internationalization support included in the build, then you can disable native
-language support using
-    ./configu --disable-nls
+'gettext' package. 
 
 Using This Package
 ==================
