@@ -76,17 +76,6 @@ class DirTraverse {
 };
 inline bool DirTraverse::valid() const { return dir.get() != 0; }
 
-#ifdef USE_HASHMAP
-namespace __gnu_cxx {
-template <>
-struct hash<std::string> {
-  size_t operator()(const std::string &__s) const {
-    return __stl_hash_string(__s.c_str());
-  }
-};
-}
-#endif
-
 class DirNode {
  public:
   // sourceDir points to where raw files are stored
