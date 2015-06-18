@@ -21,6 +21,8 @@
 #ifndef _MemoryPool_incl_
 #define _MemoryPool_incl_
 
+namespace encfs {
+
 struct MemBlock {
   unsigned char *data;
 
@@ -45,5 +47,7 @@ MemBlock allocate(int size);
 void release(const MemBlock &el);
 void destroyAll();
 }
+
+}  // namespace encfs
 
 #endif

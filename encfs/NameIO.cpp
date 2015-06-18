@@ -20,8 +20,7 @@
 
 #include "NameIO.h"
 
-#include <rlog/Error.h>
-#include <rlog/rlog.h>
+#include "internal/easylogging++.h"
 #include <cstring>
 // for static build.  Need to reference the modules which are registered at
 // run-time, to ensure that the linker doesn't optimize them away.
@@ -31,16 +30,17 @@
 
 #include "BlockNameIO.h"
 #include "CipherKey.h"
+#include "Error.h"
 #include "Interface.h"
 #include "NullNameIO.h"
 #include "StreamNameIO.h"
 
 using namespace std;
-using namespace rel;
-using namespace rlog;
 
 #define REF_MODULE(TYPE) \
   if (!TYPE::Enabled()) cerr << "referenceModule: should never happen\n";
+
+namespace encfs {
 
 static void AddSymbolReferences() {
   REF_MODULE(BlockNameIO)
@@ -94,11 +94,10 @@ bool NameIO::Register(const char *name, const char *description,
   gNameIOMap->insert(make_pair(string(name), alg));
   return true;
 }
-
-shared_ptr<NameIO> NameIO::New(const string &name,
-                               const shared_ptr<Cipher> &cipher,
-                               const CipherKey &key) {
-  shared_ptr<NameIO> result;
+std::shared_ptr<NameIO> NameIO::New(const string &name,
+                                    const std::shared_ptr<Cipher> &cipher,
+                                    const CipherKey &key) {
+  std::shared_ptr<NameIO> result;
   if (gNameIOMap) {
     NameIOMap_t::const_iterator it = gNameIOMap->find(name);
     if (it != gNameIOMap->end()) {
@@ -108,11 +107,10 @@ shared_ptr<NameIO> NameIO::New(const string &name,
   }
   return result;
 }
-
-shared_ptr<NameIO> NameIO::New(const Interface &iface,
-                               const shared_ptr<Cipher> &cipher,
-                               const CipherKey &key) {
-  shared_ptr<NameIO> result;
+std::shared_ptr<NameIO> NameIO::New(const Interface &iface,
+                                    const std::shared_ptr<Cipher> &cipher,
+                                    const CipherKey &key) {
+  std::shared_ptr<NameIO> result;
   if (gNameIOMap) {
     NameIOMap_t::const_iterator it;
     NameIOMap_t::const_iterator end = gNameIOMap->end();
@@ -139,11 +137,10 @@ void NameIO::setReverseEncryption(bool enable) { reverseEncryption = enable; }
 
 bool NameIO::getReverseEncryption() const { return reverseEncryption; }
 
-std::string NameIO::recodePath(const char *path,
-                               int (NameIO::*_length)(int) const,
-                               int (NameIO::*_code)(const char *, int,
-                                                    uint64_t *, char *, int) const,
-                               uint64_t *iv) const {
+std::string NameIO::recodePath(
+    const char *path, int (NameIO::*_length)(int) const,
+    int (NameIO::*_code)(const char *, int, uint64_t *, char *, int) const,
+    uint64_t *iv) const {
   string output;
 
   while (*path) {
@@ -165,7 +162,7 @@ std::string NameIO::recodePath(const char *path,
 
       // figure out buffer sizes
       int approxLen = (this->*_length)(len);
-      if (approxLen <= 0) throw ERROR("Filename too small to decode");
+      if (approxLen <= 0) throw Error("Filename too small to decode");
       int bufSize = 0;
 
       BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
@@ -218,11 +215,13 @@ std::string NameIO::decodePath(const char *path, uint64_t *iv) const {
   return getReverseEncryption() ? _encodePath(path, iv) : _decodePath(path, iv);
 }
 
-int NameIO::encodeName(const char *input, int length, char *output, int bufferLength) const {
+int NameIO::encodeName(const char *input, int length, char *output,
+                       int bufferLength) const {
   return encodeName(input, length, (uint64_t *)0, output, bufferLength);
 }
 
-int NameIO::decodeName(const char *input, int length, char *output, int bufferLength) const {
+int NameIO::decodeName(const char *input, int length, char *output,
+                       int bufferLength) const {
   return decodeName(input, length, (uint64_t *)0, output, bufferLength);
 }
 
@@ -290,3 +289,5 @@ int NameIO::decodeName( const char *path, int length,
         _decodeName( path, length, output );
 }
 */
+
+}  // namespace encfs

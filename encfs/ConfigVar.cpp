@@ -20,10 +20,12 @@
 
 #include "ConfigVar.h"
 
-#include <rlog/rlog.h>
+#include "internal/easylogging++.h"
 #include <cstring>
 
-using namespace rlog;
+#include "Error.h"
+
+namespace encfs {
 
 #ifndef MIN
 inline int MIN(int a, int b) { return (a < b) ? a : b; }
@@ -192,9 +194,12 @@ const ConfigVar &operator>>(const ConfigVar &src, std::string &result) {
   }
 
   if (readLen != length) {
-    rDebug("string encoded as size %i bytes, read %i", length, readLen);
+    VLOG(1) << "string encoded as size " << length << " bytes, read "
+            << readLen;
   }
   rAssert(readLen == length);
 
   return src;
 }
+
+}  // namespace encfs

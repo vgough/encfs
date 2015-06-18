@@ -21,8 +21,10 @@
 #ifndef _base64_incl_
 #define _base64_incl_
 
-#include <string>
-#include <vector>
+#include <string>  // for string
+#include <vector>  // for vector
+
+namespace encfs {
 
 inline int B64ToB256Bytes(int numB64Bytes) {
   return (numB64Bytes * 6) / 8;  // round down
@@ -68,8 +70,11 @@ void AsciiToB32(unsigned char *out, const unsigned char *in, int length);
 // Decode standard B64 into the output array.
 // Used only to decode legacy Boost XML serialized config format.
 // The output size must be at least B64ToB256Bytes(inputLen).
-bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inputLen);
+bool B64StandardDecode(unsigned char *out, const unsigned char *in,
+                       int inputLen);
 
 std::string B64StandardEncode(std::vector<unsigned char> input);
+
+}  // namespace encfs
 
 #endif

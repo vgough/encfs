@@ -28,10 +28,10 @@
 #include <sys/fsuid.h>
 #endif
 
-#include <rlog/rlog.h>
 #include <cstring>
 
 #include "CipherFileIO.h"
+#include "Error.h"
 #include "FileIO.h"
 #include "FileNode.h"
 #include "FileUtils.h"
@@ -39,13 +39,9 @@
 #include "Mutex.h"
 #include "RawFileIO.h"
 
-namespace rlog {
-class RLogChannel;
-}  // namespace rlog
-
 using namespace std;
-using namespace rel;
-using namespace rlog;
+
+namespace encfs {
 
 /*
    TODO: locking at the FileNode level is inefficient, since this precludes
@@ -55,8 +51,6 @@ using namespace rlog;
    read has to wait for the decoding of the previous read before it can be
    sent to the IO subsystem!
 */
-
-static RLogChannel *Info = DEF_CHANNEL("info/FileNode", Log_Info);
 
 FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
                    const char *plaintextName_, const char *cipherName_) {
@@ -71,11 +65,11 @@ FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
   this->fsConfig = cfg;
 
   // chain RawFileIO & CipherFileIO
-  shared_ptr<FileIO> rawIO(new RawFileIO(_cname));
-  io = shared_ptr<FileIO>(new CipherFileIO(rawIO, fsConfig));
+  std::shared_ptr<FileIO> rawIO(new RawFileIO(_cname));
+  io = std::shared_ptr<FileIO>(new CipherFileIO(rawIO, fsConfig));
 
   if (cfg->config->blockMACBytes || cfg->config->blockMACRandBytes)
-    io = shared_ptr<FileIO>(new MACFileIO(io, fsConfig));
+    io = std::shared_ptr<FileIO>(new MACFileIO(io, fsConfig));
 }
 
 FileNode::~FileNode() {
@@ -95,7 +89,7 @@ const char *FileNode::plaintextName() const { return _pname.c_str(); }
 
 string FileNode::plaintextParent() const { return parentDirectory(_pname); }
 
-static bool setIV(const shared_ptr<FileIO> &io, uint64_t iv) {
+static bool setIV(const std::shared_ptr<FileIO> &io, uint64_t iv) {
   struct stat stbuf;
   if ((io->getAttr(&stbuf) < 0) || S_ISREG(stbuf.st_mode))
     return io->setIV(iv);
@@ -106,7 +100,7 @@ static bool setIV(const shared_ptr<FileIO> &io, uint64_t iv) {
 bool FileNode::setName(const char *plaintextName_, const char *cipherName_,
                        uint64_t iv, bool setIVFirst) {
   // Lock _lock( mutex );
-  rDebug("calling setIV on %s", cipherName_);
+  VLOG(1) << "calling setIV on " << cipherName_;
   if (setIVFirst) {
     if (fsConfig->config->externalIVChaining && !setIV(io, iv)) return false;
 
@@ -145,14 +139,14 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
   if (uid != 0) {
     olduid = setfsuid(uid);
     if (olduid == -1) {
-      rInfo("setfsuid error: %s", strerror(errno));
+      RLOG(INFO) << "setfsuid error: " << strerror(errno);
       return -EPERM;
     }
   }
   if (gid != 0) {
     oldgid = setfsgid(gid);
     if (oldgid == -1) {
-      rInfo("setfsgid error: %s", strerror(errno));
+      RLOG(INFO) << "setfsgid error: " << strerror(errno);
       return -EPERM;
     }
   }
@@ -175,7 +169,7 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
 
   if (res == -1) {
     int eno = errno;
-    rDebug("mknod error: %s", strerror(eno));
+    VLOG(1) << "mknod error: " << strerror(eno);
     res = -eno;
   }
 
@@ -215,8 +209,7 @@ ssize_t FileNode::read(off_t offset, unsigned char *data, ssize_t size) const {
 }
 
 bool FileNode::write(off_t offset, unsigned char *data, ssize_t size) {
-  rLog(Info, "FileNode::write offset %" PRIi64 ", data size %i", offset,
-       (int)size);
+  RLOG(INFO) << "FileNode::write offset " << offset << ", data size " << size;
 
   IORequest req;
   req.offset = offset;
@@ -258,3 +251,5 @@ int FileNode::sync(bool datasync) {
   } else
     return fh;
 }
+
+}  // namespace encfs

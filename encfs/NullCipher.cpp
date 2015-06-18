@@ -28,16 +28,17 @@
 #include "Range.h"
 
 using namespace std;
-using namespace rel;
-using namespace rlog;
+
+namespace encfs {
 
 static Interface NullInterface("nullCipher", 1, 0, 0);
 static Range NullKeyRange(0);
 static Range NullBlockRange(1, 4096, 1);
 
-static shared_ptr<Cipher> NewNullCipher(const Interface &iface, int keyLen) {
+static std::shared_ptr<Cipher> NewNullCipher(const Interface &iface,
+                                             int keyLen) {
   (void)keyLen;
-  return shared_ptr<Cipher>(new NullCipher(iface));
+  return std::shared_ptr<Cipher>(new NullCipher(iface));
 }
 
 const bool HiddenCipher = true;
@@ -61,8 +62,7 @@ class NullDestructor {
   NullDestructor &operator=(const NullDestructor &) { return *this; }
   void operator()(NullKey *&) {}
 };
-
-shared_ptr<AbstractCipherKey> gNullKey(new NullKey(), NullDestructor());
+std::shared_ptr<AbstractCipherKey> gNullKey(new NullKey(), NullDestructor());
 
 NullCipher::NullCipher(const Interface &iface_) { this->iface = iface_; }
 
@@ -97,8 +97,8 @@ void NullCipher::writeKey(const CipherKey &, unsigned char *,
                           const CipherKey &) {}
 
 bool NullCipher::compareKey(const CipherKey &A_, const CipherKey &B_) const {
-  shared_ptr<NullKey> A = dynamic_pointer_cast<NullKey>(A_);
-  shared_ptr<NullKey> B = dynamic_pointer_cast<NullKey>(B_);
+  std::shared_ptr<NullKey> A = dynamic_pointer_cast<NullKey>(A_);
+  std::shared_ptr<NullKey> B = dynamic_pointer_cast<NullKey>(B_);
   return A.get() == B.get();
 }
 
@@ -137,3 +137,5 @@ bool NullCipher::blockDecode(unsigned char *, int, uint64_t,
 }
 
 bool NullCipher::Enabled() { return true; }
+
+}  // namespace encfs

@@ -21,12 +21,14 @@
 #ifndef _encfs_incl_
 #define _encfs_incl_
 
+#include "internal/easylogging++.h"
 #include <fuse.h>
-#include <rlog/rlog.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #include "config.h"
+
+namespace encfs {
 
 #if defined(HAVE_SYS_XATTR_H) | defined(HAVE_ATTR_XATTR_H)
 #define HAVE_XATTR
@@ -39,8 +41,7 @@ static __inline int setfsuid(uid_t uid) {
   uid_t olduid = geteuid();
 
   if (seteuid(uid) != 0) {
-    // ignore error.
-    rDebug("seteuid error: %i", errno);
+    VLOG(1) << "seteuid error: " << errno;
   }
 
   return olduid;
@@ -50,8 +51,7 @@ static __inline int setfsgid(gid_t gid) {
   gid_t oldgid = getegid();
 
   if (setegid(gid) != 0) {
-    // ignore error.
-    rDebug("setfsgid error: %i", errno);
+    VLOG(1) << "setfsgid error: " << errno;
   }
 
   return oldgid;
@@ -104,5 +104,7 @@ int encfs_removexattr(const char *path, const char *name);
 #endif
 
 int encfs_utimens(const char *path, const struct timespec ts[2]);
+
+}  // namespace encfs
 
 #endif

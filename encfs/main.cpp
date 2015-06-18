@@ -16,27 +16,24 @@
  *
  */
 
-#include <getopt.h>
-#include <pthread.h>
-#include <rlog/RLogChannel.h>
-#include <rlog/StdioNode.h>
-#include <rlog/SyslogNode.h>
-#include <rlog/rlog.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <sys/time.h>
-#include <time.h>
-#include <unistd.h>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <getopt.h>
 #include <iostream>
 #include <memory>
+#include <pthread.h>
 #include <sstream>
+#include <stdlib.h>
 #include <string>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "Context.h"
+#include "Error.h"
 #include "FileUtils.h"
 #include "MemoryPool.h"
 #include "autosprintf.h"
@@ -45,8 +42,6 @@
 #include "fuse.h"
 #include "i18n.h"
 #include "openssl.h"
-
-class DirNode;
 
 // Fuse version >= 26 requires another argument to fuse_unmount, which we
 // don't have.  So use the backward compatible call instead..
@@ -60,9 +55,14 @@ extern "C" void fuse_unmount_compat22(const char *mountpoint);
 #define LONG_OPT_REQUIRE_MAC 515
 
 using namespace std;
-using namespace rlog;
-using namespace rel;
+using namespace encfs;
 using gnu::autosprintf;
+
+INITIALIZE_EASYLOGGINGPP
+
+namespace encfs {
+
+class DirNode;
 
 // Maximum number of arguments that we're going to pass on to fuse.  Doesn't
 // affect how many arguments we can handle, just how many we can pass on..
@@ -74,14 +74,14 @@ const int MaxFuseArgs = 32;
  * derived from the arguments
  */
 struct EncFS_Args {
-  bool isDaemon;      // true == spawn in background, log to syslog
-  bool isThreaded;    // true == threaded
-  bool isVerbose;     // false == only enable warning/error messages
-  int idleTimeout;    // 0 == idle time in minutes to trigger unmount
+  bool isDaemon;    // true == spawn in background, log to syslog
+  bool isThreaded;  // true == threaded
+  bool isVerbose;   // false == only enable warning/error messages
+  int idleTimeout;  // 0 == idle time in minutes to trigger unmount
   const char *fuseArgv[MaxFuseArgs];
   int fuseArgc;
 
-  shared_ptr<EncFS_Opts> opts;
+  std::shared_ptr<EncFS_Opts> opts;
 
   // for debugging
   // In case someone sends me a log dump, I want to know how what options are
@@ -110,6 +110,8 @@ struct EncFS_Args {
 
 static int oldStderr = STDERR_FILENO;
 
+}  // namespace encfs
+
 static void usage(const char *name) {
   // xgroup(usage)
   cerr << autosprintf(_("Build: encfs version %s"), VERSION) << "\n\n"
@@ -117,7 +119,8 @@ static void usage(const char *name) {
        << autosprintf(
               _("Usage: %s [options] rootDir mountPoint [-- [FUSE Mount "
                 "Options]]"),
-              name) << "\n\n"
+              name)
+       << "\n\n"
        // xgroup(usage)
        << _("Common Options:\n"
             "  -H\t\t\t"
@@ -141,8 +144,9 @@ static void usage(const char *name) {
             "\t\t\t(for filesystems using MAC block headers)\n")
        << _("  --public\t\t"
             "act as a typical multi-user filesystem\n"
-            "\t\t\t(encfs must be run as root)\n") << _("  --reverse\t\t"
-                                                        "reverse encryption\n")
+            "\t\t\t(encfs must be run as root)\n")
+       << _("  --reverse\t\t"
+            "reverse encryption\n")
 
        // xgroup(usage)
        << _("  --extpass=program\tUse external program for password prompt\n"
@@ -151,13 +155,15 @@ static void usage(const char *name) {
             "    encfs ~/.crypt ~/crypt\n"
             "\n")
        // xgroup(usage)
-       << _("For more information, see the man page encfs(1)") << "\n" << endl;
+       << _("For more information, see the man page encfs(1)") << "\n"
+       << endl;
 }
 
 static void FuseUsage() {
   // xgroup(usage)
   cerr << _("encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
-            "valid FUSE Mount Options follow:\n") << endl;
+            "valid FUSE Mount Options follow:\n")
+       << endl;
 
   int argc = 2;
   const char *argv[] = {"...", "-h"};
@@ -177,7 +183,7 @@ static string slashTerminate(const string &src) {
 }
 
 static bool processArgs(int argc, char *argv[],
-                        const shared_ptr<EncFS_Args> &out) {
+                        const std::shared_ptr<EncFS_Args> &out) {
   // set defaults
   out->isDaemon = true;
   out->isThreaded = true;
@@ -337,7 +343,7 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 'P':
         if (geteuid() != 0)
-          rWarning(_("option '--public' ignored for non-root user"));
+          RLOG(WARNING) << "option '--public' ignored for non-root user";
         else {
           out->opts->ownerCreate = true;
           // add 'allow_other' option
@@ -362,7 +368,7 @@ static bool processArgs(int argc, char *argv[],
         // missing parameter for option..
         break;
       default:
-        rWarning(_("getopt error: %i"), res);
+        RLOG(WARNING) << "getopt error: " << res;
         break;
     }
   }
@@ -378,7 +384,7 @@ static bool processArgs(int argc, char *argv[],
     out->opts->mountPoint = slashTerminate(argv[optind++]);
   } else {
     // no mount point specified
-    rWarning(_("Missing one or more arguments, aborting."));
+    cerr << _("Missing one or more arguments, aborting.");
     return false;
   }
 
@@ -426,7 +432,8 @@ static bool processArgs(int argc, char *argv[],
     cerr <<
         // xgroup(usage)
         _("When specifying daemon mode, you must use absolute paths "
-          "(beginning with '/')") << endl;
+          "(beginning with '/')")
+         << endl;
     return false;
   }
 
@@ -439,7 +446,8 @@ static bool processArgs(int argc, char *argv[],
       cerr <<
           // xgroup(usage)
           _("The raw directory may not be a subdirectory of the "
-            "mount point.") << endl;
+            "mount point.")
+           << endl;
       return false;
     }
   }
@@ -462,13 +470,13 @@ static bool processArgs(int argc, char *argv[],
   if (!isDirectory(out->opts->rootDir.c_str()) &&
       !userAllowMkdir(out->opts->annotate ? 1 : 0, out->opts->rootDir.c_str(),
                       0700)) {
-    rWarning(_("Unable to locate root directory, aborting."));
+    cerr << _("Unable to locate root directory, aborting.");
     return false;
   }
   if (!isDirectory(out->opts->mountPoint.c_str()) &&
-      !userAllowMkdir(out->opts->annotate ? 2 : 0, out->opts->mountPoint.c_str(),
-                      0700)) {
-    rWarning(_("Unable to locate mount point, aborting."));
+      !userAllowMkdir(out->opts->annotate ? 2 : 0,
+                      out->opts->mountPoint.c_str(), 0700)) {
+    cerr << _("Unable to locate mount point, aborting.");
     return false;
   }
 
@@ -486,23 +494,27 @@ void *encfs_init(fuse_conn_info *conn) {
   // set fuse connection options
   conn->async_read = true;
 
+  if (ctx->args->isDaemon) {
+    // Switch to using syslog.
+    encfs::rlogAction = el::base::DispatchAction::SysLog;
+  }
+
   // if an idle timeout is specified, then setup a thread to monitor the
   // filesystem.
   if (ctx->args->idleTimeout > 0) {
-    rDebug("starting idle monitoring thread");
+    VLOG(1) << "starting idle monitoring thread";
     ctx->running = true;
 
     int res = pthread_create(&ctx->monitorThread, 0, idleMonitor, (void *)ctx);
     if (res != 0) {
-      rError(
-          "error starting idle monitor thread, "
-          "res = %i, errno = %i",
-          res, errno);
+      RLOG(ERROR) << "error starting idle monitor thread, "
+                     "res = "
+                  << res << ", errno = " << errno;
     }
   }
 
   if (ctx->args->isDaemon && oldStderr >= 0) {
-    rInfo("Closing stderr");
+    VLOG(1) << "Closing stderr";
     close(oldStderr);
     oldStderr = -1;
   }
@@ -516,19 +528,18 @@ void encfs_destroy(void *_ctx) {
     ctx->running = false;
 
     // wake up the thread if it is waiting..
-    rDebug("waking up monitoring thread");
+    VLOG(1) << "waking up monitoring thread";
     pthread_mutex_lock(&ctx->wakeupMutex);
     pthread_cond_signal(&ctx->wakeupCond);
     pthread_mutex_unlock(&ctx->wakeupMutex);
-    rDebug("joining with idle monitoring thread");
+    VLOG(1) << "joining with idle monitoring thread";
     pthread_join(ctx->monitorThread, 0);
-    rDebug("join done");
+    VLOG(1) << "join done";
   }
 }
 
 int main(int argc, char *argv[]) {
-  // initialize the logging library
-  RLogInit(argc, argv);
+  encfs::initLogging();
 
 #if defined(ENABLE_NLS) && defined(LOCALEDIR)
   setlocale(LC_ALL, "");
@@ -536,17 +547,9 @@ int main(int argc, char *argv[]) {
   textdomain(PACKAGE);
 #endif
 
-  // log to stderr by default..
-  std::unique_ptr<StdioNode> slog(new StdioNode(STDERR_FILENO));
-  std::unique_ptr<SyslogNode> logNode;
-
-  // show error and warning output
-  slog->subscribeTo(GetGlobalChannel("error"));
-  slog->subscribeTo(GetGlobalChannel("warning"));
-
   // anything that comes from the user should be considered tainted until
   // we've processed it and only allowed through what we support.
-  shared_ptr<EncFS_Args> encfsArgs(new EncFS_Args);
+  std::shared_ptr<EncFS_Args> encfsArgs(new EncFS_Args);
   for (int i = 0; i < MaxFuseArgs; ++i)
     encfsArgs->fuseArgv[i] = NULL;  // libfuse expects null args..
 
@@ -556,13 +559,11 @@ int main(int argc, char *argv[]) {
   }
 
   if (encfsArgs->isVerbose) {
-    // subscribe to more logging channels..
-    slog->subscribeTo(GetGlobalChannel("info"));
-    slog->subscribeTo(GetGlobalChannel("debug"));
+    el::Loggers::setVerboseLevel(1);
   }
 
-  rDebug("Root directory: %s", encfsArgs->opts->rootDir.c_str());
-  rDebug("Fuse arguments: %s", encfsArgs->toString().c_str());
+  VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
+  VLOG(1) << "Fuse arguments: " << encfsArgs->toString();
 
   fuse_operations encfs_oper;
   // in case this code is compiled against a newer FUSE library and new
@@ -609,15 +610,15 @@ int main(int argc, char *argv[]) {
   encfs_oper.fgetattr = encfs_fgetattr;
   // encfs_oper.lock = encfs_lock;
   encfs_oper.utimens = encfs_utimens;
-// encfs_oper.bmap = encfs_bmap;
+  // encfs_oper.bmap = encfs_bmap;
 
   openssl_init(encfsArgs->isThreaded);
 
   // context is not a smart pointer because it will live for the life of
   // the filesystem.
-  EncFS_Context *ctx = new EncFS_Context;
+  auto ctx = std::shared_ptr<EncFS_Context>(new EncFS_Context);
   ctx->publicFilesystem = encfsArgs->opts->ownerCreate;
-  RootPtr rootInfo = initFS(ctx, encfsArgs->opts);
+  RootPtr rootInfo = initFS(ctx.get(), encfsArgs->opts);
 
   int returnCode = EXIT_FAILURE;
 
@@ -637,7 +638,8 @@ int main(int argc, char *argv[]) {
       cerr << _("Note: requested single-threaded mode, but an idle\n"
                 "timeout was specified.  The filesystem will operate\n"
                 "single-threaded, but threads will still be used to\n"
-                "implement idle checking.") << endl;
+                "implement idle checking.")
+           << endl;
     }
 
     // reset umask now, since we don't want it to interfere with the
@@ -645,14 +647,6 @@ int main(int argc, char *argv[]) {
     umask(0);
 
     if (encfsArgs->isDaemon) {
-      // switch to logging just warning and error messages via syslog
-      logNode.reset(new SyslogNode("encfs"));
-      logNode->subscribeTo(GetGlobalChannel("warning"));
-      logNode->subscribeTo(GetGlobalChannel("error"));
-
-      // disable stderr reporting..
-      slog.reset();
-
       // keep around a pointer just in case we end up needing it to
       // report a fatal condition later (fuse_main exits unexpectedly)...
       oldStderr = dup(STDERR_FILENO);
@@ -671,7 +665,7 @@ int main(int argc, char *argv[]) {
       // fuse_main returns an error code in newer versions of fuse..
       int res = fuse_main(encfsArgs->fuseArgc,
                           const_cast<char **>(encfsArgs->fuseArgv), &encfs_oper,
-                          (void *)ctx);
+                          (void *)ctx.get());
 
       time(&endTime);
 
@@ -692,16 +686,16 @@ int main(int argc, char *argv[]) {
         fclose(out);
       }
     } catch (std::exception &ex) {
-      rError(_("Internal error: Caught exception from main loop: %s"),
-             ex.what());
+      RLOG(ERROR) << "Internal error: Caught exception from main loop: "
+                  << ex.what();
     } catch (...) {
-      rError(_("Internal error: Caught unexpected exception"));
+      RLOG(ERROR) << "Internal error: Caught unexpected exception";
     }
   }
 
   // cleanup so that we can check for leaked resources..
   rootInfo.reset();
-  ctx->setRoot(shared_ptr<DirNode>());
+  ctx->setRoot(std::shared_ptr<DirNode>());
 
   MemoryPool::destroyAll();
   openssl_shutdown(encfsArgs->isThreaded);
@@ -721,7 +715,7 @@ static bool unmountFS(EncFS_Context *ctx);
 
 static void *idleMonitor(void *_arg) {
   EncFS_Context *ctx = (EncFS_Context *)_arg;
-  shared_ptr<EncFS_Args> arg = ctx->args;
+  std::shared_ptr<EncFS_Args> arg = ctx->args;
 
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;
   int idleCycles = 0;
@@ -744,10 +738,11 @@ static void *idleMonitor(void *_arg) {
         break;
       }
 
-      rDebug("num open files: %i", openCount);
+      VLOG(1) << "num open files: " << openCount;
     }
 
-    rDebug("idle cycle count: %i, timeout after %i", idleCycles, timeoutCycles);
+    VLOG(1) << "idle cycle count: " << idleCycles << ", timeout after "
+            << timeoutCycles;
 
     struct timeval currentTime;
     gettimeofday(&currentTime, 0);
@@ -759,24 +754,23 @@ static void *idleMonitor(void *_arg) {
 
   pthread_mutex_unlock(&ctx->wakeupMutex);
 
-  rDebug("Idle monitoring thread exiting");
+  VLOG(1) << "Idle monitoring thread exiting";
 
   return 0;
 }
 
 static bool unmountFS(EncFS_Context *ctx) {
-  shared_ptr<EncFS_Args> arg = ctx->args;
+  std::shared_ptr<EncFS_Args> arg = ctx->args;
   if (arg->opts->mountOnDemand) {
-    rDebug("Detaching filesystem %s due to inactivity",
-           arg->opts->mountPoint.c_str());
+    VLOG(1) << "Detaching filesystem due to inactivity: "
+            << arg->opts->mountPoint;
 
-    ctx->setRoot(shared_ptr<DirNode>());
+    ctx->setRoot(std::shared_ptr<DirNode>());
     return false;
   } else {
     // Time to unmount!
-    // xgroup(diag)
-    rWarning(_("Unmounting filesystem %s due to inactivity"),
-             arg->opts->mountPoint.c_str());
+    RLOG(WARNING) << "Unmounting filesystem due to inactivity: "
+                  << arg->opts->mountPoint;
     fuse_unmount(arg->opts->mountPoint.c_str());
     return true;
   }

@@ -22,15 +22,17 @@
 #define _CipherFileIO_incl_
 
 #include <inttypes.h>
+#include <memory>
 #include <stdint.h>
 #include <sys/types.h>
-#include <memory>
 
 #include "BlockFileIO.h"
 #include "CipherKey.h"
 #include "FSConfig.h"
 #include "FileUtils.h"
 #include "Interface.h"
+
+namespace encfs {
 
 class Cipher;
 class FileIO;
@@ -43,10 +45,10 @@ struct IORequest;
 */
 class CipherFileIO : public BlockFileIO {
  public:
-  CipherFileIO(const shared_ptr<FileIO> &base, const FSConfigPtr &cfg);
+  CipherFileIO(const std::shared_ptr<FileIO> &base, const FSConfigPtr &cfg);
   virtual ~CipherFileIO();
 
-  virtual rel::Interface interface() const;
+  virtual Interface interface() const;
 
   virtual void setFileName(const char *fileName);
   virtual const char *getFileName() const;
@@ -75,7 +77,7 @@ class CipherFileIO : public BlockFileIO {
 
   ssize_t read(const IORequest &req) const;
 
-  shared_ptr<FileIO> base;
+  std::shared_ptr<FileIO> base;
 
   FSConfigPtr fsConfig;
 
@@ -86,8 +88,10 @@ class CipherFileIO : public BlockFileIO {
   uint64_t fileIV;
   int lastFlags;
 
-  shared_ptr<Cipher> cipher;
+  std::shared_ptr<Cipher> cipher;
   CipherKey key;
 };
+
+}  // namespace encfs
 
 #endif

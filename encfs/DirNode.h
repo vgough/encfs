@@ -23,19 +23,21 @@
 
 #include <dirent.h>
 #include <inttypes.h>
-#include <pthread.h>
-#include <stdint.h>
-#include <sys/types.h>
 #include <list>
 #include <map>
 #include <memory>
+#include <pthread.h>
+#include <stdint.h>
 #include <string>
+#include <sys/types.h>
 #include <vector>
 
 #include "CipherKey.h"
 #include "FSConfig.h"
 #include "FileNode.h"
 #include "NameIO.h"
+
+namespace encfs {
 
 class Cipher;
 class EncFS_Context;
@@ -46,8 +48,8 @@ struct RenameEl;
 
 class DirTraverse {
  public:
-  DirTraverse(const shared_ptr<DIR> &dirPtr, uint64_t iv,
-              const shared_ptr<NameIO> &naming);
+  DirTraverse(const std::shared_ptr<DIR> &dirPtr, uint64_t iv,
+              const std::shared_ptr<NameIO> &naming);
   DirTraverse(const DirTraverse &src);
   ~DirTraverse();
 
@@ -68,11 +70,11 @@ class DirTraverse {
   std::string nextInvalid();
 
  private:
-  shared_ptr<DIR> dir;  // struct DIR
+  std::shared_ptr<DIR> dir;  // struct DIR
   // initialization vector to use.  Not very general purpose, but makes it
   // more efficient to support filename IV chaining..
   uint64_t iv;
-  shared_ptr<NameIO> naming;
+  std::shared_ptr<NameIO> naming;
 };
 inline bool DirTraverse::valid() const { return dir.get() != 0; }
 
@@ -90,16 +92,16 @@ class DirNode {
   bool touchesMountpoint(const char *realPath) const;
 
   // find files
-  shared_ptr<FileNode> lookupNode(const char *plaintextName,
-                                  const char *requestor);
+  std::shared_ptr<FileNode> lookupNode(const char *plaintextName,
+                                       const char *requestor);
 
   /*
       Combined lookupNode + node->open() call.  If the open fails, then the
       node is not retained.  If the open succeeds, then the node is returned.
   */
-  shared_ptr<FileNode> openNode(const char *plaintextName,
-                                const char *requestor, int flags,
-                                int *openResult);
+  std::shared_ptr<FileNode> openNode(const char *plaintextName,
+                                     const char *requestor, int flags,
+                                     int *openResult);
 
   std::string cipherPath(const char *plaintextPath);
   std::string cipherPathWithoutRoot(const char *plaintextPath);
@@ -141,9 +143,9 @@ class DirNode {
       this call has no effect.
       Returns the FileNode if it was found.
   */
-  shared_ptr<FileNode> renameNode(const char *from, const char *to);
-  shared_ptr<FileNode> renameNode(const char *from, const char *to,
-                                  bool forwardMode);
+  std::shared_ptr<FileNode> renameNode(const char *from, const char *to);
+  std::shared_ptr<FileNode> renameNode(const char *from, const char *to,
+                                       bool forwardMode);
 
   /*
       when directory IV chaining is enabled, a directory can't be renamed
@@ -151,7 +153,7 @@ class DirNode {
       called after renaming the directory, passing in the plaintext from and
       to paths.
   */
-  shared_ptr<RenameOp> newRenameOp(const char *from, const char *to);
+  std::shared_ptr<RenameOp> newRenameOp(const char *from, const char *to);
 
  private:
   friend class RenameOp;
@@ -159,7 +161,7 @@ class DirNode {
   bool genRenameList(std::list<RenameEl> &list, const char *fromP,
                      const char *toP);
 
-  shared_ptr<FileNode> findOrCreate(const char *plainName);
+  std::shared_ptr<FileNode> findOrCreate(const char *plainName);
 
   pthread_mutex_t mutex;
 
@@ -169,7 +171,9 @@ class DirNode {
   std::string rootDir;
   FSConfigPtr fsConfig;
 
-  shared_ptr<NameIO> naming;
+  std::shared_ptr<NameIO> naming;
 };
+
+}  // namespace encfs
 
 #endif

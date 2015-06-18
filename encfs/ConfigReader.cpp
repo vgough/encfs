@@ -20,17 +20,18 @@
 
 #include "ConfigReader.h"
 
+#include <cstring>
 #include <fcntl.h>
-#include <rlog/rlog.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <cstring>
 #include <utility>
 
 #include "ConfigVar.h"
+#include "Error.h"
 
 using namespace std;
-using namespace rlog;
+
+namespace encfs {
 
 ConfigReader::ConfigReader() {}
 
@@ -54,8 +55,8 @@ bool ConfigReader::load(const char *fileName) {
   close(fd);
 
   if (res != size) {
-    rWarning("Partial read of config file, expecting %i bytes, got %i", size,
-             res);
+    RLOG(WARNING) << "Partial read of config file, expecting " << size
+                  << " bytes, got " << res;
     delete[] buf;
     return false;
   }
@@ -78,7 +79,7 @@ bool ConfigReader::loadFromVar(ConfigVar &in) {
     in >> key >> value;
 
     if (key.length() == 0) {
-      rError("Invalid key encoding in buffer");
+      RLOG(ERROR) << "Invalid key encoding in buffer";
       return false;
     }
     ConfigVar newVar(value);
@@ -97,11 +98,11 @@ bool ConfigReader::save(const char *fileName) const {
     int retVal = ::write(fd, out.buffer(), out.size());
     close(fd);
     if (retVal != out.size()) {
-      rError("Error writing to config file %s", fileName);
+      RLOG(ERROR) << "Error writing to config file " << fileName;
       return false;
     }
   } else {
-    rError("Unable to open or create file %s", fileName);
+    RLOG(ERROR) << "Unable to open or create file " << fileName;
     return false;
   }
 
@@ -135,3 +136,5 @@ ConfigVar ConfigReader::operator[](const std::string &varName) const {
 ConfigVar &ConfigReader::operator[](const std::string &varName) {
   return vars[varName];
 }
+
+}  // namespace encfs

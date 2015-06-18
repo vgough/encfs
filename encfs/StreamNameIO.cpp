@@ -20,23 +20,24 @@
 
 #include "StreamNameIO.h"
 
-#include <rlog/Error.h>
-#include <rlog/rlog.h>
+#include "internal/easylogging++.h"
 #include <cstring>
 
 #include "Cipher.h"
 #include "CipherKey.h"
+#include "Error.h"
 #include "NameIO.h"
 #include "base64.h"
 #include "intl/gettext.h"
 
-using namespace rel;
 using namespace std;
 
-static shared_ptr<NameIO> NewStreamNameIO(const Interface &iface,
-                                          const shared_ptr<Cipher> &cipher,
-                                          const CipherKey &key) {
-  return shared_ptr<NameIO>(new StreamNameIO(iface, cipher, key));
+namespace encfs {
+
+static std::shared_ptr<NameIO> NewStreamNameIO(
+    const Interface &iface, const std::shared_ptr<Cipher> &cipher,
+    const CipherKey &key) {
+  return std::shared_ptr<NameIO>(new StreamNameIO(iface, cipher, key));
 }
 
 static bool StreamIO_registered = NameIO::Register(
@@ -70,8 +71,8 @@ Interface StreamNameIO::CurrentInterface() {
   return Interface("nameio/stream", 2, 1, 2);
 }
 
-StreamNameIO::StreamNameIO(const rel::Interface &iface,
-                           const shared_ptr<Cipher> &cipher,
+StreamNameIO::StreamNameIO(const Interface &iface,
+                           const std::shared_ptr<Cipher> &cipher,
                            const CipherKey &key)
     : _interface(iface.current()), _cipher(cipher), _key(key) {}
 
@@ -90,7 +91,8 @@ int StreamNameIO::maxDecodedNameLen(int encodedStreamLen) const {
 }
 
 int StreamNameIO::encodeName(const char *plaintextName, int length,
-                             uint64_t *iv, char *encodedName, int bufferLength) const {
+                             uint64_t *iv, char *encodedName,
+                             int bufferLength) const {
   uint64_t tmpIV = 0;
   if (iv && _interface >= 2) tmpIV = *iv;
 
@@ -133,7 +135,7 @@ int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
   int decodedStreamLen = decLen256 - 2;
   rAssert(decodedStreamLen <= bufferLength);
 
-  if (decodedStreamLen <= 0) throw ERROR("Filename too small to decode");
+  if (decodedStreamLen <= 0) throw Error("Filename too small to decode");
 
   BUFFER_INIT(tmpBuf, 32, (unsigned int)length);
 
@@ -172,12 +174,14 @@ int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
 
   BUFFER_RESET(tmpBuf);
   if (mac2 != mac) {
-    rDebug("checksum mismatch: expected %u, got %u", mac, mac2);
-    rDebug("on decode of %i bytes", decodedStreamLen);
-    throw ERROR("checksum mismatch in filename decode");
+    VLOG(1) << "checksum mismatch: expected " << mac << ", got " << mac2;
+    VLOG(1) << "on decode of " << decodedStreamLen << " bytes";
+    throw Error("checksum mismatch in filename decode");
   }
 
   return decodedStreamLen;
 }
 
 bool StreamNameIO::Enabled() { return true; }
+
+}  // namespace encfs

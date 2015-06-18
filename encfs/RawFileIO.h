@@ -21,11 +21,13 @@
 #ifndef _RawFileIO_incl_
 #define _RawFileIO_incl_
 
-#include <sys/types.h>
 #include <string>
+#include <sys/types.h>
 
-#include "Interface.h"
 #include "FileIO.h"
+#include "Interface.h"
+
+namespace encfs {
 
 class RawFileIO : public FileIO {
  public:
@@ -33,7 +35,7 @@ class RawFileIO : public FileIO {
   RawFileIO(const std::string &fileName);
   virtual ~RawFileIO();
 
-  virtual rel::Interface interface() const;
+  virtual Interface interface() const;
 
   virtual void setFileName(const char *fileName);
   virtual const char *getFileName() const;
@@ -60,5 +62,7 @@ class RawFileIO : public FileIO {
   int oldfd;
   bool canWrite;
 };
+
+}  // namespace encfs
 
 #endif

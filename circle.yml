@@ -4,7 +4,7 @@ machine:
 
 dependencies:
   pre:
-    - sudo apt-get install cmake libfuse-dev librlog-dev libgettextpo-dev
+    - sudo apt-get install cmake libfuse-dev libgettextpo-dev
     - bash ./ci/install-gcc.sh
 
 test:

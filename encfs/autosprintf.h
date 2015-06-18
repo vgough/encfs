@@ -32,8 +32,8 @@
 #endif
 #endif
 
-#include <string>
 #include <iostream>
+#include <string>
 
 namespace gnu {
 /* A temporary object, usually allocated on the stack, representing

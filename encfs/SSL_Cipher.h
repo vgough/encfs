@@ -21,19 +21,22 @@
 #ifndef _SSL_Cipher_incl_
 #define _SSL_Cipher_incl_
 
-#include <stdint.h>
 #include <memory>
+#include <stdint.h>
 
 #include "Cipher.h"
 #include "CipherKey.h"
 #include "Interface.h"
 
-class SSLKey;
 #ifndef EVP_CIPHER
 struct evp_cipher_st;
 
 typedef struct evp_cipher_st EVP_CIPHER;
 #endif
+
+namespace encfs {
+
+class SSLKey;
 
 /*
     Implements Cipher interface for OpenSSL's ciphers.
@@ -74,21 +77,21 @@ typedef struct evp_cipher_st EVP_CIPHER;
     simpler to reuse the encryption algorithm as is.
 */
 class SSL_Cipher : public Cipher {
-  rel::Interface iface;
-  rel::Interface realIface;
+  Interface iface;
+  Interface realIface;
   const EVP_CIPHER *_blockCipher;
   const EVP_CIPHER *_streamCipher;
   unsigned int _keySize;  // in bytes
   unsigned int _ivLength;
 
  public:
-  SSL_Cipher(const rel::Interface &iface, const rel::Interface &realIface,
+  SSL_Cipher(const Interface &iface, const Interface &realIface,
              const EVP_CIPHER *blockCipher, const EVP_CIPHER *streamCipher,
              int keyLength);
   virtual ~SSL_Cipher();
 
   // returns the real interface, not the one we're emulating (if any)..
-  virtual rel::Interface interface() const;
+  virtual Interface interface() const;
 
   // create a new key based on a password
   virtual CipherKey newKey(const char *password, int passwdLength,
@@ -140,11 +143,13 @@ class SSL_Cipher : public Cipher {
 
  private:
   void setIVec(unsigned char *ivec, uint64_t seed,
-               const shared_ptr<SSLKey> &key) const;
+               const std::shared_ptr<SSLKey> &key) const;
 
   // deprecated - for backward compatibility
   void setIVec_old(unsigned char *ivec, unsigned int seed,
-                   const shared_ptr<SSLKey> &key) const;
+                   const std::shared_ptr<SSLKey> &key) const;
 };
+
+}  // namespace encfs
 
 #endif

@@ -26,6 +26,8 @@
 #include "FSConfig.h"
 #include "FileIO.h"
 
+namespace encfs {
+
 /*
     Implements block scatter / gather interface.  Requires derived classes to
     implement readOneBlock() / writeOneBlock() at a minimum.
@@ -64,5 +66,7 @@ class BlockFileIO : public FileIO {
   // cache last block for speed...
   mutable IORequest _cache;
 };
+
+}  // namespace encfs
 
 #endif

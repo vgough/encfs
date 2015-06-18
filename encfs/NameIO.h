@@ -22,47 +22,49 @@
 #define _NameIO_incl_
 
 #include <inttypes.h>
-#include <stdint.h>
-#include <string.h>
 #include <list>
 #include <memory>
+#include <stdint.h>
+#include <string.h>
 #include <string>
 
 #include "CipherKey.h"
 #include "Interface.h"
 
+namespace encfs {
+
 class Cipher;
 
 class NameIO {
  public:
-  typedef shared_ptr<NameIO>(*Constructor)(const rel::Interface &iface,
-                                           const shared_ptr<Cipher> &cipher,
-                                           const CipherKey &key);
+  typedef std::shared_ptr<NameIO> (*Constructor)(
+      const Interface &iface, const std::shared_ptr<Cipher> &cipher,
+      const CipherKey &key);
 
   struct Algorithm {
     std::string name;
     std::string description;
-    rel::Interface iface;
+    Interface iface;
   };
 
   typedef std::list<Algorithm> AlgorithmList;
   static AlgorithmList GetAlgorithmList(bool includeHidden = false);
 
-  static shared_ptr<NameIO> New(const rel::Interface &iface,
-                                const shared_ptr<Cipher> &cipher,
-                                const CipherKey &key);
-  static shared_ptr<NameIO> New(const std::string &name,
-                                const shared_ptr<Cipher> &cipher,
-                                const CipherKey &key);
+  static std::shared_ptr<NameIO> New(const Interface &iface,
+                                     const std::shared_ptr<Cipher> &cipher,
+                                     const CipherKey &key);
+  static std::shared_ptr<NameIO> New(const std::string &name,
+                                     const std::shared_ptr<Cipher> &cipher,
+                                     const CipherKey &key);
 
   static bool Register(const char *name, const char *description,
-                       const rel::Interface &iface, Constructor constructor,
+                       const Interface &iface, Constructor constructor,
                        bool hidden = false);
 
   NameIO();
   virtual ~NameIO();
 
-  virtual rel::Interface interface() const = 0;
+  virtual Interface interface() const = 0;
 
   void setChainedNameIV(bool enable);
   bool getChainedNameIV() const;
@@ -95,7 +97,8 @@ class NameIO {
  private:
   std::string recodePath(const char *path, int (NameIO::*codingLen)(int) const,
                          int (NameIO::*codingFunc)(const char *, int,
-                                                   uint64_t *, char *, int) const,
+                                                   uint64_t *, char *, int)
+                             const,
                          uint64_t *iv) const;
 
   std::string _encodePath(const char *plaintextPath, uint64_t *iv) const;
@@ -137,5 +140,7 @@ class NameIO {
       Name = Name##_Raw;      \
     }                         \
   } while (0);
+
+}  // namespace encfs
 
 #endif
