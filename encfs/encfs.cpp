@@ -76,8 +76,7 @@ static EncFS_Context *context() {
  * if the argument is NULL.
  */
 static bool isReadOnly(EncFS_Context *ctx) {
-  if (ctx == NULL)
-    ctx = (EncFS_Context *)fuse_get_context()->private_data;
+  if (ctx == NULL) ctx = (EncFS_Context *)fuse_get_context()->private_data;
 
   return ctx->opts->readOnly;
 }

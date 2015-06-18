@@ -122,7 +122,8 @@ struct FSConfig {
 
   bool idleTracking;  // turn on idle monitoring of filesystem
 
-  FSConfig() : forceDecode(false), reverseEncryption(false), idleTracking(false) {}
+  FSConfig()
+      : forceDecode(false), reverseEncryption(false), idleTracking(false) {}
 };
 
 typedef shared_ptr<FSConfig> FSConfigPtr;

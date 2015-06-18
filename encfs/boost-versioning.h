@@ -62,7 +62,7 @@ class iserializer<Archive, EncFSConfig> : public basic_iserializer {
   virtual bool is_polymorphic() const {
     return boost::is_polymorphic<EncFSConfig>::value;
   }
-  virtual ~iserializer() {};
+  virtual ~iserializer(){};
 };
 
 template <class Archive>

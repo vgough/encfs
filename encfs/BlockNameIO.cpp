@@ -151,7 +151,7 @@ int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
 
   // add checksum bytes
   encodedName[0] = (mac >> 8) & 0xff;
-  encodedName[1] = (mac) & 0xff;
+  encodedName[1] = (mac)&0xff;
 
   _cipher->blockEncode((unsigned char *)encodedName + 2, length + padding,
                        (uint64_t)mac ^ tmpIV, _key);
@@ -184,8 +184,7 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
   int decodedStreamLen = decLen256 - 2;
 
   // don't bother trying to decode files which are too small
-  if (decodedStreamLen < _bs)
-  {
+  if (decodedStreamLen < _bs) {
     rDebug("Rejecting filename '%s'", encodedName);
     throw ERROR("Filename too small to decode");
   }

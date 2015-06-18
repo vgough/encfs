@@ -60,7 +60,7 @@ extern "C" void fuse_unmount_compat22(const char *mountpoint);
 /* Arbitrary identifiers for long options that do
  * not have a short version */
 #define LONG_OPT_ANNOTATE 513
-#define LONG_OPT_NOCACHE  514
+#define LONG_OPT_NOCACHE 514
 #define LONG_OPT_REQUIRE_MAC 515
 
 using namespace std;
@@ -223,15 +223,16 @@ static bool processArgs(int argc, char *argv[],
       {"public", 0, 0, 'P'},            // public mode
       {"extpass", 1, 0, 'p'},           // external password program
       // {"single-thread", 0, 0, 's'},  // single-threaded mode
-      {"stdinpass", 0, 0, 'S'},         // read password from stdin
-      {"annotate", 0, 0, LONG_OPT_ANNOTATE},  // Print annotation lines to stderr
-      {"nocache", 0, 0, LONG_OPT_NOCACHE},    // disable caching
-      {"verbose", 0, 0, 'v'},    // verbose mode
-      {"version", 0, 0, 'V'},    // version
-      {"reverse", 0, 0, 'r'},    // reverse encryption
-      {"standard", 0, 0, '1'},   // standard configuration
-      {"paranoia", 0, 0, '2'},   // standard configuration
-      {"require-macs", 0, 0, LONG_OPT_REQUIRE_MAC}, // require MACs
+      {"stdinpass", 0, 0, 'S'},  // read password from stdin
+      {"annotate", 0, 0,
+       LONG_OPT_ANNOTATE},                  // Print annotation lines to stderr
+      {"nocache", 0, 0, LONG_OPT_NOCACHE},  // disable caching
+      {"verbose", 0, 0, 'v'},               // verbose mode
+      {"version", 0, 0, 'V'},               // version
+      {"reverse", 0, 0, 'r'},               // reverse encryption
+      {"standard", 0, 0, '1'},              // standard configuration
+      {"paranoia", 0, 0, '2'},              // standard configuration
+      {"require-macs", 0, 0, LONG_OPT_REQUIRE_MAC},  // require MACs
       {0, 0, 0, 0}};
 
   while (1) {
@@ -309,7 +310,7 @@ static bool processArgs(int argc, char *argv[],
          * However, disabling the caches causes a factor 3
          * slowdown. If you are concerned about inconsistencies,
          * please use --nocache. */
-         break;
+        break;
       case LONG_OPT_NOCACHE:
         /* Disable EncFS block cache
          * Causes reverse grow tests to fail because short reads
@@ -404,8 +405,8 @@ static bool processArgs(int argc, char *argv[],
 
     // "default_permissions" comes with a performance cost. Only enable
     // it if makes sense.
-    for(int i=0; i < out->fuseArgc; i++) {
-      if ( out->fuseArgv[i] == NULL ) {
+    for (int i = 0; i < out->fuseArgc; i++) {
+      if (out->fuseArgv[i] == NULL) {
         continue;
       } else if (strcmp(out->fuseArgv[i], "allow_other") == 0) {
         PUSHARG("-o");
@@ -415,7 +416,8 @@ static bool processArgs(int argc, char *argv[],
     }
 
 #if defined(__APPLE__)
-    // With OSXFuse, the 'local' flag selects a local filesystem mount icon in Finder.
+    // With OSXFuse, the 'local' flag selects a local filesystem mount icon in
+    // Finder.
     PUSHARG("-o");
     PUSHARG("local");
 #endif
@@ -700,7 +702,8 @@ int main(int argc, char *argv[]) {
         // xgroup(usage)
         fputs(_("fuse failed.  Common problems:\n"
                 " - fuse kernel module not installed (modprobe fuse)\n"
-                " - invalid options -- see usage message\n"), out);
+                " - invalid options -- see usage message\n"),
+              out);
         fclose(out);
       }
     } catch (std::exception &ex) {

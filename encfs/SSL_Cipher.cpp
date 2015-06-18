@@ -49,7 +49,7 @@ using namespace rel;
 using namespace rlog;
 
 const int MAX_KEYLENGTH = 32;  // in bytes (256 bit)
-const int MAX_IVLENGTH = 16; // 128 bit (AES block size, Blowfish has 64)
+const int MAX_IVLENGTH = 16;   // 128 bit (AES block size, Blowfish has 64)
 const int KEY_CHECKSUM_BYTES = 4;
 
 #ifndef MIN
@@ -674,21 +674,21 @@ void SSL_Cipher::setIVec_old(unsigned char *ivec, unsigned int seed,
   ivec[0] ^= (var1 >> 24) & 0xff;
   ivec[1] ^= (var2 >> 16) & 0xff;
   ivec[2] ^= (var1 >> 8) & 0xff;
-  ivec[3] ^= (var2) & 0xff;
+  ivec[3] ^= (var2)&0xff;
   ivec[4] ^= (var2 >> 24) & 0xff;
   ivec[5] ^= (var1 >> 16) & 0xff;
   ivec[6] ^= (var2 >> 8) & 0xff;
-  ivec[7] ^= (var1) & 0xff;
+  ivec[7] ^= (var1)&0xff;
 
   if (_ivLength > 8) {
-    ivec[8 + 0] ^= (var1) & 0xff;
+    ivec[8 + 0] ^= (var1)&0xff;
     ivec[8 + 1] ^= (var2 >> 8) & 0xff;
     ivec[8 + 2] ^= (var1 >> 16) & 0xff;
     ivec[8 + 3] ^= (var2 >> 24) & 0xff;
     ivec[8 + 4] ^= (var1 >> 24) & 0xff;
     ivec[8 + 5] ^= (var2 >> 16) & 0xff;
     ivec[8 + 6] ^= (var1 >> 8) & 0xff;
-    ivec[8 + 7] ^= (var2) & 0xff;
+    ivec[8 + 7] ^= (var2)&0xff;
   }
 }
 

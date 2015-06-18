@@ -363,7 +363,8 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose) {
 
 static bool testCipherSize(const string &name, int keySize, int blockSize,
                            bool verbose) {
-  cerr << name << ", key length " << keySize << ", block size " << blockSize << ":  ";
+  cerr << name << ", key length " << keySize << ", block size " << blockSize
+       << ":  ";
 
   shared_ptr<Cipher> cipher = Cipher::New(name, keySize);
   if (!cipher) {
@@ -429,8 +430,8 @@ int main(int argc, char *argv[]) {
       if (!testCipherSize(it->name, keySize, blockSize, false)) {
         // Run again in verbose mode, then exit with error.
         if (testCipherSize(it->name, keySize, blockSize, true)) {
-	  cerr << "Inconsistent test results!\n";
-	}
+          cerr << "Inconsistent test results!\n";
+        }
         return 1;
       }
     }

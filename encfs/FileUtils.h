@@ -86,9 +86,9 @@ struct EncFS_Opts {
                  * behind the back of EncFS (for example, in reverse mode).
                  * See main.cpp for a longer explaination. */
 
-  bool readOnly; // Mount read-only
+  bool readOnly;  // Mount read-only
 
-  bool requireMac; // Throw an error if MAC is disabled
+  bool requireMac;  // Throw an error if MAC is disabled
 
   ConfigMode configMode;
 

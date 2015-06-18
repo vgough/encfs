@@ -67,11 +67,11 @@ ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
    * in the last block of a file, which may be smaller than the blocksize.
    * For reverse encryption, the cache must not be used at all, because
    * the lower file may have changed behind our back. */
-  if ( (_noCache == false) && (req.offset == _cache.offset) &&
-       (_cache.dataLen != 0)) {
+  if ((_noCache == false) && (req.offset == _cache.offset) &&
+      (_cache.dataLen != 0)) {
     // satisfy request from cache
     int len = req.dataLen;
-    if (_cache.dataLen < len) len = _cache.dataLen; // Don't read past EOF
+    if (_cache.dataLen < len) len = _cache.dataLen;  // Don't read past EOF
     memcpy(req.data, _cache.data, len);
     return len;
   } else {

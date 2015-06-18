@@ -144,15 +144,12 @@ int CipherFileIO::getAttr(struct stat *stbuf) const {
   // adjust size if we have a file header
   if ((res == 0) && haveHeader && S_ISREG(stbuf->st_mode) &&
       (stbuf->st_size > 0)) {
-    if(!fsConfig->reverseEncryption)
-    {
+    if (!fsConfig->reverseEncryption) {
       /* In normal mode, the upper file (plaintext) is smaller
        * than the backing ciphertext file */
       rAssert(stbuf->st_size >= HEADER_SIZE);
       stbuf->st_size -= HEADER_SIZE;
-    }
-    else
-    {
+    } else {
       /* In reverse mode, the upper file (ciphertext) is larger than
        * the backing plaintext file */
       stbuf->st_size += HEADER_SIZE;
@@ -171,13 +168,10 @@ off_t CipherFileIO::getSize() const {
   // No check on S_ISREG here -- don't call getSize over getAttr unless this
   // is a normal file!
   if (haveHeader && size > 0) {
-    if(!fsConfig->reverseEncryption)
-    {
+    if (!fsConfig->reverseEncryption) {
       rAssert(size >= HEADER_SIZE);
       size -= HEADER_SIZE;
-    }
-    else
-    {
+    } else {
       size += HEADER_SIZE;
     }
   }
@@ -278,13 +272,13 @@ bool CipherFileIO::writeHeader() {
  * the IV. This guarantees unpredictability and prevents watermarking
  * attacks.
  */
-void CipherFileIO::generateReverseHeader(unsigned char* headerBuf) {
+void CipherFileIO::generateReverseHeader(unsigned char *headerBuf) {
 
   struct stat stbuf;
   int res = getAttr(&stbuf);
-  rAssert( res == 0 );
+  rAssert(res == 0);
   ino_t ino = stbuf.st_ino;
-  rAssert( ino != 0 );
+  rAssert(ino != 0);
 
   rDebug("generating reverse file IV header from ino=%lu", (unsigned long)ino);
 
@@ -300,7 +294,7 @@ void CipherFileIO::generateReverseHeader(unsigned char* headerBuf) {
    * may lead to duplicate IVs (see readOneBlock) */
   unsigned char md[20];
   SHA1(inoBuf, sizeof(ino), md);
-  rAssert( HEADER_SIZE <= 20 );
+  rAssert(HEADER_SIZE <= 20);
   memcpy(headerBuf, md, HEADER_SIZE);
 
   // Save the IV in fileIV for internal use
@@ -329,7 +323,7 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
 
   // adjust offset if we have a file header
   if (haveHeader && !fsConfig->reverseEncryption) {
-      tmpReq.offset += HEADER_SIZE;
+    tmpReq.offset += HEADER_SIZE;
   }
   readSize = base->read(tmpReq);
 
@@ -464,12 +458,14 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
 
   /* if reverse mode is not active with uniqueIV,
    * the read request is handled by the base class */
-  if ( !(fsConfig->reverseEncryption && haveHeader) ) {
-    rDebug("relaying request to base class: offset=%d, dataLen=%d", origReq.offset, origReq.dataLen);
+  if (!(fsConfig->reverseEncryption && haveHeader)) {
+    rDebug("relaying request to base class: offset=%d, dataLen=%d",
+           origReq.offset, origReq.dataLen);
     return BlockFileIO::read(origReq);
   }
 
-  rDebug("handling reverse unique IV read: offset=%d, dataLen=%d", origReq.offset, origReq.dataLen);
+  rDebug("handling reverse unique IV read: offset=%d, dataLen=%d",
+         origReq.offset, origReq.dataLen);
 
   // generate the file IV header
   // this is needed in any case - without IV the file cannot be decoded
@@ -483,14 +479,14 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
    * plain text file. Values below zero are the header. */
   req.offset -= HEADER_SIZE;
 
-  int headerBytes = 0; // number of header bytes to add
+  int headerBytes = 0;  // number of header bytes to add
 
   /* The request contains (a part of) the header, so we prefix that part
    * to the data. */
   if (req.offset < 0) {
     headerBytes = -req.offset;
-    if ( req.dataLen < headerBytes )
-      headerBytes = req.dataLen; // only up to the number of bytes requested
+    if (req.dataLen < headerBytes)
+      headerBytes = req.dataLen;  // only up to the number of bytes requested
     rDebug("Adding %d header bytes", headerBytes);
 
     // copy the header bytes into the data
@@ -498,14 +494,13 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
     memcpy(req.data, &headerBuf[headerOffset], headerBytes);
 
     // the read does not want data beyond the header
-    if ( headerBytes == req.dataLen)
-      return headerBytes;
+    if (headerBytes == req.dataLen) return headerBytes;
 
     /* The rest of the request will be read from the backing file.
      * As we have already generated n=headerBytes bytes, the request is
      * shifted by headerBytes */
     req.offset += headerBytes;
-    rAssert( req.offset == 0 );
+    rAssert(req.offset == 0);
     req.data += headerBytes;
     req.dataLen -= headerBytes;
   }
@@ -513,10 +508,9 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
   // read the payload
   ssize_t readBytes = BlockFileIO::read(req);
   rDebug("read %ld bytes from backing file", (long)readBytes);
-  if ( readBytes < 0)
-    return readBytes; // Return error code
-  else
-  {
+  if (readBytes < 0)
+    return readBytes;  // Return error code
+  else {
     ssize_t sum = headerBytes + readBytes;
     rDebug("returning sum=%ld", (long)sum);
     return sum;

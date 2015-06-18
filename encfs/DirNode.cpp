@@ -311,7 +311,8 @@ string DirNode::plainPath(const char *cipherPath_) {
       prefix = "+";
     }
     if (cipherPath_[0] == mark) {
-      return prefix + naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
+      return prefix +
+             naming->decodeName(cipherPath_ + 1, strlen(cipherPath_ + 1));
     }
 
     // Default.
