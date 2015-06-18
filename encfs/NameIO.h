@@ -21,13 +21,15 @@
 #ifndef _NameIO_incl_
 #define _NameIO_incl_
 
-#include <string>
-#include <list>
-
 #include <inttypes.h>
+#include <stdint.h>
+#include <string.h>
+#include <list>
+#include <memory>
+#include <string>
 
-#include "Interface.h"
 #include "CipherKey.h"
+#include "Interface.h"
 
 class Cipher;
 

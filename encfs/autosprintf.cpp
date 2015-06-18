@@ -28,10 +28,11 @@
 #include "autosprintf.h"
 
 #include <stdarg.h>
-#include <stdlib.h>
-#include <string.h>
+#include <stdarg.h>
 //#include "lib-asprintf.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 namespace gnu {
 

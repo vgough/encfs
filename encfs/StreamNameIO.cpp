@@ -20,14 +20,15 @@
 
 #include "StreamNameIO.h"
 
-#include "Cipher.h"
-#include "base64.h"
-
-#include <rlog/rlog.h>
 #include <rlog/Error.h>
-
-#include "i18n.h"
+#include <rlog/rlog.h>
 #include <cstring>
+
+#include "Cipher.h"
+#include "CipherKey.h"
+#include "NameIO.h"
+#include "base64.h"
+#include "intl/gettext.h"
 
 using namespace rel;
 using namespace std;
@@ -101,12 +102,12 @@ int StreamNameIO::encodeName(const char *plaintextName, int length,
   if (_interface >= 1) {
     // current versions store the checksum at the beginning
     encodedName[0] = (mac >> 8) & 0xff;
-    encodedName[1] = (mac) & 0xff;
+    encodedName[1] = (mac)&0xff;
     encodeBegin = (unsigned char *)encodedName + 2;
   } else {
     // encfs 0.x stored checksums at the end.
     encodedName[length] = (mac >> 8) & 0xff;
-    encodedName[length + 1] = (mac) & 0xff;
+    encodedName[length + 1] = (mac)&0xff;
     encodeBegin = (unsigned char *)encodedName;
   }
 

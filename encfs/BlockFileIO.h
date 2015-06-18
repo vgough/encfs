@@ -21,8 +21,10 @@
 #ifndef _BlockFileIO_incl_
 #define _BlockFileIO_incl_
 
-#include "FileIO.h"
+#include <sys/types.h>
+
 #include "FSConfig.h"
+#include "FileIO.h"
 
 /*
     Implements block scatter / gather interface.  Requires derived classes to

@@ -19,20 +19,21 @@
  */
 
 #include "NameIO.h"
-#include "config.h"
 
-#include <rlog/rlog.h>
 #include <rlog/Error.h>
-
-#include <map>
+#include <rlog/rlog.h>
 #include <cstring>
-
 // for static build.  Need to reference the modules which are registered at
 // run-time, to ensure that the linker doesn't optimize them away.
 #include <iostream>
+#include <map>
+#include <utility>
+
 #include "BlockNameIO.h"
-#include "StreamNameIO.h"
+#include "CipherKey.h"
+#include "Interface.h"
 #include "NullNameIO.h"
+#include "StreamNameIO.h"
 
 using namespace std;
 using namespace rel;

@@ -21,10 +21,14 @@
 #ifndef _FileUtils_incl_
 #define _FileUtils_incl_
 
-#include "encfs.h"
-#include "Interface.h"
+#include <sys/types.h>
+#include <memory>
+#include <string>
+
 #include "CipherKey.h"
 #include "FSConfig.h"
+#include "Interface.h"
+#include "encfs.h"
 
 // true if the path points to an existing node (of any type)
 bool fileExists(const char *fileName);
@@ -86,9 +90,9 @@ struct EncFS_Opts {
                  * behind the back of EncFS (for example, in reverse mode).
                  * See main.cpp for a longer explaination. */
 
-  bool readOnly; // Mount read-only
+  bool readOnly;  // Mount read-only
 
-  bool requireMac; // Throw an error if MAC is disabled
+  bool requireMac;  // Throw an error if MAC is disabled
 
   ConfigMode configMode;
 

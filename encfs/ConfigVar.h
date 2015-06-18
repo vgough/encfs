@@ -21,7 +21,9 @@
 #ifndef _ConfigVar_incl_
 #define _ConfigVar_incl_
 
+#include <memory>
 #include <string>
+
 #include "shared_ptr.h"
 
 class ConfigVar {

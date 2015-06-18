@@ -42,7 +42,7 @@ class autosprintf {
  public:
   /* Constructor: takes a format string and the printf arguments.  */
   autosprintf(const char* format, ...)
-  __attribute__((__format__(__printf__, 2, 3)));
+      __attribute__((__format__(__printf__, 2, 3)));
   /* Copy constructor.  */
   autosprintf(const autosprintf& src);
   /* Destructor: frees the temporarily allocated string.  */

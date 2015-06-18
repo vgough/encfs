@@ -21,13 +21,20 @@
 #ifndef _CipherFileIO_incl_
 #define _CipherFileIO_incl_
 
+#include <inttypes.h>
+#include <stdint.h>
+#include <sys/types.h>
+#include <memory>
+
 #include "BlockFileIO.h"
 #include "CipherKey.h"
+#include "FSConfig.h"
 #include "FileUtils.h"
-
-#include <inttypes.h>
+#include "Interface.h"
 
 class Cipher;
+class FileIO;
+struct IORequest;
 
 /*
     Implement the FileIO interface encrypting data in blocks.
@@ -57,7 +64,7 @@ class CipherFileIO : public BlockFileIO {
  private:
   virtual ssize_t readOneBlock(const IORequest &req) const;
   virtual bool writeOneBlock(const IORequest &req);
-  virtual void generateReverseHeader(unsigned char* data);
+  virtual void generateReverseHeader(unsigned char *data);
 
   void initHeader();
   bool writeHeader();

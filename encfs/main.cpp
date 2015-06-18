@@ -16,41 +16,37 @@
  *
  */
 
+#include <getopt.h>
+#include <pthread.h>
+#include <rlog/RLogChannel.h>
+#include <rlog/StdioNode.h>
+#include <rlog/SyslogNode.h>
+#include <rlog/rlog.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <time.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <exception>
 #include <iostream>
 #include <memory>
-#include <string>
 #include <sstream>
+#include <string>
 
-#include <cassert>
-#include <cstdio>
-#include <unistd.h>
-#include <sys/time.h>
-#include <cerrno>
-#include <cstring>
-
-#include <getopt.h>
-
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
-#include <rlog/RLogChannel.h>
-#include <rlog/SyslogNode.h>
-#include <rlog/StdioNode.h>
-
-#include "autosprintf.h"
-#include "ConfigReader.h"
 #include "Context.h"
-#include "DirNode.h"
 #include "FileUtils.h"
-#include "Interface.h"
 #include "MemoryPool.h"
+#include "autosprintf.h"
 #include "config.h"
 #include "encfs.h"
-#include "openssl.h"
-#include "shared_ptr.h"
-
-#include <locale.h>
-
+#include "fuse.h"
 #include "i18n.h"
+#include "openssl.h"
+
+class DirNode;
 
 // Fuse version >= 26 requires another argument to fuse_unmount, which we
 // don't have.  So use the backward compatible call instead..
@@ -60,7 +56,7 @@ extern "C" void fuse_unmount_compat22(const char *mountpoint);
 /* Arbitrary identifiers for long options that do
  * not have a short version */
 #define LONG_OPT_ANNOTATE 513
-#define LONG_OPT_NOCACHE  514
+#define LONG_OPT_NOCACHE 514
 #define LONG_OPT_REQUIRE_MAC 515
 
 using namespace std;
@@ -223,15 +219,16 @@ static bool processArgs(int argc, char *argv[],
       {"public", 0, 0, 'P'},            // public mode
       {"extpass", 1, 0, 'p'},           // external password program
       // {"single-thread", 0, 0, 's'},  // single-threaded mode
-      {"stdinpass", 0, 0, 'S'},         // read password from stdin
-      {"annotate", 0, 0, LONG_OPT_ANNOTATE},  // Print annotation lines to stderr
-      {"nocache", 0, 0, LONG_OPT_NOCACHE},    // disable caching
-      {"verbose", 0, 0, 'v'},    // verbose mode
-      {"version", 0, 0, 'V'},    // version
-      {"reverse", 0, 0, 'r'},    // reverse encryption
-      {"standard", 0, 0, '1'},   // standard configuration
-      {"paranoia", 0, 0, '2'},   // standard configuration
-      {"require-macs", 0, 0, LONG_OPT_REQUIRE_MAC}, // require MACs
+      {"stdinpass", 0, 0, 'S'},  // read password from stdin
+      {"annotate", 0, 0,
+       LONG_OPT_ANNOTATE},                  // Print annotation lines to stderr
+      {"nocache", 0, 0, LONG_OPT_NOCACHE},  // disable caching
+      {"verbose", 0, 0, 'v'},               // verbose mode
+      {"version", 0, 0, 'V'},               // version
+      {"reverse", 0, 0, 'r'},               // reverse encryption
+      {"standard", 0, 0, '1'},              // standard configuration
+      {"paranoia", 0, 0, '2'},              // standard configuration
+      {"require-macs", 0, 0, LONG_OPT_REQUIRE_MAC},  // require MACs
       {0, 0, 0, 0}};
 
   while (1) {
@@ -309,7 +306,7 @@ static bool processArgs(int argc, char *argv[],
          * However, disabling the caches causes a factor 3
          * slowdown. If you are concerned about inconsistencies,
          * please use --nocache. */
-         break;
+        break;
       case LONG_OPT_NOCACHE:
         /* Disable EncFS block cache
          * Causes reverse grow tests to fail because short reads
@@ -404,8 +401,8 @@ static bool processArgs(int argc, char *argv[],
 
     // "default_permissions" comes with a performance cost. Only enable
     // it if makes sense.
-    for(int i=0; i < out->fuseArgc; i++) {
-      if ( out->fuseArgv[i] == NULL ) {
+    for (int i = 0; i < out->fuseArgc; i++) {
+      if (out->fuseArgv[i] == NULL) {
         continue;
       } else if (strcmp(out->fuseArgv[i], "allow_other") == 0) {
         PUSHARG("-o");
@@ -415,7 +412,8 @@ static bool processArgs(int argc, char *argv[],
     }
 
 #if defined(__APPLE__)
-    // With OSXFuse, the 'local' flag selects a local filesystem mount icon in Finder.
+    // With OSXFuse, the 'local' flag selects a local filesystem mount icon in
+    // Finder.
     PUSHARG("-o");
     PUSHARG("local");
 #endif
@@ -612,18 +610,6 @@ int main(int argc, char *argv[]) {
   encfs_oper.utimens = encfs_utimens;
 // encfs_oper.bmap = encfs_bmap;
 
-#if (__FreeBSD__ >= 10) || defined(__APPLE__)
-// encfs_oper.setvolname
-// encfs_oper.exchange
-// encfs_oper.getxtimes
-// encfs_oper.setbkuptime
-// encfs_oper.setchgtime
-// encfs_oper.setcrtime
-// encfs_oper.chflags
-// encfs_oper.setattr_x
-// encfs_oper.fsetattr_x
-#endif
-
   openssl_init(encfsArgs->isThreaded);
 
   // context is not a smart pointer because it will live for the life of
@@ -700,7 +686,8 @@ int main(int argc, char *argv[]) {
         // xgroup(usage)
         fputs(_("fuse failed.  Common problems:\n"
                 " - fuse kernel module not installed (modprobe fuse)\n"
-                " - invalid options -- see usage message\n"), out);
+                " - invalid options -- see usage message\n"),
+              out);
         fclose(out);
       }
     } catch (std::exception &ex) {

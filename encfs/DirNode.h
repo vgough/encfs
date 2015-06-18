@@ -21,24 +21,28 @@
 #ifndef _DirNode_incl_
 #define _DirNode_incl_
 
-#include <inttypes.h>
 #include <dirent.h>
+#include <inttypes.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <sys/types.h>
-
-#include <map>
 #include <list>
-#include <vector>
+#include <map>
+#include <memory>
 #include <string>
+#include <vector>
 
-#include "FileNode.h"
-#include "NameIO.h"
 #include "CipherKey.h"
 #include "FSConfig.h"
+#include "FileNode.h"
+#include "NameIO.h"
 
 class Cipher;
+class EncFS_Context;
+class FileNode;
+class NameIO;
 class RenameOp;
 struct RenameEl;
-class EncFS_Context;
 
 class DirTraverse {
  public:
@@ -71,17 +75,6 @@ class DirTraverse {
   shared_ptr<NameIO> naming;
 };
 inline bool DirTraverse::valid() const { return dir.get() != 0; }
-
-#ifdef USE_HASHMAP
-namespace __gnu_cxx {
-template <>
-struct hash<std::string> {
-  size_t operator()(const std::string &__s) const {
-    return __stl_hash_string(__s.c_str());
-  }
-};
-}
-#endif
 
 class DirNode {
  public:

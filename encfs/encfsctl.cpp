@@ -15,32 +15,37 @@
  * more details.
  */
 
-#include "encfs.h"
-
 #include <fcntl.h>
 #include <getopt.h>
-#include <iostream>
-#include <string>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <limits.h>
-
-#include <rlog/rlog.h>
-#include <rlog/StdioNode.h>
 #include <rlog/RLogChannel.h>
+#include <rlog/StdioNode.h>
+#include <rlog/rlog.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
 
 #define NO_DES
 #include <openssl/ssl.h>
 
 #include "Cipher.h"
-#include "Context.h"
+#include "CipherKey.h"
 #include "DirNode.h"
+#include "FSConfig.h"
 #include "FileNode.h"
 #include "FileUtils.h"
+#include "Interface.h"
 #include "autosprintf.h"
 #include "config.h"
 #include "i18n.h"
-#include "shared_ptr.h"
+#include "intl/gettext.h"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -453,7 +458,7 @@ static int copyContents(const shared_ptr<EncFS_Root> &rootInfo,
         return EXIT_FAILURE;
       }
       if (symlink(rootInfo->root->plainPath(linkContents).c_str(),
-                                            targetName) != 0) {
+                  targetName) != 0) {
         cerr << "unable to create symlink " << targetName << "\n";
         return EXIT_FAILURE;
       }
@@ -592,7 +597,8 @@ static int cmd_showcruft(int argc, char **argv) {
 
   int filesFound = showcruft(rootInfo, "/");
 
-  // TODO: the singular version should say "Found an invalid file", but all the translations
+  // TODO: the singular version should say "Found an invalid file", but all the
+  // translations
   // depend upon this broken singular form, so it isn't easy to change.
   cerr << autosprintf(ngettext("Found %i invalid file.",
                                "Found %i invalid files.", filesFound),
@@ -701,9 +707,6 @@ int main(int argc, char **argv) {
   StdioNode *slog = new StdioNode(STDERR_FILENO);
   slog->subscribeTo(GetGlobalChannel("error"));
   slog->subscribeTo(GetGlobalChannel("warning"));
-#ifndef NO_DEBUG
-// slog->subscribeTo( GetGlobalChannel("debug") );
-#endif
 
   if (argc < 2) {
     usage(argv[0]);

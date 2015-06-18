@@ -16,28 +16,30 @@
  *
  */
 
-#include "encfs.h"
-
-#include "config.h"
-
-#include <iostream>
-
-#include <cstdlib>
-#include <sstream>
-
-#include "Cipher.h"
-#include "DirNode.h"
-#include "MemoryPool.h"
-#include "Interface.h"
-#include "FileUtils.h"
-#include "StreamNameIO.h"
-#include "BlockNameIO.h"
-#include "NullNameIO.h"
-
-#include <rlog/rlog.h>
 #include <rlog/Error.h>
-#include <rlog/StdioNode.h>
 #include <rlog/RLogChannel.h>
+#include <rlog/StdioNode.h>
+#include <rlog/rlog.h>
+#include <time.h>
+#include <unistd.h>
+#include <cstdlib>
+#include <iostream>
+#include <list>
+#include <memory>
+#include <sstream>
+#include <string>
+
+#include "BlockNameIO.h"
+#include "Cipher.h"
+#include "CipherKey.h"
+#include "DirNode.h"
+#include "FSConfig.h"
+#include "FileUtils.h"
+#include "Interface.h"
+#include "MemoryPool.h"
+#include "NameIO.h"
+#include "Range.h"
+#include "StreamNameIO.h"
 
 #define NO_DES
 #include <openssl/ssl.h>
@@ -363,7 +365,8 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose) {
 
 static bool testCipherSize(const string &name, int keySize, int blockSize,
                            bool verbose) {
-  cerr << name << ", key length " << keySize << ", block size " << blockSize << ":  ";
+  cerr << name << ", key length " << keySize << ", block size " << blockSize
+       << ":  ";
 
   shared_ptr<Cipher> cipher = Cipher::New(name, keySize);
   if (!cipher) {
@@ -429,8 +432,8 @@ int main(int argc, char *argv[]) {
       if (!testCipherSize(it->name, keySize, blockSize, false)) {
         // Run again in verbose mode, then exit with error.
         if (testCipherSize(it->name, keySize, blockSize, true)) {
-	  cerr << "Inconsistent test results!\n";
-	}
+          cerr << "Inconsistent test results!\n";
+        }
         return 1;
       }
     }

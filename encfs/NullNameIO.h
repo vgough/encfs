@@ -21,6 +21,9 @@
 #ifndef _NullNameIO_incl_
 #define _NullNameIO_incl_
 
+#include <stdint.h>
+
+#include "Interface.h"
 #include "NameIO.h"
 
 class NullNameIO : public NameIO {

@@ -24,48 +24,46 @@
 #endif
 #define _BSD_SOURCE  // pick up setenv on RH7.3
 
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <cctype>
-#include <cstdio>
-#include <cstdlib>
-#include <cerrno>
-#include <cstring>
-
-#include <iostream>
-#include <fstream>
-#include <sstream>
-
 #include <boost/version.hpp>
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
-#include <boost/serialization/split_free.hpp>
 #include <boost/serialization/binary_object.hpp>
+#include <boost/serialization/nvp.hpp>
+#include <boost/serialization/split_free.hpp>
+#include <fcntl.h>
+#include <rlog/Error.h>
+#include <rlog/rlog.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <cctype>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <fstream>
+#include <list>
+#include <vector>
 
-#include "encfs.h"
-#include "config.h"
-
-#include "autosprintf.h"
-#include "readpassphrase.h"
 #include "BlockNameIO.h"
 #include "Cipher.h"
+#include "CipherKey.h"
 #include "ConfigReader.h"
+#include "ConfigVar.h"
 #include "Context.h"
 #include "DirNode.h"
 #include "FSConfig.h"
 #include "FileUtils.h"
-#include "NullNameIO.h"
-#include "StreamNameIO.h"
-
+#include "Interface.h"
+#include "NameIO.h"
+#include "Range.h"
+#include "autosprintf.h"
+#include "config.h"
 #include "i18n.h"
-
+#include "intl/gettext.h"
+#include "readpassphrase.h"
 
 // disable rlog section grouping for this file.. seems to cause problems
 #undef RLOG_SECTION
@@ -129,7 +127,7 @@ struct ConfigInfo {
       {".encfs", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
       {NULL, Config_None, NULL, NULL, NULL, 0, 0}};
 
-#include "boost-versioning.h"
+#include "boost-versioning.h" // IWYU pragma: keep
 
 // define serialization helpers
 namespace boost {
@@ -296,8 +294,9 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
   // their own language but then have to respond 'y' or 'n'.
   // xgroup(setup)
   cerr << autosprintf(
-              _("The directory \"%s\" does not exist. Should it be created? "
-                "(y,n) "), path);
+      _("The directory \"%s\" does not exist. Should it be created? "
+        "(y,n) "),
+      path);
   char answer[10];
   char *res;
 
@@ -338,8 +337,7 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
         config->cfgType = nm->type;
         return nm->type;
       }
-    }
-    catch (rlog::Error &err) {
+    } catch (rlog::Error &err) {
       err.log(_RLWarningChannel);
     }
 
@@ -364,8 +362,10 @@ ConfigType readConfig(const string &rootDir,
     if (nm->environmentOverride != NULL) {
       char *envFile = getenv(nm->environmentOverride);
       if (envFile != NULL) {
-        if (! fileExists(envFile)) {
-          rError("fatal: config file specified by environment does not exist: %s", envFile);
+        if (!fileExists(envFile)) {
+          rError(
+              "fatal: config file specified by environment does not exist: %s",
+              envFile);
           exit(1);
         }
         return readConfig_load(nm, envFile, config);
@@ -397,8 +397,7 @@ bool readV6Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
       ia >> BOOST_SERIALIZATION_NVP(*config);
 
       return true;
-    }
-    catch (boost::archive::archive_exception &e) {
+    } catch (boost::archive::archive_exception &e) {
       rError("Archive exception: %s", e.what());
       return false;
     }
@@ -453,8 +452,7 @@ bool readV5Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
       config->blockMACRandBytes = cfgRdr["blockMACRandBytes"].readInt(0);
 
       ok = true;
-    }
-    catch (rlog::Error &err) {
+    } catch (rlog::Error &err) {
       err.log(_RLWarningChannel);
       rDebug("Error parsing data in config file %s", configFile);
       ok = false;
@@ -494,8 +492,7 @@ bool readV4Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
       config->chainedNameIV = false;
 
       ok = true;
-    }
-    catch (rlog::Error &err) {
+    } catch (rlog::Error &err) {
       err.log(_RLWarningChannel);
       rDebug("Error parsing config file %s", configFile);
       ok = false;
@@ -521,8 +518,7 @@ bool saveConfig(ConfigType type, const string &rootDir,
 
       try {
         ok = (*nm->saveFunc)(path.c_str(), config);
-      }
-      catch (rlog::Error &err) {
+      } catch (rlog::Error &err) {
         err.log(_RLWarningChannel);
         ok = false;
       }
@@ -667,7 +663,8 @@ static Cipher::CipherAlgorithm selectCipherAlgorithm() {
     Cipher::CipherAlgorithm alg = *it;
 
     // xgroup(setup)
-    cout << autosprintf(_("Selected algorithm \"%s\""), alg.name.c_str()) << "\n\n";
+    cout << autosprintf(_("Selected algorithm \"%s\""), alg.name.c_str())
+         << "\n\n";
 
     return alg;
   }
@@ -707,7 +704,8 @@ static Interface selectNameCoding() {
       ++it;
 
     // xgroup(setup)
-    cout << autosprintf(_("Selected algorithm \"%s\""), it->name.c_str()) << "\"\n\n";
+    cout << autosprintf(_("Selected algorithm \"%s\""), it->name.c_str())
+         << "\"\n\n";
 
     return it->iface;
   }
@@ -779,12 +777,12 @@ static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
   }
 
   cout << autosprintf(
-              // xgroup(setup)
-              _("Select a block size in bytes.  The cipher you have chosen\n"
-                "supports sizes from %i to %i bytes in increments of %i.\n"
-                "Or just hit enter for the default (%i bytes)\n"),
-              alg.blockSize.min(), alg.blockSize.max(), alg.blockSize.inc(),
-              DefaultBlockSize);
+      // xgroup(setup)
+      _("Select a block size in bytes.  The cipher you have chosen\n"
+        "supports sizes from %i to %i bytes in increments of %i.\n"
+        "Or just hit enter for the default (%i bytes)\n"),
+      alg.blockSize.min(), alg.blockSize.max(), alg.blockSize.inc(),
+      DefaultBlockSize);
 
   // xgroup(setup)
   cout << "\n" << _("filesystem block size: ");
@@ -824,7 +822,7 @@ static bool boolDefault(const char *prompt, bool defaultValue) {
   string response;
   bool value;
 
-  while(true) {
+  while (true) {
     cout << yesno;
     getline(cin, response);
 
@@ -867,7 +865,8 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
           "within a block will be caught and will cause a read error."));
   } else {
     cout << "\n\n" << _("You specified --require-macs.  "
-              "Enabling block authentication code headers...") << "\n\n";
+                        "Enabling block authentication code headers...")
+         << "\n\n";
     addMAC = true;
   }
 
@@ -877,13 +876,14 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
     *macBytes = 0;
 
   // xgroup(setup)
-  cout << _("Add random bytes to each block header?\n"
-            "This adds a performance penalty, but ensures that blocks\n"
-            "have different authentication codes.  Note that you can\n"
-            "have the same benefits by enabling per-file initialization\n"
-            "vectors, which does not come with as great of performance\n"
-            "penalty. \n"
-            "Select a number of bytes, from 0 (no random bytes) to 8: ");
+  cout << _(
+      "Add random bytes to each block header?\n"
+      "This adds a performance penalty, but ensures that blocks\n"
+      "have different authentication codes.  Note that you can\n"
+      "have the same benefits by enabling per-file initialization\n"
+      "vectors, which does not come with as great of performance\n"
+      "penalty. \n"
+      "Select a number of bytes, from 0 (no random bytes) to 8: ");
 
   char answer[10];
   int randSize = 0;
@@ -906,7 +906,8 @@ static bool selectUniqueIV(bool default_answer) {
       _("Enable per-file initialization vectors?\n"
         "This adds about 8 bytes per file to the storage requirements.\n"
         "It should not affect performance except possibly with applications\n"
-        "which rely on block-aligned file io for performance."), default_answer);
+        "which rely on block-aligned file io for performance."),
+      default_answer);
 }
 
 /**
@@ -964,11 +965,12 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   char answer[10] = {0};
   if (configMode == Config_Prompt) {
     // xgroup(setup)
-    cout << _("Please choose from one of the following options:\n"
-              " enter \"x\" for expert configuration mode,\n"
-              " enter \"p\" for pre-configured paranoia mode,\n"
-              " anything else, or an empty line will select standard mode.\n"
-              "?> ");
+    cout << _(
+        "Please choose from one of the following options:\n"
+        " enter \"x\" for expert configuration mode,\n"
+        " enter \"p\" for pre-configured paranoia mode,\n"
+        " anything else, or an empty line will select standard mode.\n"
+        "?> ");
 
     if (annotate) cerr << "$PROMPT$ config_option" << endl;
 
@@ -977,17 +979,17 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     cout << "\n";
   }
 
-  //                          documented in ...
-  int keySize = 0; //                       selectKeySize()
-  int blockSize = 0; //                     selectBlockSize()
-  Cipher::CipherAlgorithm alg; //           selectCipherAlgorithm()
-  Interface nameIOIface; //                 selectNameCoding()
-  int blockMACBytes = 0;   //               selectBlockMAC()
-  int blockMACRandBytes = 0; //             selectBlockMAC()
-  bool uniqueIV = true;    //               selectUniqueIV()
-  bool chainedIV = true;   //               selectChainedIV()
-  bool externalIV = false; //               selectExternalChainedIV()
-  bool allowHoles = true;  //               selectZeroBlockPassThrough()
+  //                               documented in ...
+  int keySize = 0;              // selectKeySize()
+  int blockSize = 0;            // selectBlockSize()
+  Cipher::CipherAlgorithm alg;  // selectCipherAlgorithm()
+  Interface nameIOIface;        // selectNameCoding()
+  int blockMACBytes = 0;        // selectBlockMAC()
+  int blockMACRandBytes = 0;    // selectBlockMAC()
+  bool uniqueIV = true;         // selectUniqueIV()
+  bool chainedIV = true;        // selectChainedIV()
+  bool externalIV = false;      // selectExternalChainedIV()
+  bool allowHoles = true;       // selectZeroBlockPassThrough()
   long desiredKDFDuration = NormalKDFDuration;
 
   if (reverseEncryption) {
@@ -1037,9 +1039,10 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   if (answer[0] == 'x' || alg.name.empty()) {
     if (answer[0] != 'x') {
       // xgroup(setup)
-      cout << _("Sorry, unable to locate cipher for predefined "
-                "configuration...\n"
-                "Falling through to Manual configuration mode.");
+      cout << _(
+          "Sorry, unable to locate cipher for predefined "
+          "configuration...\n"
+          "Falling through to Manual configuration mode.");
     } else {
       // xgroup(setup)
       cout << _("Manual configuration mode selected.");
@@ -1057,8 +1060,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
-      if (uniqueIV == false)
-        opts->readOnly = false;
+      if (uniqueIV == false) opts->readOnly = false;
     } else {
       chainedIV = selectChainedIV();
       uniqueIV = selectUniqueIV(true);
@@ -1125,10 +1127,11 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   }
 
   // xgroup(setup)
-  cout << _("Now you will need to enter a password for your filesystem.\n"
-            "You will need to remember this password, as there is absolutely\n"
-            "no recovery mechanism.  However, the password can be changed\n"
-            "later using encfsctl.\n\n");
+  cout << _(
+      "Now you will need to enter a password for your filesystem.\n"
+      "You will need to remember this password, as there is absolutely\n"
+      "no recovery mechanism.  However, the password can be changed\n"
+      "later using encfsctl.\n\n");
 
   int encodedKeySize = cipher->encodedKeySize();
   unsigned char *encodedKey = new unsigned char[encodedKeySize];
@@ -1196,11 +1199,10 @@ void showFSInfo(const shared_ptr<EncFSConfig> &config) {
   shared_ptr<Cipher> cipher = Cipher::New(config->cipherIface, -1);
   {
     cout << autosprintf(
-                // xgroup(diag)
-                _("Filesystem cipher: \"%s\", version %i:%i:%i"),
-                config->cipherIface.name().c_str(),
-                config->cipherIface.current(), config->cipherIface.revision(),
-                config->cipherIface.age());
+        // xgroup(diag)
+        _("Filesystem cipher: \"%s\", version %i:%i:%i"),
+        config->cipherIface.name().c_str(), config->cipherIface.current(),
+        config->cipherIface.revision(), config->cipherIface.age());
     // check if we support this interface..
     if (!cipher)
       cout << _(" (NOT supported)\n");
@@ -1210,7 +1212,7 @@ void showFSInfo(const shared_ptr<EncFSConfig> &config) {
         Interface iface = cipher->interface();
         // xgroup(diag)
         cout << autosprintf(_(" (using %i:%i:%i)\n"), iface.current(),
-                    iface.revision(), iface.age());
+                            iface.revision(), iface.age());
       } else
         cout << "\n";
     }
@@ -1218,8 +1220,9 @@ void showFSInfo(const shared_ptr<EncFSConfig> &config) {
   {
     // xgroup(diag)
     cout << autosprintf(_("Filename encoding: \"%s\", version %i:%i:%i"),
-                config->nameIface.name().c_str(), config->nameIface.current(),
-                config->nameIface.revision(), config->nameIface.age());
+                        config->nameIface.name().c_str(),
+                        config->nameIface.current(),
+                        config->nameIface.revision(), config->nameIface.age());
 
     // check if we support the filename encoding interface..
     shared_ptr<NameIO> nameCoder =
@@ -1232,7 +1235,7 @@ void showFSInfo(const shared_ptr<EncFSConfig> &config) {
       if (config->nameIface != nameCoder->interface()) {
         Interface iface = nameCoder->interface();
         cout << autosprintf(_(" (using %i:%i:%i)\n"), iface.current(),
-                    iface.revision(), iface.age());
+                            iface.revision(), iface.age());
       } else
         cout << "\n";
     }
@@ -1248,8 +1251,9 @@ void showFSInfo(const shared_ptr<EncFSConfig> &config) {
   }
   if (config->kdfIterations > 0 && config->salt.size() > 0) {
     cout << autosprintf(_("Using PBKDF2, with %i iterations"),
-                config->kdfIterations) << "\n";
-    cout << autosprintf(_("Salt Size: %i bits"), (int)(8 * config->salt.size())) << "\n";
+                        config->kdfIterations) << "\n";
+    cout << autosprintf(_("Salt Size: %i bits"), (int)(8 * config->salt.size()))
+         << "\n";
   }
   if (config->blockMACBytes || config->blockMACRandBytes) {
     if (config->subVersion < 20040813) {
@@ -1448,7 +1452,7 @@ CipherKey EncFSConfig::getUserKey(const std::string &passProg,
     snprintf(tmpBuf, sizeof(tmpBuf) - 1, "%i", stdErrCopy);
     setenv(ENCFS_ENV_STDERR, tmpBuf, 1);
 
-    execvp(argv[0], (char * const *)argv);  // returns only on error..
+    execvp(argv[0], (char *const *)argv);  // returns only on error..
 
     perror(_("Internal error: failed to exec program"));
     exit(1);
@@ -1502,17 +1506,16 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
 
   if (readConfig(opts->rootDir, config) != Config_None) {
     if (config->blockMACBytes == 0 && opts->requireMac) {
-      cout
-         << _("The configuration disabled MAC, but you passed --require-macs\n");
+      cout << _(
+          "The configuration disabled MAC, but you passed --require-macs\n");
       return rootInfo;
     }
 
     if (opts->reverseEncryption) {
       if (config->blockMACBytes != 0 || config->blockMACRandBytes != 0 ||
-          config->externalIVChaining ||
-          config->chainedNameIV) {
-        cout
-            << _("The configuration loaded is not compatible with --reverse\n");
+          config->externalIVChaining || config->chainedNameIV) {
+        cout << _(
+            "The configuration loaded is not compatible with --reverse\n");
         return rootInfo;
       }
     }
@@ -1566,8 +1569,9 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
              config->nameIface.name().c_str(), config->nameIface.current(),
              config->nameIface.revision(), config->nameIface.age());
       // xgroup(diag)
-      cout << _("The requested filename coding interface is "
-                "not available\n");
+      cout << _(
+          "The requested filename coding interface is "
+          "not available\n");
       return rootInfo;
     }
 

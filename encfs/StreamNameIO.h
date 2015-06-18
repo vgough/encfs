@@ -21,8 +21,12 @@
 #ifndef _StreamNameIO_incl_
 #define _StreamNameIO_incl_
 
-#include "NameIO.h"
+#include <stdint.h>
+#include <memory>
+
 #include "CipherKey.h"
+#include "Interface.h"
+#include "NameIO.h"
 
 class Cipher;
 

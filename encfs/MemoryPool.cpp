@@ -19,13 +19,10 @@
  */
 
 #include "MemoryPool.h"
-#include <rlog/rlog.h>
 
-#include <cstdlib>
-#include <cstring>
-
-#include "config.h"
+#include <openssl/ossl_typ.h>
 #include <pthread.h>
+#include <cstring>
 
 #ifdef HAVE_VALGRIND_MEMCHECK_H
 #include <valgrind/memcheck.h>
@@ -34,9 +31,8 @@
 #define VALGRIND_MAKE_MEM_UNDEFINED(a, b)
 #endif
 
-using namespace rlog;
-
 #include <openssl/buffer.h>
+
 #define BLOCKDATA(BLOCK) (unsigned char *) BLOCK->data->data
 
 struct BlockList {

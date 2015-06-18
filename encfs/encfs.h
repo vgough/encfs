@@ -21,11 +21,12 @@
 #ifndef _encfs_incl_
 #define _encfs_incl_
 
-#include "config.h"
 #include <fuse.h>
+#include <rlog/rlog.h>
+#include <sys/types.h>
 #include <unistd.h>
 
-#include <rlog/rlog.h>
+#include "config.h"
 
 #if defined(HAVE_SYS_XATTR_H) | defined(HAVE_ATTR_XATTR_H)
 #define HAVE_XATTR

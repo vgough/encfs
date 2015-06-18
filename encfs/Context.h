@@ -21,22 +21,20 @@
 #ifndef _Context_incl_
 #define _Context_incl_
 
+#include <pthread.h>
+#include <memory>
 #include <set>
 
-#ifdef USE_HASHMAP
-#include <ext/hash_map>
-#else
-#include <map>
-#endif
 #include <string>
+#include <unordered_map>
 
 #include "encfs.h"
 #include "shared_ptr.h"
 
+class DirNode;
+class FileNode;
 struct EncFS_Args;
 struct EncFS_Opts;
-class FileNode;
-class DirNode;
 
 class EncFS_Context {
  public:
@@ -88,12 +86,7 @@ class EncFS_Context {
     Placeholder(const shared_ptr<FileNode> &ptr) : node(ptr) {}
   };
 
-#ifdef USE_HASHMAP
-  // set of open files, indexed by path
-  typedef __gnu_cxx::hash_map<std::string, std::set<Placeholder *> > FileMap;
-#else
-  typedef std::map<std::string, std::set<Placeholder *> > FileMap;
-#endif
+  typedef std::unordered_map<std::string, std::set<Placeholder *> > FileMap;
 
   mutable pthread_mutex_t contextMutex;
   FileMap openFiles;

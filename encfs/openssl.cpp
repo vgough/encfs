@@ -20,13 +20,14 @@
 
 #include "openssl.h"
 
+#include <openssl/crypto.h>
 #include <pthread.h>
-
 #include <rlog/rlog.h>
+#include <stdlib.h>
 
 #define NO_DES
-#include <openssl/ssl.h>
 #include <openssl/rand.h>
+#include <openssl/ssl.h>
 #ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
 #endif

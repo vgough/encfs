@@ -17,16 +17,20 @@
 
 #include "encfs.h"
 
-#include <cstdio>
-#include <cstring>
-#include <unistd.h>
 #include <fcntl.h>
-#include <dirent.h>
-#include <cerrno>
+#include <inttypes.h>
+#include <stdint.h>
+#include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
-
-#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
+#include <utime.h>
+#include <cerrno>
+#include <cstddef>
+#include <cstdio>
+#include <cstring>
+#include <memory>
 #ifdef linux
 #include <sys/fsuid.h>
 #endif
@@ -37,19 +41,24 @@
 #include <attr/xattr.h>
 #endif
 
+#include <rlog/Error.h>
+#include <rlog/rlog.h>
 #include <functional>
-#include <map>
 #include <string>
 #include <vector>
 
-#include "DirNode.h"
-#include "MemoryPool.h"
-#include "FileUtils.h"
-#include "Mutex.h"
 #include "Context.h"
+#include "DirNode.h"
+#include "FileNode.h"
+#include "FileUtils.h"
+#include "fuse.h"
 
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
+namespace rel {
+class Lock;
+}  // namespace rel
+namespace rlog {
+class RLogChannel;
+}  // namespace rlog
 
 #ifndef MIN
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
@@ -76,8 +85,7 @@ static EncFS_Context *context() {
  * if the argument is NULL.
  */
 static bool isReadOnly(EncFS_Context *ctx) {
-  if (ctx == NULL)
-    ctx = (EncFS_Context *)fuse_get_context()->private_data;
+  if (ctx == NULL) ctx = (EncFS_Context *)fuse_get_context()->private_data;
 
   return ctx->opts->readOnly;
 }

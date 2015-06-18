@@ -1,4 +1,5 @@
-/*	$OpenBSD: readpassphrase.h,v 1.1 2000/11/21 00:48:38 millert Exp $	*/
+/*	$OpenBSD: readpassphrase.h,v 1.1 2000/11/21 00:48:38 millert Exp $
+ */
 
 /*
  * Copyright (c) 2000 Todd C. Miller <Todd.Miller@courtesan.com>
@@ -35,17 +36,18 @@
 
 #ifndef HAVE_READPASSPHRASE
 
-#define RPP_ECHO_OFF    0x00		/* Turn off echo (default). */
-#define RPP_ECHO_ON     0x01		/* Leave echo on. */
-#define RPP_REQUIRE_TTY 0x02		/* Fail if there is no tty. */
-#define RPP_FORCELOWER  0x04		/* Force input to lower case. */
-#define RPP_FORCEUPPER  0x08		/* Force input to upper case. */
-#define RPP_SEVENBIT    0x10		/* Strip the high bit from input. */
+#define RPP_ECHO_OFF 0x00    /* Turn off echo (default). */
+#define RPP_ECHO_ON 0x01     /* Leave echo on. */
+#define RPP_REQUIRE_TTY 0x02 /* Fail if there is no tty. */
+#define RPP_FORCELOWER 0x04  /* Force input to lower case. */
+#define RPP_FORCEUPPER 0x08  /* Force input to upper case. */
+#define RPP_SEVENBIT 0x10    /* Strip the high bit from input. */
 
 #ifdef __cplusplus
 extern "C"
 #endif
-char *readpassphrase(const char *prompt, char *buf, size_t bufSize, int flags);
+    char *
+    readpassphrase(const char *prompt, char *buf, size_t bufSize, int flags);
 
 #endif /* HAVE_READPASSPHRASE */
 

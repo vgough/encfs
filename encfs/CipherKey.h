@@ -21,6 +21,8 @@
 #ifndef _CipherKey_incl_
 #define _CipherKey_incl_
 
+#include <memory>
+
 #include "shared_ptr.h"
 
 class AbstractCipherKey {
