@@ -37,18 +37,17 @@ static const char rcsid[] =
 
 #ifndef HAVE_READPASSPHRASE
 
+#include <fcntl.h>
+#include <paths.h>
+#include <sys/types.h>
+#include <termios.h>
+#include <unistd.h>
+#include <cctype>
+#include <cerrno>
 #include <csignal>
 #include <cstdio>
-#include <cerrno>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <paths.h>
 #include <cstring>
-#include <cctype>
 
-#include <termios.h>
 #include "readpassphrase.h"
 
 #ifdef TCSASOFT

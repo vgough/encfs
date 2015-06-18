@@ -19,11 +19,10 @@
  */
 
 #include <rlog/rlog.h>
+#include <utility>
 
 #include "Context.h"
 #include "DirNode.h"
-#include "FileNode.h"
-#include "FileUtils.h"
 #include "Mutex.h"
 
 using namespace rel;

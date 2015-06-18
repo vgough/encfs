@@ -21,12 +21,17 @@
 #ifndef _SSL_Cipher_incl_
 #define _SSL_Cipher_incl_
 
+#include <stdint.h>
+#include <memory>
+
 #include "Cipher.h"
 #include "Interface.h"
+#include "encfs/CipherKey.h"
 
 class SSLKey;
 #ifndef EVP_CIPHER
 struct evp_cipher_st;
+
 typedef struct evp_cipher_st EVP_CIPHER;
 #endif
 

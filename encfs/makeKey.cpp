@@ -18,16 +18,15 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "encfs.h"
+#include <stdlib.h>
+#include <unistd.h>
+#include <iostream>
+#include <memory>
+#include <string>
 
 #include "Cipher.h"
 #include "CipherKey.h"
 #include "openssl.h"
-
-#include <iostream>
-
-#include <sys/types.h>
-#include <unistd.h>
 
 using namespace std;
 

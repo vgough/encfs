@@ -18,22 +18,22 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "config.h"
+#include <stddef.h>
+#include <iostream>
+#include <list>
+#include <map>
+#include <string>
+#include <utility>
 
 #include "Cipher.h"
 #include "Interface.h"
-#include "Range.h"
-#include "base64.h"
-
-#include <map>
-#include <list>
-#include <string>
-#include <iostream>
-
 // for static build.  Need to reference the modules which are registered at
 // run-time, to ensure that the linker doesn't optimize them away.
 #include "NullCipher.h"
+#include "Range.h"
 #include "SSL_Cipher.h"
+#include "base64.h"
+#include "encfs/CipherKey.h"
 
 using namespace std;
 using namespace rel;

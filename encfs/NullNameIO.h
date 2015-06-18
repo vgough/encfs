@@ -21,7 +21,10 @@
 #ifndef _NullNameIO_incl_
 #define _NullNameIO_incl_
 
+#include <stdint.h>
+
 #include "NameIO.h"
+#include "encfs/Interface.h"
 
 class NullNameIO : public NameIO {
  public:

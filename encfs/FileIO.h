@@ -21,11 +21,12 @@
 #ifndef _FileIO_incl_
 #define _FileIO_incl_
 
-#include "encfs.h"
-
 #include <inttypes.h>
+#include <stdint.h>
+#include <sys/types.h>
 
 #include "Interface.h"
+#include "encfs.h"
 
 struct IORequest {
   off_t offset;

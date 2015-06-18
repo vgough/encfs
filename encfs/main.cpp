@@ -16,41 +16,37 @@
  *
  */
 
+#include <getopt.h>
+#include <pthread.h>
+#include <rlog/RLogChannel.h>
+#include <rlog/StdioNode.h>
+#include <rlog/SyslogNode.h>
+#include <rlog/rlog.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <time.h>
+#include <unistd.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <exception>
 #include <iostream>
 #include <memory>
-#include <string>
 #include <sstream>
+#include <string>
 
-#include <cassert>
-#include <cstdio>
-#include <unistd.h>
-#include <sys/time.h>
-#include <cerrno>
-#include <cstring>
-
-#include <getopt.h>
-
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
-#include <rlog/RLogChannel.h>
-#include <rlog/SyslogNode.h>
-#include <rlog/StdioNode.h>
-
-#include "autosprintf.h"
-#include "ConfigReader.h"
 #include "Context.h"
-#include "DirNode.h"
 #include "FileUtils.h"
-#include "Interface.h"
 #include "MemoryPool.h"
+#include "autosprintf.h"
 #include "config.h"
 #include "encfs.h"
-#include "openssl.h"
-#include "shared_ptr.h"
-
-#include <locale.h>
-
+#include "fuse.h"
 #include "i18n.h"
+#include "openssl.h"
+
+class DirNode;
 
 // Fuse version >= 26 requires another argument to fuse_unmount, which we
 // don't have.  So use the backward compatible call instead..
@@ -613,18 +609,6 @@ int main(int argc, char *argv[]) {
   // encfs_oper.lock = encfs_lock;
   encfs_oper.utimens = encfs_utimens;
 // encfs_oper.bmap = encfs_bmap;
-
-#if (__FreeBSD__ >= 10) || defined(__APPLE__)
-// encfs_oper.setvolname
-// encfs_oper.exchange
-// encfs_oper.getxtimes
-// encfs_oper.setbkuptime
-// encfs_oper.setchgtime
-// encfs_oper.setcrtime
-// encfs_oper.chflags
-// encfs_oper.setattr_x
-// encfs_oper.fsetattr_x
-#endif
 
   openssl_init(encfsArgs->isThreaded);
 

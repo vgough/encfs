@@ -21,8 +21,19 @@
 #ifndef _MACFileIO_incl_
 #define _MACFileIO_incl_
 
+#include <stdint.h>
+#include <sys/types.h>
+#include <memory>
+
 #include "BlockFileIO.h"
 #include "Cipher.h"
+#include "encfs/CipherKey.h"
+#include "encfs/FSConfig.h"
+#include "encfs/Interface.h"
+
+class Cipher;
+class FileIO;
+struct IORequest;
 
 class MACFileIO : public BlockFileIO {
  public:

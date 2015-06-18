@@ -20,13 +20,14 @@
 
 #include "ConfigReader.h"
 
-#include <rlog/rlog.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
+#include <rlog/rlog.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <cstring>
+#include <utility>
+
+#include "encfs/ConfigVar.h"
 
 using namespace std;
 using namespace rlog;

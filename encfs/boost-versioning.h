@@ -18,8 +18,6 @@ BOOST_CLASS_VERSION(EncFSConfig, V6SubVersion)
 // we specify in BOOST_CLASS_VERSION below.  Without this, manual editing
 // of the file is needed before boost will allow us to read it.
 
-// See bug http://code.google.com/p/encfs/issues/detail?id=60
-
 BOOST_CLASS_VERSION(EncFSConfig, 20)
 
 namespace boost {

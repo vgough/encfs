@@ -20,16 +20,22 @@
 
 #include "MACFileIO.h"
 
-#include "MemoryPool.h"
-#include "FileUtils.h"
-
-#include <rlog/rlog.h>
+#include <inttypes.h>
 #include <rlog/Error.h>
-#include <rlog/RLogChannel.h>
-
+#include <rlog/rlog.h>
+#include <sys/stat.h>
 #include <cstring>
 
+#include "FileUtils.h"
+#include "MemoryPool.h"
+#include "encfs/BlockFileIO.h"
+#include "encfs/Cipher.h"
+#include "encfs/FileIO.h"
 #include "i18n.h"
+
+namespace rlog {
+class RLogChannel;
+}  // namespace rlog
 
 using namespace rlog;
 using namespace rel;

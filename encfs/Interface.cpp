@@ -20,10 +20,13 @@
 
 #include "Interface.h"
 
+#include <rlog/rlog.h>
+
 #include "ConfigVar.h"
 
-#include <rlog/rlog.h>
-#include <rlog/RLogChannel.h>
+namespace rlog {
+class RLogChannel;
+}  // namespace rlog
 
 using namespace rel;
 using namespace rlog;

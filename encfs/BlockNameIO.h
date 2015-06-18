@@ -21,8 +21,12 @@
 #ifndef _BlockNameIO_incl_
 #define _BlockNameIO_incl_
 
-#include "NameIO.h"
+#include <stdint.h>
+#include <memory>
+
 #include "CipherKey.h"
+#include "NameIO.h"
+#include "encfs/Interface.h"
 #include "shared_ptr.h"
 
 class Cipher;

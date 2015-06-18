@@ -20,14 +20,16 @@
 
 #include "BlockFileIO.h"
 
-#include "MemoryPool.h"
-
-#include <cstring>
+#include <inttypes.h>
 #include <rlog/rlog.h>
-
-#include "i18n.h"
+#include <cstring>
+#include <memory>
 
 #include "FileUtils.h"
+#include "MemoryPool.h"
+#include "encfs/FSConfig.h"
+#include "encfs/FileIO.h"
+#include "i18n.h"
 
 template <typename Type>
 inline Type min(Type A, Type B) {

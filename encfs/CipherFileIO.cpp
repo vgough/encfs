@@ -20,17 +20,19 @@
 
 #include "CipherFileIO.h"
 
-#include "Cipher.h"
-#include "MemoryPool.h"
-
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
-
 #include <fcntl.h>
-#include <cerrno>
-#include <string.h>
-
+#include <inttypes.h>
 #include <openssl/sha.h>
+#include <rlog/Error.h>
+#include <rlog/rlog.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <cerrno>
+
+#include "Cipher.h"
+#include "encfs/BlockFileIO.h"
+#include "encfs/CipherKey.h"
+#include "encfs/FileIO.h"
 
 /*
     - Version 2:0 adds support for a per-file initialization vector with a

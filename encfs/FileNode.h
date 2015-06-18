@@ -21,17 +21,21 @@
 #ifndef _FileNode_incl_
 #define _FileNode_incl_
 
-#include "encfs.h"
-#include "CipherKey.h"
-#include "FileUtils.h"
-
 #include <inttypes.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <sys/types.h>
+#include <memory>
 #include <string>
 
+#include "CipherKey.h"
+#include "FileUtils.h"
+#include "encfs.h"
+#include "encfs/FSConfig.h"
+
 class Cipher;
-class FileIO;
 class DirNode;
+class FileIO;
 
 class FileNode {
  public:

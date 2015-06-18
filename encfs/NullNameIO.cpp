@@ -20,10 +20,13 @@
 
 #include "NullNameIO.h"
 
-#include "Cipher.h"
-#include "base64.h"
-
 #include <cstring>
+#include <memory>
+
+#include "encfs/CipherKey.h"
+#include "encfs/NameIO.h"
+
+class Cipher;
 
 using namespace rel;
 

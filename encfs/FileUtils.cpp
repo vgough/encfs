@@ -24,36 +24,29 @@
 #endif
 #define _BSD_SOURCE  // pick up setenv on RH7.3
 
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/socket.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <cctype>
-#include <cstdio>
-#include <cstdlib>
-#include <cerrno>
-#include <cstring>
-
-#include <iostream>
-#include <fstream>
-#include <sstream>
-
 #include <boost/version.hpp>
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
-#include <boost/serialization/split_free.hpp>
 #include <boost/serialization/binary_object.hpp>
+#include <boost/serialization/nvp.hpp>
+#include <boost/serialization/split_free.hpp>
+#include <fcntl.h>
+#include <rlog/Error.h>
+#include <rlog/rlog.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <cctype>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <fstream>
+#include <list>
+#include <vector>
 
-#include "encfs.h"
-#include "config.h"
-
-#include "autosprintf.h"
-#include "readpassphrase.h"
 #include "BlockNameIO.h"
 #include "Cipher.h"
 #include "ConfigReader.h"
@@ -61,10 +54,16 @@
 #include "DirNode.h"
 #include "FSConfig.h"
 #include "FileUtils.h"
-#include "NullNameIO.h"
-#include "StreamNameIO.h"
-
+#include "autosprintf.h"
+#include "config.h"
+#include "encfs/CipherKey.h"
+#include "encfs/ConfigVar.h"
+#include "encfs/Interface.h"
+#include "encfs/NameIO.h"
+#include "encfs/Range.h"
 #include "i18n.h"
+#include "intl/gettext.h"
+#include "readpassphrase.h"
 
 // disable rlog section grouping for this file.. seems to cause problems
 #undef RLOG_SECTION
@@ -128,7 +127,7 @@ struct ConfigInfo {
       {".encfs", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
       {NULL, Config_None, NULL, NULL, NULL, 0, 0}};
 
-#include "boost-versioning.h"
+#include "boost-versioning.h" // IWYU pragma: keep
 
 // define serialization helpers
 namespace boost {

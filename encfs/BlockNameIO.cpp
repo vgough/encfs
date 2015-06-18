@@ -20,15 +20,19 @@
 
 #include "BlockNameIO.h"
 
+#include <rlog/Error.h>
+#include <rlog/rlog.h>
+#include <cstring>
+
 #include "Cipher.h"
 #include "base64.h"
+#include "encfs/CipherKey.h"
+#include "encfs/NameIO.h"
+#include "intl/gettext.h"
 
-#include <cstring>
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
-#include <rlog/RLogChannel.h>
-
-#include "i18n.h"
+namespace rlog {
+class RLogChannel;
+}  // namespace rlog
 
 using namespace rlog;
 using namespace rel;

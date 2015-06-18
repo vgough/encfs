@@ -21,8 +21,11 @@
 #ifndef _NullCipher_incl_
 #define _NullCipher_incl_
 
+#include <stdint.h>
+
 #include "Cipher.h"
 #include "Interface.h"
+#include "encfs/CipherKey.h"
 
 /*
     Implements Cipher interface for a pass-through mode.  May be useful for

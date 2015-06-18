@@ -21,11 +21,11 @@
 #include "NullCipher.h"
 
 #include <cstring>
-#include <rlog/rlog.h>
+#include <memory>
 
-#include "Range.h"
 #include "Interface.h"
-#include "shared_ptr.h"
+#include "Range.h"
+#include "encfs/Cipher.h"
 
 using namespace std;
 using namespace rel;

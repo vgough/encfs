@@ -21,15 +21,16 @@
 #ifndef _Cipher_incl_
 #define _Cipher_incl_
 
-#include "encfs.h"
-
-#include "Range.h"
-#include "Interface.h"
-#include "CipherKey.h"
-
-#include <string>
-#include <list>
 #include <inttypes.h>
+#include <stdint.h>
+#include <list>
+#include <memory>
+#include <string>
+
+#include "CipherKey.h"
+#include "Interface.h"
+#include "Range.h"
+#include "encfs.h"
 
 /*
     Mostly pure virtual interface defining operations on a cipher.

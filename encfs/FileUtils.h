@@ -21,10 +21,14 @@
 #ifndef _FileUtils_incl_
 #define _FileUtils_incl_
 
-#include "encfs.h"
-#include "Interface.h"
+#include <sys/types.h>
+#include <memory>
+#include <string>
+
 #include "CipherKey.h"
 #include "FSConfig.h"
+#include "Interface.h"
+#include "encfs.h"
 
 // true if the path points to an existing node (of any type)
 bool fileExists(const char *fileName);

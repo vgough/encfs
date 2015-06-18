@@ -18,31 +18,30 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "encfs.h"
-
-#include "config.h"
-
-#include <openssl/blowfish.h>
-#include <openssl/sha.h>
-#include <openssl/rand.h>
+#include <openssl/crypto.h>
 #include <openssl/err.h>
+#include <openssl/evp.h>
 #include <openssl/hmac.h>
-
-#include "SSL_Cipher.h"
-#include "Range.h"
-#include "MemoryPool.h"
-#include "Mutex.h"
-
-#include <cstring>
-#include <ctime>
-
+#include <openssl/ossl_typ.h>
+#include <openssl/rand.h>
+#include <pthread.h>
+#include <rlog/Error.h>
+#include <rlog/rlog.h>
 #include <sys/mman.h>
 #include <sys/time.h>
+#include <cstring>
+#include <string>
 
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
+#include "Mutex.h"
+#include "Range.h"
+#include "SSL_Cipher.h"
+#include "encfs/Cipher.h"
+#include "encfs/Interface.h"
+#include "intl/gettext.h"
 
-#include "i18n.h"
+namespace rlog {
+class RLogChannel;
+}  // namespace rlog
 
 using namespace std;
 using namespace rel;

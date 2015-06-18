@@ -18,31 +18,33 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "encfs.h"
+#include <pthread.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <utime.h>
+#include <cerrno>
+#include <cstdio>
 
 #include "DirNode.h"
 #include "FileUtils.h"
-
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <cerrno>
-#include <cstdio>
-#include <cstdlib>
-#include <pthread.h>
-#include <unistd.h>
+#include "encfs/FSConfig.h"
+#include "encfs/FileNode.h"
+#include "encfs/NameIO.h"
 #ifdef linux
 #include <sys/fsuid.h>
 #endif
 
+#include <rlog/Error.h>
+#include <rlog/rlog.h>
 #include <cstring>
 
 #include "Context.h"
-#include "Cipher.h"
 #include "Mutex.h"
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
 
-#include <iostream>
+namespace rlog {
+class RLogChannel;
+}  // namespace rlog
 
 using namespace std;
 using namespace rel;

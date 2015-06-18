@@ -20,14 +20,15 @@
 
 #include "StreamNameIO.h"
 
+#include <rlog/Error.h>
+#include <rlog/rlog.h>
+#include <cstring>
+
 #include "Cipher.h"
 #include "base64.h"
-
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
-
-#include "i18n.h"
-#include <cstring>
+#include "encfs/CipherKey.h"
+#include "encfs/NameIO.h"
+#include "intl/gettext.h"
 
 using namespace rel;
 using namespace std;

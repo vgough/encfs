@@ -21,13 +21,20 @@
 #ifndef _CipherFileIO_incl_
 #define _CipherFileIO_incl_
 
+#include <inttypes.h>
+#include <stdint.h>
+#include <sys/types.h>
+#include <memory>
+
 #include "BlockFileIO.h"
 #include "CipherKey.h"
 #include "FileUtils.h"
-
-#include <inttypes.h>
+#include "encfs/FSConfig.h"
+#include "encfs/Interface.h"
 
 class Cipher;
+class FileIO;
+struct IORequest;
 
 /*
     Implement the FileIO interface encrypting data in blocks.

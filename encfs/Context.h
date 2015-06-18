@@ -21,6 +21,8 @@
 #ifndef _Context_incl_
 #define _Context_incl_
 
+#include <pthread.h>
+#include <memory>
 #include <set>
 
 #ifdef USE_HASHMAP
@@ -33,10 +35,10 @@
 #include "encfs.h"
 #include "shared_ptr.h"
 
+class DirNode;
+class FileNode;
 struct EncFS_Args;
 struct EncFS_Opts;
-class FileNode;
-class DirNode;
 
 class EncFS_Context {
  public:

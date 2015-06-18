@@ -18,37 +18,30 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// Include encfs first, because we need to include fuse.h before any inclusion
-// of sys/stat.h or other system headers (to be safe)
-#include "encfs.h"
-
 #include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <fcntl.h>
 #include <unistd.h>
 #ifdef linux
 #include <sys/fsuid.h>
 #endif
 
+#include <rlog/rlog.h>
 #include <cstring>
 
-#include "config.h"
-
+#include "CipherFileIO.h"
+#include "FileIO.h"
 #include "FileNode.h"
 #include "FileUtils.h"
-#include "Cipher.h"
-#include "CipherFileIO.h"
-#include "RawFileIO.h"
 #include "MACFileIO.h"
-#include "DirNode.h"
-
-#include "FileIO.h"
-#include "MemoryPool.h"
 #include "Mutex.h"
+#include "RawFileIO.h"
 
-#include <rlog/rlog.h>
-#include <rlog/Error.h>
+namespace rlog {
+class RLogChannel;
+}  // namespace rlog
 
 using namespace std;
 using namespace rel;

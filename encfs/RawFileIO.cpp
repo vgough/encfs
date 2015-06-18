@@ -21,18 +21,16 @@
 #ifdef linux
 #define _XOPEN_SOURCE 500  // pick up pread , pwrite
 #endif
-#include <unistd.h>
-
-#include "RawFileIO.h"
-
-#include <rlog/rlog.h>
-
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <fcntl.h>
+#include <inttypes.h>
+#include <rlog/rlog.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cerrno>
 #include <cstring>
 
-#include <cerrno>
+#include "RawFileIO.h"
+#include "encfs/FileIO.h"
 
 using namespace std;
 
