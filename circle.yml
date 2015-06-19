@@ -1,0 +1,18 @@
+machine:
+  timezone:
+    America/Los_Angeles
+
+dependencies:
+  pre:
+    - sudo apt-get update
+    - sudo apt-get install cmake libfuse-dev librlog-dev libgettextpo-dev
+    - bash ./ci/install-gcc.sh
+    - bash ./ci/install-cmake.sh
+  cache_directories:
+    - "ci/cmake"
+
+test:
+  override:
+    - bash ./ci/config.sh
+    - cd build && make && make test && make install
+    - /tmp/encfs/bin/encfsctl --version

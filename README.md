@@ -1,6 +1,8 @@
 # EncFS - an Encrypted Filesystem
 
-[![Build Status](http://104.236.164.205:8080/api/badge/github.com/vgough/encfs/status.svg?branch=master)](http://104.236.164.205:8080/github.com/vgough/encfs)
+_Build Status_
+ - Drone: [![Build Status](http://104.236.164.205:8080/api/badge/github.com/vgough/encfs/status.svg?branch=master)](http://104.236.164.205:8080/github.com/vgough/encfs)
+ - Circle: [![Circle CI](https://circleci.com/gh/vgough/encfs.svg?style=svg)](https://circleci.com/gh/vgough/encfs)
 
 ## About
 
