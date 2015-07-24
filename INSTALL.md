@@ -46,9 +46,8 @@ EncFS depends on a number of libraries:
 Compiling on Debian and Ubuntu
 ==============================
 
-We use Drone.io to automatically build and test every commit.  See the README.md
-file for current build status.
+We use separate [Drone.io](https://drone.io/) and [CircleCi](https://circleci.com/) builds to automatically
+test every commit.  See the README.md file for current build status.
 
-The [Drone configuration file .drone.yml](.drone.yml) therefore
-always contains up-to-date instructions to build EncFS on Ubuntu
-(Drone is configured to use a Ubuntu build machines).
+The build configuration files (.drone.yml and circle.yml) therefore
+always contains up-to-date instructions to build EncFS on Ubuntu distributions.
