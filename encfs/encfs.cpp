@@ -17,20 +17,25 @@
 
 #include "encfs.h"
 
+#include <cerrno>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <memory>
 #include <stdint.h>
+#include <string>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#include <utility>
 #include <utime.h>
-#include <cerrno>
-#include <cstddef>
-#include <cstdio>
-#include <cstring>
-#include <memory>
+#include <vector>
+
 #ifdef linux
 #include <sys/fsuid.h>
 #endif
@@ -43,9 +48,6 @@
 
 #include <rlog/Error.h>
 #include <rlog/rlog.h>
-#include <functional>
-#include <string>
-#include <vector>
 
 #include "Context.h"
 #include "DirNode.h"
@@ -60,10 +62,6 @@ namespace rlog {
 class RLogChannel;
 }  // namespace rlog
 
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
-
 #define ESUCCESS 0
 
 using namespace std;
@@ -71,7 +69,14 @@ using namespace std::placeholders;
 using namespace rlog;
 using rel::Lock;
 
-#define GET_FN(ctx, finfo) ctx->getNode((void *)(uintptr_t) finfo->fh)
+#define GET_FN(ctx, finfo) ctx->getNode((void *)(uintptr_t)finfo->fh)
+
+// XAttr prefix replacement.
+// Replaces "com.apple." with "encfs_apl." when storing xattrs.
+// TODO: future versions of encfs should encrypt xattrs, making this
+// unnecessary.
+static const char _attr_apple[] = "com.apple.";
+static const char _attr_apple_internal[] = "encfs_apl.";
 
 static RLogChannel *Info = DEF_CHANNEL("info", Log_Info);
 
@@ -566,7 +571,7 @@ int encfs_release(const char *path, struct fuse_file_info *finfo) {
   EncFS_Context *ctx = context();
 
   try {
-    ctx->eraseNode(path, (void *)(uintptr_t) finfo->fh);
+    ctx->eraseNode(path, (void *)(uintptr_t)finfo->fh);
     return ESUCCESS;
   } catch (rlog::Error &err) {
     rError("error caught in release");
@@ -634,77 +639,97 @@ int encfs_statfs(const char *path, struct statvfs *st) {
 
 #ifdef HAVE_XATTR
 
-#ifdef XATTR_ADD_OPT
+typedef std::unique_ptr<const char[], std::function<void(const char *)>>
+    AttrPtr;
+void NoFree(const char *) {}
+
+AttrPtr extToInternalAttr(const char *attr) {
+  if (!strncmp(attr, _attr_apple, sizeof(_attr_apple) - 1)) {
+    char *out = strdup(attr);
+    memcpy(out, _attr_apple_internal, sizeof(_attr_apple_internal) - 1);
+    return AttrPtr(out, (void (*)(const char *))std::free);
+  } else {
+    return AttrPtr(attr, NoFree);
+  }
+}
+
+void internalToExtAttr(char *attr) {
+  if (!strncmp(attr, _attr_apple_internal, sizeof(_attr_apple_internal) - 1)) {
+    memcpy(attr, _attr_apple, sizeof(_attr_apple) - 1);
+  }
+}
+
 int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
                  const char *value, size_t size, uint32_t pos) {
-  int options = 0;
-  return ::setxattr(cyName.c_str(), name, value, size, pos, options);
+#ifdef XATTR_ADD_OPT
+  return ::setxattr(cyName.c_str(), name, value, size, pos, XATTR_NOFOLLOW);
+#else
+  return ::setxattr(cyName.c_str(), name, value, size, 0);
+#endif
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
-                   size_t size, int flags, uint32_t position) {
+                   size_t size, int flags, uint32_t pos) {
   if (isReadOnly(NULL)) return -EROFS;
   (void)flags;
-  return withCipherPath("setxattr", path, bind(_do_setxattr, _1, _2, name,
-                                               value, size, position));
-}
-#else
-int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
-                 const char *value, size_t size, int flags) {
-  return ::setxattr(cyName.c_str(), name, value, size, flags);
+
+  AttrPtr attr = extToInternalAttr(name);
+  return withCipherPath("setxattr", path, bind(_do_setxattr, _1, _2, attr.get(),
+                                               value, size, pos));
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags) {
-  if (isReadOnly(NULL)) return -EROFS;
-  return withCipherPath("setxattr", path,
-                        bind(_do_setxattr, _1, _2, name, value, size, flags));
+  return encfs_setxattr(path, name, value, size, flags, uint32_t(0));
 }
-#endif
 
-#ifdef XATTR_ADD_OPT
 int _do_getxattr(EncFS_Context *, const string &cyName, const char *name,
                  void *value, size_t size, uint32_t pos) {
-  int options = 0;
-  return ::getxattr(cyName.c_str(), name, value, size, pos, options);
+#ifdef XATTR_ADD_OPT
+  return ::getxattr(cyName.c_str(), name, value, size, pos, XATTR_NOFOLLOW);
+#else
+  return ::getxattr(cyName.c_str(), name, value, size);
+#endif
 }
 int encfs_getxattr(const char *path, const char *name, char *value, size_t size,
-                   uint32_t position) {
+                   uint32_t pos) {
+  AttrPtr attr = extToInternalAttr(name);
   return withCipherPath(
       "getxattr", path,
-      bind(_do_getxattr, _1, _2, name, (void *)value, size, position), true);
-}
-#else
-int _do_getxattr(EncFS_Context *, const string &cyName, const char *name,
-                 void *value, size_t size) {
-  return ::getxattr(cyName.c_str(), name, value, size);
+      bind(_do_getxattr, _1, _2, attr.get(), (void *)value, size, pos), true);
 }
 int encfs_getxattr(const char *path, const char *name, char *value,
                    size_t size) {
-  return withCipherPath("getxattr", path,
-                        bind(_do_getxattr, _1, _2, name, (void *)value, size),
-                        true);
+  return encfs_getxattr(path, name, value, size, uint32_t(0));
 }
-#endif
 
 int _do_listxattr(EncFS_Context *, const string &cyName, char *list,
                   size_t size) {
 #ifdef XATTR_ADD_OPT
-  int options = 0;
-  int res = ::listxattr(cyName.c_str(), list, size, options);
+  return ::listxattr(cyName.c_str(), list, size, XATTR_NOFOLLOW);
 #else
-  int res = ::listxattr(cyName.c_str(), list, size);
+  return ::listxattr(cyName.c_str(), list, size);
 #endif
-  return (res == -1) ? -errno : res;
 }
 
 int encfs_listxattr(const char *path, char *list, size_t size) {
-  return withCipherPath("listxattr", path,
-                        bind(_do_listxattr, _1, _2, list, size), true);
+  int res = withCipherPath("listxattr", path,
+                           bind(_do_listxattr, _1, _2, list, size), true);
+  if (list) {
+    size_t len = 0;
+    char *curr = list;
+    while (len < res) {
+      internalToExtAttr(curr);
+      size_t el_len = strlen(curr) + 1;
+      curr += el_len;
+      len += el_len;
+    }
+  }
+
+  return res;
 }
 
 int _do_removexattr(EncFS_Context *, const string &cyName, const char *name) {
 #ifdef XATTR_ADD_OPT
-  int options = 0;
-  int res = ::removexattr(cyName.c_str(), name, options);
+  int res = ::removexattr(cyName.c_str(), name, XATTR_NOFOLLOW);
 #else
   int res = ::removexattr(cyName.c_str(), name);
 #endif
@@ -714,8 +739,9 @@ int _do_removexattr(EncFS_Context *, const string &cyName, const char *name) {
 int encfs_removexattr(const char *path, const char *name) {
   if (isReadOnly(NULL)) return -EROFS;
 
+  AttrPtr attr = extToInternalAttr(name);
   return withCipherPath("removexattr", path,
-                        bind(_do_removexattr, _1, _2, name));
+                        bind(_do_removexattr, _1, _2, attr.get()));
 }
 
 #endif  // HAVE_XATTR
