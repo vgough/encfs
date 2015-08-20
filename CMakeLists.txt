@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.1)
+# 3.1 preferred, but we can often get by with 2.8.
+cmake_minimum_required(VERSION 2.8)
 project(EncFS C CXX)
 
 set (ENCFS_MAJOR 1)
@@ -12,8 +13,31 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_SOURCE_DIR}/cmake")
 
 # We need C++ 11
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED on)
+if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
+  # CMake 3.1 has built-in CXX standard checks.
+  set(CMAKE_CXX_STANDARD 11)
+  set(CMAKE_CXX_STANDARD_REQUIRED on)
+else ()
+  if (CMAKE_COMPILER_IS_GNUCXX)
+    message ("Assuming that GNU CXX uses -std=c++11 flag for C++11 compatibility.")
+    list(APPEND CMAKE_CXX_FLAGS "-std=c++11")
+  else()
+    message ("No CMAKE C++11 check. If the build breaks, you're on your own.")
+  endif()
+endif ()
+
+# http://www.cmake.org/Wiki/CMake_RPATH_handling#Mac_OS_X_and_the_RPATH
+if (APPLE)
+   set(CMAKE_MACOSX_RPATH ON)
+   set(CMAKE_SKIP_BUILD_RPATH FALSE)
+   set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+   set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+   list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
+   if("${isSystemDir}" STREQUAL "-1")
+     set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+   endif()
+endif()
 
 # Check for FUSE.
 find_package (FUSE REQUIRED)
