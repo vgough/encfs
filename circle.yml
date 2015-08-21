@@ -7,9 +7,6 @@ dependencies:
     - sudo apt-get update
     - sudo apt-get install cmake libfuse-dev librlog-dev libgettextpo-dev
     - bash ./ci/install-gcc.sh
-    - bash ./ci/install-cmake.sh
-  cache_directories:
-    - "ci/cmake"
 
 test:
   override:
