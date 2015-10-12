@@ -2,7 +2,7 @@
 
 # This script mounts an encfs filesystem, starts a shell in the mounted
 # directory, and then unmounts the filesystem when the shell exits.
-# This is an equivalent of the cfssh utility for cfs. 
+# This is an equivalent of the cfssh utility for cfs.
 # Contributed by David Rosenstrauch.
 
 canonicalize() {
@@ -60,6 +60,10 @@ echo "Directory is $unenc_dir"
 orig_dir=$(pwd)
 cd $unenc_dir
 
-# Set the shell up
-exec /bin/sh -c "$SHELL ; cd $orig_dir ; fusermount -u $unenc_dir ; if ! $unenc_dir_given; then rmdir $unenc_dir; fi"
+# Fall back to umount if fusermount is not available (e.g., on OS X)
+FUSE_UMOUNT="$(which 2>/dev/null fusermount)"
+FUSE_UMOUNT="${FUSE_UMOUNT:+fusermount -u}"
+FUSE_UMOUNT="${FUSE_UMOUNT:-umount}"
 
+# Set the shell up
+exec /bin/sh -c "$SHELL ; cd $orig_dir ; $FUSE_UMOUNT $unenc_dir ; if ! $unenc_dir_given; then rmdir $unenc_dir; fi"
