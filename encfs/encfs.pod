@@ -325,7 +325,7 @@ One such limitation is filename length.  If your underlying filesystem limits
 you to N characters in a filename, then B<EncFS> will limit you to approximately
 3*(N-2)/4.  For example if the host filesystem limits to 256 characters, then
 B<EncFS> will be limited to 190 character filenames.  This is because encrypted
-filenames are always longer then plaintext filenames.
+filenames are always longer than plaintext filenames.
 
 =head1 FILESYSTEM OPTIONS
 
