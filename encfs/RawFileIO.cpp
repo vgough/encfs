@@ -73,29 +73,6 @@ RawFileIO::~RawFileIO() {
 rel::Interface RawFileIO::interface() const { return RawFileIO_iface; }
 
 /*
-    Workaround for opening a file for write when permissions don't allow.
-    Since the kernel has already checked permissions, we can assume it is ok to
-    provide access.  So force it by changing permissions temporarily.  Should
-    be called with a lock around it so that there won't be a race condition
-    with calls to lstat picking up the wrong permissions.
-*/
-static int open_readonly_workaround(const char *path, int flags) {
-  int fd = -1;
-  struct stat stbuf;
-  memset(&stbuf, 0, sizeof(struct stat));
-  if (lstat(path, &stbuf) != -1) {
-    // make sure user has read/write permission..
-    chmod(path, stbuf.st_mode | 0600);
-    fd = ::open(path, flags);
-    chmod(path, stbuf.st_mode);
-  } else {
-    rInfo("can't stat file %s", path);
-  }
-
-  return fd;
-}
-
-/*
     We shouldn't have to support all possible open flags, so untaint the flags
     argument by only taking ones we understand and accept.
     -  Since the kernel has already done permission tests before calling us, we
@@ -127,11 +104,6 @@ int RawFileIO::open(int flags) {
     int newFd = ::open(name.c_str(), finalFlags);
 
     rDebug("open file with flags %i, result = %i", finalFlags, newFd);
-
-    if ((newFd == -1) && (errno == EACCES)) {
-      rDebug("using readonly workaround for open");
-      newFd = open_readonly_workaround(name.c_str(), finalFlags);
-    }
 
     if (newFd >= 0) {
       if (oldfd >= 0) {
