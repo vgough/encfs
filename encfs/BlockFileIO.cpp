@@ -178,6 +178,8 @@ bool BlockFileIO::write(const IORequest &req) {
   rAssert(_blockSize != 0);
 
   off_t fileSize = getSize();
+  if (fileSize < 0)
+    return false;
 
   // where write request begins
   off_t blockNum = req.offset / _blockSize;

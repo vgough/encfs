@@ -178,8 +178,10 @@ off_t RawFileIO::getSize() const {
       const_cast<RawFileIO *>(this)->fileSize = stbuf.st_size;
       const_cast<RawFileIO *>(this)->knownSize = true;
       return fileSize;
-    } else
+    } else {
+      rError("getSize on %s failed: %s", name.c_str(), strerror(errno));
       return -1;
+    }
   } else {
     return fileSize;
   }
