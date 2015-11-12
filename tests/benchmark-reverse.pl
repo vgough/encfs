@@ -12,7 +12,7 @@ sub mount_encfs_reverse {
     my $c = shift;
     my $opts = shift;
 
-    my $cmdline = "./encfs/encfs --extpass=\"echo test\" --standard $p $c --reverse $opts 2>&1 > /dev/null";
+    my $cmdline = "./build/encfs --extpass=\"echo test\" --standard $p $c --reverse $opts 2>&1 > /dev/null";
     # print "mounting encfs: $cmdline\n";
     my $status = system($cmdline);
     if ( $status != 0 ) { die("command returned error: $status"); }

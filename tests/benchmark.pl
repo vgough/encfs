@@ -35,7 +35,7 @@ sub mount_encfs {
     mkdir($p);
 
     delete $ENV{"ENCFS6_CONFIG"};
-    system("./encfs/encfs --extpass=\"echo test\" --standard $c $p > /dev/null");
+    system("./build/encfs --extpass=\"echo test\" --standard $c $p > /dev/null");
     waitForFile("$c/.encfs6.xml") or die("Control file not created");
 
     print "# encfs mounted on $p\n";
@@ -156,7 +156,6 @@ sub main {
 
     if ( $> != 0 ) {
         print("This test must be run as root!\n");
-        exit(2);
     }
 
     dl_linuxgz();
