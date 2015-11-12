@@ -69,6 +69,7 @@ enum ConfigMode { Config_Prompt, Config_Standard, Config_Paranoia };
  */
 struct EncFS_Opts {
   std::string rootDir;
+  std::string mountPoint; // where to make filesystem visible
   bool createIfNotFound;  // create filesystem if not found
   bool idleTracking;      // turn on idle monitoring of filesystem
   bool mountOnDemand;     // mounting on-demand

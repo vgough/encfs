@@ -86,6 +86,9 @@ class DirNode {
   // return the path to the root directory
   std::string rootDirectory();
 
+  // recursive lookup check
+  bool touchesMountpoint(const char *realPath) const;
+
   // find files
   shared_ptr<FileNode> lookupNode(const char *plaintextName,
                                   const char *requestor);
