@@ -254,12 +254,8 @@ DirNode::DirNode(EncFS_Context *_ctx, const string &sourceDir,
   Lock _lock(mutex);
 
   ctx = _ctx;
-  rootDir = sourceDir;
+  rootDir = sourceDir; // .. and fsConfig->opts->mountPoint have trailing slash
   fsConfig = _config;
-
-  // make sure rootDir ends in '/', so that we can form a path by appending
-  // the rest..
-  if (rootDir[rootDir.length() - 1] != '/') rootDir.append(1, '/');
 
   naming = fsConfig->nameCoding;
 }
@@ -275,6 +271,27 @@ string DirNode::rootDirectory() {
   // be reset.
   // chop off '/' terminator from root dir.
   return string(rootDir, 0, rootDir.length() - 1);
+}
+
+bool DirNode::touchesMountpoint( const char *realPath ) const {
+  const string &mountPoint = fsConfig->opts->mountPoint;
+  // compare mountPoint up to the leading slash.
+  // examples:
+  //   mountPoint      = /home/user/Junk/experiment/
+  //   realPath        = /home/user/Junk/experiment
+  //   realPath        = /home/user/Junk/experiment/abc
+  const ssize_t len = mountPoint.length() - 1;
+
+  if (mountPoint.compare(0, len, realPath, len) == 0) {
+    // if next character is a NUL or a slash, then we're referencing our
+    // mount point:
+    //   .../experiment => true
+    //   .../experiment/... => true
+    //   .../experiment2/abc => false
+    return realPath[len] == '\0' || realPath[len] == '/';
+  }
+
+  return false;
 }
 
 /**

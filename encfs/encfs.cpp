@@ -139,6 +139,14 @@ static int withFileNode(const char *opName, const char *path,
 
     rAssert(fnode.get() != NULL);
     rLog(Info, "%s %s", opName, fnode->cipherName());
+
+    // check that we're not recursing into the mount point itself
+    if (FSRoot->touchesMountpoint(fnode->cipherName())) {
+      rInfo("%s error: Tried to touch mountpoint: '%s'",
+            opName, fnode->cipherName());
+      return res; // still -EIO
+    }
+
     res = op(fnode.get());
 
     if (res < 0) rInfo("%s error: %s", opName, strerror(-res));

@@ -74,7 +74,6 @@ const int MaxFuseArgs = 32;
  * derived from the arguments
  */
 struct EncFS_Args {
-  string mountPoint;  // where to make filesystem visible
   bool isDaemon;      // true == spawn in background, log to syslog
   bool isThreaded;    // true == threaded
   bool isVerbose;     // false == only enable warning/error messages
@@ -373,8 +372,10 @@ static bool processArgs(int argc, char *argv[],
   // we should have at least 2 arguments left over - the source directory and
   // the mount point.
   if (optind + 2 <= argc) {
+    // both rootDir and mountPoint are assumed to be slash terminated in the
+    // rest of the code.
     out->opts->rootDir = slashTerminate(argv[optind++]);
-    out->mountPoint = argv[optind++];
+    out->opts->mountPoint = slashTerminate(argv[optind++]);
   } else {
     // no mount point specified
     rWarning(_("Missing one or more arguments, aborting."));
@@ -420,7 +421,7 @@ static bool processArgs(int argc, char *argv[],
   }
 
   // sanity check
-  if (out->isDaemon && (!isAbsolutePath(out->mountPoint.c_str()) ||
+  if (out->isDaemon && (!isAbsolutePath(out->opts->mountPoint.c_str()) ||
                         !isAbsolutePath(out->opts->rootDir.c_str()))) {
     cerr <<
         // xgroup(usage)
@@ -431,7 +432,7 @@ static bool processArgs(int argc, char *argv[],
 
   // the raw directory may not be a subdirectory of the mount point.
   {
-    string testMountPoint = slashTerminate(out->mountPoint);
+    string testMountPoint = out->opts->mountPoint;
     string testRootDir = out->opts->rootDir.substr(0, testMountPoint.length());
 
     if (testMountPoint == testRootDir) {
@@ -464,15 +465,15 @@ static bool processArgs(int argc, char *argv[],
     rWarning(_("Unable to locate root directory, aborting."));
     return false;
   }
-  if (!isDirectory(out->mountPoint.c_str()) &&
-      !userAllowMkdir(out->opts->annotate ? 2 : 0, out->mountPoint.c_str(),
+  if (!isDirectory(out->opts->mountPoint.c_str()) &&
+      !userAllowMkdir(out->opts->annotate ? 2 : 0, out->opts->mountPoint.c_str(),
                       0700)) {
     rWarning(_("Unable to locate mount point, aborting."));
     return false;
   }
 
   // fill in mount path for fuse
-  out->fuseArgv[1] = out->mountPoint.c_str();
+  out->fuseArgv[1] = out->opts->mountPoint.c_str();
 
   return true;
 }
@@ -767,7 +768,7 @@ static bool unmountFS(EncFS_Context *ctx) {
   shared_ptr<EncFS_Args> arg = ctx->args;
   if (arg->opts->mountOnDemand) {
     rDebug("Detaching filesystem %s due to inactivity",
-           arg->mountPoint.c_str());
+           arg->opts->mountPoint.c_str());
 
     ctx->setRoot(shared_ptr<DirNode>());
     return false;
@@ -775,8 +776,8 @@ static bool unmountFS(EncFS_Context *ctx) {
     // Time to unmount!
     // xgroup(diag)
     rWarning(_("Unmounting filesystem %s due to inactivity"),
-             arg->mountPoint.c_str());
-    fuse_unmount(arg->mountPoint.c_str());
+             arg->opts->mountPoint.c_str());
+    fuse_unmount(arg->opts->mountPoint.c_str());
     return true;
   }
 }
