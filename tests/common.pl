@@ -141,7 +141,7 @@ sub stopwatch {
         my $delta = ms(time() - $start_time);
         print("$delta ms\n");
         my $results = shift;
-        push( $results, [ $name, $delta, 'ms' ] );
+        push( @$results, [ $name, $delta, 'ms' ] );
     }
 }
 

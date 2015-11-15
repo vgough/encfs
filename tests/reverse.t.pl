@@ -46,11 +46,11 @@ sub cleanup
 sub mount
 {
     delete $ENV{"ENCFS6_CONFIG"};
-    system("./encfs/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse --nocache");
+    system("./build/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse --nocache");
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
     my $e = encName(".encfs6.xml");
     ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
-    system("ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfs --nocache --extpass=\"echo test\" $ciphertext $decrypted");
+    system("ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfs --nocache --extpass=\"echo test\" $ciphertext $decrypted");
     ok(waitForFile("$decrypted/.encfs6.xml"), "decrypted .encfs6.xml exists") or BAIL_OUT("'$decrypted/.encfs6.xml'");
 }
 
@@ -60,7 +60,7 @@ sub mount
 sub encName
 {
 	my $name = shift;
-	my $enc = qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./encfs/encfsctl encode --extpass="echo test" $ciphertext $name);
+	my $enc = qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfsctl encode --extpass="echo test" $ciphertext $name);
 	chomp($enc);
 	return $enc;
 }
