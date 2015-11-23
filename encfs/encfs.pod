@@ -71,7 +71,7 @@ enabled.
 The B<-s> (I<single threaded>) option causes B<EncFS> to run in single threaded
 mode.  By default, B<EncFS> runs in multi-threaded mode.  This option is used
 during B<EncFS> development in order to simplify debugging and allow it to run
-under memory checking tools..
+under memory checking tools.
 
 =item B<-d>, B<--fuse-debug>
 
@@ -197,7 +197,7 @@ the B<fusermount> help page for information on available commands.
 =item B<--no-default-flags>
 
 B<Encfs> adds the FUSE flags "use_ino" and "default_permissions" by default, as
-of version 1.2.2, because that improves compatibility with some programs..  If
+of version 1.2.2, because that improves compatibility with some programs.  If
 for some reason you need to disable one or both of these flags, use the option
 B<--no-default-flags>.
 
