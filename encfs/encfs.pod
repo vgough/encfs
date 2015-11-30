@@ -538,7 +538,7 @@ Some algorithms in B<EncFS> are also meant to frustrate on-line attacks where
 an attacker is assumed to be able to modify the files.
 
 The most intrusive attacks, where an attacker has complete control of the
-user's machine (and can therefor modify B<EncFS>, or B<FUSE>, or the kernel
+user's machine (and can therefore modify B<EncFS>, or B<FUSE>, or the kernel
 itself) are not guarded against.  Do not assume that encrypted files will
 protect your sensitive data if you enter your password into a compromised
 computer.  How you determine that the computer is safe to use is beyond the
