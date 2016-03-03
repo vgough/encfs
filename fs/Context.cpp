@@ -72,7 +72,7 @@ void EncFS_Context::setRoot(const shared_ptr<DirNode> &r) {
   if (r) rootCipherDir = r->rootDirectory();
 }
 
-bool EncFS_Context::isMounted() const { return root; }
+bool EncFS_Context::isMounted() const { return root != NULL; }
 
 int EncFS_Context::getAndResetUsageCounter() {
   Lock lock(contextMutex);

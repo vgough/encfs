@@ -157,7 +157,7 @@ class RenameOp {
 
   ~RenameOp();
 
-  operator bool() const { return renameList; }
+  operator bool() const { return renameList != NULL; }
 
   bool apply();
   void undo();
