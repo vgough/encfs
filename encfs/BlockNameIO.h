@@ -42,7 +42,7 @@ class BlockNameIO : public NameIO {
 
   BlockNameIO(const rel::Interface &iface, const shared_ptr<Cipher> &cipher,
               const CipherKey &key, int blockSize,
-              bool caseSensitiveEncoding = false);
+              bool caseInsensitiveEncoding = false);
   virtual ~BlockNameIO();
 
   virtual rel::Interface interface() const;
@@ -64,7 +64,7 @@ class BlockNameIO : public NameIO {
   int _bs;
   shared_ptr<Cipher> _cipher;
   CipherKey _key;
-  bool _caseSensitive;
+  bool _caseInsensitive;
 };
 
 #endif
