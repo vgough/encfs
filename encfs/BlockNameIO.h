@@ -38,7 +38,7 @@ class Cipher;
 */
 class BlockNameIO : public NameIO {
  public:
-  static rel::Interface CurrentInterface(bool caseSensitive = false);
+  static rel::Interface CurrentInterface(bool caseInsensitive = false);
 
   BlockNameIO(const rel::Interface &iface, const shared_ptr<Cipher> &cipher,
               const CipherKey &key, int blockSize,
