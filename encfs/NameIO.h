@@ -83,19 +83,19 @@ class NameIO {
 
  protected:
   virtual int encodeName(const char *plaintextName, int length,
-                         char *encodedName) const;
+                         char *encodedName, int bufferLength) const;
   virtual int decodeName(const char *encodedName, int length,
-                         char *plaintextName) const;
+                         char *plaintextName, int bufferLength) const;
 
   virtual int encodeName(const char *plaintextName, int length, uint64_t *iv,
-                         char *encodedName) const = 0;
+                         char *encodedName, int bufferLength) const = 0;
   virtual int decodeName(const char *encodedName, int length, uint64_t *iv,
-                         char *plaintextName) const = 0;
+                         char *plaintextName, int bufferLength) const = 0;
 
  private:
   std::string recodePath(const char *path, int (NameIO::*codingLen)(int) const,
                          int (NameIO::*codingFunc)(const char *, int,
-                                                   uint64_t *, char *) const,
+                                                   uint64_t *, char *, int) const,
                          uint64_t *iv) const;
 
   std::string _encodePath(const char *plaintextPath, uint64_t *iv) const;
@@ -108,16 +108,26 @@ class NameIO {
 };
 
 /*
-    Helper macros for creating temporary buffers with an optimization that
-    below a given size (OptimizedSize) is allocated on the stack, and when a
-    larger size is requested it is allocated on the heap.
+	Helper macros for creating temporary buffers with an optimization that
+	below a given size (OptimizedSize) is allocated on the stack, and when a
+	larger size is requested it is allocated on the heap.
 
-    BUFFER_RESET should be called for the same name as BUFFER_INIT
+	BUFFER_RESET should be called for the same name as BUFFER_INIT
 */
 #define BUFFER_INIT(Name, OptimizedSize, Size)          \
   char Name##_Raw[OptimizedSize];                       \
   char *Name = Name##_Raw;                              \
   if (sizeof(Name##_Raw) < Size) Name = new char[Size]; \
+  memset(Name, 0, Size);
+
+#define BUFFER_INIT_S(Name, OptimizedSize, Size, BufSize) \
+  char Name##_Raw[OptimizedSize];                         \
+  BufSize = sizeof(Name##_Raw);                           \
+  char *Name = Name##_Raw;                                \
+  if (sizeof(Name##_Raw) < Size) {                        \
+    Name = new char[Size];                                \
+    BufSize = Size;                                       \
+  }                                                       \
   memset(Name, 0, Size);
 
 #define BUFFER_RESET(Name)    \

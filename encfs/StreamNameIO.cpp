@@ -90,7 +90,7 @@ int StreamNameIO::maxDecodedNameLen(int encodedStreamLen) const {
 }
 
 int StreamNameIO::encodeName(const char *plaintextName, int length,
-                             uint64_t *iv, char *encodedName) const {
+                             uint64_t *iv, char *encodedName, int bufferLength) const {
   uint64_t tmpIV = 0;
   if (iv && _interface >= 2) tmpIV = *iv;
 
@@ -104,11 +104,13 @@ int StreamNameIO::encodeName(const char *plaintextName, int length,
     encodedName[0] = (mac >> 8) & 0xff;
     encodedName[1] = (mac)&0xff;
     encodeBegin = (unsigned char *)encodedName + 2;
+	rAssert(length <= (bufferLength - 2));
   } else {
     // encfs 0.x stored checksums at the end.
     encodedName[length] = (mac >> 8) & 0xff;
     encodedName[length + 1] = (mac)&0xff;
     encodeBegin = (unsigned char *)encodedName;
+	rAssert(length <= bufferLength);
   }
 
   // stream encode the plaintext bytes
@@ -126,10 +128,11 @@ int StreamNameIO::encodeName(const char *plaintextName, int length,
 }
 
 int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
-                             char *plaintextName) const {
+                             char *plaintextName, int bufferLength) const {
   rAssert(length > 2);
   int decLen256 = B64ToB256Bytes(length);
   int decodedStreamLen = decLen256 - 2;
+  rAssert(decodedStreamLen <= bufferLength);
 
   if (decodedStreamLen <= 0) throw ERROR("Filename too small to decode");
 

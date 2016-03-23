@@ -142,7 +142,7 @@ bool NameIO::getReverseEncryption() const { return reverseEncryption; }
 std::string NameIO::recodePath(const char *path,
                                int (NameIO::*_length)(int) const,
                                int (NameIO::*_code)(const char *, int,
-                                                    uint64_t *, char *) const,
+                                                    uint64_t *, char *, int) const,
                                uint64_t *iv) const {
   string output;
 
@@ -166,11 +166,12 @@ std::string NameIO::recodePath(const char *path,
       // figure out buffer sizes
       int approxLen = (this->*_length)(len);
       if (approxLen <= 0) throw ERROR("Filename too small to decode");
+	  int bufSize = 0;
 
-      BUFFER_INIT(codeBuf, 32, (unsigned int)approxLen + 1)
-
+      BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
+	  
       // code the name
-      int codedLen = (this->*_code)(path, len, iv, codeBuf);
+      int codedLen = (this->*_code)(path, len, iv, codeBuf, bufSize);
       rAssert(codedLen <= approxLen);
       rAssert(codeBuf[codedLen] == '\0');
       path += len;
@@ -217,21 +218,22 @@ std::string NameIO::decodePath(const char *path, uint64_t *iv) const {
   return getReverseEncryption() ? _encodePath(path, iv) : _decodePath(path, iv);
 }
 
-int NameIO::encodeName(const char *input, int length, char *output) const {
-  return encodeName(input, length, (uint64_t *)0, output);
+int NameIO::encodeName(const char *input, int length, char *output, int bufferLength) const {
+  return encodeName(input, length, (uint64_t *)0, output, bufferLength);
 }
 
-int NameIO::decodeName(const char *input, int length, char *output) const {
-  return decodeName(input, length, (uint64_t *)0, output);
+int NameIO::decodeName(const char *input, int length, char *output, int bufferLength) const {
+  return decodeName(input, length, (uint64_t *)0, output, bufferLength);
 }
 
 std::string NameIO::_encodeName(const char *plaintextName, int length) const {
   int approxLen = maxEncodedNameLen(length);
+  int bufSize = 0;
 
-  BUFFER_INIT(codeBuf, 32, (unsigned int)approxLen + 1)
-
+  BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
+  
   // code the name
-  int codedLen = encodeName(plaintextName, length, 0, codeBuf);
+  int codedLen = encodeName(plaintextName, length, 0, codeBuf, bufSize);
   rAssert(codedLen <= approxLen);
   rAssert(codeBuf[codedLen] == '\0');
 
@@ -245,11 +247,12 @@ std::string NameIO::_encodeName(const char *plaintextName, int length) const {
 
 std::string NameIO::_decodeName(const char *encodedName, int length) const {
   int approxLen = maxDecodedNameLen(length);
+  int bufSize = 0;
 
-  BUFFER_INIT(codeBuf, 32, (unsigned int)approxLen + 1)
-
+  BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
+  
   // code the name
-  int codedLen = decodeName(encodedName, length, 0, codeBuf);
+  int codedLen = decodeName(encodedName, length, 0, codeBuf, bufSize);
   rAssert(codedLen <= approxLen);
   rAssert(codeBuf[codedLen] == '\0');
 
