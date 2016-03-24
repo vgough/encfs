@@ -108,11 +108,11 @@ class NameIO {
 };
 
 /*
-	Helper macros for creating temporary buffers with an optimization that
-	below a given size (OptimizedSize) is allocated on the stack, and when a
-	larger size is requested it is allocated on the heap.
+    Helper macros for creating temporary buffers with an optimization that
+    below a given size (OptimizedSize) is allocated on the stack, and when a
+    larger size is requested it is allocated on the heap.
 
-	BUFFER_RESET should be called for the same name as BUFFER_INIT
+    BUFFER_RESET should be called for the same name as BUFFER_INIT
 */
 #define BUFFER_INIT(Name, OptimizedSize, Size)          \
   char Name##_Raw[OptimizedSize];                       \

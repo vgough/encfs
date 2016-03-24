@@ -137,16 +137,15 @@ int BlockNameIO::maxDecodedNameLen(int encodedNameLen) const {
 int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
                             char *encodedName, int bufferLength) const {
 
-  // copy the data into the encoding buffer..
-  rAssert(length <= (bufferLength - 2));
-  memcpy(encodedName + 2, plaintextName, length);
-
   // Pad encryption buffer to block boundary..
   int padding = _bs - length % _bs;
   if (padding == 0) padding = _bs;  // padding a full extra block!
 
-  rAssert(padding <= (bufferLength - length - 2));
+  rAssert(bufferLength >= length + 2 + padding);
   memset(encodedName + length + 2, (unsigned char)padding, padding);
+
+  // copy the data into the encoding buffer..
+  memcpy(encodedName + 2, plaintextName, length);
 
   // store the IV before it is modified by the MAC call.
   uint64_t tmpIV = 0;

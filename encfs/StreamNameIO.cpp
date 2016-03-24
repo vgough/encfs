@@ -99,18 +99,17 @@ int StreamNameIO::encodeName(const char *plaintextName, int length,
 
   // add on checksum bytes
   unsigned char *encodeBegin;
+  rAssert(bufferLength >= length + 2);
   if (_interface >= 1) {
     // current versions store the checksum at the beginning
     encodedName[0] = (mac >> 8) & 0xff;
     encodedName[1] = (mac)&0xff;
     encodeBegin = (unsigned char *)encodedName + 2;
-	rAssert(length <= (bufferLength - 2));
   } else {
     // encfs 0.x stored checksums at the end.
     encodedName[length] = (mac >> 8) & 0xff;
     encodedName[length + 1] = (mac)&0xff;
     encodeBegin = (unsigned char *)encodedName;
-	rAssert(length <= bufferLength);
   }
 
   // stream encode the plaintext bytes

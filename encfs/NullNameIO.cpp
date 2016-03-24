@@ -58,7 +58,7 @@ int NullNameIO::maxDecodedNameLen(int encodedNameLen) const {
 int NullNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
                            char *encodedName, int bufferLength) const {
   (void)iv;
-  
+
   rAssert(length <= bufferLength);
   memcpy(encodedName, plaintextName, length);
 

@@ -166,10 +166,10 @@ std::string NameIO::recodePath(const char *path,
       // figure out buffer sizes
       int approxLen = (this->*_length)(len);
       if (approxLen <= 0) throw ERROR("Filename too small to decode");
-	  int bufSize = 0;
+      int bufSize = 0;
 
       BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
-	  
+
       // code the name
       int codedLen = (this->*_code)(path, len, iv, codeBuf, bufSize);
       rAssert(codedLen <= approxLen);
@@ -231,7 +231,7 @@ std::string NameIO::_encodeName(const char *plaintextName, int length) const {
   int bufSize = 0;
 
   BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
-  
+
   // code the name
   int codedLen = encodeName(plaintextName, length, 0, codeBuf, bufSize);
   rAssert(codedLen <= approxLen);
@@ -250,7 +250,7 @@ std::string NameIO::_decodeName(const char *encodedName, int length) const {
   int bufSize = 0;
 
   BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
-  
+
   // code the name
   int codedLen = decodeName(encodedName, length, 0, codeBuf, bufSize);
   rAssert(codedLen <= approxLen);
