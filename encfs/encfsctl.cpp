@@ -93,7 +93,7 @@ struct CommandOpts {
       {"showcruft", 1, 1, cmd_showcruft, "(root dir)",
        // xgroup(usage)
        gettext_noop("  -- show undecodable filenames in the volume")},
-      {"cat", 2, 2, cmd_cat, "(root dir) path",
+      {"cat", 2, 3, cmd_cat, "[--extpass=prog] (root dir) path",
        // xgroup(usage)
        gettext_noop("  -- decodes the file and cats it to standard out")},
       {"decode", 1, 100, cmd_decode,
@@ -403,12 +403,11 @@ class WriteOutput {
 };
 
 static int cmd_cat(int argc, char **argv) {
-  (void)argc;
-  RootPtr rootInfo = initRootInfo(argv[1]);
+  RootPtr rootInfo = initRootInfo(argc, argv);
 
   if (!rootInfo) return EXIT_FAILURE;
 
-  const char *path = argv[2];
+  const char *path = argv[0];
   WriteOutput output(STDOUT_FILENO);
   int errCode = processContents(rootInfo, path, output);
 
