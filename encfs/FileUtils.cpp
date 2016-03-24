@@ -1016,7 +1016,14 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     keySize = 256;
     blockSize = DefaultBlockSize;
     alg = findCipherAlgorithm("AES", keySize);
+
+    // If case-insensitive system, opt for Block32 filename encoding 
+#if defined(__APPLE__) || defined(WIN32)
+    nameIOIface = BlockNameIO::CurrentInterface(true);
+#else
     nameIOIface = BlockNameIO::CurrentInterface();
+#endif
+
     blockMACBytes = 8;
     blockMACRandBytes = 0;  // using uniqueIV, so this isn't necessary
     externalIV = true;
@@ -1029,7 +1036,13 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     keySize = 192;
     blockSize = DefaultBlockSize;
     alg = findCipherAlgorithm("AES", keySize);
+
+    // If case-insensitive system, opt for Block32 filename encoding 
+#if defined(__APPLE__) || defined(WIN32)
+    nameIOIface = BlockNameIO::CurrentInterface(true);
+#else
     nameIOIface = BlockNameIO::CurrentInterface();
+#endif
 
     if (opts->requireMac) {
       blockMACBytes = 8;
