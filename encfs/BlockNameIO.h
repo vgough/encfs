@@ -55,9 +55,9 @@ class BlockNameIO : public NameIO {
 
  protected:
   virtual int encodeName(const char *plaintextName, int length, uint64_t *iv,
-                         char *encodedName) const;
+                         char *encodedName, int bufferLength) const;
   virtual int decodeName(const char *encodedName, int length, uint64_t *iv,
-                         char *plaintextName) const;
+                         char *plaintextName, int bufferLength) const;
 
  private:
   int _interface;

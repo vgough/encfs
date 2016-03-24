@@ -135,15 +135,17 @@ int BlockNameIO::maxDecodedNameLen(int encodedNameLen) const {
 }
 
 int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
-                            char *encodedName) const {
-  // copy the data into the encoding buffer..
-  memcpy(encodedName + 2, plaintextName, length);
+                            char *encodedName, int bufferLength) const {
 
   // Pad encryption buffer to block boundary..
   int padding = _bs - length % _bs;
   if (padding == 0) padding = _bs;  // padding a full extra block!
 
+  rAssert(bufferLength >= length + 2 + padding);
   memset(encodedName + length + 2, (unsigned char)padding, padding);
+
+  // copy the data into the encoding buffer..
+  memcpy(encodedName + 2, plaintextName, length);
 
   // store the IV before it is modified by the MAC call.
   uint64_t tmpIV = 0;
@@ -182,7 +184,7 @@ int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
 }
 
 int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
-                            char *plaintextName) const {
+                            char *plaintextName, int bufferLength) const {
   int decLen256 =
       _caseSensitive ? B32ToB256Bytes(length) : B64ToB256Bytes(length);
   int decodedStreamLen = decLen256 - 2;
@@ -225,6 +227,7 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
   }
 
   // copy out the result..
+  rAssert(finalSize < bufferLength);
   memcpy(plaintextName, tmpBuf + 2, finalSize);
   plaintextName[finalSize] = '\0';
 
