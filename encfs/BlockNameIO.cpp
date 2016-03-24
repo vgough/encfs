@@ -130,7 +130,7 @@ int BlockNameIO::maxEncodedNameLen(int plaintextNameLen) const {
 
 int BlockNameIO::maxDecodedNameLen(int encodedNameLen) const {
   int decLen256 = _caseInsensitive ? B32ToB256Bytes(encodedNameLen)
-                                 : B64ToB256Bytes(encodedNameLen);
+                                   : B64ToB256Bytes(encodedNameLen);
   return decLen256 - 2;  // 2 checksum bytes removed..
 }
 
@@ -184,7 +184,7 @@ int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
 int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
                             char *plaintextName) const {
   int decLen256 =
-	  _caseInsensitive ? B32ToB256Bytes(length) : B64ToB256Bytes(length);
+      _caseInsensitive ? B32ToB256Bytes(length) : B64ToB256Bytes(length);
   int decodedStreamLen = decLen256 - 2;
 
   // don't bother trying to decode files which are too small
