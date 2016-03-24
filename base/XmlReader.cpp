@@ -29,7 +29,7 @@
 #include <cstring>
 #include <map>
 
-#include <tinyxml.h>
+#include <tinyxml2.h>
 
 #include <glog/logging.h>
 #include "base/base64.h"
@@ -124,13 +124,13 @@ bool XmlValue::read(const char *path, Interface *out) const {
   return true;
 }
 
-std::string safeValueForNode(const TiXmlElement *element) {
+std::string safeValueForNode(const tinyxml2::XMLElement *element) {
   std::string value;
   if (element == NULL) return value;
 
-  const TiXmlNode *child = element->FirstChild();
+  const tinyxml2::XMLNode *child = element->FirstChild();
   if (child) {
-    const TiXmlText *childText = child->ToText();
+    const tinyxml2::XMLText *childText = child->ToText();
     if (childText) value = childText->Value();
   }
 
@@ -138,10 +138,10 @@ std::string safeValueForNode(const TiXmlElement *element) {
 }
 
 class XmlNode : virtual public XmlValue {
-  const TiXmlElement *element;
+  const tinyxml2::XMLElement *element;
 
  public:
-  XmlNode(const TiXmlElement *element_)
+  XmlNode(const tinyxml2::XMLElement *element_)
       : XmlValue(safeValueForNode(element_)), element(element_) {}
 
   virtual ~XmlNode() {}
@@ -154,7 +154,7 @@ class XmlNode : virtual public XmlValue {
       else
         return XmlValuePtr();
     } else {
-      const TiXmlElement *el = element->FirstChildElement(name);
+      const tinyxml2::XMLElement *el = element->FirstChildElement(name);
       if (el)
         return XmlValuePtr(new XmlNode(el));
       else
@@ -164,7 +164,7 @@ class XmlNode : virtual public XmlValue {
 };
 
 struct XmlReader::XmlReaderData {
-  shared_ptr<TiXmlDocument> doc;
+  shared_ptr<tinyxml2::XMLDocument> doc;
 };
 
 XmlReader::XmlReader() : pd(new XmlReaderData()) {}
@@ -172,22 +172,22 @@ XmlReader::XmlReader() : pd(new XmlReaderData()) {}
 XmlReader::~XmlReader() {}
 
 bool XmlReader::load(const char *fileName) {
-  pd->doc.reset(new TiXmlDocument(fileName));
+  pd->doc.reset(new tinyxml2::XMLDocument());
 
-  return pd->doc->LoadFile();
+  return pd->doc->LoadFile(fileName);
 }
 
 XmlValuePtr XmlReader::operator[](const char *name) const {
-  TiXmlNode *node = pd->doc->FirstChild(name);
+  tinyxml2::XMLNode *node = pd->doc->FirstChildElement(name);
   if (node == NULL) {
     LOG(ERROR) << "Xml node " << name << " not found";
     return XmlValuePtr(new XmlValue());
   }
 
-  TiXmlElement *element = node->ToElement();
+  tinyxml2::XMLElement *element = node->ToElement();
   if (element == NULL) {
     LOG(ERROR) << "Xml node " << name
-               << " not element, type = " << node->Type();
+               << " not element";
     return XmlValuePtr(new XmlValue());
   }
 

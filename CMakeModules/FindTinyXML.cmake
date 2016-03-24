@@ -11,12 +11,12 @@ IF( TINYXML_INCLUDE_DIR )
     SET( TinyXML_FIND_QUIETLY TRUE )
 ENDIF( TINYXML_INCLUDE_DIR )
 
-FIND_PATH( TINYXML_INCLUDE_DIR "tinyxml.h"
-           PATH_SUFFIXES "tinyxml" )
+FIND_PATH( TINYXML_INCLUDE_DIR "tinyxml2.h"
+           PATH_SUFFIXES "tinyxml2" )
 
 FIND_LIBRARY( TINYXML_LIBRARIES
-              NAMES "tinyxml"
-              PATH_SUFFIXES "tinyxml" )
+              NAMES "tinyxml2"
+              PATH_SUFFIXES "tinyxml2" )
 
 # handle the QUIETLY and REQUIRED arguments and set TINYXML_FOUND to TRUE if
 # all listed variables are TRUE

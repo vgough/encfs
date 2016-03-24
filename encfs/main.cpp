@@ -558,7 +558,7 @@ int main(int argc, char *argv[]) {
   encfs_oper.utimens = encfs_utimens;
 // encfs_oper.bmap = encfs_bmap;
 
-#if (__FreeBSD__ >= 10)
+#if (__FreeBSD__ >= 10) || defined(__APPLE__)
 // encfs_oper.setvolname
 // encfs_oper.exchange
 // encfs_oper.getxtimes

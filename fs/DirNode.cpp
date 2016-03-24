@@ -80,7 +80,7 @@ static bool _nextName(struct dirent *&de, const shared_ptr<DIR> &dir,
 
   if (de) {
     if (fileType) {
-#if defined(_DIRENT_HAVE_D_TYPE) || defined(__FreeBSD__)
+#if defined(_DIRENT_HAVE_D_TYPE) || defined(__FreeBSD__) || defined(__APPLE__)
       *fileType = de->d_type;
 #else
 #warning "struct dirent.d_type not supported"
@@ -157,7 +157,7 @@ class RenameOp {
 
   ~RenameOp();
 
-  operator bool() const { return renameList; }
+  operator bool() const { return renameList != NULL; }
 
   bool apply();
   void undo();
