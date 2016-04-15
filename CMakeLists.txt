@@ -48,11 +48,8 @@ add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 find_package (OpenSSL REQUIRED)
 include_directories (${OPENSSL_INCLUDE_DIR})
 
-find_package(Boost
-  1.34.0
-  REQUIRED
-  COMPONENTS serialization)
-include_directories (${Boost_INCLUDE_DIRS})
+find_package (TinyXML REQUIRED)
+include_directories (${TINYXML_INCLUDE_DIR})
 
 find_package (RLog REQUIRED)
 add_definitions (-DRLOG_COMPONENT="encfs")
@@ -130,6 +127,7 @@ set(SOURCE_FILES
   encfs/readpassphrase.cpp
   encfs/SSL_Cipher.cpp
   encfs/StreamNameIO.cpp
+  encfs/XmlReader.cpp
 )
 add_library(encfs SHARED ${SOURCE_FILES})
 set_property(TARGET encfs PROPERTY VERSION ${ENCFS_VERSION})
@@ -137,7 +135,7 @@ set_property(TARGET encfs PROPERTY SOVERSION ${ENCFS_SOVERSION})
 target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
-  ${Boost_LIBRARIES}
+  ${TINYXML_LIBRARIES}
   ${RLOG_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
 )

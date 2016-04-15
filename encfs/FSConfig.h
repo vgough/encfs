@@ -21,6 +21,7 @@
 #ifndef _FSConfig_incl_
 #define _FSConfig_incl_
 
+#include <string>
 #include <vector>
 
 #include "encfs.h"
@@ -54,12 +55,13 @@ struct EncFSConfig {
   rel::Interface cipherIface;
   // interface used for file name coding
   rel::Interface nameIface;
+  
   int keySize;    // reported in bits
   int blockSize;  // reported in bytes
 
   std::vector<unsigned char> keyData;
-
   std::vector<unsigned char> salt;
+
   int kdfIterations;
   long desiredKDFDuration;
 

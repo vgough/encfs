@@ -16,18 +16,20 @@
  *
  */
 
-#include <rlog/Error.h>
-#include <rlog/RLogChannel.h>
-#include <rlog/StdioNode.h>
-#include <rlog/rlog.h>
 #include <time.h>
 #include <unistd.h>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <list>
 #include <memory>
 #include <sstream>
 #include <string>
+
+#include <rlog/Error.h>
+#include <rlog/RLogChannel.h>
+#include <rlog/StdioNode.h>
+#include <rlog/rlog.h>
 
 #include "BlockNameIO.h"
 #include "Cipher.h"
@@ -132,8 +134,9 @@ static bool testNameCoding(DirNode &dirNode, bool verbose) {
 
 bool runTests(const shared_ptr<Cipher> &cipher, bool verbose) {
   // create a random key
-  if (verbose)
+  if (verbose) {
     cerr << "Generating new key, output will be different on each run\n\n";
+  }
   CipherKey key = cipher->newRandomKey();
 
   if (verbose) cerr << "Testing key save / restore :";
@@ -173,18 +176,17 @@ bool runTests(const shared_ptr<Cipher> &cipher, bool verbose) {
     cfg.assignKeyData(keyBuf, encodedKeySize);
 
     // save config
-    string data;
+    auto name = std::tmpnam(nullptr);
     {
-      ostringstream st;
-      st << cfg;
-      data = st.str();
+      auto ok = writeV6Config(name, &cfg);
+      rAssert(ok == true);
     }
 
     // read back in and check everything..
     EncFSConfig cfg2;
     {
-      istringstream st(data);
-      st >> cfg2;
+      auto ok = readV6Config(name, &cfg2, nullptr);
+      rAssert(ok == true);
     }
 
     // check..

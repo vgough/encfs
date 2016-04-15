@@ -20,7 +20,10 @@
 
 #include "base64.h"
 
+#include <cstdlib>
 #include <ctype.h>
+
+#include <rlog/rlog.h>
 
 // change between two powers of two, stored as the low bits of the bytes in the
 // arrays.
@@ -176,4 +179,100 @@ void AsciiToB32(unsigned char *out, const unsigned char *in, int length) {
 
     *out++ = (unsigned char)lch;
   }
+}
+
+#define WHITESPACE 64
+#define EQUALS 65
+#define INVALID 66
+
+static const unsigned char d[] = {
+    66, 66, 66, 66, 66, 66, 66, 66, 66, 64, 66, 66, 66, 66, 66, 66, 66,
+    66, 66, 66, 66, 66, 66, 66, 66, 66, 66, 66, 66, 66, 66, 66, 66, 66,
+    66, 66, 66, 66, 66, 66, 66, 66, 66, 62, 66, 66, 66, 63, 52, 53, 54,
+    55, 56, 57, 58, 59, 60, 61, 66, 66,  // 50-59
+    66, 65, 66, 66, 66, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11,
+    12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 66, 66, 66,
+    66, 66, 66, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38,  // 100-109
+    39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51};
+
+bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inLen) {
+  const unsigned char *end = in + inLen;
+  size_t buf = 1;
+
+  while (in < end) {
+    unsigned char v = *in++;
+    if (v > 'z') {
+      rError("Invalid character: %d", (unsigned int)v);
+      return false;
+    }
+    unsigned char c = d[v];
+
+    switch (c) {
+      case WHITESPACE:
+        continue; /* skip whitespace */
+      case INVALID:
+        rError("Invalid character: %d", (unsigned int)v);
+        return false; /* invalid input, return error */
+      case EQUALS:    /* pad character, end of data */
+        in = end;
+        continue;
+      default:
+        buf = buf << 6 | c;
+
+        /* If the buffer is full, split it into bytes */
+        if (buf & 0x1000000) {
+          *out++ = buf >> 16;
+          *out++ = buf >> 8;
+          *out++ = buf;
+          buf = 1;
+        }
+    }
+  }
+
+  if (buf & 0x40000) {
+    *out++ = buf >> 10;
+    *out++ = buf >> 2;
+  } else if (buf & 0x1000) {
+    *out++ = buf >> 4;
+  }
+
+  return true;
+}
+
+// Lookup table for encoding
+// If you want to use an alternate alphabet, change the characters here
+const static char encodeLookup[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+std::string B64StandardEncode(std::vector<unsigned char> inputBuffer) {
+  std::string encodedString;
+  encodedString.reserve(B256ToB64Bytes(inputBuffer.size()));
+  long temp;
+  std::vector<unsigned char>::iterator cursor = inputBuffer.begin();
+  for (size_t idx = 0; idx < inputBuffer.size() / 3; idx++) {
+    temp = (*cursor++) << 16;  // Convert to big endian
+    temp += (*cursor++) << 8;
+    temp += (*cursor++);
+    encodedString.append(1, encodeLookup[(temp & 0x00FC0000) >> 18]);
+    encodedString.append(1, encodeLookup[(temp & 0x0003F000) >> 12]);
+    encodedString.append(1, encodeLookup[(temp & 0x00000FC0) >> 6]);
+    encodedString.append(1, encodeLookup[(temp & 0x0000003F)]);
+  }
+
+  switch (inputBuffer.size() % 3) {
+    case 1:
+      temp = (*cursor++) << 16;  // Convert to big endian
+      encodedString.append(1, encodeLookup[(temp & 0x00FC0000) >> 18]);
+      encodedString.append(1, encodeLookup[(temp & 0x0003F000) >> 12]);
+      encodedString.append(2, '=');
+      break;
+    case 2:
+      temp = (*cursor++) << 16;  // Convert to big endian
+      temp += (*cursor++) << 8;
+      encodedString.append(1, encodeLookup[(temp & 0x00FC0000) >> 18]);
+      encodedString.append(1, encodeLookup[(temp & 0x0003F000) >> 12]);
+      encodedString.append(1, encodeLookup[(temp & 0x00000FC0) >> 6]);
+      encodedString.append(1, '=');
+      break;
+  }
+  return encodedString;
 }

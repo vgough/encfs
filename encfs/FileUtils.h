@@ -69,11 +69,11 @@ enum ConfigMode { Config_Prompt, Config_Standard, Config_Paranoia };
  */
 struct EncFS_Opts {
   std::string rootDir;
-  std::string mountPoint; // where to make filesystem visible
-  bool createIfNotFound;  // create filesystem if not found
-  bool idleTracking;      // turn on idle monitoring of filesystem
-  bool mountOnDemand;     // mounting on-demand
-  bool delayMount;        // delay initial mount
+  std::string mountPoint;  // where to make filesystem visible
+  bool createIfNotFound;   // create filesystem if not found
+  bool idleTracking;       // turn on idle monitoring of filesystem
+  bool mountOnDemand;      // mounting on-demand
+  bool delayMount;         // delay initial mount
 
   bool checkKey;     // check crypto key decoding
   bool forceDecode;  // force decode on MAC block failures
@@ -118,15 +118,14 @@ struct EncFS_Opts {
 /*
     Read existing config file.  Looks for any supported configuration version.
 */
-ConfigType readConfig(const std::string &rootDir,
-                      const shared_ptr<EncFSConfig> &config);
+ConfigType readConfig(const std::string &rootDir, EncFSConfig *config);
 
 /*
     Save the configuration.  Saves back as the same configuration type as was
     read from.
 */
 bool saveConfig(ConfigType type, const std::string &rootdir,
-                const shared_ptr<EncFSConfig> &config);
+                const EncFSConfig *config);
 
 class EncFS_Context;
 
@@ -134,21 +133,18 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts);
 
 RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts);
 
-void showFSInfo(const shared_ptr<EncFSConfig> &config);
+void showFSInfo(const EncFSConfig *config);
 
-bool readV4Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
+bool readV4Config(const char *configFile, EncFSConfig *config,
                   struct ConfigInfo *);
-bool writeV4Config(const char *configFile,
-                   const shared_ptr<EncFSConfig> &config);
+bool writeV4Config(const char *configFile, const EncFSConfig *config);
 
-bool readV5Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
+bool readV5Config(const char *configFile, EncFSConfig *config,
                   struct ConfigInfo *);
-bool writeV5Config(const char *configFile,
-                   const shared_ptr<EncFSConfig> &config);
+bool writeV5Config(const char *configFile, const EncFSConfig *config);
 
-bool readV6Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
+bool readV6Config(const char *configFile, EncFSConfig *config,
                   struct ConfigInfo *);
-bool writeV6Config(const char *configFile,
-                   const shared_ptr<EncFSConfig> &config);
+bool writeV6Config(const char *configFile, const EncFSConfig *config);
 
 #endif

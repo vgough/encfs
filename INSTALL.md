@@ -41,7 +41,7 @@ Dependencies
 
 EncFS depends on a number of libraries:
 
-    openssl fuse boost-serialization gettext libintl librlog
+    openssl fuse tinyxml2 gettext libintl librlog
 
 Compiling on Debian and Ubuntu
 ==============================

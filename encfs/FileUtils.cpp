@@ -24,12 +24,6 @@
 #endif
 #define _BSD_SOURCE  // pick up setenv on RH7.3
 
-#include <boost/version.hpp>
-#include <boost/archive/xml_iarchive.hpp>
-#include <boost/archive/xml_oarchive.hpp>
-#include <boost/serialization/binary_object.hpp>
-#include <boost/serialization/nvp.hpp>
-#include <boost/serialization/split_free.hpp>
 #include <fcntl.h>
 #include <rlog/Error.h>
 #include <rlog/rlog.h>
@@ -45,6 +39,7 @@
 #include <iostream>
 #include <fstream>
 #include <list>
+#include <tinyxml2.h>
 #include <vector>
 
 #include "BlockNameIO.h"
@@ -59,7 +54,9 @@
 #include "Interface.h"
 #include "NameIO.h"
 #include "Range.h"
+#include "XmlReader.h"
 #include "autosprintf.h"
+#include "base64.h"
 #include "config.h"
 #include "i18n.h"
 #include "intl/gettext.h"
@@ -73,7 +70,6 @@ using namespace rel;
 using namespace rlog;
 using namespace std;
 using gnu::autosprintf;
-namespace serial = boost::serialization;
 
 static const int DefaultBlockSize = 1024;
 // The maximum length of text passwords.  If longer are needed,
@@ -108,9 +104,8 @@ struct ConfigInfo {
   const char *fileName;
   ConfigType type;
   const char *environmentOverride;
-  bool (*loadFunc)(const char *fileName, const shared_ptr<EncFSConfig> &config,
-                   ConfigInfo *cfg);
-  bool (*saveFunc)(const char *fileName, const shared_ptr<EncFSConfig> &config);
+  bool (*loadFunc)(const char *fileName, EncFSConfig *config, ConfigInfo *cfg);
+  bool (*saveFunc)(const char *fileName, const EncFSConfig *config);
   int currentSubVersion;
   int defaultSubVersion;
 } ConfigFileMapping[] = {
@@ -126,121 +121,6 @@ struct ConfigInfo {
       {".encfs2", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
       {".encfs", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
       {NULL, Config_None, NULL, NULL, NULL, 0, 0}};
-
-#include "boost-versioning.h" // IWYU pragma: keep
-
-// define serialization helpers
-namespace boost {
-namespace serialization {
-template <class Archive>
-void save(Archive &ar, const EncFSConfig &cfg, unsigned int version) {
-  (void)version;
-  // version 20 (aka 20100613)
-  if (cfg.subVersion == 0)
-    ar << make_nvp("version", V6SubVersion);
-  else
-    ar << make_nvp("version", cfg.subVersion);
-
-  ar << make_nvp("creator", cfg.creator);
-  ar << make_nvp("cipherAlg", cfg.cipherIface);
-  ar << make_nvp("nameAlg", cfg.nameIface);
-  ar << make_nvp("keySize", cfg.keySize);
-  ar << make_nvp("blockSize", cfg.blockSize);
-  ar << make_nvp("uniqueIV", cfg.uniqueIV);
-  ar << make_nvp("chainedNameIV", cfg.chainedNameIV);
-  ar << make_nvp("externalIVChaining", cfg.externalIVChaining);
-  ar << make_nvp("blockMACBytes", cfg.blockMACBytes);
-  ar << make_nvp("blockMACRandBytes", cfg.blockMACRandBytes);
-  ar << make_nvp("allowHoles", cfg.allowHoles);
-
-  int encodedSize = cfg.keyData.size();
-  ar << make_nvp("encodedKeySize", encodedSize);
-  ar << make_nvp("encodedKeyData",
-                 serial::make_binary_object(cfg.getKeyData(), encodedSize));
-
-  // version 20080816
-  int size = cfg.salt.size();
-  ar << make_nvp("saltLen", size);
-  ar << make_nvp("saltData",
-                 serial::make_binary_object(cfg.getSaltData(), size));
-  ar << make_nvp("kdfIterations", cfg.kdfIterations);
-  ar << make_nvp("desiredKDFDuration", cfg.desiredKDFDuration);
-}
-
-template <class Archive>
-void load(Archive &ar, EncFSConfig &cfg, unsigned int version) {
-  rInfo("version = %i", version);
-  // TODO: figure out how to deprecate all but the first case..
-  if (version == 20 || version >= 20100713) {
-    rInfo("found new serialization format");
-    ar >> make_nvp("version", cfg.subVersion);
-  } else if (version == 26800) {
-    rInfo("found 20080816 version");
-    cfg.subVersion = 20080816;
-  } else if (version == 26797) {
-    rInfo("found 20080813");
-    cfg.subVersion = 20080813;
-  } else if (version < (unsigned int)V5SubVersion) {
-    rError("Invalid version %i - please fix config file", version);
-  } else {
-    rInfo("Boost <= 1.41 compatibility mode");
-    cfg.subVersion = version;
-  }
-  rInfo("subVersion = %i", cfg.subVersion);
-
-  ar >> make_nvp("creator", cfg.creator);
-  ar >> make_nvp("cipherAlg", cfg.cipherIface);
-  ar >> make_nvp("nameAlg", cfg.nameIface);
-  ar >> make_nvp("keySize", cfg.keySize);
-  ar >> make_nvp("blockSize", cfg.blockSize);
-  ar >> make_nvp("uniqueIV", cfg.uniqueIV);
-  ar >> make_nvp("chainedNameIV", cfg.chainedNameIV);
-  ar >> make_nvp("externalIVChaining", cfg.externalIVChaining);
-  ar >> make_nvp("blockMACBytes", cfg.blockMACBytes);
-  ar >> make_nvp("blockMACRandBytes", cfg.blockMACRandBytes);
-  ar >> make_nvp("allowHoles", cfg.allowHoles);
-
-  int encodedSize;
-  ar >> make_nvp("encodedKeySize", encodedSize);
-  rAssert(encodedSize == cfg.getCipher()->encodedKeySize());
-
-  unsigned char *key = new unsigned char[encodedSize];
-  ar >>
-      make_nvp("encodedKeyData", serial::make_binary_object(key, encodedSize));
-  cfg.assignKeyData(key, encodedSize);
-  delete[] key;
-
-  if (cfg.subVersion >= 20080816) {
-    int saltLen;
-    ar >> make_nvp("saltLen", saltLen);
-    unsigned char *salt = new unsigned char[saltLen];
-    ar >> make_nvp("saltData", serial::make_binary_object(salt, saltLen));
-    cfg.assignSaltData(salt, saltLen);
-    delete[] salt;
-
-    ar >> make_nvp("kdfIterations", cfg.kdfIterations);
-    ar >> make_nvp("desiredKDFDuration", cfg.desiredKDFDuration);
-  } else {
-    cfg.salt.clear();
-    cfg.kdfIterations = 16;
-    cfg.desiredKDFDuration = NormalKDFDuration;
-  }
-}
-
-template <class Archive>
-void serialize(Archive &ar, EncFSConfig &cfg, unsigned int version) {
-  split_free(ar, cfg, version);
-}
-
-template <class Archive>
-void serialize(Archive &ar, Interface &i, const unsigned int version) {
-  (void)version;
-  ar &make_nvp("name", i.name());
-  ar &make_nvp("major", i.current());
-  ar &make_nvp("minor", i.revision());
-}
-}
-}
 
 EncFS_Root::EncFS_Root() {}
 
@@ -330,7 +210,7 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
  * Load config file by calling the load function on the filename
  */
 ConfigType readConfig_load(ConfigInfo *nm, const char *path,
-                           const shared_ptr<EncFSConfig> &config) {
+                           EncFSConfig *config) {
   if (nm->loadFunc) {
     try {
       if ((*nm->loadFunc)(path, config, nm)) {
@@ -354,8 +234,7 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
  * Try to locate the config file
  * Tries the most recent format first, then looks for older versions
  */
-ConfigType readConfig(const string &rootDir,
-                      const shared_ptr<EncFSConfig> &config) {
+ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
   ConfigInfo *nm = ConfigFileMapping;
   while (nm->fileName) {
     // allow environment variable to override default config path
@@ -386,32 +265,96 @@ ConfigType readConfig(const string &rootDir,
  * Read config file in current "V6" XML format, normally named ".encfs6.xml"
  * This format is in use since Apr 13, 2008 (commit 6d081f5c)
  */
-bool readV6Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
+ // Read a boost::serialization config file using an Xml reader..
+bool readV6Config(const char *configFile, EncFSConfig *cfg,
                   ConfigInfo *info) {
   (void)info;
 
-  ifstream st(configFile);
-  if (st.is_open()) {
-    try {
-      boost::archive::xml_iarchive ia(st);
-      ia >> BOOST_SERIALIZATION_NVP(*config);
-
-      return true;
-    } catch (boost::archive::archive_exception &e) {
-      rError("Archive exception: %s", e.what());
-      return false;
-    }
-  } else {
-    rInfo("Failed to load config file %s", configFile);
+  XmlReader rdr;
+  if (!rdr.load(configFile)) {
+    rError("Failed to load config file %s", configFile);
     return false;
   }
+
+  XmlValuePtr serialization = rdr["boost_serialization"];
+  XmlValuePtr config = (*serialization)["cfg"];
+  if (!config) {
+    config = (*serialization)["config"];
+  }
+  if (!config) {
+    rError("Unable to find XML configuration in file %s", configFile);
+    return false;
+  }
+
+  int version;
+  if (!config->read("version", &version) &&
+      !config->read("@version", &version)) {
+    rError("Unable to find version in config file");
+    return false;
+  }
+
+  // version numbering was complicated by boost::archive
+  if (version == 20 || version >= 20100713) {
+    rDebug("found new serialization format");
+    cfg->subVersion = version;
+  } else if (version == 26800) {
+    rDebug("found 20080816 version");
+    cfg->subVersion = 20080816;
+  } else if (version == 26797) {
+    rDebug("found 20080813");
+    cfg->subVersion = 20080813;
+  } else if (version < V5SubVersion) {
+    rError("Invalid version %d - please fix config file", version);
+  } else {
+    rInfo("Boost <= 1.41 compatibility mode");
+    cfg->subVersion = version;
+  }
+  rDebug("subVersion = %d", cfg->subVersion);
+
+  config->read("creator", &cfg->creator);
+  config->read("cipherAlg", &cfg->cipherIface);
+  config->read("nameAlg", &cfg->nameIface);
+
+  config->read("keySize", &cfg->keySize);
+
+  config->read("blockSize", &cfg->blockSize);
+  config->read("uniqueIV", &cfg->uniqueIV);
+  config->read("chainedNameIV", &cfg->chainedNameIV);
+  config->read("externalIVChaining", &cfg->externalIVChaining);
+  config->read("blockMACBytes", &cfg->blockMACBytes);
+  config->read("blockMACRandBytes", &cfg->blockMACRandBytes);
+  config->read("allowHoles", &cfg->allowHoles);
+
+  int encodedSize;
+  config->read("encodedKeySize", &encodedSize);
+  unsigned char *key = new unsigned char[encodedSize];
+  config->readB64("encodedKeyData", key, encodedSize);
+  cfg->assignKeyData(key, encodedSize);
+  delete[] key;
+
+  if (cfg->subVersion >= 20080816) {
+    int saltLen;
+    config->read("saltLen", &saltLen);
+    unsigned char *salt = new unsigned char[saltLen];
+    config->readB64("saltData", salt, saltLen);
+    cfg->assignSaltData(salt, saltLen);
+    delete[] salt;
+
+    config->read("kdfIterations", &cfg->kdfIterations);
+    config->read("desiredKDFDuration", &cfg->desiredKDFDuration);
+  } else {
+    cfg->kdfIterations = 16;
+    cfg->desiredKDFDuration = NormalKDFDuration;
+  }
+
+  return true;
 }
 
 /**
  * Read config file in deprecated "V5" format, normally named ".encfs5"
  * This format has been used before Apr 13, 2008
  */
-bool readV5Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
+bool readV5Config(const char *configFile, EncFSConfig *config,
                   ConfigInfo *info) {
   bool ok = false;
 
@@ -466,7 +409,7 @@ bool readV5Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
  * Read config file in deprecated "V4" format, normally named ".encfs4"
  * This format has been used before Jan 7, 2008
  */
-bool readV4Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
+bool readV4Config(const char *configFile, EncFSConfig *config,
                   ConfigInfo *info) {
   bool ok = false;
 
@@ -503,7 +446,7 @@ bool readV4Config(const char *configFile, const shared_ptr<EncFSConfig> &config,
 }
 
 bool saveConfig(ConfigType type, const string &rootDir,
-                const shared_ptr<EncFSConfig> &config) {
+                const EncFSConfig *config) {
   bool ok = false;
 
   ConfigInfo *nm = ConfigFileMapping;
@@ -530,31 +473,93 @@ bool saveConfig(ConfigType type, const string &rootDir,
   return ok;
 }
 
-bool writeV6Config(const char *configFile,
-                   const shared_ptr<EncFSConfig> &config) {
-  ofstream st(configFile);
-  if (!st.is_open()) return false;
-
-  st << *config;
-  return true;
+template <typename T>
+tinyxml2::XMLElement *addEl(tinyxml2::XMLDocument &doc,
+                            tinyxml2::XMLNode *parent, const char *name,
+                            T value) {
+  auto el = doc.NewElement(name);
+  el->SetText(value);
+  parent->InsertEndChild(el);
+  return el;
 }
 
-std::ostream &operator<<(std::ostream &st, const EncFSConfig &cfg) {
-  boost::archive::xml_oarchive oa(st);
-  oa << BOOST_SERIALIZATION_NVP(cfg);
+template <>
+tinyxml2::XMLElement *addEl<>(tinyxml2::XMLDocument &doc,
+                              tinyxml2::XMLNode *parent, const char *name,
+                              Interface iface) {
+  auto el = doc.NewElement(name);
 
-  return st;
+  auto n = doc.NewElement("name");
+  n->SetText(iface.name().c_str());
+  el->InsertEndChild(n);
+
+  auto major = doc.NewElement("major");
+  major->SetText(iface.current());
+  el->InsertEndChild(major);
+
+  auto minor = doc.NewElement("minor");
+  minor->SetText(iface.revision());
+  el->InsertEndChild(minor);
+
+  parent->InsertEndChild(el);
+  return el;
 }
 
-std::istream &operator>>(std::istream &st, EncFSConfig &cfg) {
-  boost::archive::xml_iarchive ia(st);
-  ia >> BOOST_SERIALIZATION_NVP(cfg);
+template <>
+tinyxml2::XMLElement *addEl<>(tinyxml2::XMLDocument &doc,
+                              tinyxml2::XMLNode *parent, const char *name,
+                              std::vector<unsigned char> data) {
+  string v = string("\n") + B64StandardEncode(data) + "\n";
+  return addEl(doc, parent, name, v.c_str());
+}
 
-  return st;
+bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
+  tinyxml2::XMLDocument doc;
+
+  // Various static tags are included to make the output compatible with
+  // older boost-based readers.
+  doc.InsertEndChild(doc.NewDeclaration(nullptr));
+  doc.InsertEndChild(doc.NewUnknown("DOCTYPE boost_serialization"));
+
+  auto header = doc.NewElement("boost_serialization");
+  header->SetAttribute("signature", "serialization::archive");
+  header->SetAttribute("version", "7");
+  doc.InsertEndChild(header);
+
+  auto config = doc.NewElement("cfg");
+  config->SetAttribute("class_id", "0");
+  config->SetAttribute("tracking_level", "0");
+  config->SetAttribute("version", "20");
+  header->InsertEndChild(config);
+
+  addEl(doc, config, "version", V6SubVersion);
+  addEl(doc, config, "creator", cfg->creator.c_str());
+  auto cipherAlg = addEl(doc, config, "cipherAlg", cfg->cipherIface);
+  cipherAlg->SetAttribute("class_id", "1");
+  cipherAlg->SetAttribute("tracking_level", "0");
+  cipherAlg->SetAttribute("version", "0");
+  addEl(doc, config, "nameAlg", cfg->nameIface);
+  addEl(doc, config, "keySize", cfg->keySize);
+  addEl(doc, config, "blockSize", cfg->blockSize);
+  addEl(doc, config, "uniqueIV", cfg->uniqueIV);
+  addEl(doc, config, "chainedNameIV", cfg->chainedNameIV);
+  addEl(doc, config, "externalIVChaining", cfg->externalIVChaining);
+  addEl(doc, config, "blockMACBytes", cfg->blockMACBytes);
+  addEl(doc, config, "blockMACRandBytes", cfg->blockMACRandBytes);
+  addEl(doc, config, "allowHoles", cfg->allowHoles);
+  addEl(doc, config, "encodedKeySize", (int)cfg->keyData.size());
+  addEl(doc, config, "encodedKeyData", cfg->keyData);
+  addEl(doc, config, "saltLen", (int)cfg->salt.size());
+  addEl(doc, config, "saltData", cfg->salt);
+  addEl(doc, config, "kdfIterations", cfg->kdfIterations);
+  addEl(doc, config, "desiredKDFDuration", (int)cfg->desiredKDFDuration);
+
+  auto err = doc.SaveFile(configFile, false);
+  return err == tinyxml2::XML_SUCCESS;
 }
 
 bool writeV5Config(const char *configFile,
-                   const shared_ptr<EncFSConfig> &config) {
+                   const EncFSConfig *config) {
   ConfigReader cfg;
 
   cfg["creator"] << config->creator;
@@ -576,7 +581,7 @@ bool writeV5Config(const char *configFile,
 }
 
 bool writeV4Config(const char *configFile,
-                   const shared_ptr<EncFSConfig> &config) {
+                   const EncFSConfig *config) {
   ConfigReader cfg;
 
   cfg["cipher"] << config->cipherIface;
@@ -1125,7 +1130,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   // xgroup(setup)
   cout << _("Configuration finished.  The filesystem to be created has\n"
             "the following properties:") << endl;
-  showFSInfo(config);
+  showFSInfo(config.get());
 
   if (config->externalIVChaining) {
     cout << _("-------------------------- WARNING --------------------------\n")
@@ -1175,7 +1180,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     return rootInfo;
   }
 
-  if (!saveConfig(Config_V6, rootDir, config)) return rootInfo;
+  if (!saveConfig(Config_V6, rootDir, config.get())) return rootInfo;
 
   // fill in config struct
   shared_ptr<NameIO> nameCoder =
@@ -1208,7 +1213,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   return rootInfo;
 }
 
-void showFSInfo(const shared_ptr<EncFSConfig> &config) {
+void showFSInfo(const EncFSConfig *config) {
   shared_ptr<Cipher> cipher = Cipher::New(config->cipherIface, -1);
   {
     cout << autosprintf(
@@ -1517,7 +1522,7 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   RootPtr rootInfo;
   shared_ptr<EncFSConfig> config(new EncFSConfig);
 
-  if (readConfig(opts->rootDir, config) != Config_None) {
+  if (readConfig(opts->rootDir, config.get()) != Config_None) {
     if (config->blockMACBytes == 0 && opts->requireMac) {
       cout << _(
           "The configuration disabled MAC, but you passed --require-macs\n");
