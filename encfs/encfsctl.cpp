@@ -167,7 +167,7 @@ static int showInfo(int argc, char **argv) {
   string rootDir = argv[1];
   if (!checkDir(rootDir)) return EXIT_FAILURE;
 
-  shared_ptr<EncFSConfig> config(new EncFSConfig);
+  EncFSConfig* config = new EncFSConfig;
   ConfigType type = readConfig(rootDir, config);
 
   // show information stored in config..
@@ -617,7 +617,7 @@ static int do_chpasswd(bool useStdin, bool annotate, bool checkOnly, int argc, c
   string rootDir = argv[1];
   if (!checkDir(rootDir)) return EXIT_FAILURE;
 
-  shared_ptr<EncFSConfig> config(new EncFSConfig);
+  EncFSConfig* config = new EncFSConfig;
   ConfigType cfgType = readConfig(rootDir, config);
 
   if (cfgType == Config_None) {
