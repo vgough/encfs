@@ -523,19 +523,6 @@ void *encfs_init(fuse_conn_info *conn) {
 }
 
 void encfs_destroy(void *_ctx) {
-  EncFS_Context *ctx = (EncFS_Context *)_ctx;
-  if (ctx->args->idleTimeout > 0) {
-    ctx->running = false;
-
-    // wake up the thread if it is waiting..
-    VLOG(1) << "waking up monitoring thread";
-    pthread_mutex_lock(&ctx->wakeupMutex);
-    pthread_cond_signal(&ctx->wakeupCond);
-    pthread_mutex_unlock(&ctx->wakeupMutex);
-    VLOG(1) << "joining with idle monitoring thread";
-    pthread_join(ctx->monitorThread, 0);
-    VLOG(1) << "join done";
-  }
 }
 
 int main(int argc, char *argv[]) {
@@ -691,6 +678,18 @@ int main(int argc, char *argv[]) {
     } catch (...) {
       RLOG(ERROR) << "Internal error: Caught unexpected exception";
     }
+
+    if (ctx->args->idleTimeout > 0) {
+      ctx->running = false;
+      // wake up the thread if it is waiting..
+      VLOG(1) << "waking up monitoring thread";
+      pthread_mutex_lock(&ctx->wakeupMutex);
+      pthread_cond_signal(&ctx->wakeupCond);
+      pthread_mutex_unlock(&ctx->wakeupMutex);
+      VLOG(1) << "joining with idle monitoring thread";
+      pthread_join(ctx->monitorThread, 0);
+      VLOG(1) << "join done";
+    }
   }
 
   // cleanup so that we can check for leaked resources..
@@ -718,7 +717,7 @@ static void *idleMonitor(void *_arg) {
   std::shared_ptr<EncFS_Args> arg = ctx->args;
 
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;
-  int idleCycles = 0;
+  int idleCycles = -1;
 
   pthread_mutex_lock(&ctx->wakeupMutex);
 
@@ -732,13 +731,20 @@ static void *idleMonitor(void *_arg) {
 
     if (idleCycles >= timeoutCycles) {
       int openCount = ctx->openFileCount();
-      if (openCount == 0 && unmountFS(ctx)) {
-        // wait for main thread to wake us up
-        pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
-        break;
+      if (openCount == 0) {
+        if (unmountFS(ctx)) {
+          // wait for main thread to wake us up
+          pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
+          break;
+        }
       }
-
-      VLOG(1) << "num open files: " << openCount;
+      else {
+        RLOG(WARNING) << "Filesystem "
+                      << arg->opts->mountPoint
+                      << " inactivity detected, but still "
+                      << openCount
+                      << " opened files";
+      }
     }
 
     VLOG(1) << "idle cycle count: " << idleCycles << ", timeout after "
