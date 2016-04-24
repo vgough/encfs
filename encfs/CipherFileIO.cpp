@@ -356,7 +356,7 @@ bool CipherFileIO::writeOneBlock(const IORequest &req) {
 
   if (haveHeader && fsConfig->reverseEncryption) {
     rDebug("writing to a reverse mount with per-file IVs is not implemented");
-    return -EROFS;
+    return false;
   }
 
   int bs = blockSize();
