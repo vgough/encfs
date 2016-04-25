@@ -4,7 +4,7 @@ FROM ubuntu
 # Do system updates and install dependencies
 RUN apt-get update
 RUN apt-get -y upgrade
-RUN sudo apt-get -y install git wget autopoint libfuse-dev libtinyxml2-dev
+RUN sudo apt-get -y install git wget autopoint libfuse-dev
 RUN apt-get clean
 
 # Download Drone.io
