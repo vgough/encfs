@@ -35,6 +35,5 @@ RUN     apt-get -y upgrade \
             librlog-dev \
             gettext \
             libgettextpo-dev \
-            libtinyxml2-dev \
         && apt-get clean
 
