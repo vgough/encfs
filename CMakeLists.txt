@@ -12,6 +12,9 @@ set (ENCFS_NAME "Encrypted Filesystem")
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_SOURCE_DIR}/cmake")
 
+option (BUILD_SHARED_LIBS "build shared libraries" OFF)
+option (USE_INTERNAL_TINYXML "use build-in TinyXML2" ON)
+
 # We need C++ 11
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
   # CMake 3.1 has built-in CXX standard checks.
@@ -48,8 +51,16 @@ add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 find_package (OpenSSL REQUIRED)
 include_directories (${OPENSSL_INCLUDE_DIR})
 
-find_package (TinyXML REQUIRED)
-include_directories (${TINYXML_INCLUDE_DIR})
+if (USE_INTERNAL_TINYXML)
+  message("-- Using local TinyXML2 copy")
+  add_subdirectory(tinyxml2-3.0.0)
+  include_directories(${CMAKE_SOURCE_DIR}/tinyxml2-3.0.0)
+  link_directories(${CMAKE_BINARY_DIR}/tinyxml2-3.0.0)
+  set(TINYXML_LIBRARIES tinyxml2)
+else ()
+  find_package (TinyXML REQUIRED)
+  include_directories (${TINYXML_INCLUDE_DIR})
+endif ()
 
 find_package (RLog REQUIRED)
 add_definitions (-DRLOG_COMPONENT="encfs")
@@ -129,9 +140,10 @@ set(SOURCE_FILES
   encfs/StreamNameIO.cpp
   encfs/XmlReader.cpp
 )
-add_library(encfs SHARED ${SOURCE_FILES})
-set_property(TARGET encfs PROPERTY VERSION ${ENCFS_VERSION})
-set_property(TARGET encfs PROPERTY SOVERSION ${ENCFS_SOVERSION})
+add_library(encfs ${SOURCE_FILES})
+set_target_properties(encfs PROPERTIES
+  VERSION ${ENCFS_VERSION}
+  SOVERSION ${ENCFS_SOVERSION})
 target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
