@@ -21,10 +21,12 @@
 #ifndef _ConfigReader_incl_
 #define _ConfigReader_incl_
 
-#include <string>
 #include <map>
+#include <string>
 
 #include "ConfigVar.h"
+
+namespace encfs {
 
 /*
     handles Configuration load / store for Encfs filesystems.
@@ -60,5 +62,7 @@ class ConfigReader {
  private:
   std::map<std::string, ConfigVar> vars;
 };
+
+}  // namespace encfs
 
 #endif

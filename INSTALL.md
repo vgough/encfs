@@ -41,13 +41,16 @@ Dependencies
 
 EncFS depends on a number of libraries:
 
-    openssl fuse tinyxml2 gettext libintl librlog
+    * fuse : the userspace filesystem layer
+    * openssl : used for cryptographic primitives
+    * tinyxml2 : for reading and writing XML configuration files
+    * gettext : internationalization support
+    * libintl : internationalization support
 
 Compiling on Debian and Ubuntu
 ==============================
 
-We use separate [Drone.io](https://drone.io/) and [CircleCi](https://circleci.com/) builds to automatically
-test every commit.  See the README.md file for current build status.
+See the automated build static in README.md for current build status on Ubuntu systems.
 
-The build configuration files (.drone.yml and circle.yml) therefore
-always contains up-to-date instructions to build EncFS on Ubuntu distributions.
+The build configuration files (.drone.yml and circle.yml) always contains up-to-date
+instructions to build EncFS on Ubuntu distributions.

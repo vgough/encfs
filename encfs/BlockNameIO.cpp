@@ -20,42 +20,37 @@
 
 #include "BlockNameIO.h"
 
-#include <rlog/Error.h>
-#include <rlog/rlog.h>
 #include <cstring>
+#include <memory>
 
 #include "Cipher.h"
 #include "CipherKey.h"
+#include "Error.h"
+#include "Interface.h"
 #include "NameIO.h"
 #include "base64.h"
+#include "internal/easylogging++.h"
 #include "intl/gettext.h"
 
-namespace rlog {
-class RLogChannel;
-}  // namespace rlog
+namespace encfs {
 
-using namespace rlog;
-using namespace rel;
-
-static RLogChannel *Info = DEF_CHANNEL("info/nameio", Log_Info);
-
-static shared_ptr<NameIO> NewBlockNameIO(const Interface &iface,
-                                         const shared_ptr<Cipher> &cipher,
-                                         const CipherKey &key) {
+static std::shared_ptr<NameIO> NewBlockNameIO(
+    const Interface &iface, const std::shared_ptr<Cipher> &cipher,
+    const CipherKey &key) {
   int blockSize = 8;
   if (cipher) blockSize = cipher->cipherBlockSize();
 
-  return shared_ptr<NameIO>(
+  return std::shared_ptr<NameIO>(
       new BlockNameIO(iface, cipher, key, blockSize, false));
 }
 
-static shared_ptr<NameIO> NewBlockNameIO32(const Interface &iface,
-                                           const shared_ptr<Cipher> &cipher,
-                                           const CipherKey &key) {
+static std::shared_ptr<NameIO> NewBlockNameIO32(
+    const Interface &iface, const std::shared_ptr<Cipher> &cipher,
+    const CipherKey &key) {
   int blockSize = 8;
   if (cipher) blockSize = cipher->cipherBlockSize();
 
-  return shared_ptr<NameIO>(
+  return std::shared_ptr<NameIO>(
       new BlockNameIO(iface, cipher, key, blockSize, true));
 }
 
@@ -99,9 +94,10 @@ Interface BlockNameIO::CurrentInterface(bool caseInsensitive) {
     return Interface("nameio/block", 4, 0, 2);
 }
 
-BlockNameIO::BlockNameIO(const rel::Interface &iface,
-                         const shared_ptr<Cipher> &cipher, const CipherKey &key,
-                         int blockSize, bool caseInsensitiveEncoding)
+BlockNameIO::BlockNameIO(const Interface &iface,
+                         const std::shared_ptr<Cipher> &cipher,
+                         const CipherKey &key, int blockSize,
+                         bool caseInsensitiveEncoding)
     : _interface(iface.current()),
       _bs(blockSize),
       _cipher(cipher),
@@ -191,8 +187,8 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
 
   // don't bother trying to decode files which are too small
   if (decodedStreamLen < _bs) {
-    rDebug("Rejecting filename '%s'", encodedName);
-    throw ERROR("Filename too small to decode");
+    VLOG(1) << "Rejecting filename " << encodedName;
+    throw Error("Filename too small to decode");
   }
 
   BUFFER_INIT(tmpBuf, 32, (unsigned int)length);
@@ -222,8 +218,9 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
 
   // might happen if there is an error decoding..
   if (padding > _bs || finalSize < 0) {
-    rDebug("padding, _bx, finalSize = %i, %i, %i", padding, _bs, finalSize);
-    throw ERROR("invalid padding size");
+    VLOG(1) << "padding, _bx, finalSize = " << padding << ", " << _bs << ", "
+            << finalSize;
+    throw Error("invalid padding size");
   }
 
   // copy out the result..
@@ -238,12 +235,14 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
   BUFFER_RESET(tmpBuf);
 
   if (mac2 != mac) {
-    rDebug("checksum mismatch: expected %u, got %u", mac, mac2);
-    rDebug("on decode of %i bytes", finalSize);
-    throw ERROR("checksum mismatch in filename decode");
+    VLOG(1) << "checksum mismatch: expected " << mac << ", got " << mac2
+            << " on decode of " << finalSize << " bytes";
+    throw Error("checksum mismatch in filename decode");
   }
 
   return finalSize;
 }
 
 bool BlockNameIO::Enabled() { return true; }
+
+}  // namespace encfs

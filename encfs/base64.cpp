@@ -20,10 +20,11 @@
 
 #include "base64.h"
 
-#include <cstdlib>
-#include <ctype.h>
+#include <ctype.h>  // for toupper
 
-#include <rlog/rlog.h>
+#include "Error.h"
+
+namespace encfs {
 
 // change between two powers of two, stored as the low bits of the bytes in the
 // arrays.
@@ -202,7 +203,7 @@ bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inLen) {
   while (in < end) {
     unsigned char v = *in++;
     if (v > 'z') {
-      rError("Invalid character: %d", (unsigned int)v);
+      RLOG(ERROR) << "Invalid character: " << (unsigned int)v;
       return false;
     }
     unsigned char c = d[v];
@@ -211,7 +212,7 @@ bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inLen) {
       case WHITESPACE:
         continue; /* skip whitespace */
       case INVALID:
-        rError("Invalid character: %d", (unsigned int)v);
+        RLOG(ERROR) << "Invalid character: " << (unsigned int)v;
         return false; /* invalid input, return error */
       case EQUALS:    /* pad character, end of data */
         in = end;
@@ -276,3 +277,5 @@ std::string B64StandardEncode(std::vector<unsigned char> inputBuffer) {
   }
   return encodedString;
 }
+
+}  // namespace encfs

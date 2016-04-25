@@ -18,19 +18,22 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdlib.h>
-#include <unistd.h>
 #include <iostream>
 #include <memory>
+#include <stdlib.h>
 #include <string>
+#include <unistd.h>
 
 #include "Cipher.h"
 #include "CipherKey.h"
 #include "openssl.h"
 
 using namespace std;
+using namespace encfs;
 
-void genKey(const shared_ptr<Cipher> &cipher) {
+INITIALIZE_EASYLOGGINGPP
+
+void genKey(const std::shared_ptr<Cipher> &cipher) {
   CipherKey key = cipher->newRandomKey();
 
   // encode with itself
@@ -54,7 +57,7 @@ int main(int argc, char **argv) {
   openssl_init(false);
 
   // get a list of the available algorithms
-  shared_ptr<Cipher> cipher = Cipher::New(type, size);
+  std::shared_ptr<Cipher> cipher = Cipher::New(type, size);
   genKey(cipher);
 
   // openssl_shutdown(false);

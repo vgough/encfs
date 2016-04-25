@@ -21,13 +21,15 @@
 #ifndef _FSConfig_incl_
 #define _FSConfig_incl_
 
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "encfs.h"
-#include "Interface.h"
 #include "CipherKey.h"
-#include "shared_ptr.h"
+#include "Interface.h"
+#include "encfs.h"
+
+namespace encfs {
 
 enum ConfigType {
   Config_None = 0,
@@ -52,10 +54,10 @@ struct EncFSConfig {
   int subVersion;
 
   // interface of cipher
-  rel::Interface cipherIface;
+  Interface cipherIface;
   // interface used for file name coding
-  rel::Interface nameIface;
-  
+  Interface nameIface;
+
   int keySize;    // reported in bits
   int blockSize;  // reported in bytes
 
@@ -93,7 +95,7 @@ struct EncFSConfig {
                        const std::string &rootDir);
   CipherKey getNewUserKey();
 
-  shared_ptr<Cipher> getCipher() const;
+  std::shared_ptr<Cipher> getCipher() const;
 
   // deprecated
   void assignKeyData(const std::string &in);
@@ -112,12 +114,12 @@ std::ostream &operator<<(std::ostream &os, const EncFSConfig &cfg);
 std::istream &operator>>(std::istream &os, EncFSConfig &cfg);
 
 struct FSConfig {
-  shared_ptr<EncFSConfig> config;
-  shared_ptr<EncFS_Opts> opts;
+  std::shared_ptr<EncFSConfig> config;
+  std::shared_ptr<EncFS_Opts> opts;
 
-  shared_ptr<Cipher> cipher;
+  std::shared_ptr<Cipher> cipher;
   CipherKey key;
-  shared_ptr<NameIO> nameCoding;
+  std::shared_ptr<NameIO> nameCoding;
 
   bool forceDecode;        // force decode on MAC block failures
   bool reverseEncryption;  // reverse encryption operation
@@ -128,6 +130,8 @@ struct FSConfig {
       : forceDecode(false), reverseEncryption(false), idleTracking(false) {}
 };
 
-typedef shared_ptr<FSConfig> FSConfigPtr;
+typedef std::shared_ptr<FSConfig> FSConfigPtr;
+
+}  // namespace encfs
 
 #endif

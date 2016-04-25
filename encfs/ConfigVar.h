@@ -24,7 +24,7 @@
 #include <memory>
 #include <string>
 
-#include "shared_ptr.h"
+namespace encfs {
 
 class ConfigVar {
   struct ConfigVarData {
@@ -32,7 +32,7 @@ class ConfigVar {
     int offset;
   };
 
-  shared_ptr<ConfigVarData> pd;
+  std::shared_ptr<ConfigVarData> pd;
 
  public:
   ConfigVar();
@@ -76,5 +76,7 @@ ConfigVar &operator<<(ConfigVar &, const std::string &str);
 const ConfigVar &operator>>(const ConfigVar &, bool &);
 const ConfigVar &operator>>(const ConfigVar &, int &);
 const ConfigVar &operator>>(const ConfigVar &, std::string &str);
+
+}  // namespace encfs
 
 #endif

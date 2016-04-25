@@ -18,15 +18,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <rlog/rlog.h>
+#include "internal/easylogging++.h"
 #include <utility>
 
 #include "Context.h"
 #include "DirNode.h"
+#include "Error.h"
 #include "Mutex.h"
 
-using namespace rel;
-using namespace rlog;
+namespace encfs {
 
 EncFS_Context::EncFS_Context() {
   pthread_cond_init(&wakeupCond, 0);
@@ -44,9 +44,8 @@ EncFS_Context::~EncFS_Context() {
   // release all entries from map
   openFiles.clear();
 }
-
-shared_ptr<DirNode> EncFS_Context::getRoot(int *errCode) {
-  shared_ptr<DirNode> ret;
+std::shared_ptr<DirNode> EncFS_Context::getRoot(int *errCode) {
+  std::shared_ptr<DirNode> ret;
   do {
     {
       Lock lock(contextMutex);
@@ -66,7 +65,7 @@ shared_ptr<DirNode> EncFS_Context::getRoot(int *errCode) {
   return ret;
 }
 
-void EncFS_Context::setRoot(const shared_ptr<DirNode> &r) {
+void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
   Lock lock(contextMutex);
 
   root = r;
@@ -89,8 +88,7 @@ int EncFS_Context::openFileCount() const {
 
   return openFiles.size();
 }
-
-shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
+std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
   Lock lock(contextMutex);
 
   FileMap::iterator it = openFiles.find(std::string(path));
@@ -99,7 +97,7 @@ shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
     // first
     return (*it->second.begin())->node;
   } else {
-    return shared_ptr<FileNode>();
+    return std::shared_ptr<FileNode>();
   }
 }
 
@@ -113,14 +111,13 @@ void EncFS_Context::renameNode(const char *from, const char *to) {
     openFiles[std::string(to)] = val;
   }
 }
-
-shared_ptr<FileNode> EncFS_Context::getNode(void *pl) {
+std::shared_ptr<FileNode> EncFS_Context::getNode(void *pl) {
   Placeholder *ph = (Placeholder *)pl;
   return ph->node;
 }
 
 void *EncFS_Context::putNode(const char *path,
-                             const shared_ptr<FileNode> &node) {
+                             const std::shared_ptr<FileNode> &node) {
   Lock lock(contextMutex);
   Placeholder *pl = new Placeholder(node);
   openFiles[std::string(path)].insert(pl);
@@ -151,3 +148,5 @@ void EncFS_Context::eraseNode(const char *path, void *pl) {
 
   delete ph;
 }
+
+}  // namespace encfs

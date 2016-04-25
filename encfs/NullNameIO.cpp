@@ -24,15 +24,17 @@
 #include <memory>
 
 #include "CipherKey.h"
+#include "Error.h"
 #include "NameIO.h"
+
+namespace encfs {
 
 class Cipher;
 
-using namespace rel;
-
-static shared_ptr<NameIO> NewNNIO(const Interface &, const shared_ptr<Cipher> &,
-                                  const CipherKey &) {
-  return shared_ptr<NameIO>(new NullNameIO());
+static std::shared_ptr<NameIO> NewNNIO(const Interface &,
+                                       const std::shared_ptr<Cipher> &,
+                                       const CipherKey &) {
+  return std::shared_ptr<NameIO>(new NullNameIO());
 }
 
 static Interface NNIOIface("nameio/null", 1, 0, 0);
@@ -76,3 +78,5 @@ int NullNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
 }
 
 bool NullNameIO::Enabled() { return true; }
+
+}  // namespace encfs

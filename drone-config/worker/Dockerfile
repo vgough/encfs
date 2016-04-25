@@ -32,7 +32,6 @@ RUN     apt-get -y upgrade \
             git \
             libfuse-dev \
             libssl-dev \
-            librlog-dev \
             gettext \
             libgettextpo-dev \
         && apt-get clean

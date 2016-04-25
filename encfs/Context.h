@@ -21,15 +21,16 @@
 #ifndef _Context_incl_
 #define _Context_incl_
 
-#include <pthread.h>
 #include <memory>
+#include <pthread.h>
 #include <set>
 
 #include <string>
 #include <unordered_map>
 
 #include "encfs.h"
-#include "shared_ptr.h"
+
+namespace encfs {
 
 class DirNode;
 class FileNode;
@@ -41,24 +42,24 @@ class EncFS_Context {
   EncFS_Context();
   ~EncFS_Context();
 
-  shared_ptr<FileNode> getNode(void *ptr);
-  shared_ptr<FileNode> lookupNode(const char *path);
+  std::shared_ptr<FileNode> getNode(void *ptr);
+  std::shared_ptr<FileNode> lookupNode(const char *path);
 
   int getAndResetUsageCounter();
   int openFileCount() const;
 
-  void *putNode(const char *path, const shared_ptr<FileNode> &node);
+  void *putNode(const char *path, const std::shared_ptr<FileNode> &node);
 
   void eraseNode(const char *path, void *placeholder);
 
   void renameNode(const char *oldName, const char *newName);
 
-  void setRoot(const shared_ptr<DirNode> &root);
-  shared_ptr<DirNode> getRoot(int *err);
+  void setRoot(const std::shared_ptr<DirNode> &root);
+  std::shared_ptr<DirNode> getRoot(int *err);
   bool isMounted();
 
-  shared_ptr<EncFS_Args> args;
-  shared_ptr<EncFS_Opts> opts;
+  std::shared_ptr<EncFS_Args> args;
+  std::shared_ptr<EncFS_Opts> opts;
   bool publicFilesystem;
 
   // root path to cipher dir
@@ -77,13 +78,13 @@ class EncFS_Context {
    * A FileNode may be opened many times, but only one FileNode instance per
    * file is kept.  Rather then doing reference counting in FileNode, we
    * store a unique Placeholder for each open() until the corresponding
-   * release() is called.  shared_ptr then does our reference counting for
+   * release() is called.  std::shared_ptr then does our reference counting for
    * us.
    */
   struct Placeholder {
-    shared_ptr<FileNode> node;
+    std::shared_ptr<FileNode> node;
 
-    Placeholder(const shared_ptr<FileNode> &ptr) : node(ptr) {}
+    Placeholder(const std::shared_ptr<FileNode> &ptr) : node(ptr) {}
   };
 
   typedef std::unordered_map<std::string, std::set<Placeholder *> > FileMap;
@@ -92,9 +93,11 @@ class EncFS_Context {
   FileMap openFiles;
 
   int usageCount;
-  shared_ptr<DirNode> root;
+  std::shared_ptr<DirNode> root;
 };
 
 int remountFS(EncFS_Context *ctx);
+
+}  // namespace encfs
 
 #endif

@@ -23,10 +23,9 @@
 
 #include <string>
 
-class ConfigVar;
+namespace encfs {
 
-// part of REL library..
-namespace rel {
+class ConfigVar;
 
 class Interface {
  public:
@@ -67,16 +66,17 @@ class Interface {
   int _revision;
   int _age;
 };
-}
 
-ConfigVar &operator<<(ConfigVar &, const rel::Interface &);
-const ConfigVar &operator>>(const ConfigVar &, rel::Interface &);
+ConfigVar &operator<<(ConfigVar &, const Interface &);
+const ConfigVar &operator>>(const ConfigVar &, Interface &);
 
-bool operator<(const rel::Interface &A, const rel::Interface &B);
-bool operator>(const rel::Interface &A, const rel::Interface &B);
-bool operator<=(const rel::Interface &A, const rel::Interface &B);
-bool operator>=(const rel::Interface &A, const rel::Interface &B);
-bool operator==(const rel::Interface &A, const rel::Interface &B);
-bool operator!=(const rel::Interface &A, const rel::Interface &B);
+bool operator<(const Interface &A, const Interface &B);
+bool operator>(const Interface &A, const Interface &B);
+bool operator<=(const Interface &A, const Interface &B);
+bool operator>=(const Interface &A, const Interface &B);
+bool operator==(const Interface &A, const Interface &B);
+bool operator!=(const Interface &A, const Interface &B);
+
+}  // namespace encfs
 
 #endif

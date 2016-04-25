@@ -20,18 +20,10 @@
 
 #include "Interface.h"
 
-#include <rlog/rlog.h>
-
 #include "ConfigVar.h"
+#include "Error.h"
 
-namespace rlog {
-class RLogChannel;
-}  // namespace rlog
-
-using namespace rel;
-using namespace rlog;
-
-static RLogChannel *Info = DEF_CHANNEL("info/iface", Log_Info);
+namespace encfs {
 
 Interface::Interface(const char *name_, int Current, int Revision, int Age)
     : _name(name_), _current(Current), _revision(Revision), _age(Age) {}
@@ -115,9 +107,9 @@ static int diffSum(const Interface &A, const Interface &B) {
 const int EqualVersion = (1 * 3 + 1) * 3 + 1;
 
 bool Interface::implements(const Interface &B) const {
-  rLog(Info, "checking if %s(%i:%i:%i) implements %s(%i:%i:%i)", name().c_str(),
-       current(), revision(), age(), B.name().c_str(), B.current(),
-       B.revision(), B.age());
+  VLOG(1) << "checking if " << name() << "(" << current() << ":" << revision()
+          << ":" << age() << ") implements " << B.name() << "(" << B.current()
+          << ":" << B.revision() << ")";
 
   if (name() != B.name()) return false;
 
@@ -153,7 +145,7 @@ bool operator>=(const Interface &A, const Interface &B) {
     return A.name() < B.name();
 }
 
-ConfigVar &operator<<(ConfigVar &dst, const rel::Interface &iface) {
+ConfigVar &operator<<(ConfigVar &dst, const Interface &iface) {
   dst << iface.name() << iface.current() << iface.revision() << iface.age();
   return dst;
 }
@@ -165,3 +157,5 @@ const ConfigVar &operator>>(const ConfigVar &src, Interface &iface) {
   src >> iface.age();
   return src;
 }
+
+}  // namespace encfs

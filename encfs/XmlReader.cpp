@@ -20,23 +20,17 @@
 
 #include "XmlReader.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include <algorithm>  // for remove_if
+#include <cstring>    // for NULL
+#include <memory>     // for shared_ptr
 
-#include <algorithm>
-#include <cstring>
-#include <map>
+#include <tinyxml2.h>  // for XMLElement, XMLNode, XMLDocument (ptr only)
 
-#include <tinyxml2.h>
-
-#include <rlog/Error.h>
-#include <rlog/rlog.h>
-
-#include "base64.h"
+#include "Error.h"
 #include "Interface.h"
-#include "shared_ptr.h"
+#include "base64.h"
+
+namespace encfs {
 
 XmlValue::~XmlValue() {}
 
@@ -44,7 +38,7 @@ XmlValuePtr XmlValue::operator[](const char *path) const { return find(path); }
 
 XmlValuePtr XmlValue::find(const char *path) const {
   // Shouldn't get here.
-  rError("in XmlValue::find(%s)", path);
+  RLOG(ERROR) << "in XmlValue::find for path " << path;
   return XmlValuePtr();
 }
 
@@ -88,7 +82,8 @@ bool XmlValue::read(const char *path, bool *out) const {
   return true;
 }
 
-bool XmlValue::readB64(const char *path, unsigned char *data, int length) const {
+bool XmlValue::readB64(const char *path, unsigned char *data,
+                       int length) const {
   XmlValuePtr value = find(path);
   if (!value) return false;
 
@@ -98,25 +93,26 @@ bool XmlValue::readB64(const char *path, unsigned char *data, int length) const 
 
   int decodedSize = B64ToB256Bytes(s.size());
   if (decodedSize != length) {
-    rError("decoding bytes len %d, expecting output len %d, got %d", s.size(),
-           length, decodedSize);
+    RLOG(ERROR) << "decoding bytes len " << s.size()
+                << ", expecting output len " << length << ", got "
+                << decodedSize;
     return false;
   }
   if (!B64StandardDecode(data, (unsigned char *)s.data(), s.size())) {
-    rError("B64 decode failure on \"%s\"", s.c_str());
+    RLOG(ERROR) << "B64 decode failure on \"" << s << "\"";
     return false;
   }
 
   return true;
 }
 
-bool XmlValue::read(const char *path, rel::Interface *out) const {
+bool XmlValue::read(const char *path, Interface *out) const {
   XmlValuePtr node = find(path);
   if (!node) return false;
 
   bool ok = node->read("name", &out->name()) &&
             node->read("major", &out->current()) &&
-             node->read("minor", &out->revision());
+            node->read("minor", &out->revision());
 
   return ok;
 }
@@ -161,7 +157,7 @@ class XmlNode : virtual public XmlValue {
 };
 
 struct XmlReader::XmlReaderData {
-  shared_ptr<tinyxml2::XMLDocument> doc;
+  std::shared_ptr<tinyxml2::XMLDocument> doc;
 };
 
 XmlReader::XmlReader() : pd(new XmlReaderData()) {}
@@ -178,15 +174,17 @@ bool XmlReader::load(const char *fileName) {
 XmlValuePtr XmlReader::operator[](const char *name) const {
   tinyxml2::XMLNode *node = pd->doc->FirstChildElement(name);
   if (node == NULL) {
-    rError("Xml node %s not found", name);
+    RLOG(ERROR) << "Xml node " << name << " not found";
     return XmlValuePtr(new XmlValue());
   }
 
   tinyxml2::XMLElement *element = node->ToElement();
   if (element == NULL) {
-    rError("Xml node %s not element", name);
+    RLOG(ERROR) << "Xml node " << name << " not element";
     return XmlValuePtr(new XmlValue());
   }
 
   return XmlValuePtr(new XmlNode(element));
 }
+
+}  // namespace encfs

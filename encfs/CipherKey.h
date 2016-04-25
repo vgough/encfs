@@ -23,7 +23,7 @@
 
 #include <memory>
 
-#include "shared_ptr.h"
+namespace encfs {
 
 class AbstractCipherKey {
  public:
@@ -31,6 +31,8 @@ class AbstractCipherKey {
   virtual ~AbstractCipherKey();
 };
 
-typedef shared_ptr<AbstractCipherKey> CipherKey;
+typedef std::shared_ptr<AbstractCipherKey> CipherKey;
+
+}  // namespace encfs
 
 #endif

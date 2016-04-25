@@ -9,6 +9,8 @@ set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}.${ENCFS_PATCH}")
 set (ENCFS_SOVERSION "1.9")
 set (ENCFS_NAME "Encrypted Filesystem")
 
+option(IWYU "Build with IWYU analyais." OFF)
+
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_SOURCE_DIR}/cmake")
 
@@ -53,18 +55,14 @@ include_directories (${OPENSSL_INCLUDE_DIR})
 
 if (USE_INTERNAL_TINYXML)
   message("-- Using local TinyXML2 copy")
-  add_subdirectory(tinyxml2-3.0.0)
-  include_directories(${CMAKE_SOURCE_DIR}/tinyxml2-3.0.0)
-  link_directories(${CMAKE_BINARY_DIR}/tinyxml2-3.0.0)
+  add_subdirectory(internal/tinyxml2-3.0.0)
+  include_directories(${CMAKE_SOURCE_DIR}/internal/tinyxml2-3.0.0)
+  link_directories(${CMAKE_BINARY_DIR}/internal/tinyxml2-3.0.0)
   set(TINYXML_LIBRARIES tinyxml2)
 else ()
   find_package (TinyXML REQUIRED)
   include_directories (${TINYXML_INCLUDE_DIR})
 endif ()
-
-find_package (RLog REQUIRED)
-add_definitions (-DRLOG_COMPONENT="encfs")
-include_directories (${RLOG_INCLUDE_DIR})
 
 find_program (POD2MAN pod2man)
 include (FindGettext)
@@ -95,6 +93,14 @@ check_function_exists_glibc (lchmod HAVE_LCHMOD)
 set (CMAKE_THREAD_PREFER_PTHREAD)
 find_package (Threads REQUIRED)
 
+# Logging.
+add_definitions (-DELPP_THREAD_SAFE -DELPP_DISABLE_DEFAULT_CRASH_HANDLING)
+check_include_file_cxx (syslog.h HAVE_SYSLOG_H)
+if (HAVE_SYSLOG_H)
+  message ("-- Enabled syslog logging support")
+  add_definitions(-DELPP_SYSLOG)
+endif (HAVE_SYSLOG_H)
+
 # Packaging config.
 set (CPACK_PACKAGE_NAME "encfs")
 set (CPACK_PACKAGE_VERSION_MAJOR ${ENCFS_MAJOR})
@@ -124,6 +130,7 @@ set(SOURCE_FILES
   encfs/Context.cpp
   encfs/DirNode.cpp
   encfs/encfs.cpp
+  encfs/Error.cpp
   encfs/FileIO.cpp
   encfs/FileNode.cpp
   encfs/FileUtils.cpp
@@ -148,10 +155,20 @@ target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
-  ${RLOG_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
 )
 install (TARGETS encfs DESTINATION lib)
+
+if (IWYU)
+  if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.2)
+    find_program(iwyu_path NAMES include-what-you-use iwyu)
+    if (iwyu_path)
+      message ("-- Enabled IWYU")
+      set_property(TARGET encfs PROPERTY CXX_INCLUDE_WHAT_YOU_USE ${iwyu_path})
+    endif()
+  endif()
+endif()
+
 
 # Set RPATH to library install path.
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")

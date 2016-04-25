@@ -20,29 +20,23 @@
 
 #include "MACFileIO.h"
 
-#include <inttypes.h>
-#include <rlog/Error.h>
-#include <rlog/rlog.h>
-#include <sys/stat.h>
+#include "internal/easylogging++.h"
 #include <cstring>
+#include <inttypes.h>
+#include <sys/stat.h>
 
 #include "BlockFileIO.h"
 #include "Cipher.h"
+#include "Error.h"
 #include "FileIO.h"
 #include "FileUtils.h"
 #include "MemoryPool.h"
 #include "i18n.h"
 
-namespace rlog {
-class RLogChannel;
-}  // namespace rlog
-
-using namespace rlog;
-using namespace rel;
 using namespace std;
 
-static RLogChannel *Info = DEF_CHANNEL("info/MACFileIO", Log_Info);
-//
+namespace encfs {
+
 // Version 1.0 worked on blocks of size (blockSize + headerSize).
 //   That is, it took [blockSize] worth of user data and added headers.
 // Version 2.0 takes [blockSize - headerSize] worth of user data and writes
@@ -55,14 +49,15 @@ static RLogChannel *Info = DEF_CHANNEL("info/MACFileIO", Log_Info);
 // compatible, except at a high level by checking a revision number for the
 // filesystem...
 //
-static rel::Interface MACFileIO_iface("FileIO/MAC", 2, 1, 0);
+static Interface MACFileIO_iface("FileIO/MAC", 2, 1, 0);
 
 int dataBlockSize(const FSConfigPtr &cfg) {
   return cfg->config->blockSize - cfg->config->blockMACBytes -
          cfg->config->blockMACRandBytes;
 }
 
-MACFileIO::MACFileIO(const shared_ptr<FileIO> &_base, const FSConfigPtr &cfg)
+MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
+                     const FSConfigPtr &cfg)
     : BlockFileIO(dataBlockSize(cfg), cfg),
       base(_base),
       cipher(cfg->cipher),
@@ -72,14 +67,14 @@ MACFileIO::MACFileIO(const shared_ptr<FileIO> &_base, const FSConfigPtr &cfg)
       warnOnly(cfg->opts->forceDecode) {
   rAssert(macBytes >= 0 && macBytes <= 8);
   rAssert(randBytes >= 0);
-  rLog(Info, "fs block size = %i, macBytes = %i, randBytes = %i",
-       cfg->config->blockSize, cfg->config->blockMACBytes,
-       cfg->config->blockMACRandBytes);
+  VLOG(1) << "fs block size = " << cfg->config->blockSize
+          << ", macBytes = " << cfg->config->blockMACBytes
+          << ", randBytes = " << cfg->config->blockMACRandBytes;
 }
 
 MACFileIO::~MACFileIO() {}
 
-rel::Interface MACFileIO::interface() const { return MACFileIO_iface; }
+Interface MACFileIO::interface() const { return MACFileIO_iface; }
 
 int MACFileIO::open(int flags) { return base->open(flags); }
 
@@ -192,10 +187,10 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
       if (fail > 0) {
         // uh oh..
         long blockNum = req.offset / bs;
-        rWarning(_("MAC comparison failure in block %li"), blockNum);
+        RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
         if (!warnOnly) {
           MemoryPool::release(mb);
-          throw ERROR(_("MAC comparison failure, refusing to read"));
+          throw Error(_("MAC comparison failure, refusing to read"));
         }
       }
     }
@@ -204,7 +199,7 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
     readSize -= headerSize;
     memcpy(req.data, tmp.data + headerSize, readSize);
   } else {
-    rDebug("readSize %i at offset %" PRIi64, (int)readSize, req.offset);
+    VLOG(1) << "readSize " << readSize << " at offset " << req.offset;
     if (readSize > 0) readSize = 0;
   }
 
@@ -264,3 +259,5 @@ int MACFileIO::truncate(off_t size) {
 }
 
 bool MACFileIO::isWritable() const { return base->isWritable(); }
+
+}  // namespace encfs

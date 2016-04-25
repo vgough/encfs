@@ -21,15 +21,17 @@
 #ifndef _MACFileIO_incl_
 #define _MACFileIO_incl_
 
+#include <memory>
 #include <stdint.h>
 #include <sys/types.h>
-#include <memory>
 
 #include "BlockFileIO.h"
 #include "Cipher.h"
 #include "CipherKey.h"
 #include "FSConfig.h"
 #include "Interface.h"
+
+namespace encfs {
 
 class Cipher;
 class FileIO;
@@ -42,11 +44,11 @@ class MACFileIO : public BlockFileIO {
       result in a warning message from encfs -- the garbled data will still
       be made available..
   */
-  MACFileIO(const shared_ptr<FileIO> &base, const FSConfigPtr &cfg);
+  MACFileIO(const std::shared_ptr<FileIO> &base, const FSConfigPtr &cfg);
   MACFileIO();
   virtual ~MACFileIO();
 
-  virtual rel::Interface interface() const;
+  virtual Interface interface() const;
 
   virtual void setFileName(const char *fileName);
   virtual const char *getFileName() const;
@@ -64,12 +66,14 @@ class MACFileIO : public BlockFileIO {
   virtual ssize_t readOneBlock(const IORequest &req) const;
   virtual bool writeOneBlock(const IORequest &req);
 
-  shared_ptr<FileIO> base;
-  shared_ptr<Cipher> cipher;
+  std::shared_ptr<FileIO> base;
+  std::shared_ptr<Cipher> cipher;
   CipherKey key;
   int macBytes;
   int randBytes;
   bool warnOnly;
 };
+
+}  // namespace encfs
 
 #endif

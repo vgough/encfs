@@ -21,14 +21,16 @@
 #ifndef _FileUtils_incl_
 #define _FileUtils_incl_
 
-#include <sys/types.h>
 #include <memory>
 #include <string>
+#include <sys/types.h>
 
 #include "CipherKey.h"
 #include "FSConfig.h"
 #include "Interface.h"
 #include "encfs.h"
+
+namespace encfs {
 
 // true if the path points to an existing node (of any type)
 bool fileExists(const char *fileName);
@@ -50,15 +52,15 @@ class Cipher;
 class DirNode;
 
 struct EncFS_Root {
-  shared_ptr<Cipher> cipher;
+  std::shared_ptr<Cipher> cipher;
   CipherKey volumeKey;
-  shared_ptr<DirNode> root;
+  std::shared_ptr<DirNode> root;
 
   EncFS_Root();
   ~EncFS_Root();
 };
 
-typedef shared_ptr<EncFS_Root> RootPtr;
+typedef std::shared_ptr<EncFS_Root> RootPtr;
 
 enum ConfigMode { Config_Prompt, Config_Standard, Config_Paranoia };
 
@@ -129,9 +131,10 @@ bool saveConfig(ConfigType type, const std::string &rootdir,
 
 class EncFS_Context;
 
-RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts);
+RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts);
 
-RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts);
+RootPtr createV6Config(EncFS_Context *ctx,
+                       const std::shared_ptr<EncFS_Opts> &opts);
 
 void showFSInfo(const EncFSConfig *config);
 
@@ -146,5 +149,7 @@ bool writeV5Config(const char *configFile, const EncFSConfig *config);
 bool readV6Config(const char *configFile, EncFSConfig *config,
                   struct ConfigInfo *);
 bool writeV6Config(const char *configFile, const EncFSConfig *config);
+
+}  // namespace encfs
 
 #endif

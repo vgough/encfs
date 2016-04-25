@@ -20,6 +20,8 @@
 
 #include "FileIO.h"
 
+namespace encfs {
+
 FileIO::FileIO() {}
 
 FileIO::~FileIO() {}
@@ -30,3 +32,5 @@ bool FileIO::setIV(uint64_t iv) {
   (void)iv;
   return true;
 }
+
+}  // namespace encfs

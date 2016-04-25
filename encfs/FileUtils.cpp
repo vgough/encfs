@@ -24,22 +24,21 @@
 #endif
 #define _BSD_SOURCE  // pick up setenv on RH7.3
 
-#include <fcntl.h>
-#include <rlog/Error.h>
-#include <rlog/rlog.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "internal/easylogging++.h"
 #include <cctype>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
+#include <fcntl.h>
 #include <fstream>
+#include <iostream>
 #include <list>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <tinyxml2.h>
+#include <unistd.h>
 #include <vector>
 
 #include "BlockNameIO.h"
@@ -49,6 +48,7 @@
 #include "ConfigVar.h"
 #include "Context.h"
 #include "DirNode.h"
+#include "Error.h"
 #include "FSConfig.h"
 #include "FileUtils.h"
 #include "Interface.h"
@@ -62,14 +62,10 @@
 #include "intl/gettext.h"
 #include "readpassphrase.h"
 
-// disable rlog section grouping for this file.. seems to cause problems
-#undef RLOG_SECTION
-#define RLOG_SECTION
-
-using namespace rel;
-using namespace rlog;
 using namespace std;
 using gnu::autosprintf;
+
+namespace encfs {
 
 static const int DefaultBlockSize = 1024;
 // The maximum length of text passwords.  If longer are needed,
@@ -109,18 +105,18 @@ struct ConfigInfo {
   int currentSubVersion;
   int defaultSubVersion;
 } ConfigFileMapping[] = {
-      // current format
-      {".encfs6.xml", Config_V6, "ENCFS6_CONFIG", readV6Config, writeV6Config,
-       V6SubVersion, 0},
-      // backward compatible support for older versions
-      {".encfs5", Config_V5, "ENCFS5_CONFIG", readV5Config, writeV5Config,
-       V5SubVersion, V5SubVersionDefault},
-      {".encfs4", Config_V4, NULL, readV4Config, writeV4Config, 0, 0},
-      // no longer support earlier versions
-      {".encfs3", Config_V3, NULL, NULL, NULL, 0, 0},
-      {".encfs2", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
-      {".encfs", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
-      {NULL, Config_None, NULL, NULL, NULL, 0, 0}};
+    // current format
+    {".encfs6.xml", Config_V6, "ENCFS6_CONFIG", readV6Config, writeV6Config,
+     V6SubVersion, 0},
+    // backward compatible support for older versions
+    {".encfs5", Config_V5, "ENCFS5_CONFIG", readV5Config, writeV5Config,
+     V5SubVersion, V5SubVersionDefault},
+    {".encfs4", Config_V4, NULL, readV4Config, writeV4Config, 0, 0},
+    // no longer support earlier versions
+    {".encfs3", Config_V3, NULL, NULL, NULL, 0, 0},
+    {".encfs2", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
+    {".encfs", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
+    {NULL, Config_None, NULL, NULL, NULL, 0, 0}};
 
 EncFS_Root::EncFS_Root() {}
 
@@ -217,11 +213,12 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
         config->cfgType = nm->type;
         return nm->type;
       }
-    } catch (rlog::Error &err) {
-      err.log(_RLWarningChannel);
+    } catch (encfs::Error &err) {
+      RLOG(ERROR) << "readConfig error: " << err.what();
     }
 
-    rError(_("Found config file %s, but failed to load - exiting"), path);
+    RLOG(ERROR) << "Found config file " << path
+                << ", but failed to load - exiting";
     exit(1);
   } else {
     // No load function - must be an unsupported type..
@@ -242,9 +239,9 @@ ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
       char *envFile = getenv(nm->environmentOverride);
       if (envFile != NULL) {
         if (!fileExists(envFile)) {
-          rError(
-              "fatal: config file specified by environment does not exist: %s",
-              envFile);
+          RLOG(ERROR)
+              << "fatal: config file specified by environment does not exist: "
+              << envFile;
           exit(1);
         }
         return readConfig_load(nm, envFile, config);
@@ -265,14 +262,13 @@ ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
  * Read config file in current "V6" XML format, normally named ".encfs6.xml"
  * This format is in use since Apr 13, 2008 (commit 6d081f5c)
  */
- // Read a boost::serialization config file using an Xml reader..
-bool readV6Config(const char *configFile, EncFSConfig *cfg,
-                  ConfigInfo *info) {
+// Read a boost::serialization config file using an Xml reader..
+bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
   (void)info;
 
   XmlReader rdr;
   if (!rdr.load(configFile)) {
-    rError("Failed to load config file %s", configFile);
+    RLOG(ERROR) << "Failed to load config file " << configFile;
     return false;
   }
 
@@ -282,34 +278,34 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg,
     config = (*serialization)["config"];
   }
   if (!config) {
-    rError("Unable to find XML configuration in file %s", configFile);
+    RLOG(ERROR) << "Unable to find XML configuration in file " << configFile;
     return false;
   }
 
   int version;
   if (!config->read("version", &version) &&
       !config->read("@version", &version)) {
-    rError("Unable to find version in config file");
+    RLOG(ERROR) << "Unable to find version in config file";
     return false;
   }
 
   // version numbering was complicated by boost::archive
   if (version == 20 || version >= 20100713) {
-    rDebug("found new serialization format");
+    VLOG(1) << "found new serialization format";
     cfg->subVersion = version;
   } else if (version == 26800) {
-    rDebug("found 20080816 version");
+    VLOG(1) << "found 20080816 version";
     cfg->subVersion = 20080816;
   } else if (version == 26797) {
-    rDebug("found 20080813");
+    VLOG(1) << "found 20080813";
     cfg->subVersion = 20080813;
   } else if (version < V5SubVersion) {
-    rError("Invalid version %d - please fix config file", version);
+    RLOG(ERROR) << "Invalid version " << version << " - please fix config file";
   } else {
-    rInfo("Boost <= 1.41 compatibility mode");
+    VLOG(1) << "Boost <= 1.41 compatibility mode";
     cfg->subVersion = version;
   }
-  rDebug("subVersion = %d", cfg->subVersion);
+  VLOG(1) << "subVersion = " << cfg->subVersion;
 
   config->read("creator", &cfg->creator);
   config->read("cipherAlg", &cfg->cipherIface);
@@ -367,15 +363,14 @@ bool readV5Config(const char *configFile, EncFSConfig *config,
       if (config->subVersion > info->currentSubVersion) {
         /* config file specifies a version outside our supported
          range..   */
-        rWarning(_("Config subversion %i found, but this version of"
-                   " encfs only supports up to version %i."),
-                 config->subVersion, info->currentSubVersion);
+        RLOG(WARNING) << "Config subversion " << config->subVersion
+                      << " found, which is newer than supported version "
+                      << info->currentSubVersion;
         return false;
       }
       if (config->subVersion < 20040813) {
-        rError(
-            _("This version of EncFS doesn't support "
-              "filesystems created before 2004-08-13"));
+        RLOG(ERROR) << "This version of EncFS doesn't support "
+                       "filesystems created before 2004-08-13";
         return false;
       }
 
@@ -395,9 +390,9 @@ bool readV5Config(const char *configFile, EncFSConfig *config,
       config->blockMACRandBytes = cfgRdr["blockMACRandBytes"].readInt(0);
 
       ok = true;
-    } catch (rlog::Error &err) {
-      err.log(_RLWarningChannel);
-      rDebug("Error parsing data in config file %s", configFile);
+    } catch (encfs::Error &err) {
+      RLOG(WARNING) << err.what();
+      VLOG(1) << "Error parsing data in config file " << configFile;
       ok = false;
     }
   }
@@ -435,9 +430,9 @@ bool readV4Config(const char *configFile, EncFSConfig *config,
       config->chainedNameIV = false;
 
       ok = true;
-    } catch (rlog::Error &err) {
-      err.log(_RLWarningChannel);
-      rDebug("Error parsing config file %s", configFile);
+    } catch (encfs::Error &err) {
+      RLOG(WARNING) << err.what();
+      VLOG(1) << "Error parsing config file " << configFile;
       ok = false;
     }
   }
@@ -461,8 +456,8 @@ bool saveConfig(ConfigType type, const string &rootDir,
 
       try {
         ok = (*nm->saveFunc)(path.c_str(), config);
-      } catch (rlog::Error &err) {
-        err.log(_RLWarningChannel);
+      } catch (encfs::Error &err) {
+        RLOG(WARNING) << err.what();
         ok = false;
       }
       break;
@@ -558,8 +553,7 @@ bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
   return err == tinyxml2::XML_SUCCESS;
 }
 
-bool writeV5Config(const char *configFile,
-                   const EncFSConfig *config) {
+bool writeV5Config(const char *configFile, const EncFSConfig *config) {
   ConfigReader cfg;
 
   cfg["creator"] << config->creator;
@@ -580,8 +574,7 @@ bool writeV5Config(const char *configFile,
   return cfg.save(configFile);
 }
 
-bool writeV4Config(const char *configFile,
-                   const EncFSConfig *config) {
+bool writeV4Config(const char *configFile, const EncFSConfig *config) {
   ConfigReader cfg;
 
   cfg["cipher"] << config->cipherIface;
@@ -632,20 +625,23 @@ static Cipher::CipherAlgorithm selectCipherAlgorithm() {
                     // shown after algorithm name and description.
                     // xgroup(setup)
                     _(" -- Supports key lengths of %i to %i bits"),
-                    it->keyLength.min(), it->keyLength.max()) << "\n";
+                    it->keyLength.min(), it->keyLength.max())
+             << "\n";
       }
 
       if (it->blockSize.min() == it->blockSize.max()) {
         cout << autosprintf(
                     // shown after algorithm name and description.
                     // xgroup(setup)
-                    _(" -- block size %i bytes"), it->blockSize.min()) << "\n";
+                    _(" -- block size %i bytes"), it->blockSize.min())
+             << "\n";
       } else {
         cout << autosprintf(
                     // shown after algorithm name and description.
                     // xgroup(setup)
                     _(" -- Supports block sizes of %i to %i bytes"),
-                    it->blockSize.min(), it->blockSize.max()) << "\n";
+                    it->blockSize.min(), it->blockSize.max())
+             << "\n";
       }
     }
 
@@ -777,7 +773,8 @@ static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
     cout << autosprintf(
                 // xgroup(setup)
                 _("Using filesystem block size of %i bytes"),
-                alg.blockSize.min()) << "\n";
+                alg.blockSize.min())
+         << "\n";
     return alg.blockSize.min();
   }
 
@@ -869,8 +866,9 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
           "performance but it also means [almost] any modifications or errors\n"
           "within a block will be caught and will cause a read error."));
   } else {
-    cout << "\n\n" << _("You specified --require-macs.  "
-                        "Enabling block authentication code headers...")
+    cout << "\n\n"
+         << _("You specified --require-macs.  "
+              "Enabling block authentication code headers...")
          << "\n\n";
     addMAC = true;
   }
@@ -950,7 +948,8 @@ static bool selectZeroBlockPassThrough() {
         "This avoids writing encrypted blocks when file holes are created."));
 }
 
-RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
+RootPtr createV6Config(EncFS_Context *ctx,
+                       const std::shared_ptr<EncFS_Opts> &opts) {
   const std::string rootDir = opts->rootDir;
   bool enableIdleTracking = opts->idleTracking;
   bool forceDecode = opts->forceDecode;
@@ -1007,7 +1006,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
 
   if (configMode == Config_Paranoia || answer[0] == 'p') {
     if (reverseEncryption) {
-      rError(_("Paranoia configuration not supported for reverse encryption"));
+      cerr << _("Paranoia configuration not supported for reverse encryption");
       return rootInfo;
     }
 
@@ -1022,7 +1021,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     blockSize = DefaultBlockSize;
     alg = findCipherAlgorithm("AES", keySize);
 
-    // If case-insensitive system, opt for Block32 filename encoding 
+// If case-insensitive system, opt for Block32 filename encoding
 #if defined(__APPLE__) || defined(WIN32)
     nameIOIface = BlockNameIO::CurrentInterface(true);
 #else
@@ -1042,7 +1041,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     blockSize = DefaultBlockSize;
     alg = findCipherAlgorithm("AES", keySize);
 
-    // If case-insensitive system, opt for Block32 filename encoding 
+// If case-insensitive system, opt for Block32 filename encoding
 #if defined(__APPLE__) || defined(WIN32)
     nameIOIface = BlockNameIO::CurrentInterface(true);
 #else
@@ -1096,17 +1095,18 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     }
   }
 
-  shared_ptr<Cipher> cipher = Cipher::New(alg.name, keySize);
+  std::shared_ptr<Cipher> cipher = Cipher::New(alg.name, keySize);
   if (!cipher) {
-    rError(_("Unable to instanciate cipher %s, key size %i, block size %i"),
-           alg.name.c_str(), keySize, blockSize);
+    cerr << autosprintf(
+        _("Unable to instanciate cipher %s, key size %i, block size %i"),
+        alg.name.c_str(), keySize, blockSize);
     return rootInfo;
   } else {
-    rDebug("Using cipher %s, key size %i, block size %i", alg.name.c_str(),
-           keySize, blockSize);
+    VLOG(1) << "Using cipher " << alg.name << ", key size " << keySize
+            << ", block size " << blockSize;
   }
 
-  shared_ptr<EncFSConfig> config(new EncFSConfig);
+  std::shared_ptr<EncFSConfig> config(new EncFSConfig);
 
   config->cfgType = Config_V6;
   config->cipherIface = cipher->interface();
@@ -1129,7 +1129,8 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   cout << "\n";
   // xgroup(setup)
   cout << _("Configuration finished.  The filesystem to be created has\n"
-            "the following properties:") << endl;
+            "the following properties:")
+       << endl;
   showFSInfo(config.get());
 
   if (config->externalIVChaining) {
@@ -1140,7 +1141,8 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
               "The programs 'mutt' and 'procmail' are known to fail.  For\n"
               "more information, please see the encfs mailing list.\n"
               "If you would like to choose another configuration setting,\n"
-              "please press CTRL-C now to abort and start over.") << endl;
+              "please press CTRL-C now to abort and start over.")
+         << endl;
     cout << endl;
   }
 
@@ -1158,7 +1160,7 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
 
   // get user key and use it to encode volume key
   CipherKey userKey;
-  rDebug("useStdin: %i", useStdin);
+  VLOG(1) << "useStdin: " << useStdin;
   if (useStdin) {
     if (annotate) cerr << "$PROMPT$ new_passwd" << endl;
     userKey = config->getUserKey(useStdin);
@@ -1174,19 +1176,21 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   delete[] encodedKey;
 
   if (!volumeKey) {
-    rWarning(
-        _("Failure generating new volume key! "
-          "Please report this error."));
+    cerr << _(
+        "Failure generating new volume key! "
+        "Please report this error.");
     return rootInfo;
   }
 
-  if (!saveConfig(Config_V6, rootDir, config.get())) return rootInfo;
+  if (!saveConfig(Config_V6, rootDir, config.get())) {
+    return rootInfo;
+  }
 
   // fill in config struct
-  shared_ptr<NameIO> nameCoder =
+  std::shared_ptr<NameIO> nameCoder =
       NameIO::New(config->nameIface, cipher, volumeKey);
   if (!nameCoder) {
-    rWarning(_("Name coding interface not supported"));
+    cerr << _("Name coding interface not supported");
     cout << _("The filename encoding interface requested is not available")
          << endl;
     return rootInfo;
@@ -1208,13 +1212,14 @@ RootPtr createV6Config(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
   rootInfo = RootPtr(new EncFS_Root);
   rootInfo->cipher = cipher;
   rootInfo->volumeKey = volumeKey;
-  rootInfo->root = shared_ptr<DirNode>(new DirNode(ctx, rootDir, fsConfig));
+  rootInfo->root =
+      std::shared_ptr<DirNode>(new DirNode(ctx, rootDir, fsConfig));
 
   return rootInfo;
 }
 
 void showFSInfo(const EncFSConfig *config) {
-  shared_ptr<Cipher> cipher = Cipher::New(config->cipherIface, -1);
+  std::shared_ptr<Cipher> cipher = Cipher::New(config->cipherIface, -1);
   {
     cout << autosprintf(
         // xgroup(diag)
@@ -1243,7 +1248,7 @@ void showFSInfo(const EncFSConfig *config) {
                         config->nameIface.revision(), config->nameIface.age());
 
     // check if we support the filename encoding interface..
-    shared_ptr<NameIO> nameCoder =
+    std::shared_ptr<NameIO> nameCoder =
         NameIO::New(config->nameIface, cipher, CipherKey());
     if (!nameCoder) {
       // xgroup(diag)
@@ -1269,7 +1274,8 @@ void showFSInfo(const EncFSConfig *config) {
   }
   if (config->kdfIterations > 0 && config->salt.size() > 0) {
     cout << autosprintf(_("Using PBKDF2, with %i iterations"),
-                        config->kdfIterations) << "\n";
+                        config->kdfIterations)
+         << "\n";
     cout << autosprintf(_("Salt Size: %i bits"), (int)(8 * config->salt.size()))
          << "\n";
   }
@@ -1279,14 +1285,16 @@ void showFSInfo(const EncFSConfig *config) {
                   // xgroup(diag)
                   _("Block Size: %i bytes + %i byte MAC header"),
                   config->blockSize,
-                  config->blockMACBytes + config->blockMACRandBytes) << endl;
+                  config->blockMACBytes + config->blockMACRandBytes)
+           << endl;
     } else {
       // new version stores the header as part of that block size..
       cout << autosprintf(
                   // xgroup(diag)
                   _("Block Size: %i bytes, including %i byte MAC header"),
                   config->blockSize,
-                  config->blockMACBytes + config->blockMACRandBytes) << endl;
+                  config->blockMACBytes + config->blockMACRandBytes)
+           << endl;
     }
   } else {
     // xgroup(diag)
@@ -1312,8 +1320,7 @@ void showFSInfo(const EncFSConfig *config) {
   }
   cout << "\n";
 }
-
-shared_ptr<Cipher> EncFSConfig::getCipher() const {
+std::shared_ptr<Cipher> EncFSConfig::getCipher() const {
   return Cipher::New(cipherIface, keySize);
 }
 
@@ -1339,7 +1346,7 @@ unsigned char *EncFSConfig::getSaltData() const {
 
 CipherKey EncFSConfig::makeKey(const char *password, int passwdLen) {
   CipherKey userKey;
-  shared_ptr<Cipher> cipher = getCipher();
+  std::shared_ptr<Cipher> cipher = getCipher();
 
   // if no salt is set and we're creating a new password for a new
   // FS type, then initialize salt..
@@ -1427,7 +1434,7 @@ CipherKey EncFSConfig::getUserKey(const std::string &passProg,
     perror(_("Internal error: socketpair() failed"));
     return result;
   }
-  rDebug("getUserKey: fds = %i, %i", fds[0], fds[1]);
+  VLOG(1) << "getUserKey: fds = " << fds[0] << ", " << fds[1];
 
   pid = fork();
   if (pid == -1) {
@@ -1518,9 +1525,9 @@ CipherKey EncFSConfig::getNewUserKey() {
   return userKey;
 }
 
-RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
+RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
   RootPtr rootInfo;
-  shared_ptr<EncFSConfig> config(new EncFSConfig);
+  std::shared_ptr<EncFSConfig> config(new EncFSConfig);
 
   if (readConfig(opts->rootDir, config.get()) != Config_None) {
     if (config->blockMACBytes == 0 && opts->requireMac) {
@@ -1539,11 +1546,12 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     }
 
     // first, instanciate the cipher.
-    shared_ptr<Cipher> cipher = config->getCipher();
+    std::shared_ptr<Cipher> cipher = config->getCipher();
     if (!cipher) {
-      rError(_("Unable to find cipher %s, version %i:%i:%i"),
-             config->cipherIface.name().c_str(), config->cipherIface.current(),
-             config->cipherIface.revision(), config->cipherIface.age());
+      cerr << autosprintf(
+          _("Unable to find cipher %s, version %i:%i:%i"),
+          config->cipherIface.name().c_str(), config->cipherIface.current(),
+          config->cipherIface.revision(), config->cipherIface.age());
       // xgroup(diag)
       cout << _("The requested cipher interface is not available\n");
       return rootInfo;
@@ -1552,7 +1560,7 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     if (opts->delayMount) {
       rootInfo = RootPtr(new EncFS_Root);
       rootInfo->cipher = cipher;
-      rootInfo->root = shared_ptr<DirNode>();
+      rootInfo->root = std::shared_ptr<DirNode>();
       return rootInfo;
     }
 
@@ -1560,7 +1568,7 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     CipherKey userKey;
 
     if (opts->passwordProgram.empty()) {
-      rDebug("useStdin: %i", opts->useStdin);
+      VLOG(1) << "useStdin: " << opts->useStdin;
       if (opts->annotate) cerr << "$PROMPT$ passwd" << endl;
       userKey = config->getUserKey(opts->useStdin);
     } else
@@ -1568,7 +1576,7 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
 
     if (!userKey) return rootInfo;
 
-    rDebug("cipher key size = %i", cipher->encodedKeySize());
+    VLOG(1) << "cipher key size = " << cipher->encodedKeySize();
     // decode volume key..
     CipherKey volumeKey =
         cipher->readKey(config->getKeyData(), userKey, opts->checkKey);
@@ -1580,12 +1588,13 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
       return rootInfo;
     }
 
-    shared_ptr<NameIO> nameCoder =
+    std::shared_ptr<NameIO> nameCoder =
         NameIO::New(config->nameIface, cipher, volumeKey);
     if (!nameCoder) {
-      rError(_("Unable to find nameio interface %s, version %i:%i:%i"),
-             config->nameIface.name().c_str(), config->nameIface.current(),
-             config->nameIface.revision(), config->nameIface.age());
+      cerr << autosprintf(
+          _("Unable to find nameio interface '%s', version %i:%i:%i"),
+          config->nameIface.name().c_str(), config->nameIface.current(),
+          config->nameIface.revision(), config->nameIface.age());
       // xgroup(diag)
       cout << _(
           "The requested filename coding interface is "
@@ -1609,7 +1618,7 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
     rootInfo->cipher = cipher;
     rootInfo->volumeKey = volumeKey;
     rootInfo->root =
-        shared_ptr<DirNode>(new DirNode(ctx, opts->rootDir, fsConfig));
+        std::shared_ptr<DirNode>(new DirNode(ctx, opts->rootDir, fsConfig));
   } else {
     if (opts->createIfNotFound) {
       // creating a new encrypted filesystem
@@ -1621,14 +1630,16 @@ RootPtr initFS(EncFS_Context *ctx, const shared_ptr<EncFS_Opts> &opts) {
 }
 
 int remountFS(EncFS_Context *ctx) {
-  rDebug("Attempting to reinitialize filesystem");
+  VLOG(1) << "Attempting to reinitialize filesystem";
 
   RootPtr rootInfo = initFS(ctx, ctx->opts);
   if (rootInfo) {
     ctx->setRoot(rootInfo->root);
     return 0;
   } else {
-    rInfo(_("Remount failed"));
+    RLOG(INFO) << "Remount failed";
     return -EACCES;
   }
 }
+
+}  // namespace encfs

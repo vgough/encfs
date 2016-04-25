@@ -21,12 +21,15 @@
 #ifndef _XmlReader_incl_
 #define _XmlReader_incl_
 
+#include <memory>
 #include <string>
+
 #include "Interface.h"
-#include "shared_ptr.h"
+
+namespace encfs {
 
 class XmlValue;
-typedef shared_ptr<XmlValue> XmlValuePtr;
+typedef std::shared_ptr<XmlValue> XmlValuePtr;
 
 class XmlValue {
   std::string value;
@@ -49,7 +52,7 @@ class XmlValue {
   bool read(const char *path, double *out) const;
   bool read(const char *path, bool *out) const;
 
-  bool read(const char *path, rel::Interface *out) const;
+  bool read(const char *path, Interface *out) const;
 
  protected:
   virtual XmlValuePtr find(const char *name) const;
@@ -66,7 +69,9 @@ class XmlReader {
 
  private:
   struct XmlReaderData;
-  shared_ptr<XmlReaderData> pd;
+  std::shared_ptr<XmlReaderData> pd;
 };
+
+}  // namespace encfs
 
 #endif
