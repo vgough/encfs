@@ -139,14 +139,14 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
   if (uid != 0) {
     olduid = setfsuid(uid);
     if (olduid == -1) {
-      RLOG(INFO) << "setfsuid error: " << strerror(errno);
+      RLOG(DEBUG) << "setfsuid error: " << strerror(errno);
       return -EPERM;
     }
   }
   if (gid != 0) {
     oldgid = setfsgid(gid);
     if (oldgid == -1) {
-      RLOG(INFO) << "setfsgid error: " << strerror(errno);
+      RLOG(DEBUG) << "setfsgid error: " << strerror(errno);
       return -EPERM;
     }
   }
@@ -209,7 +209,7 @@ ssize_t FileNode::read(off_t offset, unsigned char *data, ssize_t size) const {
 }
 
 bool FileNode::write(off_t offset, unsigned char *data, ssize_t size) {
-  RLOG(INFO) << "FileNode::write offset " << offset << ", data size " << size;
+  VLOG(1) << "FileNode::write offset " << offset << ", data size " << size;
 
   IORequest req;
   req.offset = offset;

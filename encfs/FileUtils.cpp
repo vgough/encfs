@@ -1637,7 +1637,7 @@ int remountFS(EncFS_Context *ctx) {
     ctx->setRoot(rootInfo->root);
     return 0;
   } else {
-    RLOG(INFO) << "Remount failed";
+    RLOG(WARNING) << "Remount failed";
     return -EACCES;
   }
 }

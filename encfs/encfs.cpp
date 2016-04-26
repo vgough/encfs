@@ -140,8 +140,9 @@ static int withFileNode(const char *opName, const char *path,
     }
 
     res = op(fnode.get());
-
-    LOG_IF(res < 0, INFO) << "op: " << opName << " error: " << strerror(-res);
+    if (res < 0) {
+      RLOG(DEBUG) << "op: " << opName << " error: " << strerror(-res);
+    }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "withFileNode: error caught in " << opName << ": "
                 << err.what();
