@@ -4,8 +4,6 @@
 #cmakedefine HAVE_SYS_XATTR_H
 #cmakedefine XATTR_ADD_OPT
 
-#cmakedefine HAVE_TR1_MEMORY
-
 #cmakedefine HAVE_LCHMOD
 
 /* TODO: add other thread library support. */

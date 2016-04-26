@@ -24,10 +24,10 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
   set(CMAKE_CXX_STANDARD_REQUIRED on)
 else ()
   if (CMAKE_COMPILER_IS_GNUCXX)
-    message ("Assuming that GNU CXX uses -std=c++11 flag for C++11 compatibility.")
+    message ("** Assuming that GNU CXX uses -std=c++11 flag for C++11 compatibility.")
     list(APPEND CMAKE_CXX_FLAGS "-std=c++11")
   else()
-    message ("No CMAKE C++11 check. If the build breaks, you're on your own.")
+    message ("** No CMAKE C++11 check. If the build breaks, you're on your own.")
   endif()
 endif ()
 
@@ -71,9 +71,6 @@ include (FindGettext)
 include (CheckIncludeFileCXX)
 check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
 check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
-
-# Look for old pre-C++11 headers.
-check_include_file_cxx (tr1/memory HAVE_TR1_MEMORY)
 
 # Check if xattr functions take extra arguments, as they do on OSX.
 # Output error is misleading, so do this test quietly.
