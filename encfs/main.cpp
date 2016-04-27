@@ -522,8 +522,7 @@ void *encfs_init(fuse_conn_info *conn) {
   return (void *)ctx;
 }
 
-void encfs_destroy(void *_ctx) {
-}
+void encfs_destroy(void *_ctx) {}
 
 int main(int argc, char *argv[]) {
   encfs::initLogging();
@@ -737,12 +736,9 @@ static void *idleMonitor(void *_arg) {
           pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
           break;
         }
-      }
-      else {
-        RLOG(WARNING) << "Filesystem "
-                      << arg->opts->mountPoint
-                      << " inactivity detected, but still "
-                      << openCount
+      } else {
+        RLOG(WARNING) << "Filesystem " << arg->opts->mountPoint
+                      << " inactivity detected, but still " << openCount
                       << " opened files";
       }
     }
