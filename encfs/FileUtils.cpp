@@ -866,9 +866,8 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
           "performance but it also means [almost] any modifications or errors\n"
           "within a block will be caught and will cause a read error."));
   } else {
-    cout << "\n\n"
-         << _("You specified --require-macs.  "
-              "Enabling block authentication code headers...")
+    cout << "\n\n" << _("You specified --require-macs.  "
+                        "Enabling block authentication code headers...")
          << "\n\n";
     addMAC = true;
   }

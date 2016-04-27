@@ -95,10 +95,9 @@ std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
   if (it != openFiles.end()) {
     // all the items in the set point to the same node.. so just use the
     // first
-    return (*it->second.begin())->node;
-  } else {
-    return std::shared_ptr<FileNode>();
+    return it->second.front();
   }
+  return std::shared_ptr<FileNode>();
 }
 
 void EncFS_Context::renameNode(const char *from, const char *to) {
@@ -106,36 +105,27 @@ void EncFS_Context::renameNode(const char *from, const char *to) {
 
   FileMap::iterator it = openFiles.find(std::string(from));
   if (it != openFiles.end()) {
-    std::set<Placeholder *> val = it->second;
+    auto val = it->second;
     openFiles.erase(it);
     openFiles[std::string(to)] = val;
   }
 }
-std::shared_ptr<FileNode> EncFS_Context::getNode(void *pl) {
-  Placeholder *ph = (Placeholder *)pl;
-  return ph->node;
+
+FileNode *EncFS_Context::putNode(const char *path,
+                                 std::shared_ptr<FileNode> &&node) {
+  Lock lock(contextMutex);
+  auto &list = openFiles[std::string(path)];
+  list.push_front(std::move(node));
+  return list.front().get();
 }
 
-void *EncFS_Context::putNode(const char *path,
-                             const std::shared_ptr<FileNode> &node) {
+void EncFS_Context::eraseNode(const char *path, FileNode *pl) {
   Lock lock(contextMutex);
-  Placeholder *pl = new Placeholder(node);
-  openFiles[std::string(path)].insert(pl);
-
-  return (void *)pl;
-}
-
-void EncFS_Context::eraseNode(const char *path, void *pl) {
-  Lock lock(contextMutex);
-
-  Placeholder *ph = (Placeholder *)pl;
 
   FileMap::iterator it = openFiles.find(std::string(path));
   rAssert(it != openFiles.end());
 
-  int rmCount = it->second.erase(ph);
-
-  rAssert(rmCount == 1);
+  it->second.pop_front();
 
   // if no more references to this file, remove the record all together
   if (it->second.empty()) {
@@ -145,8 +135,6 @@ void EncFS_Context::eraseNode(const char *path, void *pl) {
     openFiles.erase(it);
     storedName.assign(storedName.length(), '\0');
   }
-
-  delete ph;
 }
 
 }  // namespace encfs

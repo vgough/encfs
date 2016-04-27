@@ -633,7 +633,6 @@ std::shared_ptr<FileNode> DirNode::renameNode(const char *from, const char *to,
 std::shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
   std::shared_ptr<FileNode> node;
   if (ctx) node = ctx->lookupNode(plainName);
-
   if (!node) {
     uint64_t iv = 0;
     string cipherName = naming->encodePath(plainName, &iv);
@@ -647,14 +646,11 @@ std::shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
 
   return node;
 }
-std::shared_ptr<FileNode> DirNode::lookupNode(const char *plainName,
-                                              const char *requestor) {
-  (void)requestor;
+
+shared_ptr<FileNode> DirNode::lookupNode(const char *plainName,
+                                         const char * /* requestor */) {
   Lock _lock(mutex);
-
-  std::shared_ptr<FileNode> node = findOrCreate(plainName);
-
-  return node;
+  return findOrCreate(plainName);
 }
 
 /*
