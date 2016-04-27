@@ -605,7 +605,7 @@ int main(int argc, char *argv[]) {
   encfs_oper.init = encfs_init;
   encfs_oper.destroy = encfs_destroy;
   // encfs_oper.access = encfs_access;
-  // encfs_oper.create = encfs_create;
+  encfs_oper.create = encfs_create;
   encfs_oper.ftruncate = encfs_ftruncate;
   encfs_oper.fgetattr = encfs_fgetattr;
   // encfs_oper.lock = encfs_lock;
