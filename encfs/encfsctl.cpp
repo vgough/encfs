@@ -165,8 +165,8 @@ static int showInfo(int argc, char **argv) {
   string rootDir = argv[1];
   if (!checkDir(rootDir)) return EXIT_FAILURE;
 
-  EncFSConfig *config = new EncFSConfig;
-  ConfigType type = readConfig(rootDir, config);
+  std::shared_ptr<EncFSConfig> config(new EncFSConfig);
+  ConfigType type = readConfig(rootDir, config.get());
 
   // show information stored in config..
   switch (type) {
@@ -210,8 +210,7 @@ static int showInfo(int argc, char **argv) {
       break;
   }
 
-  showFSInfo(config);
-  delete config;
+  showFSInfo(config.get());
 
   return EXIT_SUCCESS;
 }
