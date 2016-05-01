@@ -62,7 +62,8 @@ int encfs_getattr(const char *path, struct stat *stbuf);
 int encfs_fgetattr(const char *path, struct stat *stbuf,
                    struct fuse_file_info *fi);
 int encfs_readlink(const char *path, char *buf, size_t size);
-int encfs_getdir(const char *path, fuse_dirh_t h, fuse_dirfil_t filler);
+int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+                  off_t offset, struct fuse_file_info *finfo);
 int encfs_mknod(const char *path, mode_t mode, dev_t rdev);
 int encfs_mkdir(const char *path, mode_t mode);
 int encfs_unlink(const char *path);

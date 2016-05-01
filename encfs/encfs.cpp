@@ -195,7 +195,8 @@ int encfs_fgetattr(const char *path, struct stat *stbuf,
   return withFileNode("fgetattr", path, fi, bind(_do_getattr, _1, stbuf));
 }
 
-int encfs_getdir(const char *path, fuse_dirh_t h, fuse_dirfil_t filler) {
+int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+                  off_t offset, struct fuse_file_info *finfo) {
   EncFS_Context *ctx = context();
 
   int res = ESUCCESS;
@@ -206,7 +207,7 @@ int encfs_getdir(const char *path, fuse_dirh_t h, fuse_dirfil_t filler) {
 
     DirTraverse dt = FSRoot->openDir(path);
 
-    VLOG(1) << "getdir on " << FSRoot->cipherPath(path);
+    VLOG(1) << "readdir on " << FSRoot->cipherPath(path);
 
     if (dt.valid()) {
       int fileType = 0;
@@ -214,19 +215,26 @@ int encfs_getdir(const char *path, fuse_dirh_t h, fuse_dirfil_t filler) {
 
       std::string name = dt.nextPlaintextName(&fileType, &inode);
       while (!name.empty()) {
-        res = filler(h, name.c_str(), fileType, inode);
+        struct stat st;
+        st.st_ino = inode;
+        st.st_mode = fileType << 12;
 
-        if (res != ESUCCESS) break;
+        // TODO: add offset support.
+#if defined(fuse_fill_dir_flags)
+        if (filler(buf, name.c_str(), &st, 0, 0)) break;
+#else
+        if (filler(buf, name.c_str(), &st, 0)) break;
+#endif
 
         name = dt.nextPlaintextName(&fileType, &inode);
       }
     } else {
-      VLOG(1) << "getdir request invalid, path: '" << path << "'";
+      VLOG(1) << "readdir request invalid, path: '" << path << "'";
     }
 
     return res;
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "Error caught in getdir";
+    RLOG(ERROR) << "Error caught in readdir";
     return -EIO;
   }
 }
