@@ -127,14 +127,6 @@ void EncFS_Context::eraseNode(const char *path, FileNode *pl) {
 
   it->second.pop_front();
 
-  // if no more references to this file, remove the record all together
-  if (it->second.empty()) {
-    // attempts to make use of shallow copy to clear memory used to hold
-    // unencrypted filenames.. not sure this does any good..
-    std::string storedName = it->first;
-    openFiles.erase(it);
-    storedName.assign(storedName.length(), '\0');
-  }
 }
 
 }  // namespace encfs
