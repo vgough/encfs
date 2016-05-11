@@ -122,24 +122,25 @@ static int withFileNode(const char *opName, const char *path,
   if (!FSRoot) return res;
 
   try {
-    std::shared_ptr<FileNode> fnode;
 
-    if (fi != NULL)
-      fnode = GET_FN(ctx, fi);
+    auto do_op = [&FSRoot, opName, &op](FileNode *fnode) {
+      rAssert(fnode != nullptr);
+      VLOG(1) << "op: " << opName << " : " << fnode->cipherName();
+
+      // check that we're not recursing into the mount point itself
+      if (FSRoot->touchesMountpoint(fnode->cipherName())) {
+        VLOG(1) << "op: " << opName << " error: Tried to touch mountpoint: '"
+                << fnode->cipherName() << "'";
+        return -EIO;
+      }
+      return op(fnode);
+    };
+
+    if (fi != nullptr)
+      res = do_op(reinterpret_cast<FileNode *>(fi->fh));
     else
-      fnode = FSRoot->lookupNode(path, opName);
+      res = do_op(FSRoot->lookupNode(path, opName).get());
 
-    rAssert(fnode.get() != NULL);
-    VLOG(1) << "op: " << opName << " : " << fnode->cipherName();
-
-    // check that we're not recursing into the mount point itself
-    if (FSRoot->touchesMountpoint(fnode->cipherName())) {
-      VLOG(1) << "op: " << opName << " error: Tried to touch mountpoint: '"
-              << fnode->cipherName() << "'";
-      return res;  // still -EIO
-    }
-
-    res = op(fnode.get());
     if (res < 0) {
       RLOG(DEBUG) << "op: " << opName << " error: " << strerror(-res);
     }
@@ -522,7 +523,8 @@ int encfs_open(const char *path, struct fuse_file_info *file) {
               << file->flags;
 
       if (res >= 0) {
-        file->fh = (uintptr_t)ctx->putNode(path, fnode);
+        file->fh =
+            reinterpret_cast<uintptr_t>(ctx->putNode(path, std::move(fnode)));
         res = ESUCCESS;
       }
     }
@@ -571,7 +573,7 @@ int encfs_release(const char *path, struct fuse_file_info *finfo) {
   EncFS_Context *ctx = context();
 
   try {
-    ctx->eraseNode(path, (void *)(uintptr_t)finfo->fh);
+    ctx->eraseNode(path, reinterpret_cast<FileNode *>(finfo->fh));
     return ESUCCESS;
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in release: " << err.what();

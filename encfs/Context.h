@@ -21,10 +21,10 @@
 #ifndef _Context_incl_
 #define _Context_incl_
 
+#include <forward_list>
 #include <memory>
 #include <pthread.h>
 #include <set>
-
 #include <string>
 #include <unordered_map>
 
@@ -42,15 +42,14 @@ class EncFS_Context {
   EncFS_Context();
   ~EncFS_Context();
 
-  std::shared_ptr<FileNode> getNode(void *ptr);
   std::shared_ptr<FileNode> lookupNode(const char *path);
 
   int getAndResetUsageCounter();
   int openFileCount() const;
 
-  void *putNode(const char *path, const std::shared_ptr<FileNode> &node);
+  FileNode *putNode(const char *path, std::shared_ptr<FileNode> &&node);
 
-  void eraseNode(const char *path, void *placeholder);
+  void eraseNode(const char *path, FileNode *fnode);
 
   void renameNode(const char *oldName, const char *newName);
 
@@ -81,13 +80,9 @@ class EncFS_Context {
    * release() is called.  std::shared_ptr then does our reference counting for
    * us.
    */
-  struct Placeholder {
-    std::shared_ptr<FileNode> node;
 
-    Placeholder(const std::shared_ptr<FileNode> &ptr) : node(ptr) {}
-  };
-
-  typedef std::unordered_map<std::string, std::set<Placeholder *> > FileMap;
+  typedef std::unordered_map<
+      std::string, std::forward_list<std::shared_ptr<FileNode>>> FileMap;
 
   mutable pthread_mutex_t contextMutex;
   FileMap openFiles;

@@ -182,31 +182,27 @@ static int showInfo(int argc, char **argv) {
       return EXIT_FAILURE;
     case Config_V3:
       // xgroup(diag)
-      cout << "\n"
-           << autosprintf(_("Version 3 configuration; "
-                            "created by %s\n"),
-                          config->creator.c_str());
+      cout << "\n" << autosprintf(_("Version 3 configuration; "
+                                    "created by %s\n"),
+                                  config->creator.c_str());
       break;
     case Config_V4:
       // xgroup(diag)
-      cout << "\n"
-           << autosprintf(_("Version 4 configuration; "
-                            "created by %s\n"),
-                          config->creator.c_str());
+      cout << "\n" << autosprintf(_("Version 4 configuration; "
+                                    "created by %s\n"),
+                                  config->creator.c_str());
       break;
     case Config_V5:
       // xgroup(diag)
-      cout << "\n"
-           << autosprintf(_("Version 5 configuration; "
-                            "created by %s (revision %i)\n"),
-                          config->creator.c_str(), config->subVersion);
+      cout << "\n" << autosprintf(_("Version 5 configuration; "
+                                    "created by %s (revision %i)\n"),
+                                  config->creator.c_str(), config->subVersion);
       break;
     case Config_V6:
       // xgroup(diag)
-      cout << "\n"
-           << autosprintf(_("Version 6 configuration; "
-                            "created by %s (revision %i)\n"),
-                          config->creator.c_str(), config->subVersion);
+      cout << "\n" << autosprintf(_("Version 6 configuration; "
+                                    "created by %s (revision %i)\n"),
+                                  config->creator.c_str(), config->subVersion);
       break;
   }
 
