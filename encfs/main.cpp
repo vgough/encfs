@@ -48,12 +48,6 @@
 extern "C" void fuse_unmount_compat22(const char *mountpoint);
 #define fuse_unmount fuse_unmount_compat22
 
-/* Arbitrary identifiers for long options that do
- * not have a short version */
-#define LONG_OPT_ANNOTATE 513
-#define LONG_OPT_NOCACHE 514
-#define LONG_OPT_REQUIRE_MAC 515
-
 using namespace std;
 using namespace encfs;
 using gnu::autosprintf;
@@ -117,10 +111,17 @@ static void usage(const char *name) {
   cerr << autosprintf(_("Build: encfs version %s"), VERSION) << "\n\n"
        // xgroup(usage)
        << autosprintf(
-              _("Usage: %s [options] rootDir mountPoint [-- [FUSE Mount "
+              _("Usage:\n %s [options] [--mount] rootDir mountPoint [-- [FUSE Mount "
+                "Options]]"),
+              name)
+       << "\n"
+
+       << autosprintf(
+              _(" %s [options] --unmount mountPoint [-- [FUSE Mount "
                 "Options]]"),
               name)
        << "\n\n"
+
        // xgroup(usage)
        << _("Common Options:\n"
             "  -H\t\t\t"
@@ -147,6 +148,13 @@ static void usage(const char *name) {
             "\t\t\t(encfs must be run as root)\n")
        << _("  --reverse\t\t"
             "reverse encryption\n")
+
+       << _("  --unmount\t\t"
+            "unmounts specified mountPoint \n"
+            "\t\t\t(cannot be used with --mount)\n")
+
+       << _("  --config=path\t\t"
+            "specifies config file (overrides ENV variable)\n")
 
        // xgroup(usage)
        << _("  --extpass=program\tUse external program for password prompt\n"
@@ -198,6 +206,7 @@ static bool processArgs(int argc, char *argv[],
   out->opts->annotate = false;
   out->opts->reverseEncryption = false;
   out->opts->requireMac = false;
+  out->opts->unmount = false;
 
   bool useDefaultFlags = true;
 
@@ -234,6 +243,9 @@ static bool processArgs(int argc, char *argv[],
       {"standard", 0, 0, '1'},              // standard configuration
       {"paranoia", 0, 0, '2'},              // standard configuration
       {"require-macs", 0, 0, LONG_OPT_REQUIRE_MAC},  // require MACs
+      { "mount", 0, 0, LONG_OPT_MOUNT },  // only mount 
+      { "unmount", 0, 0, LONG_OPT_UNMOUNT },  // only unmount 
+      { "config", 1, 0, LONG_OPT_CONFIG },  // command-line-supplied config location 
       {0, 0, 0, 0}};
 
   while (1) {
@@ -331,6 +343,21 @@ static bool processArgs(int argc, char *argv[],
       case 'M':
         out->opts->delayMount = true;
         break;
+      case LONG_OPT_MOUNT:
+        /* Only allow mounting of an existing 
+         * filesystem (no auto-create) */
+        out->opts->createIfNotFound = false;
+        break;
+      case LONG_OPT_UNMOUNT:
+        /* Only allow unmounting of mounted 
+        * filesystem (no create or mount) */
+        out->opts->unmount = true;
+        break;
+      case LONG_OPT_CONFIG:
+        /* Take config file path from command 
+         * line instead of ENV variable */
+        out->opts->config.assign(optarg);
+        break;
       case 'N':
         useDefaultFlags = false;
         break;
@@ -375,9 +402,14 @@ static bool processArgs(int argc, char *argv[],
 
   if (!out->isThreaded) PUSHARG("-s");
 
-  // we should have at least 2 arguments left over - the source directory and
-  // the mount point.
-  if (optind + 2 <= argc) {
+  // for --unmount, we should have at least 1 argument left - the mount point
+  // otherwise we should have at least 2 arguments left over - the source 
+  // directory and the mount point.
+  if (out->opts->unmount && optind + 1 <= argc) {
+    // mountPoint is assumed to be slash terminated in the
+    // rest of the code.
+    out->opts->mountPoint = slashTerminate(argv[optind++]);
+  } else if (optind + 2 <= argc) {
     // both rootDir and mountPoint are assumed to be slash terminated in the
     // rest of the code.
     out->opts->rootDir = slashTerminate(argv[optind++]);
@@ -428,7 +460,8 @@ static bool processArgs(int argc, char *argv[],
 
   // sanity check
   if (out->isDaemon && (!isAbsolutePath(out->opts->mountPoint.c_str()) ||
-                        !isAbsolutePath(out->opts->rootDir.c_str()))) {
+                        !out->opts->unmount 
+                        && !isAbsolutePath(out->opts->rootDir.c_str()))) {
     cerr <<
         // xgroup(usage)
         _("When specifying daemon mode, you must use absolute paths "
@@ -438,7 +471,7 @@ static bool processArgs(int argc, char *argv[],
   }
 
   // the raw directory may not be a subdirectory of the mount point.
-  {
+  if (!out->opts->unmount) {
     string testMountPoint = out->opts->mountPoint;
     string testRootDir = out->opts->rootDir.substr(0, testMountPoint.length());
 
@@ -467,7 +500,7 @@ static bool processArgs(int argc, char *argv[],
   }
 
   // check that the directories exist, or that we can create them..
-  if (!isDirectory(out->opts->rootDir.c_str()) &&
+  if (!out->opts->unmount && !isDirectory(out->opts->rootDir.c_str()) &&
       !userAllowMkdir(out->opts->annotate ? 1 : 0, out->opts->rootDir.c_str(),
                       0700)) {
     cerr << _("Unable to locate root directory, aborting.");
@@ -542,6 +575,13 @@ int main(int argc, char *argv[]) {
   if (argc == 1 || !processArgs(argc, argv, encfsArgs)) {
     usage(argv[0]);
     return EXIT_FAILURE;
+  }
+
+  // Grab a command to unmount now, so we can exit right away 
+  if (encfsArgs->opts->unmount) {
+    VLOG(1) << "performing --unmount of " << encfsArgs->opts->mountPoint;
+    fuse_unmount(encfsArgs->opts->mountPoint.c_str());
+    return 0;
   }
 
   if (encfsArgs->isVerbose) {

@@ -30,6 +30,16 @@
 #include "Interface.h"
 #include "encfs.h"
 
+
+ /* Arbitrary identifiers for long options that do
+ * not have a short version */
+#define LONG_OPT_ANNOTATE 513
+#define LONG_OPT_NOCACHE 514
+#define LONG_OPT_REQUIRE_MAC 515
+#define LONG_OPT_MOUNT 516
+#define LONG_OPT_UNMOUNT 517
+#define LONG_OPT_CONFIG 518
+
 namespace encfs {
 
 // true if the path points to an existing node (of any type)
@@ -76,6 +86,7 @@ struct EncFS_Opts {
   bool idleTracking;       // turn on idle monitoring of filesystem
   bool mountOnDemand;      // mounting on-demand
   bool delayMount;         // delay initial mount
+  bool unmount;         // unmount filesystem mountPoint
 
   bool checkKey;     // check crypto key decoding
   bool forceDecode;  // force decode on MAC block failures
@@ -98,12 +109,14 @@ struct EncFS_Opts {
   bool requireMac;  // Throw an error if MAC is disabled
 
   ConfigMode configMode;
+  std::string config;  // path to configuration file (or empty)
 
   EncFS_Opts() {
     createIfNotFound = true;
     idleTracking = false;
     mountOnDemand = false;
     delayMount = false;
+    unmount = false;
     checkKey = true;
     forceDecode = false;
     useStdin = false;
@@ -120,14 +133,15 @@ struct EncFS_Opts {
 /*
     Read existing config file.  Looks for any supported configuration version.
 */
-ConfigType readConfig(const std::string &rootDir, EncFSConfig *config);
+ConfigType readConfig(const std::string &rootDir, EncFSConfig *config, 
+                      const std::string &cmdConfig);
 
 /*
     Save the configuration.  Saves back as the same configuration type as was
     read from.
 */
 bool saveConfig(ConfigType type, const std::string &rootdir,
-                const EncFSConfig *config);
+                const EncFSConfig *config, const std::string &cmdConfig);
 
 class EncFS_Context;
 
