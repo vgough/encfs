@@ -127,6 +127,10 @@ void EncFS_Context::eraseNode(const char *path, FileNode *pl) {
 
   it->second.pop_front();
 
+  // if no more references to this file, remove the record all together
+  if (it->second.empty()) {
+    openFiles.erase(it);
+  }
 }
 
 }  // namespace encfs
