@@ -83,9 +83,10 @@ check_cxx_source_compiles ("#include <sys/types.h>
   " XATTR_ADD_OPT)
 set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
 
-# Check if we have lchmod.
+# Check if we have some standard functions.
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
+check_function_exists_glibc (utimensat HAVE_UTIMENSAT)
 
 set (CMAKE_THREAD_PREFER_PTHREAD)
 find_package (Threads REQUIRED)
