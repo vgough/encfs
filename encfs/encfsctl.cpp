@@ -453,7 +453,7 @@ static int copyContents(const std::shared_ptr<EncFS_Root> &rootInfo,
 
     if (node->getAttr(&st) != 0) return EXIT_FAILURE;
 
-    if ((st.st_mode & S_IFLNK) == S_IFLNK) {
+    if ((st.st_mode & S_IFMT) == S_IFLNK) {
       string d = rootInfo->root->cipherPath(encfsName);
       char linkContents[PATH_MAX + 2];
 
