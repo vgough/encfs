@@ -524,8 +524,6 @@ void *encfs_init(fuse_conn_info *conn) {
 void encfs_destroy(void *_ctx) {}
 
 int main(int argc, char *argv[]) {
-  encfs::initLogging();
-
 #if defined(ENABLE_NLS) && defined(LOCALEDIR)
   setlocale(LC_ALL, "");
   bindtextdomain(PACKAGE, LOCALEDIR);
@@ -546,6 +544,8 @@ int main(int argc, char *argv[]) {
   if (encfsArgs->isVerbose) {
     el::Loggers::setVerboseLevel(1);
   }
+
+  encfs::initLogging(encfsArgs->isVerbose);
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();
