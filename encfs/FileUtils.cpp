@@ -1542,6 +1542,11 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
             "The configuration loaded is not compatible with --reverse\n");
         return rootInfo;
       }
+      /* Reverse mounts are read-only by default (set in main.cpp).
+       * If uniqueIV is off, writing can be allowed, because there
+       * is no header that could be overwritten */
+      if (config->uniqueIV == false)
+        opts->readOnly = false;
     }
 
     // first, instanciate the cipher.
