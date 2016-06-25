@@ -405,17 +405,14 @@ static bool processArgs(int argc, char *argv[],
     PUSHARG("-o");
     PUSHARG("use_ino");
 
-    // "default_permissions" comes with a performance cost. Only enable
-    // it if makes sense.
-    for (int i = 0; i < out->fuseArgc; i++) {
-      if (out->fuseArgv[i] == NULL) {
-        continue;
-      } else if (strcmp(out->fuseArgv[i], "allow_other") == 0) {
-        PUSHARG("-o");
-        PUSHARG("default_permissions");
-        break;
-      }
-    }
+    // "default_permissions" comes with a performance cost, and only makes
+    // sense if "allow_other"" is used.
+    // But it works around the issues "open_readonly_workaround" causes,
+    // so enable it unconditionally.
+    // See https://github.com/vgough/encfs/issues/181 and
+    // https://github.com/vgough/encfs/issues/112 for more info.
+    PUSHARG("-o");
+    PUSHARG("default_permissions");
 
 #if defined(__APPLE__)
     // With OSXFuse, the 'local' flag selects a local filesystem mount icon in
