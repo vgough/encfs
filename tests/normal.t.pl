@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 102;
+use Test::More tests => 104;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -46,6 +46,7 @@ sub runTests
     &renames;
     &internalModification;
     &grow;
+    &umask0777;
 
     &cleanup;
 }
@@ -324,3 +325,12 @@ sub cleanup
     ok( ! -d $workingDir, "working dir removed");
 }
 
+# Test that we can create and write to a a file even if umask is set to 0777
+# Regression test for bug https://github.com/vgough/encfs/issues/181
+sub umask0777
+{
+    my $old = umask(0777);
+    ok(open(my $fh, "+>$crypt/umask0777"), "open with umask 0777");
+    close($fh);
+    umask($old);
+}
