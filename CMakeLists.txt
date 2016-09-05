@@ -16,7 +16,8 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
 
 option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
-option (ENABLE_NLS "Compile with Native Language Support (using gettext)" ON)
+option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
+option (INSTALL_LIBENCFS "install libencfs" OFF)
 
 # We need C++ 11
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
@@ -165,7 +166,9 @@ target_link_libraries(encfs
   ${TINYXML_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
 )
-install (TARGETS encfs DESTINATION lib)
+if (INSTALL_LIBENCFS)
+  install (TARGETS encfs DESTINATION lib)
+endif (INSTALL_LIBENCFS)
 
 if (IWYU)
   if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.2)
