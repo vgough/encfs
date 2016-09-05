@@ -21,14 +21,12 @@ msgstr ""
 "X-Generator: Launchpad (build 17389)\n"
 "X-Rosetta-Version: 0.1\n"
 
-#, c-format
-msgid "truncate failure: read %i bytes, partial block of %i"
-msgstr "trunkeringsfel: läst %i bytes, delblock av %i"
-
-msgid "  -- show information (Default command)"
-msgstr "  -- visa information (Standardkommando)"
-
-msgid "  -- show key"
+msgid ""
+"\n"
+"\n"
+"You specified --require-macs.  Enabling block authentication code "
+"headers...\n"
+"\n"
 msgstr ""
 
 msgid "  -- change password for volume"
@@ -39,159 +37,70 @@ msgid ""
 "\tNo prompts are issued."
 msgstr "  -- ändra lösenord för volym, läser lösenord från standard input."
 
-msgid "  -- show undecodable filenames in the volume"
-msgstr "  -- visa icke tolkbara filnamn i volymen."
+msgid "  -- decodes name and prints plaintext version"
+msgstr "  -- tolkar namnet och skriver ut textversion"
 
 msgid "  -- decodes the file and cats it to standard out"
 msgstr ""
 
-msgid "  -- decodes name and prints plaintext version"
-msgstr "  -- tolkar namnet och skriver ut textversion"
+msgid "  -- decrypts a volume and writes results to path"
+msgstr ""
 
 msgid "  -- encodes a filename and print result"
 msgstr "  -- kodar ett filnamn och skriver ut resultatet"
 
-msgid "  -- decrypts a volume and writes results to path"
-msgstr ""
-
 msgid "  -- print version number and exit"
 msgstr "  -- skriv ut versionsnummer och avsluta"
 
-#, c-format
-msgid "encfsctl version %s"
-msgstr "encfsctl version %s"
+msgid "  -- show information (Default command)"
+msgstr "  -- visa information (Standardkommando)"
 
-msgid "Usage:\n"
-msgstr "Användning:\n"
-
-#, c-format
-msgid ""
-"%s (root dir)\n"
-"  -- displays information about the filesystem, or \n"
+msgid "  -- show key"
 msgstr ""
-"%s (root dir)\n"
-"  -- visar information om filsystemet, eller \n"
 
-#, c-format
-msgid ""
-"Example: \n"
-"%s info ~/.crypt\n"
-msgstr ""
-"Exempel: \n"
-"%s info ~/.crypt\n"
-
-#, c-format
-msgid "directory %s does not exist.\n"
-msgstr "katalog %s existerar inte\n"
-
-msgid "Unable to load or parse config file\n"
-msgstr "Oförmögen att ladda eller tolka konfigurationsfil\n"
+msgid "  -- show undecodable filenames in the volume"
+msgstr "  -- visa icke tolkbara filnamn i volymen."
 
 msgid ""
-"A really old EncFS filesystem was found. \n"
-"It is not supported in this EncFS build.\n"
+"  --extpass=program\tUse external program for password prompt\n"
+"\n"
+"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
+"    encfs ~/.crypt ~/crypt\n"
+"\n"
 msgstr ""
-"Ett väldigt gammalt EncFS-filsystem hittades. \n"
-"Det stöds inte av den här EncFS-versionen.\n"
-
-#, c-format
-msgid "Version 3 configuration; created by %s\n"
-msgstr "Version 3 konfiguration; skapad av %s\n"
-
-#, c-format
-msgid "Version 4 configuration; created by %s\n"
-msgstr "Version 4 konfiguration; skapad av %s\n"
-
-#, c-format
-msgid "Version 5 configuration; created by %s (revision %i)\n"
-msgstr "Version 5 konfiguration; skapad av %s (revision %i)\n"
-
-#, c-format
-msgid "Version 6 configuration; created by %s (revision %i)\n"
-msgstr ""
-
-#, c-format
-msgid "getopt error: %i"
-msgstr "getopt fel: %i"
-
-msgid "Incorrect number of arguments"
-msgstr ""
-
-msgid "Unable to initialize encrypted filesystem - check path.\n"
-msgstr "Kunde inte initiera krypterat filsystem - granska sökvägen.\n"
-
-#, c-format
-msgid "In directory %s: \n"
-msgstr "I katalog %s: \n"
-
-#, c-format
-msgid "Found %i invalid file."
-msgid_plural "Found %i invalid files."
-msgstr[0] "Lokaliserade %i felaktig fil."
-msgstr[1] "Lokaliserade %i felaktiga filer."
-
-#, c-format
-msgid "Unable to find specified cipher \"%s\"\n"
-msgstr "Kan ej hitta specificerad chiffer \"%s\"\n"
-
-msgid "Enter current Encfs password\n"
-msgstr "Ange nuvarande Encfs-lösenord\n"
-
-msgid "Invalid password\n"
-msgstr "Felaktigt lösenord\n"
-
-msgid "Enter new Encfs password\n"
-msgstr "Ange nytt Encfs-lösenord\n"
-
-msgid "Volume Key successfully updated.\n"
-msgstr "Volymnyckeln uppdaterades utan problem.\n"
-
-msgid "Error saving modified config file.\n"
-msgstr "Fel vid sparande av modifierad konfigurationsfil.\n"
-
-msgid "Error creating key\n"
-msgstr ""
-
-#, c-format
-msgid "invalid command: \"%s\""
-msgstr "Felaktigt kommando: \"%s\""
-
-#, c-format
-msgid "Incorrect number of arguments for command \"%s\""
-msgstr "Felaktigt antal argument för kommandot \"%s\""
-
-#, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Katalogen \"%s\" finns ej. Ska den skapas? (j/n) "
-
-msgid "Unable to create directory: "
-msgstr "Kunde inte skapa katalog: "
-
-msgid "Directory not created."
-msgstr "Katalogen skapades inte."
-
-#, fuzzy, c-format
-msgid "Found config file %s, but failed to load - exiting"
-msgstr "Lokaliserade konfigurationsfilen %s, men kunde inte ladda den"
-
-#, c-format
-msgid ""
-"Config subversion %i found, but this version of encfs only supports up to "
-"version %i."
-msgstr ""
-"Konfiguration subversion %i funnen. Denna version av encfs stöder endast upp "
-"till version %i."
 
 msgid ""
-"This version of EncFS doesn't support filesystems created before 2004-08-13"
-msgstr "Denna verison av EncFS stödjer inte filsystem skapta innan 2004-08-13"
+"  --public\t\tact as a typical multi-user filesystem\n"
+"\t\t\t(encfs must be run as root)\n"
+msgstr ""
 
-msgid "The following cipher algorithms are available:"
-msgstr "Följande krypteringsalgoritmer är tillgängliga:"
+msgid "  --reverse\t\treverse encryption\n"
+msgstr ""
+
+msgid ""
+"  -v, --verbose\t\tverbose: output encfs debug messages\n"
+"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
+"  --anykey\t\tDo not verify correct key is being used\n"
+"  --forcedecode\t\tdecode data even if an error is detected\n"
+"\t\t\t(for filesystems using MAC block headers)\n"
+msgstr ""
+"  -v, --verbose\t\tverbose: skriv ut debugmeddelanden\n"
+"  -i, --idle=MINUTER\tAvmontera automatiskt efter den angivna perioden av \t"
+"\t\tinaktivitet\n"
+"  --anykey\t\tVerifiera inte att rätt nyckel används\n"
+"  --forcedecode\t\tTolka data även om ett fel upptäcks\n"
+"\t\t\t(för filsystem som använder MAC-blockhuvuden)\n"
+
+msgid " (NOT supported)\n"
+msgstr " (Stöds INTE)\n"
 
 #, c-format
-msgid " -- key length %i bits"
-msgstr " - nyckellängd %i bits"
+msgid " (using %i:%i:%i)\n"
+msgstr " använder %i:%i:%i)\n"
+
+#, c-format
+msgid " -- Supports block sizes of %i to %i bytes"
+msgstr " - Stödjer blockstorlekar på mellan %i till %i bytes"
 
 #, c-format
 msgid " -- Supports key lengths of %i to %i bits"
@@ -202,71 +111,26 @@ msgid " -- block size %i bytes"
 msgstr " - blockstorlek %i bytes"
 
 #, c-format
-msgid " -- Supports block sizes of %i to %i bytes"
-msgstr " - Stödjer blockstorlekar på mellan %i till %i bytes"
-
-msgid "Enter the number corresponding to your choice: "
-msgstr "Ange numret som motsvarar ditt val: "
-
-msgid "Invalid selection."
-msgstr "Ogiltigt val."
-
-#, c-format
-msgid "Selected algorithm \"%s\""
-msgstr "Vald algoritm \"%s\""
-
-msgid "The following filename encoding algorithms are available:"
-msgstr "Följande kodningsalgoritmer för filnamn är tillgängliga:"
-
-#, c-format
-msgid "Using key size of %i bits"
-msgstr "Använder nyckelstorlek på %i bitar"
+msgid " -- key length %i bits"
+msgstr " - nyckellängd %i bits"
 
 #, c-format
 msgid ""
-"Please select a key size in bits.  The cipher you have chosen\n"
-"supports sizes from %i to %i bits in increments of %i bits.\n"
-"For example: "
+"%s (root dir)\n"
+"  -- displays information about the filesystem, or \n"
 msgstr ""
-"Vänligen välj en nyckelstorlek i bitar. Krypteringsalgoritmen du har valt\n"
-"stödjer storlekar från %i till %i bitar i ökningar om %i bitar.\n"
-"Till exempel: "
+"%s (root dir)\n"
+"  -- visar information om filsystemet, eller \n"
 
-msgid "Selected key size: "
-msgstr "Vald nyckelstorlek: "
-
-#, c-format
-msgid "Using filesystem block size of %i bytes"
-msgstr "Använder filsystemsblockstorlek på %i bytes"
-
-#, c-format
-msgid ""
-"Select a block size in bytes.  The cipher you have chosen\n"
-"supports sizes from %i to %i bytes in increments of %i.\n"
-"Or just hit enter for the default (%i bytes)\n"
-msgstr ""
-"Välj en blockstorlek i bytes. Krypteringsalgoritmen du har valt\n"
-"stödjer storlekar från %i till %i bytes i ökningar om %i\n"
-"Eller tryck enter för standardstorlek (%i bytes)\n"
-
-msgid "filesystem block size: "
-msgstr "Filsystemsblockstorlek: "
+msgid "-------------------------- WARNING --------------------------\n"
+msgstr "-------------------------- VARNING --------------------------\n"
 
 msgid ""
-"Enable block authentication code headers\n"
-"on every block in a file?  This adds about 12 bytes per block\n"
-"to the storage requirements for a file, and significantly affects\n"
-"performance but it also means [almost] any modifications or errors\n"
-"within a block will be caught and will cause a read error."
+"A really old EncFS filesystem was found. \n"
+"It is not supported in this EncFS build.\n"
 msgstr ""
-
-msgid ""
-"\n"
-"\n"
-"You specified --require-macs.  Enabling block authentication code "
-"headers...\n"
-"\n"
-msgstr ""
+"Ett väldigt gammalt EncFS-filsystem hittades. \n"
+"Det stöds inte av den här EncFS-versionen.\n"
 
 msgid ""
 "Add random bytes to each block header?\n"
@@ -278,11 +142,72 @@ msgid ""
 "Select a number of bytes, from 0 (no random bytes) to 8: "
 msgstr ""
 
+#, c-format
+msgid "Block Size: %i bytes"
+msgstr "Blockstorlek: %i bytes"
+
+#, c-format
+msgid "Block Size: %i bytes + %i byte MAC header"
+msgstr "Block storlek: %i bytes + %i byte MAC-huvud"
+
+#, c-format
+msgid "Block Size: %i bytes, including %i byte MAC header"
+msgstr "Block storlek: %i bytes, innehållande %i byte MAC-huvud"
+
+#, c-format
+msgid "Build: encfs version %s"
+msgstr "Bygge: encfs version %s"
+
 msgid ""
-"Enable per-file initialization vectors?\n"
-"This adds about 8 bytes per file to the storage requirements.\n"
-"It should not affect performance except possibly with applications\n"
-"which rely on block-aligned file io for performance."
+"Common Options:\n"
+"  -H\t\t\tshow optional FUSE Mount Options\n"
+"  -s\t\t\tdisable multithreaded operation\n"
+"  -f\t\t\trun in foreground (don't spawn daemon).\n"
+"\t\t\tError messages will be sent to stderr\n"
+"\t\t\tinstead of syslog.\n"
+msgstr ""
+"Vanliga alternativ:\n"
+"  -H\t\t\tvisa valfria FUSE monteringsalternativ.\n"
+"  -s\t\t\tstäng av multitrådad funktionalitet\n"
+"  -f\t\t\texekvera i förgrunden (starta inte demon)\n"
+"\t\t\tFelmeddelanden kommer att skickas till stderr\n"
+"\t\t\tistället för syslog.\n"
+
+#, c-format
+msgid ""
+"Config subversion %i found, but this version of encfs only supports up to "
+"version %i."
+msgstr ""
+"Konfiguration subversion %i funnen. Denna version av encfs stöder endast upp "
+"till version %i."
+
+msgid ""
+"Configuration finished.  The filesystem to be created has\n"
+"the following properties:"
+msgstr ""
+"Konfiguration slutfördes. Filsystemet som kommer skapas har följande "
+"inställningar:"
+
+msgid "Creating new encrypted volume."
+msgstr "Skapar ny krypterad volym."
+
+msgid "Directory not created."
+msgstr "Katalogen skapades inte."
+
+msgid "Each file contains 8 byte header with unique IV data.\n"
+msgstr "Varje fil innehåller 8 byte huvud med unik IV data.\n"
+
+msgid ""
+"Enable block authentication code headers\n"
+"on every block in a file?  This adds about 12 bytes per block\n"
+"to the storage requirements for a file, and significantly affects\n"
+"performance but it also means [almost] any modifications or errors\n"
+"within a block will be caught and will cause a read error."
+msgstr ""
+
+msgid ""
+"Enable file-hole pass-through?\n"
+"This avoids writing encrypted blocks when file holes are created."
 msgstr ""
 
 msgid ""
@@ -301,12 +226,169 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Enable file-hole pass-through?\n"
-"This avoids writing encrypted blocks when file holes are created."
+"Enable per-file initialization vectors?\n"
+"This adds about 8 bytes per file to the storage requirements.\n"
+"It should not affect performance except possibly with applications\n"
+"which rely on block-aligned file io for performance."
 msgstr ""
 
-msgid "Creating new encrypted volume."
-msgstr "Skapar ny krypterad volym."
+msgid "EncFS Password: "
+msgstr "EncFS-lösenord: "
+
+msgid "Enter current Encfs password\n"
+msgstr "Ange nuvarande Encfs-lösenord\n"
+
+msgid "Enter new Encfs password\n"
+msgstr "Ange nytt Encfs-lösenord\n"
+
+msgid "Enter the number corresponding to your choice: "
+msgstr "Ange numret som motsvarar ditt val: "
+
+msgid "Error creating key\n"
+msgstr ""
+
+msgid "Error creating salt\n"
+msgstr ""
+
+msgid "Error decoding volume key, password incorrect\n"
+msgstr "Fel volymnyckel för avkodning, lösenord inkorrekt\n"
+
+msgid "Error saving modified config file.\n"
+msgstr "Fel vid sparande av modifierad konfigurationsfil.\n"
+
+#, c-format
+msgid ""
+"Example: \n"
+"%s info ~/.crypt\n"
+msgstr ""
+"Exempel: \n"
+"%s info ~/.crypt\n"
+
+msgid ""
+"External chained IV disabled, as both 'IV chaining'\n"
+"and 'unique IV' features are required for this option."
+msgstr ""
+
+msgid "Failure generating new volume key! Please report this error."
+msgstr ""
+"Fel vid generation av ny volymnyckel! Var vänlig att rapportera detta fel."
+
+msgid "File data IV is chained to filename IV.\n"
+msgstr "Fildata IV är kopplad till filnamn IV.\n"
+
+msgid "File holes passed through to ciphertext.\n"
+msgstr ""
+
+#, c-format
+msgid "Filename encoding: \"%s\", version %i:%i:%i"
+msgstr "Filnamns kodning: \"%s\", version %i:%i:%i"
+
+msgid "Filenames encoded using IV chaining mode.\n"
+msgstr "Filenamn kodade genom att använda IV kedjeläge.\n"
+
+#, c-format
+msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
+msgstr "Filsystemets kodningsalgoritm: \"%s\", version %i:%i:%i"
+
+msgid "For more information, see the man page encfs(1)"
+msgstr "För mer information se manualsidan encfs(1)"
+
+#, c-format
+msgid "Found %i invalid file."
+msgid_plural "Found %i invalid files."
+msgstr[0] "Lokaliserade %i felaktig fil."
+msgstr[1] "Lokaliserade %i felaktiga filer."
+
+#, fuzzy, c-format
+msgid "Found config file %s, but failed to load - exiting"
+msgstr "Lokaliserade konfigurationsfilen %s, men kunde inte ladda den"
+
+#, c-format
+msgid "In directory %s: \n"
+msgstr "I katalog %s: \n"
+
+msgid "Incorrect number of arguments"
+msgstr ""
+
+#, c-format
+msgid "Incorrect number of arguments for command \"%s\""
+msgstr "Felaktigt antal argument för kommandot \"%s\""
+
+#, c-format
+msgid "Internal error: Caught exception from main loop: %s"
+msgstr "Internt fel: Råkade på en avvikelse från huvudloopen: %s"
+
+msgid "Internal error: Caught unexpected exception"
+msgstr "Internt fel: Råkade på en oväntad avvikelse"
+
+msgid "Internal error: failed to exec program"
+msgstr "Internt fel: kunde inte exekvera programmet"
+
+msgid "Internal error: fork() failed"
+msgstr "Internt fel: fork() misslyckades"
+
+msgid "Internal error: socketpair() failed"
+msgstr "Internt fel: socketpair() misslyckades"
+
+msgid "Invalid password\n"
+msgstr "Felaktigt lösenord\n"
+
+msgid "Invalid selection."
+msgstr "Ogiltigt val."
+
+#, c-format
+msgid "Key Size: %i bits"
+msgstr "Nyckelstorlek: %i bitar"
+
+#, c-format
+msgid "MAC comparison failure in block %li"
+msgstr "MAC jämförelse misslyckades i block %li"
+
+msgid "MAC comparison failure, refusing to read"
+msgstr "MAC jämförelse fel, vägrar att läsa"
+
+msgid "Manual configuration mode selected."
+msgstr "Manuellt konfigurationsläge valt."
+
+msgid "Missing one or more arguments, aborting."
+msgstr "Saknar en eller flera argument, avbryter."
+
+msgid "Must set password program when using mount-on-demand"
+msgstr ""
+
+msgid "Name coding interface not supported"
+msgstr "Namn kodnings gränssnitt stöds inte"
+
+msgid "New Encfs Password: "
+msgstr "Nytt Encfs-lösenord: "
+
+msgid ""
+"Note: requested single-threaded mode, but an idle\n"
+"timeout was specified.  The filesystem will operate\n"
+"single-threaded, but threads will still be used to\n"
+"implement idle checking."
+msgstr ""
+"Not: begärde entrådsläge, men en idlingstid specificerades. Filsystemet "
+"kommer att arbeta med en tråd, men trådar kommer fortfarande att användas "
+"för att implementera idlingskoll."
+
+msgid ""
+"Now you will need to enter a password for your filesystem.\n"
+"You will need to remember this password, as there is absolutely\n"
+"no recovery mechanism.  However, the password can be changed\n"
+"later using encfsctl.\n"
+"\n"
+msgstr ""
+
+#, fuzzy
+msgid "Paranoia configuration not supported for reverse encryption"
+msgstr "Paranoia konfiguration vald."
+
+msgid "Paranoia configuration selected."
+msgstr "Paranoia konfiguration vald."
+
+msgid "Passwords did not match, please try again\n"
+msgstr "Lösenorden matchade inte, var god försök igen\n"
 
 msgid ""
 "Please choose from one of the following options:\n"
@@ -321,45 +403,57 @@ msgstr ""
 " något annat, eller tomma fält kommer automatiskt att välja sandardvärden\n"
 "?> "
 
-#, fuzzy
-msgid "Paranoia configuration not supported for reverse encryption"
-msgstr "Paranoia konfiguration vald."
+#, c-format
+msgid ""
+"Please select a key size in bits.  The cipher you have chosen\n"
+"supports sizes from %i to %i bits in increments of %i bits.\n"
+"For example: "
+msgstr ""
+"Vänligen välj en nyckelstorlek i bitar. Krypteringsalgoritmen du har valt\n"
+"stödjer storlekar från %i till %i bitar i ökningar om %i bitar.\n"
+"Till exempel: "
 
-msgid "Paranoia configuration selected."
-msgstr "Paranoia konfiguration vald."
+msgid "Remount failed"
+msgstr ""
 
-msgid "Standard configuration selected."
-msgstr "Standard konfiguration vald."
+#, c-format
+msgid "Salt Size: %i bits"
+msgstr ""
+
+#, c-format
+msgid ""
+"Select a block size in bytes.  The cipher you have chosen\n"
+"supports sizes from %i to %i bytes in increments of %i.\n"
+"Or just hit enter for the default (%i bytes)\n"
+msgstr ""
+"Välj en blockstorlek i bytes. Krypteringsalgoritmen du har valt\n"
+"stödjer storlekar från %i till %i bytes i ökningar om %i\n"
+"Eller tryck enter för standardstorlek (%i bytes)\n"
+
+#, c-format
+msgid "Selected algorithm \"%s\""
+msgstr "Vald algoritm \"%s\""
+
+msgid "Selected key size: "
+msgstr "Vald nyckelstorlek: "
 
 msgid ""
 "Sorry, unable to locate cipher for predefined configuration...\n"
 "Falling through to Manual configuration mode."
 msgstr ""
 
-msgid "Manual configuration mode selected."
-msgstr "Manuellt konfigurationsläge valt."
+msgid "Standard configuration selected."
+msgstr "Standard konfiguration vald."
 
-msgid "reverse encryption - chained IV and MAC disabled"
+msgid "The configuration disabled MAC, but you passed --require-macs\n"
 msgstr ""
 
-msgid ""
-"External chained IV disabled, as both 'IV chaining'\n"
-"and 'unique IV' features are required for this option."
+msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr ""
 
 #, c-format
-msgid "Unable to instanciate cipher %s, key size %i, block size %i"
-msgstr ""
-
-msgid ""
-"Configuration finished.  The filesystem to be created has\n"
-"the following properties:"
-msgstr ""
-"Konfiguration slutfördes. Filsystemet som kommer skapas har följande "
-"inställningar:"
-
-msgid "-------------------------- WARNING --------------------------\n"
-msgstr "-------------------------- VARNING --------------------------\n"
+msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
+msgstr "Katalogen \"%s\" finns ej. Ska den skapas? (j/n) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"
@@ -371,138 +465,65 @@ msgid ""
 "please press CTRL-C now to abort and start over."
 msgstr ""
 
-msgid ""
-"Now you will need to enter a password for your filesystem.\n"
-"You will need to remember this password, as there is absolutely\n"
-"no recovery mechanism.  However, the password can be changed\n"
-"later using encfsctl.\n"
-"\n"
-msgstr ""
-
-msgid "Failure generating new volume key! Please report this error."
-msgstr ""
-"Fel vid generation av ny volymnyckel! Var vänlig att rapportera detta fel."
-
-msgid "Name coding interface not supported"
-msgstr "Namn kodnings gränssnitt stöds inte"
-
 msgid "The filename encoding interface requested is not available"
 msgstr "Det begärda filnamnets kodnings gränssnitt finns inte tillgängligt."
 
-#, c-format
-msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
-msgstr "Filsystemets kodningsalgoritm: \"%s\", version %i:%i:%i"
+msgid "The following cipher algorithms are available:"
+msgstr "Följande krypteringsalgoritmer är tillgängliga:"
 
-msgid " (NOT supported)\n"
-msgstr " (Stöds INTE)\n"
+msgid "The following filename encoding algorithms are available:"
+msgstr "Följande kodningsalgoritmer för filnamn är tillgängliga:"
 
-#, c-format
-msgid " (using %i:%i:%i)\n"
-msgstr " använder %i:%i:%i)\n"
+msgid "The raw directory may not be a subdirectory of the mount point."
+msgstr "Rotmappen kan inte vara undermap till monteringspunkten."
 
-#, c-format
-msgid "Filename encoding: \"%s\", version %i:%i:%i"
-msgstr "Filnamns kodning: \"%s\", version %i:%i:%i"
+msgid "The requested cipher interface is not available\n"
+msgstr "Det begärda kodnings gränssnittet finns inte tillgängligt.\n"
 
-#, c-format
-msgid "Key Size: %i bits"
-msgstr "Nyckelstorlek: %i bitar"
-
-#, c-format
-msgid "Using PBKDF2, with %i iterations"
+msgid "The requested filename coding interface is not available\n"
 msgstr ""
 
-#, c-format
-msgid "Salt Size: %i bits"
-msgstr ""
+msgid ""
+"This version of EncFS doesn't support filesystems created before 2004-08-13"
+msgstr "Denna verison av EncFS stödjer inte filsystem skapta innan 2004-08-13"
 
-#, c-format
-msgid "Block Size: %i bytes + %i byte MAC header"
-msgstr "Block storlek: %i bytes + %i byte MAC-huvud"
-
-#, c-format
-msgid "Block Size: %i bytes, including %i byte MAC header"
-msgstr "Block storlek: %i bytes, innehållande %i byte MAC-huvud"
-
-#, c-format
-msgid "Block Size: %i bytes"
-msgstr "Blockstorlek: %i bytes"
-
-msgid "Each file contains 8 byte header with unique IV data.\n"
-msgstr "Varje fil innehåller 8 byte huvud med unik IV data.\n"
-
-msgid "Filenames encoded using IV chaining mode.\n"
-msgstr "Filenamn kodade genom att använda IV kedjeläge.\n"
-
-msgid "File data IV is chained to filename IV.\n"
-msgstr "Fildata IV är kopplad till filnamn IV.\n"
-
-msgid "File holes passed through to ciphertext.\n"
-msgstr ""
-
-msgid "Error creating salt\n"
-msgstr ""
-
-msgid "EncFS Password: "
-msgstr "EncFS-lösenord: "
-
-msgid "Zero length password not allowed\n"
-msgstr "Tomt lösenord är ej tillåtet\n"
-
-msgid "Internal error: socketpair() failed"
-msgstr "Internt fel: socketpair() misslyckades"
-
-msgid "Internal error: fork() failed"
-msgstr "Internt fel: fork() misslyckades"
-
-msgid "Internal error: failed to exec program"
-msgstr "Internt fel: kunde inte exekvera programmet"
-
-msgid "New Encfs Password: "
-msgstr "Nytt Encfs-lösenord: "
-
-msgid "Verify Encfs Password: "
-msgstr "Verifiera Encfs-lösenord: "
-
-msgid "Passwords did not match, please try again\n"
-msgstr "Lösenorden matchade inte, var god försök igen\n"
-
-msgid "The configuration disabled MAC, but you passed --require-macs\n"
-msgstr ""
-
-msgid "The configuration loaded is not compatible with --reverse\n"
-msgstr ""
+msgid "Unable to create directory: "
+msgstr "Kunde inte skapa katalog: "
 
 #, c-format
 msgid "Unable to find cipher %s, version %i:%i:%i"
 msgstr "Kan inte hitta kodningsalgoritm %s, version %i:%i:%i"
 
-msgid "The requested cipher interface is not available\n"
-msgstr "Det begärda kodnings gränssnittet finns inte tillgängligt.\n"
-
-msgid "Error decoding volume key, password incorrect\n"
-msgstr "Fel volymnyckel för avkodning, lösenord inkorrekt\n"
-
 #, c-format
 msgid "Unable to find nameio interface %s, version %i:%i:%i"
 msgstr "Kan inte hitta nameio-användargränssnitt %s, version %i:%i:%i"
 
-msgid "The requested filename coding interface is not available\n"
-msgstr ""
+#, c-format
+msgid "Unable to find specified cipher \"%s\"\n"
+msgstr "Kan ej hitta specificerad chiffer \"%s\"\n"
 
-msgid "Remount failed"
-msgstr ""
+msgid "Unable to initialize encrypted filesystem - check path.\n"
+msgstr "Kunde inte initiera krypterat filsystem - granska sökvägen.\n"
 
 #, c-format
-msgid "MAC comparison failure in block %li"
-msgstr "MAC jämförelse misslyckades i block %li"
+msgid "Unable to instanciate cipher %s, key size %i, block size %i"
+msgstr ""
 
-msgid "MAC comparison failure, refusing to read"
-msgstr "MAC jämförelse fel, vägrar att läsa"
+msgid "Unable to load or parse config file\n"
+msgstr "Oförmögen att ladda eller tolka konfigurationsfil\n"
+
+msgid "Unable to locate mount point, aborting."
+msgstr "Kunde inte lokalisera monteringspunkten, avbryter."
+
+msgid "Unable to locate root directory, aborting."
+msgstr "Kunde inte lokalisera rotkatalogen, avbryter."
 
 #, c-format
-msgid "Build: encfs version %s"
-msgstr "Bygge: encfs version %s"
+msgid "Unmounting filesystem %s due to inactivity"
+msgstr "Avmonterar filsystem %s på grund av inaktivitet"
+
+msgid "Usage:\n"
+msgstr "Användning:\n"
 
 #, c-format
 msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
@@ -510,68 +531,39 @@ msgstr ""
 "Användning: %s [alternativ] rootKatalog monteringsPunkt [-- [FUSE "
 "monteringsalternativ]]"
 
-msgid ""
-"Common Options:\n"
-"  -H\t\t\tshow optional FUSE Mount Options\n"
-"  -s\t\t\tdisable multithreaded operation\n"
-"  -f\t\t\trun in foreground (don't spawn daemon).\n"
-"\t\t\tError messages will be sent to stderr\n"
-"\t\t\tinstead of syslog.\n"
+#, c-format
+msgid "Using PBKDF2, with %i iterations"
 msgstr ""
-"Vanliga alternativ:\n"
-"  -H\t\t\tvisa valfria FUSE monteringsalternativ.\n"
-"  -s\t\t\tstäng av multitrådad funktionalitet\n"
-"  -f\t\t\texekvera i förgrunden (starta inte demon)\n"
-"\t\t\tFelmeddelanden kommer att skickas till stderr\n"
-"\t\t\tistället för syslog.\n"
-
-msgid ""
-"  -v, --verbose\t\tverbose: output encfs debug messages\n"
-"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
-"  --anykey\t\tDo not verify correct key is being used\n"
-"  --forcedecode\t\tdecode data even if an error is detected\n"
-"\t\t\t(for filesystems using MAC block headers)\n"
-msgstr ""
-"  -v, --verbose\t\tverbose: skriv ut debugmeddelanden\n"
-"  -i, --idle=MINUTER\tAvmontera automatiskt efter den angivna perioden av \t"
-"\t\tinaktivitet\n"
-"  --anykey\t\tVerifiera inte att rätt nyckel används\n"
-"  --forcedecode\t\tTolka data även om ett fel upptäcks\n"
-"\t\t\t(för filsystem som använder MAC-blockhuvuden)\n"
-
-msgid ""
-"  --public\t\tact as a typical multi-user filesystem\n"
-"\t\t\t(encfs must be run as root)\n"
-msgstr ""
-
-msgid "  --reverse\t\treverse encryption\n"
-msgstr ""
-
-msgid ""
-"  --extpass=program\tUse external program for password prompt\n"
-"\n"
-"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
-"    encfs ~/.crypt ~/crypt\n"
-"\n"
-msgstr ""
-
-msgid "For more information, see the man page encfs(1)"
-msgstr "För mer information se manualsidan encfs(1)"
-
-msgid ""
-"encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
-"valid FUSE Mount Options follow:\n"
-msgstr ""
-
-msgid "option '--public' ignored for non-root user"
-msgstr "val '--public' ignorerat för ej-root användare"
 
 #, c-format
-msgid "encfs version %s"
-msgstr "encfs version %s"
+msgid "Using filesystem block size of %i bytes"
+msgstr "Använder filsystemsblockstorlek på %i bytes"
 
-msgid "Missing one or more arguments, aborting."
-msgstr "Saknar en eller flera argument, avbryter."
+#, c-format
+msgid "Using key size of %i bits"
+msgstr "Använder nyckelstorlek på %i bitar"
+
+msgid "Verify Encfs Password: "
+msgstr "Verifiera Encfs-lösenord: "
+
+#, c-format
+msgid "Version 3 configuration; created by %s\n"
+msgstr "Version 3 konfiguration; skapad av %s\n"
+
+#, c-format
+msgid "Version 4 configuration; created by %s\n"
+msgstr "Version 4 konfiguration; skapad av %s\n"
+
+#, c-format
+msgid "Version 5 configuration; created by %s (revision %i)\n"
+msgstr "Version 5 konfiguration; skapad av %s (revision %i)\n"
+
+#, c-format
+msgid "Version 6 configuration; created by %s (revision %i)\n"
+msgstr ""
+
+msgid "Volume Key successfully updated.\n"
+msgstr "Volymnyckeln uppdaterades utan problem.\n"
 
 msgid ""
 "When specifying daemon mode, you must use absolute paths (beginning with '/')"
@@ -579,30 +571,31 @@ msgstr ""
 "När du specificerar demonläge så måste du använda absoluta sökvägar (börjar "
 "med '/')"
 
-msgid "The raw directory may not be a subdirectory of the mount point."
-msgstr "Rotmappen kan inte vara undermap till monteringspunkten."
-
 msgid "You must use mount-on-demand with delay-mount"
 msgstr ""
 
-msgid "Must set password program when using mount-on-demand"
-msgstr ""
+msgid "Zero length password not allowed\n"
+msgstr "Tomt lösenord är ej tillåtet\n"
 
-msgid "Unable to locate root directory, aborting."
-msgstr "Kunde inte lokalisera rotkatalogen, avbryter."
-
-msgid "Unable to locate mount point, aborting."
-msgstr "Kunde inte lokalisera monteringspunkten, avbryter."
+#, c-format
+msgid "directory %s does not exist.\n"
+msgstr "katalog %s existerar inte\n"
 
 msgid ""
-"Note: requested single-threaded mode, but an idle\n"
-"timeout was specified.  The filesystem will operate\n"
-"single-threaded, but threads will still be used to\n"
-"implement idle checking."
+"encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
+"valid FUSE Mount Options follow:\n"
 msgstr ""
-"Not: begärde entrådsläge, men en idlingstid specificerades. Filsystemet "
-"kommer att arbeta med en tråd, men trådar kommer fortfarande att användas "
-"för att implementera idlingskoll."
+
+#, c-format
+msgid "encfs version %s"
+msgstr "encfs version %s"
+
+#, c-format
+msgid "encfsctl version %s"
+msgstr "encfsctl version %s"
+
+msgid "filesystem block size: "
+msgstr "Filsystemsblockstorlek: "
 
 msgid ""
 "fuse failed.  Common problems:\n"
@@ -614,18 +607,25 @@ msgstr ""
 " - Ogiltiga alternativ -- se användningsmeddelandet\n"
 
 #, c-format
-msgid "Internal error: Caught exception from main loop: %s"
-msgstr "Internt fel: Råkade på en avvikelse från huvudloopen: %s"
-
-msgid "Internal error: Caught unexpected exception"
-msgstr "Internt fel: Råkade på en oväntad avvikelse"
+msgid "getopt error: %i"
+msgstr "getopt fel: %i"
 
 #, c-format
-msgid "Unmounting filesystem %s due to inactivity"
-msgstr "Avmonterar filsystem %s på grund av inaktivitet"
+msgid "invalid command: \"%s\""
+msgstr "Felaktigt kommando: \"%s\""
 
-#~ msgid "Block encoding, hides file name size somewhat"
-#~ msgstr "Blockkodning, döljer filnamnsstorleken något"
+msgid "option '--public' ignored for non-root user"
+msgstr "val '--public' ignorerat för ej-root användare"
+
+msgid "reverse encryption - chained IV and MAC disabled"
+msgstr ""
+
+#, c-format
+msgid "truncate failure: read %i bytes, partial block of %i"
+msgstr "trunkeringsfel: läst %i bytes, delblock av %i"
 
 #~ msgid "8 byte block cipher"
 #~ msgstr "8 byte block chiffer"
+
+#~ msgid "Block encoding, hides file name size somewhat"
+#~ msgstr "Blockkodning, döljer filnamnsstorleken något"

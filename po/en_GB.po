@@ -21,14 +21,12 @@ msgstr ""
 "X-Generator: Launchpad (build 17389)\n"
 "X-Rosetta-Version: 0.1\n"
 
-#, c-format
-msgid "truncate failure: read %i bytes, partial block of %i"
-msgstr "truncate failure: read %i bytes, partial block of %i"
-
-msgid "  -- show information (Default command)"
-msgstr "  -- show information (Default command)"
-
-msgid "  -- show key"
+msgid ""
+"\n"
+"\n"
+"You specified --require-macs.  Enabling block authentication code "
+"headers...\n"
+"\n"
 msgstr ""
 
 msgid "  -- change password for volume"
@@ -41,160 +39,76 @@ msgstr ""
 "  -- change password for volume, taking password from standard input.\n"
 "\tNo prompts are issued."
 
-msgid "  -- show undecodable filenames in the volume"
-msgstr "  -- show undecodable filenames in the volume"
+msgid "  -- decodes name and prints plaintext version"
+msgstr "  -- decodes name and prints plaintext version"
 
 msgid "  -- decodes the file and cats it to standard out"
 msgstr "  -- decodes the file and cats it to standard out"
 
-msgid "  -- decodes name and prints plaintext version"
-msgstr "  -- decodes name and prints plaintext version"
+msgid "  -- decrypts a volume and writes results to path"
+msgstr "  -- decrypts a volume and writes results to path"
 
 msgid "  -- encodes a filename and print result"
 msgstr "  -- encodes a filename and prints result"
 
-msgid "  -- decrypts a volume and writes results to path"
-msgstr "  -- decrypts a volume and writes results to path"
-
 msgid "  -- print version number and exit"
 msgstr "  -- print version number and exit"
 
-#, c-format
-msgid "encfsctl version %s"
-msgstr "encfsctl version %s"
+msgid "  -- show information (Default command)"
+msgstr "  -- show information (Default command)"
 
-msgid "Usage:\n"
-msgstr "Usage:\n"
-
-#, c-format
-msgid ""
-"%s (root dir)\n"
-"  -- displays information about the filesystem, or \n"
+msgid "  -- show key"
 msgstr ""
-"%s (root dir)\n"
-"  -- displays information about the filesystem, or \n"
 
-#, c-format
-msgid ""
-"Example: \n"
-"%s info ~/.crypt\n"
-msgstr ""
-"Example: \n"
-"%s info ~/.crypt\n"
-
-#, c-format
-msgid "directory %s does not exist.\n"
-msgstr "directory %s does not exist.\n"
-
-msgid "Unable to load or parse config file\n"
-msgstr "Unable to load or parse config file\n"
+msgid "  -- show undecodable filenames in the volume"
+msgstr "  -- show undecodable filenames in the volume"
 
 msgid ""
-"A really old EncFS filesystem was found. \n"
-"It is not supported in this EncFS build.\n"
+"  --extpass=program\tUse external program for password prompt\n"
+"\n"
+"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
+"    encfs ~/.crypt ~/crypt\n"
+"\n"
 msgstr ""
-"A really old EncFS filesystem was found. \n"
-"It is not supported in this EncFS build.\n"
-
-#, c-format
-msgid "Version 3 configuration; created by %s\n"
-msgstr "Version 3 configuration; created by %s\n"
-
-#, c-format
-msgid "Version 4 configuration; created by %s\n"
-msgstr "Version 4 configuration; created by %s\n"
-
-#, c-format
-msgid "Version 5 configuration; created by %s (revision %i)\n"
-msgstr "Version 5 configuration; created by %s (revision %i)\n"
-
-#, c-format
-msgid "Version 6 configuration; created by %s (revision %i)\n"
-msgstr ""
-
-#, c-format
-msgid "getopt error: %i"
-msgstr "getopt error: %i"
-
-msgid "Incorrect number of arguments"
-msgstr ""
-
-msgid "Unable to initialize encrypted filesystem - check path.\n"
-msgstr "Unable to initialise encrypted filesystem - check path.\n"
-
-#, c-format
-msgid "In directory %s: \n"
-msgstr "In directory %s: \n"
-
-#, c-format
-msgid "Found %i invalid file."
-msgid_plural "Found %i invalid files."
-msgstr[0] "Found %i invalid file."
-msgstr[1] "Found %i invalid files."
-
-#, c-format
-msgid "Unable to find specified cipher \"%s\"\n"
-msgstr "Unable to find specified cypher \"%s\"\n"
-
-msgid "Enter current Encfs password\n"
-msgstr "Enter current Encfs password\n"
-
-msgid "Invalid password\n"
-msgstr "Invalid password\n"
-
-msgid "Enter new Encfs password\n"
-msgstr "Enter new Encfs password\n"
-
-msgid "Volume Key successfully updated.\n"
-msgstr "Volume Key successfully updated.\n"
-
-msgid "Error saving modified config file.\n"
-msgstr "Error saving modified config file.\n"
-
-msgid "Error creating key\n"
-msgstr ""
-
-#, c-format
-msgid "invalid command: \"%s\""
-msgstr "invalid command: \"%s\""
-
-#, c-format
-msgid "Incorrect number of arguments for command \"%s\""
-msgstr "Incorrect number of arguments for command \"%s\""
-
-#, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "The directory \"%s\" does not exist. Should it be created? (y,n) "
-
-msgid "Unable to create directory: "
-msgstr "Unable to create directory: "
-
-msgid "Directory not created."
-msgstr "Directory not created."
-
-#, fuzzy, c-format
-msgid "Found config file %s, but failed to load - exiting"
-msgstr "Found config file %s, but failed to load"
-
-#, c-format
-msgid ""
-"Config subversion %i found, but this version of encfs only supports up to "
-"version %i."
-msgstr ""
-"Config subversion %i found, but this version of encfs only supports up to "
-"version %i."
+"  --extpass=program\tUse external program for password prompt\n"
+"\n"
+"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
+"    encfs ~/.crypt ~/crypt\n"
+"\n"
 
 msgid ""
-"This version of EncFS doesn't support filesystems created before 2004-08-13"
+"  --public\t\tact as a typical multi-user filesystem\n"
+"\t\t\t(encfs must be run as root)\n"
 msgstr ""
-"This version of EncFS doesn't support filesystems created before 13/08/2004"
+"  --public\t\tact as a typical multi-user filesystem\n"
+"\t\t\t(encfs must be run as root)\n"
 
-msgid "The following cipher algorithms are available:"
-msgstr "The following cypher algorithms are available:"
+msgid "  --reverse\t\treverse encryption\n"
+msgstr "  --reverse\t\treverse encryption\n"
+
+msgid ""
+"  -v, --verbose\t\tverbose: output encfs debug messages\n"
+"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
+"  --anykey\t\tDo not verify correct key is being used\n"
+"  --forcedecode\t\tdecode data even if an error is detected\n"
+"\t\t\t(for filesystems using MAC block headers)\n"
+msgstr ""
+"  -v, --verbose\t\tverbose: output encfs debug messages\n"
+"  -i, --idle=MINUTES\tAuto dismount after period of inactivity\n"
+"  --anykey\t\tDo not verify that correct key is being used\n"
+"  --forcedecode\t\tdecode data even if an error is detected\n"
+"\t\t\t(for filesystems using MAC block headers)\n"
+
+msgid " (NOT supported)\n"
+msgstr " (NOT supported)\n"
 
 #, c-format
-msgid " -- key length %i bits"
-msgstr " -- key length %i bits"
+msgid " (using %i:%i:%i)\n"
+msgstr " (using %i:%i:%i)\n"
+
+#, c-format
+msgid " -- Supports block sizes of %i to %i bytes"
+msgstr " -- Supports block sizes of %i to %i bytes"
 
 #, c-format
 msgid " -- Supports key lengths of %i to %i bits"
@@ -205,71 +119,26 @@ msgid " -- block size %i bytes"
 msgstr " -- block size %i bytes"
 
 #, c-format
-msgid " -- Supports block sizes of %i to %i bytes"
-msgstr " -- Supports block sizes of %i to %i bytes"
-
-msgid "Enter the number corresponding to your choice: "
-msgstr "Enter the number corresponding to your choice: "
-
-msgid "Invalid selection."
-msgstr "Invalid selection."
-
-#, c-format
-msgid "Selected algorithm \"%s\""
-msgstr "Selected algorithm \"%s\""
-
-msgid "The following filename encoding algorithms are available:"
-msgstr "The following filename encoding algorithms are available:"
-
-#, c-format
-msgid "Using key size of %i bits"
-msgstr "Using key size of %i bits"
+msgid " -- key length %i bits"
+msgstr " -- key length %i bits"
 
 #, c-format
 msgid ""
-"Please select a key size in bits.  The cipher you have chosen\n"
-"supports sizes from %i to %i bits in increments of %i bits.\n"
-"For example: "
+"%s (root dir)\n"
+"  -- displays information about the filesystem, or \n"
 msgstr ""
-"Please select a key size in bits. The cypher you have chosen\n"
-"supports sizes from %i to %i bits in increments of %i bits.\n"
-"For example: "
+"%s (root dir)\n"
+"  -- displays information about the filesystem, or \n"
 
-msgid "Selected key size: "
-msgstr "Selected key size: "
-
-#, c-format
-msgid "Using filesystem block size of %i bytes"
-msgstr "Using filesystem block size of %i bytes"
-
-#, c-format
-msgid ""
-"Select a block size in bytes.  The cipher you have chosen\n"
-"supports sizes from %i to %i bytes in increments of %i.\n"
-"Or just hit enter for the default (%i bytes)\n"
-msgstr ""
-"Select a block size in bytes. The cypher you have chosen\n"
-"supports sizes from %i to %i bytes in increments of %i.\n"
-"Alternatively, just press enter for the default (%i bytes)\n"
-
-msgid "filesystem block size: "
-msgstr "filesystem block size: "
+msgid "-------------------------- WARNING --------------------------\n"
+msgstr "-------------------------- WARNING --------------------------\n"
 
 msgid ""
-"Enable block authentication code headers\n"
-"on every block in a file?  This adds about 12 bytes per block\n"
-"to the storage requirements for a file, and significantly affects\n"
-"performance but it also means [almost] any modifications or errors\n"
-"within a block will be caught and will cause a read error."
+"A really old EncFS filesystem was found. \n"
+"It is not supported in this EncFS build.\n"
 msgstr ""
-
-msgid ""
-"\n"
-"\n"
-"You specified --require-macs.  Enabling block authentication code "
-"headers...\n"
-"\n"
-msgstr ""
+"A really old EncFS filesystem was found. \n"
+"It is not supported in this EncFS build.\n"
 
 msgid ""
 "Add random bytes to each block header?\n"
@@ -288,11 +157,72 @@ msgstr ""
 "penalty. \n"
 "Select a number of bytes, from 0 (no random bytes) to 8: "
 
+#, c-format
+msgid "Block Size: %i bytes"
+msgstr "Block Size: %i bytes"
+
+#, c-format
+msgid "Block Size: %i bytes + %i byte MAC header"
+msgstr "Block Size: %i bytes + %i byte MAC header"
+
+#, c-format
+msgid "Block Size: %i bytes, including %i byte MAC header"
+msgstr "Block Size: %i bytes, including %i byte MAC header"
+
+#, c-format
+msgid "Build: encfs version %s"
+msgstr "Build: encfs version %s"
+
 msgid ""
-"Enable per-file initialization vectors?\n"
-"This adds about 8 bytes per file to the storage requirements.\n"
-"It should not affect performance except possibly with applications\n"
-"which rely on block-aligned file io for performance."
+"Common Options:\n"
+"  -H\t\t\tshow optional FUSE Mount Options\n"
+"  -s\t\t\tdisable multithreaded operation\n"
+"  -f\t\t\trun in foreground (don't spawn daemon).\n"
+"\t\t\tError messages will be sent to stderr\n"
+"\t\t\tinstead of syslog.\n"
+msgstr ""
+"Common Options:\n"
+"  -H\t\t\tshow optional FUSE Mount Options\n"
+"  -s\t\t\tdisable multithreaded operation\n"
+"  -f\t\t\trun in foreground (don't spawn daemon).\n"
+"\t\t\tError messages will be sent to stderr\n"
+"\t\t\tinstead of syslog.\n"
+
+#, c-format
+msgid ""
+"Config subversion %i found, but this version of encfs only supports up to "
+"version %i."
+msgstr ""
+"Config subversion %i found, but this version of encfs only supports up to "
+"version %i."
+
+msgid ""
+"Configuration finished.  The filesystem to be created has\n"
+"the following properties:"
+msgstr ""
+"Configuration finished. The filesystem to be created has\n"
+"the following properties:"
+
+msgid "Creating new encrypted volume."
+msgstr "Creating new encrypted volume."
+
+msgid "Directory not created."
+msgstr "Directory not created."
+
+msgid "Each file contains 8 byte header with unique IV data.\n"
+msgstr "Each file contains 8 byte header with unique IV data.\n"
+
+msgid ""
+"Enable block authentication code headers\n"
+"on every block in a file?  This adds about 12 bytes per block\n"
+"to the storage requirements for a file, and significantly affects\n"
+"performance but it also means [almost] any modifications or errors\n"
+"within a block will be caught and will cause a read error."
+msgstr ""
+
+msgid ""
+"Enable file-hole pass-through?\n"
+"This avoids writing encrypted blocks when file holes are created."
 msgstr ""
 
 msgid ""
@@ -311,25 +241,166 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Enable file-hole pass-through?\n"
-"This avoids writing encrypted blocks when file holes are created."
+"Enable per-file initialization vectors?\n"
+"This adds about 8 bytes per file to the storage requirements.\n"
+"It should not affect performance except possibly with applications\n"
+"which rely on block-aligned file io for performance."
 msgstr ""
 
-msgid "Creating new encrypted volume."
-msgstr "Creating new encrypted volume."
+msgid "EncFS Password: "
+msgstr "EncFS Password: "
+
+msgid "Enter current Encfs password\n"
+msgstr "Enter current Encfs password\n"
+
+msgid "Enter new Encfs password\n"
+msgstr "Enter new Encfs password\n"
+
+msgid "Enter the number corresponding to your choice: "
+msgstr "Enter the number corresponding to your choice: "
+
+msgid "Error creating key\n"
+msgstr ""
+
+msgid "Error creating salt\n"
+msgstr ""
+
+msgid "Error decoding volume key, password incorrect\n"
+msgstr "Error decoding volume key, password incorrect\n"
+
+msgid "Error saving modified config file.\n"
+msgstr "Error saving modified config file.\n"
+
+#, c-format
+msgid ""
+"Example: \n"
+"%s info ~/.crypt\n"
+msgstr ""
+"Example: \n"
+"%s info ~/.crypt\n"
 
 msgid ""
-"Please choose from one of the following options:\n"
-" enter \"x\" for expert configuration mode,\n"
-" enter \"p\" for pre-configured paranoia mode,\n"
-" anything else, or an empty line will select standard mode.\n"
-"?> "
+"External chained IV disabled, as both 'IV chaining'\n"
+"and 'unique IV' features are required for this option."
 msgstr ""
-"Please choose from one of the following options:\n"
-" enter \"x\" for expert configuration mode,\n"
-" enter \"p\" for pre-configured paranoia mode,\n"
-" anything else, or an empty line will select standard mode.\n"
-"?> "
+"External chained IV disabled, as both 'IV chaining'\n"
+"and 'unique IV' features are required for this option."
+
+msgid "Failure generating new volume key! Please report this error."
+msgstr "Failure generating new volume key! Please report this error."
+
+msgid "File data IV is chained to filename IV.\n"
+msgstr "File data IV is chained to filename IV.\n"
+
+msgid "File holes passed through to ciphertext.\n"
+msgstr ""
+
+#, c-format
+msgid "Filename encoding: \"%s\", version %i:%i:%i"
+msgstr "Filename encoding: \"%s\", version %i:%i:%i"
+
+msgid "Filenames encoded using IV chaining mode.\n"
+msgstr "Filenames encoded using IV chaining mode.\n"
+
+#, c-format
+msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
+msgstr "Filesystem cypher: \"%s\", version %i:%i:%i"
+
+msgid "For more information, see the man page encfs(1)"
+msgstr "For more information, see the main page encfs(1)"
+
+#, c-format
+msgid "Found %i invalid file."
+msgid_plural "Found %i invalid files."
+msgstr[0] "Found %i invalid file."
+msgstr[1] "Found %i invalid files."
+
+#, fuzzy, c-format
+msgid "Found config file %s, but failed to load - exiting"
+msgstr "Found config file %s, but failed to load"
+
+#, c-format
+msgid "In directory %s: \n"
+msgstr "In directory %s: \n"
+
+msgid "Incorrect number of arguments"
+msgstr ""
+
+#, c-format
+msgid "Incorrect number of arguments for command \"%s\""
+msgstr "Incorrect number of arguments for command \"%s\""
+
+#, c-format
+msgid "Internal error: Caught exception from main loop: %s"
+msgstr "Internal error: Caught exception from main loop: %s"
+
+msgid "Internal error: Caught unexpected exception"
+msgstr "Internal error: Caught unexpected exception"
+
+msgid "Internal error: failed to exec program"
+msgstr "Internal error: failed to exec program"
+
+msgid "Internal error: fork() failed"
+msgstr "Internal error: fork() failed"
+
+msgid "Internal error: socketpair() failed"
+msgstr "Internal error: socketpair() failed"
+
+msgid "Invalid password\n"
+msgstr "Invalid password\n"
+
+msgid "Invalid selection."
+msgstr "Invalid selection."
+
+#, c-format
+msgid "Key Size: %i bits"
+msgstr "Key Size: %i bits"
+
+#, c-format
+msgid "MAC comparison failure in block %li"
+msgstr "MAC comparison failure in block %li"
+
+msgid "MAC comparison failure, refusing to read"
+msgstr "MAC comparison failure, refusing to read"
+
+msgid "Manual configuration mode selected."
+msgstr "Manual configuration mode selected."
+
+msgid "Missing one or more arguments, aborting."
+msgstr "Missing one or more arguments, aborting."
+
+msgid "Must set password program when using mount-on-demand"
+msgstr "Must set password program when using mount-on-demand"
+
+msgid "Name coding interface not supported"
+msgstr "Name coding interface not supported"
+
+msgid "New Encfs Password: "
+msgstr "New Encfs Password: "
+
+msgid ""
+"Note: requested single-threaded mode, but an idle\n"
+"timeout was specified.  The filesystem will operate\n"
+"single-threaded, but threads will still be used to\n"
+"implement idle checking."
+msgstr ""
+"Note: requested single-threaded mode, but an idle\n"
+"timeout was specified. The filesystem will operate\n"
+"single-threaded, but threads will still be used to\n"
+"implement idle checking."
+
+msgid ""
+"Now you will need to enter a password for your filesystem.\n"
+"You will need to remember this password, as there is absolutely\n"
+"no recovery mechanism.  However, the password can be changed\n"
+"later using encfsctl.\n"
+"\n"
+msgstr ""
+"Now you will need to enter a password for your filesystem.\n"
+"You will need to remember this password, as there is absolutely\n"
+"no recovery mechanism. However, the password can be changed\n"
+"later using encfsctl.\n"
+"\n"
 
 #, fuzzy
 msgid "Paranoia configuration not supported for reverse encryption"
@@ -338,8 +409,55 @@ msgstr "Paranoia configuration not supported for --reverse"
 msgid "Paranoia configuration selected."
 msgstr "Paranoia configuration selected."
 
-msgid "Standard configuration selected."
-msgstr "Standard configuration selected."
+msgid "Passwords did not match, please try again\n"
+msgstr "Passwords did not match, please try again\n"
+
+msgid ""
+"Please choose from one of the following options:\n"
+" enter \"x\" for expert configuration mode,\n"
+" enter \"p\" for pre-configured paranoia mode,\n"
+" anything else, or an empty line will select standard mode.\n"
+"?> "
+msgstr ""
+"Please choose from one of the following options:\n"
+" enter \"x\" for expert configuration mode,\n"
+" enter \"p\" for pre-configured paranoia mode,\n"
+" anything else, or an empty line will select standard mode.\n"
+"?> "
+
+#, c-format
+msgid ""
+"Please select a key size in bits.  The cipher you have chosen\n"
+"supports sizes from %i to %i bits in increments of %i bits.\n"
+"For example: "
+msgstr ""
+"Please select a key size in bits. The cypher you have chosen\n"
+"supports sizes from %i to %i bits in increments of %i bits.\n"
+"For example: "
+
+msgid "Remount failed"
+msgstr "Remount failed"
+
+#, c-format
+msgid "Salt Size: %i bits"
+msgstr ""
+
+#, c-format
+msgid ""
+"Select a block size in bytes.  The cipher you have chosen\n"
+"supports sizes from %i to %i bytes in increments of %i.\n"
+"Or just hit enter for the default (%i bytes)\n"
+msgstr ""
+"Select a block size in bytes. The cypher you have chosen\n"
+"supports sizes from %i to %i bytes in increments of %i.\n"
+"Alternatively, just press enter for the default (%i bytes)\n"
+
+#, c-format
+msgid "Selected algorithm \"%s\""
+msgstr "Selected algorithm \"%s\""
+
+msgid "Selected key size: "
+msgstr "Selected key size: "
 
 msgid ""
 "Sorry, unable to locate cipher for predefined configuration...\n"
@@ -348,32 +466,19 @@ msgstr ""
 "Sorry, unable to locate cypher for predefined configuration...\n"
 "Falling through to Manual configuration mode."
 
-msgid "Manual configuration mode selected."
-msgstr "Manual configuration mode selected."
+msgid "Standard configuration selected."
+msgstr "Standard configuration selected."
 
-msgid "reverse encryption - chained IV and MAC disabled"
-msgstr ""
+#, fuzzy
+msgid "The configuration disabled MAC, but you passed --require-macs\n"
+msgstr "The configuration loaded is not compatible with --reverse\n"
 
-msgid ""
-"External chained IV disabled, as both 'IV chaining'\n"
-"and 'unique IV' features are required for this option."
-msgstr ""
-"External chained IV disabled, as both 'IV chaining'\n"
-"and 'unique IV' features are required for this option."
+msgid "The configuration loaded is not compatible with --reverse\n"
+msgstr "The configuration loaded is not compatible with --reverse\n"
 
 #, c-format
-msgid "Unable to instanciate cipher %s, key size %i, block size %i"
-msgstr "Unable to instantiate cypher %s, key size %i, block size %i"
-
-msgid ""
-"Configuration finished.  The filesystem to be created has\n"
-"the following properties:"
-msgstr ""
-"Configuration finished. The filesystem to be created has\n"
-"the following properties:"
-
-msgid "-------------------------- WARNING --------------------------\n"
-msgstr "-------------------------- WARNING --------------------------\n"
+msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
+msgstr "The directory \"%s\" does not exist. Should it be created? (y,n) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"
@@ -392,201 +497,119 @@ msgstr ""
 "If you would like to choose another configuration setting,\n"
 "please press CTRL-C now to abort and start again."
 
-msgid ""
-"Now you will need to enter a password for your filesystem.\n"
-"You will need to remember this password, as there is absolutely\n"
-"no recovery mechanism.  However, the password can be changed\n"
-"later using encfsctl.\n"
-"\n"
-msgstr ""
-"Now you will need to enter a password for your filesystem.\n"
-"You will need to remember this password, as there is absolutely\n"
-"no recovery mechanism. However, the password can be changed\n"
-"later using encfsctl.\n"
-"\n"
-
-msgid "Failure generating new volume key! Please report this error."
-msgstr "Failure generating new volume key! Please report this error."
-
-msgid "Name coding interface not supported"
-msgstr "Name coding interface not supported"
-
 msgid "The filename encoding interface requested is not available"
 msgstr "The filename encoding interface requested is not available"
 
-#, c-format
-msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
-msgstr "Filesystem cypher: \"%s\", version %i:%i:%i"
+msgid "The following cipher algorithms are available:"
+msgstr "The following cypher algorithms are available:"
 
-msgid " (NOT supported)\n"
-msgstr " (NOT supported)\n"
+msgid "The following filename encoding algorithms are available:"
+msgstr "The following filename encoding algorithms are available:"
+
+msgid "The raw directory may not be a subdirectory of the mount point."
+msgstr "The raw directory may not be a subdirectory of the mount point."
+
+msgid "The requested cipher interface is not available\n"
+msgstr "The requested cypher interface is not available\n"
+
+msgid "The requested filename coding interface is not available\n"
+msgstr "The requested filename coding interface is not available\n"
+
+msgid ""
+"This version of EncFS doesn't support filesystems created before 2004-08-13"
+msgstr ""
+"This version of EncFS doesn't support filesystems created before 13/08/2004"
+
+msgid "Unable to create directory: "
+msgstr "Unable to create directory: "
 
 #, c-format
-msgid " (using %i:%i:%i)\n"
-msgstr " (using %i:%i:%i)\n"
+msgid "Unable to find cipher %s, version %i:%i:%i"
+msgstr "Unable to find cypher %s, version %i:%i:%i"
 
 #, c-format
-msgid "Filename encoding: \"%s\", version %i:%i:%i"
-msgstr "Filename encoding: \"%s\", version %i:%i:%i"
+msgid "Unable to find nameio interface %s, version %i:%i:%i"
+msgstr "Unable to find nameio interface %s, version %i:%i:%i"
 
 #, c-format
-msgid "Key Size: %i bits"
-msgstr "Key Size: %i bits"
+msgid "Unable to find specified cipher \"%s\"\n"
+msgstr "Unable to find specified cypher \"%s\"\n"
+
+msgid "Unable to initialize encrypted filesystem - check path.\n"
+msgstr "Unable to initialise encrypted filesystem - check path.\n"
+
+#, c-format
+msgid "Unable to instanciate cipher %s, key size %i, block size %i"
+msgstr "Unable to instantiate cypher %s, key size %i, block size %i"
+
+msgid "Unable to load or parse config file\n"
+msgstr "Unable to load or parse config file\n"
+
+msgid "Unable to locate mount point, aborting."
+msgstr "Unable to locate mount point, aborting."
+
+msgid "Unable to locate root directory, aborting."
+msgstr "Unable to locate root directory, aborting."
+
+#, c-format
+msgid "Unmounting filesystem %s due to inactivity"
+msgstr "Dismounting filesystem %s due to inactivity"
+
+msgid "Usage:\n"
+msgstr "Usage:\n"
+
+#, c-format
+msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
+msgstr "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
 
 #, c-format
 msgid "Using PBKDF2, with %i iterations"
 msgstr ""
 
 #, c-format
-msgid "Salt Size: %i bits"
-msgstr ""
+msgid "Using filesystem block size of %i bytes"
+msgstr "Using filesystem block size of %i bytes"
 
 #, c-format
-msgid "Block Size: %i bytes + %i byte MAC header"
-msgstr "Block Size: %i bytes + %i byte MAC header"
-
-#, c-format
-msgid "Block Size: %i bytes, including %i byte MAC header"
-msgstr "Block Size: %i bytes, including %i byte MAC header"
-
-#, c-format
-msgid "Block Size: %i bytes"
-msgstr "Block Size: %i bytes"
-
-msgid "Each file contains 8 byte header with unique IV data.\n"
-msgstr "Each file contains 8 byte header with unique IV data.\n"
-
-msgid "Filenames encoded using IV chaining mode.\n"
-msgstr "Filenames encoded using IV chaining mode.\n"
-
-msgid "File data IV is chained to filename IV.\n"
-msgstr "File data IV is chained to filename IV.\n"
-
-msgid "File holes passed through to ciphertext.\n"
-msgstr ""
-
-msgid "Error creating salt\n"
-msgstr ""
-
-msgid "EncFS Password: "
-msgstr "EncFS Password: "
-
-msgid "Zero length password not allowed\n"
-msgstr "Zero length password not allowed\n"
-
-msgid "Internal error: socketpair() failed"
-msgstr "Internal error: socketpair() failed"
-
-msgid "Internal error: fork() failed"
-msgstr "Internal error: fork() failed"
-
-msgid "Internal error: failed to exec program"
-msgstr "Internal error: failed to exec program"
-
-msgid "New Encfs Password: "
-msgstr "New Encfs Password: "
+msgid "Using key size of %i bits"
+msgstr "Using key size of %i bits"
 
 msgid "Verify Encfs Password: "
 msgstr "Verify Encfs Password: "
 
-msgid "Passwords did not match, please try again\n"
-msgstr "Passwords did not match, please try again\n"
-
-#, fuzzy
-msgid "The configuration disabled MAC, but you passed --require-macs\n"
-msgstr "The configuration loaded is not compatible with --reverse\n"
-
-msgid "The configuration loaded is not compatible with --reverse\n"
-msgstr "The configuration loaded is not compatible with --reverse\n"
+#, c-format
+msgid "Version 3 configuration; created by %s\n"
+msgstr "Version 3 configuration; created by %s\n"
 
 #, c-format
-msgid "Unable to find cipher %s, version %i:%i:%i"
-msgstr "Unable to find cypher %s, version %i:%i:%i"
-
-msgid "The requested cipher interface is not available\n"
-msgstr "The requested cypher interface is not available\n"
-
-msgid "Error decoding volume key, password incorrect\n"
-msgstr "Error decoding volume key, password incorrect\n"
+msgid "Version 4 configuration; created by %s\n"
+msgstr "Version 4 configuration; created by %s\n"
 
 #, c-format
-msgid "Unable to find nameio interface %s, version %i:%i:%i"
-msgstr "Unable to find nameio interface %s, version %i:%i:%i"
-
-msgid "The requested filename coding interface is not available\n"
-msgstr "The requested filename coding interface is not available\n"
-
-msgid "Remount failed"
-msgstr "Remount failed"
+msgid "Version 5 configuration; created by %s (revision %i)\n"
+msgstr "Version 5 configuration; created by %s (revision %i)\n"
 
 #, c-format
-msgid "MAC comparison failure in block %li"
-msgstr "MAC comparison failure in block %li"
+msgid "Version 6 configuration; created by %s (revision %i)\n"
+msgstr ""
 
-msgid "MAC comparison failure, refusing to read"
-msgstr "MAC comparison failure, refusing to read"
-
-#, c-format
-msgid "Build: encfs version %s"
-msgstr "Build: encfs version %s"
-
-#, c-format
-msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
-msgstr "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
+msgid "Volume Key successfully updated.\n"
+msgstr "Volume Key successfully updated.\n"
 
 msgid ""
-"Common Options:\n"
-"  -H\t\t\tshow optional FUSE Mount Options\n"
-"  -s\t\t\tdisable multithreaded operation\n"
-"  -f\t\t\trun in foreground (don't spawn daemon).\n"
-"\t\t\tError messages will be sent to stderr\n"
-"\t\t\tinstead of syslog.\n"
+"When specifying daemon mode, you must use absolute paths (beginning with '/')"
 msgstr ""
-"Common Options:\n"
-"  -H\t\t\tshow optional FUSE Mount Options\n"
-"  -s\t\t\tdisable multithreaded operation\n"
-"  -f\t\t\trun in foreground (don't spawn daemon).\n"
-"\t\t\tError messages will be sent to stderr\n"
-"\t\t\tinstead of syslog.\n"
+"When specifying daemon mode, you must use absolute paths (beginning with '/')"
 
-msgid ""
-"  -v, --verbose\t\tverbose: output encfs debug messages\n"
-"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
-"  --anykey\t\tDo not verify correct key is being used\n"
-"  --forcedecode\t\tdecode data even if an error is detected\n"
-"\t\t\t(for filesystems using MAC block headers)\n"
+msgid "You must use mount-on-demand with delay-mount"
 msgstr ""
-"  -v, --verbose\t\tverbose: output encfs debug messages\n"
-"  -i, --idle=MINUTES\tAuto dismount after period of inactivity\n"
-"  --anykey\t\tDo not verify that correct key is being used\n"
-"  --forcedecode\t\tdecode data even if an error is detected\n"
-"\t\t\t(for filesystems using MAC block headers)\n"
 
-msgid ""
-"  --public\t\tact as a typical multi-user filesystem\n"
-"\t\t\t(encfs must be run as root)\n"
-msgstr ""
-"  --public\t\tact as a typical multi-user filesystem\n"
-"\t\t\t(encfs must be run as root)\n"
+msgid "Zero length password not allowed\n"
+msgstr "Zero length password not allowed\n"
 
-msgid "  --reverse\t\treverse encryption\n"
-msgstr "  --reverse\t\treverse encryption\n"
-
-msgid ""
-"  --extpass=program\tUse external program for password prompt\n"
-"\n"
-"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
-"    encfs ~/.crypt ~/crypt\n"
-"\n"
-msgstr ""
-"  --extpass=program\tUse external program for password prompt\n"
-"\n"
-"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
-"    encfs ~/.crypt ~/crypt\n"
-"\n"
-
-msgid "For more information, see the man page encfs(1)"
-msgstr "For more information, see the main page encfs(1)"
+#, c-format
+msgid "directory %s does not exist.\n"
+msgstr "directory %s does not exist.\n"
 
 msgid ""
 "encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
@@ -594,47 +617,17 @@ msgid ""
 msgstr ""
 "encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
 "valid FUSE Mount Options follow:\n"
-
-msgid "option '--public' ignored for non-root user"
-msgstr "option '--public' ignored for non-root user"
 
 #, c-format
 msgid "encfs version %s"
 msgstr "encfs version %s"
 
-msgid "Missing one or more arguments, aborting."
-msgstr "Missing one or more arguments, aborting."
+#, c-format
+msgid "encfsctl version %s"
+msgstr "encfsctl version %s"
 
-msgid ""
-"When specifying daemon mode, you must use absolute paths (beginning with '/')"
-msgstr ""
-"When specifying daemon mode, you must use absolute paths (beginning with '/')"
-
-msgid "The raw directory may not be a subdirectory of the mount point."
-msgstr "The raw directory may not be a subdirectory of the mount point."
-
-msgid "You must use mount-on-demand with delay-mount"
-msgstr ""
-
-msgid "Must set password program when using mount-on-demand"
-msgstr "Must set password program when using mount-on-demand"
-
-msgid "Unable to locate root directory, aborting."
-msgstr "Unable to locate root directory, aborting."
-
-msgid "Unable to locate mount point, aborting."
-msgstr "Unable to locate mount point, aborting."
-
-msgid ""
-"Note: requested single-threaded mode, but an idle\n"
-"timeout was specified.  The filesystem will operate\n"
-"single-threaded, but threads will still be used to\n"
-"implement idle checking."
-msgstr ""
-"Note: requested single-threaded mode, but an idle\n"
-"timeout was specified. The filesystem will operate\n"
-"single-threaded, but threads will still be used to\n"
-"implement idle checking."
+msgid "filesystem block size: "
+msgstr "filesystem block size: "
 
 msgid ""
 "fuse failed.  Common problems:\n"
@@ -646,24 +639,31 @@ msgstr ""
 "- invalid options -- see usage message\n"
 
 #, c-format
-msgid "Internal error: Caught exception from main loop: %s"
-msgstr "Internal error: Caught exception from main loop: %s"
-
-msgid "Internal error: Caught unexpected exception"
-msgstr "Internal error: Caught unexpected exception"
+msgid "getopt error: %i"
+msgstr "getopt error: %i"
 
 #, c-format
-msgid "Unmounting filesystem %s due to inactivity"
-msgstr "Dismounting filesystem %s due to inactivity"
+msgid "invalid command: \"%s\""
+msgstr "invalid command: \"%s\""
 
-#~ msgid "Block encoding, hides file name size somewhat"
-#~ msgstr "Block encoding, hides file name size somewhat"
+msgid "option '--public' ignored for non-root user"
+msgstr "option '--public' ignored for non-root user"
+
+msgid "reverse encryption - chained IV and MAC disabled"
+msgstr ""
+
+#, c-format
+msgid "truncate failure: read %i bytes, partial block of %i"
+msgstr "truncate failure: read %i bytes, partial block of %i"
 
 #~ msgid "--reverse specified, not using unique/chained IV"
 #~ msgstr "--reverse specified, not using unique/chained IV"
 
 #~ msgid "8 byte block cipher"
 #~ msgstr "8 byte block cypher"
+
+#~ msgid "Block encoding, hides file name size somewhat"
+#~ msgstr "Block encoding, hides file name size somewhat"
 
 #~ msgid "Stream encoding, keeps filenames as short as possible"
 #~ msgstr "Stream encoding, keeps filenames as short as possible"

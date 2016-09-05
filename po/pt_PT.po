@@ -21,14 +21,12 @@ msgstr ""
 "X-Generator: Launchpad (build 17389)\n"
 "X-Rosetta-Version: 0.1\n"
 
-#, c-format
-msgid "truncate failure: read %i bytes, partial block of %i"
-msgstr ""
-
-msgid "  -- show information (Default command)"
-msgstr "  -- mostrar informação (Comando de omissão)"
-
-msgid "  -- show key"
+msgid ""
+"\n"
+"\n"
+"You specified --require-macs.  Enabling block authentication code "
+"headers...\n"
+"\n"
 msgstr ""
 
 msgid "  -- change password for volume"
@@ -41,159 +39,70 @@ msgstr ""
 "  -- mudar de senha para volume, a usar a palavra-passe do standard input.\n"
 "\tNão serão efectuados pedidos."
 
-msgid "  -- show undecodable filenames in the volume"
-msgstr "  -- mostra nomes de ficheiros não descodificáveis na partição"
+msgid "  -- decodes name and prints plaintext version"
+msgstr "  -- descodifica nome e imprime a versão textualmente"
 
 msgid "  -- decodes the file and cats it to standard out"
 msgstr ""
 
-msgid "  -- decodes name and prints plaintext version"
-msgstr "  -- descodifica nome e imprime a versão textualmente"
+msgid "  -- decrypts a volume and writes results to path"
+msgstr ""
 
 msgid "  -- encodes a filename and print result"
 msgstr "  -- codifica um nome de ficheiro e mostra o resultado"
 
-msgid "  -- decrypts a volume and writes results to path"
-msgstr ""
-
 msgid "  -- print version number and exit"
 msgstr "  -- imprime número de versão e sai"
 
-#, c-format
-msgid "encfsctl version %s"
-msgstr "encfsctl versão %s"
+msgid "  -- show information (Default command)"
+msgstr "  -- mostrar informação (Comando de omissão)"
 
-msgid "Usage:\n"
-msgstr "Utilização:\n"
-
-#, c-format
-msgid ""
-"%s (root dir)\n"
-"  -- displays information about the filesystem, or \n"
+msgid "  -- show key"
 msgstr ""
-"%s (directoria raiz)\n"
-"  -- apresenta informação sobre o sistema de ficheiros, ou \n"
 
-#, c-format
-msgid ""
-"Example: \n"
-"%s info ~/.crypt\n"
-msgstr ""
-"Exemplo: \n"
-"%s info ~/.crypt\n"
-
-#, c-format
-msgid "directory %s does not exist.\n"
-msgstr "directoria %s não existe.\n"
-
-msgid "Unable to load or parse config file\n"
-msgstr "Incapaz de carregar ou analizar o ficheiro de configurações\n"
+msgid "  -- show undecodable filenames in the volume"
+msgstr "  -- mostra nomes de ficheiros não descodificáveis na partição"
 
 msgid ""
-"A really old EncFS filesystem was found. \n"
-"It is not supported in this EncFS build.\n"
-msgstr ""
-"Uma versão bastante antigo do sistema de ficheiros EncFS foi encontrada. \n"
-"Não é suportada nessa versão de EncFS.\n"
-
-#, c-format
-msgid "Version 3 configuration; created by %s\n"
-msgstr "Configuração da versão 3; criada por %s\n"
-
-#, c-format
-msgid "Version 4 configuration; created by %s\n"
-msgstr "Configuração da versão 4; criada por %s\n"
-
-#, c-format
-msgid "Version 5 configuration; created by %s (revision %i)\n"
-msgstr "Confuguração da versão 5; criada por %s (revisão %i)\n"
-
-#, c-format
-msgid "Version 6 configuration; created by %s (revision %i)\n"
-msgstr ""
-
-#, c-format
-msgid "getopt error: %i"
-msgstr "erro getopt: %i"
-
-msgid "Incorrect number of arguments"
-msgstr ""
-
-msgid "Unable to initialize encrypted filesystem - check path.\n"
-msgstr ""
-"Incapaz de inicializar o sistema de ficheiros cifrado - verifique o "
-"caminho.\n"
-
-#, c-format
-msgid "In directory %s: \n"
-msgstr "Na directoria %s: \n"
-
-#, c-format
-msgid "Found %i invalid file."
-msgid_plural "Found %i invalid files."
-msgstr[0] "Encontrado %i ficheiro inválido"
-msgstr[1] "Encontrados %i ficheiros inválidos"
-
-#, c-format
-msgid "Unable to find specified cipher \"%s\"\n"
-msgstr "Incapaz de localizar a cifra especificada \"%s\"\n"
-
-msgid "Enter current Encfs password\n"
-msgstr "Introduza a senha actual de Encfs\n"
-
-msgid "Invalid password\n"
-msgstr "Senha inválida\n"
-
-msgid "Enter new Encfs password\n"
-msgstr "Introduza a nova senha Encfs\n"
-
-msgid "Volume Key successfully updated.\n"
-msgstr "Chave de volume actualizada com sucesso.\n"
-
-msgid "Error saving modified config file.\n"
-msgstr "Erro ao guardar o ficheiro de configurações modificado.\n"
-
-msgid "Error creating key\n"
-msgstr ""
-
-#, c-format
-msgid "invalid command: \"%s\""
-msgstr "Comando inválido: \"%s\""
-
-#, c-format
-msgid "Incorrect number of arguments for command \"%s\""
-msgstr "Número incorrecto de argumentos para o comando \"%s\""
-
-#, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "A directoria \"%s\" não existe. Deverá ser criada? (y,n) "
-
-msgid "Unable to create directory: "
-msgstr "Incapaz de criar directoria: "
-
-msgid "Directory not created."
-msgstr "Directoria não criada."
-
-#, fuzzy, c-format
-msgid "Found config file %s, but failed to load - exiting"
-msgstr "Ficheiro de configuração %s encontrado, mas foi impossível carregá-lo"
-
-#, c-format
-msgid ""
-"Config subversion %i found, but this version of encfs only supports up to "
-"version %i."
+"  --extpass=program\tUse external program for password prompt\n"
+"\n"
+"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
+"    encfs ~/.crypt ~/crypt\n"
+"\n"
 msgstr ""
 
 msgid ""
-"This version of EncFS doesn't support filesystems created before 2004-08-13"
+"  --public\t\tact as a typical multi-user filesystem\n"
+"\t\t\t(encfs must be run as root)\n"
+msgstr ""
+"  --public\t\tage como um típico sistema de ficheiros multi-utilizadores\n"
+"\t\t\t(encfs tem que ser executado como super-utilizador)\n"
+
+msgid "  --reverse\t\treverse encryption\n"
 msgstr ""
 
-msgid "The following cipher algorithms are available:"
-msgstr "Os seguintes algorítmos de cifra estão disponíveis"
+msgid ""
+"  -v, --verbose\t\tverbose: output encfs debug messages\n"
+"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
+"  --anykey\t\tDo not verify correct key is being used\n"
+"  --forcedecode\t\tdecode data even if an error is detected\n"
+"\t\t\t(for filesystems using MAC block headers)\n"
+msgstr ""
+"  -v, --verbose\t\tverbose: emite messagens de debug do encfs\n"
+"  -i, --idle=MINUTOS\tAutomaticamente desmonta após período de inactividade\n"
+"  --anykey\t\tdescodifica os dados mesmo que algum erro seja detectado\n"
+"\t\t\t(para sistemas de ficheiros que usem cabeçalhos de bloco MAC)\n"
+
+msgid " (NOT supported)\n"
+msgstr " (NÃO suportodo)\n"
 
 #, c-format
-msgid " -- key length %i bits"
-msgstr " -- comprimento de chave %i bits"
+msgid " (using %i:%i:%i)\n"
+msgstr " (a usar %i:%i:%i)\n"
+
+#, c-format
+msgid " -- Supports block sizes of %i to %i bytes"
+msgstr " -- Suporta blocos de tamanho entre %i a %i bytes"
 
 #, c-format
 msgid " -- Supports key lengths of %i to %i bits"
@@ -204,71 +113,26 @@ msgid " -- block size %i bytes"
 msgstr " -- tamanho de bloco de %i bytes"
 
 #, c-format
-msgid " -- Supports block sizes of %i to %i bytes"
-msgstr " -- Suporta blocos de tamanho entre %i a %i bytes"
-
-msgid "Enter the number corresponding to your choice: "
-msgstr "Insira o número correspondente à sua escolha: "
-
-msgid "Invalid selection."
-msgstr "Selecção inválida."
-
-#, c-format
-msgid "Selected algorithm \"%s\""
-msgstr "Algoritmo seleccionado \"%s\""
-
-msgid "The following filename encoding algorithms are available:"
-msgstr "Os seguintes algoritmos de codificação estão disponíveis:"
-
-#, c-format
-msgid "Using key size of %i bits"
-msgstr "A usar chave de tamanho de %i bits"
+msgid " -- key length %i bits"
+msgstr " -- comprimento de chave %i bits"
 
 #, c-format
 msgid ""
-"Please select a key size in bits.  The cipher you have chosen\n"
-"supports sizes from %i to %i bits in increments of %i bits.\n"
-"For example: "
+"%s (root dir)\n"
+"  -- displays information about the filesystem, or \n"
 msgstr ""
-"Por favor, seleccione um tamanho de chave em bits. A cifra que seleccionou\n"
-"suporta tamanhos de %i até %i bits em incrementos de %i bits.\n"
-"Por exemplo: "
+"%s (directoria raiz)\n"
+"  -- apresenta informação sobre o sistema de ficheiros, ou \n"
 
-msgid "Selected key size: "
-msgstr "Tamanho da chave seleccionada: "
-
-#, c-format
-msgid "Using filesystem block size of %i bytes"
-msgstr "A utilizar blocos do Sistema de ficheiros com o tamanho de %i bytes"
-
-#, c-format
-msgid ""
-"Select a block size in bytes.  The cipher you have chosen\n"
-"supports sizes from %i to %i bytes in increments of %i.\n"
-"Or just hit enter for the default (%i bytes)\n"
-msgstr ""
-"Selecciona um tamanho de bloco em bytes. A cifra que escolheu\n"
-"suporta tamanhos de %i até %i butes em incrementos de %i.\n"
-"Ou simplesmente carregue em enter para o valor de omissão (%i bytes)\n"
-
-msgid "filesystem block size: "
-msgstr "tamanho de bloco do sistema de ficheiro "
+msgid "-------------------------- WARNING --------------------------\n"
+msgstr "-------------------------- ATENÇÃO --------------------------\n"
 
 msgid ""
-"Enable block authentication code headers\n"
-"on every block in a file?  This adds about 12 bytes per block\n"
-"to the storage requirements for a file, and significantly affects\n"
-"performance but it also means [almost] any modifications or errors\n"
-"within a block will be caught and will cause a read error."
+"A really old EncFS filesystem was found. \n"
+"It is not supported in this EncFS build.\n"
 msgstr ""
-
-msgid ""
-"\n"
-"\n"
-"You specified --require-macs.  Enabling block authentication code "
-"headers...\n"
-"\n"
-msgstr ""
+"Uma versão bastante antigo do sistema de ficheiros EncFS foi encontrada. \n"
+"Não é suportada nessa versão de EncFS.\n"
 
 msgid ""
 "Add random bytes to each block header?\n"
@@ -280,11 +144,70 @@ msgid ""
 "Select a number of bytes, from 0 (no random bytes) to 8: "
 msgstr ""
 
+#, c-format
+msgid "Block Size: %i bytes"
+msgstr "Tamanho de bloco: %i bytes"
+
+#, c-format
+msgid "Block Size: %i bytes + %i byte MAC header"
+msgstr "Tamanho de bloco: %i bytes + %i byte de cabeçalho MAC"
+
+#, c-format
+msgid "Block Size: %i bytes, including %i byte MAC header"
+msgstr "Tamanho de bloco: %i bytes, incluindo %i byte de cabeçalho MAC"
+
+#, c-format
+msgid "Build: encfs version %s"
+msgstr "Criação: encfs versão %s"
+
 msgid ""
-"Enable per-file initialization vectors?\n"
-"This adds about 8 bytes per file to the storage requirements.\n"
-"It should not affect performance except possibly with applications\n"
-"which rely on block-aligned file io for performance."
+"Common Options:\n"
+"  -H\t\t\tshow optional FUSE Mount Options\n"
+"  -s\t\t\tdisable multithreaded operation\n"
+"  -f\t\t\trun in foreground (don't spawn daemon).\n"
+"\t\t\tError messages will be sent to stderr\n"
+"\t\t\tinstead of syslog.\n"
+msgstr ""
+"Opções comuns:\n"
+"  -H\t\t\tmostrar opções opcionais de montegem de FUSE\n"
+"  -s\t\t\tdesactivar operações multithreaded\n"
+"  -f\t\t\tcorrer em primeiro plano (não gera daemon)\n"
+"\t\t\tMensagens de erro serão enviadas para o stderr\n"
+"\t\t\tinvés do syslog.\n"
+
+#, c-format
+msgid ""
+"Config subversion %i found, but this version of encfs only supports up to "
+"version %i."
+msgstr ""
+
+msgid ""
+"Configuration finished.  The filesystem to be created has\n"
+"the following properties:"
+msgstr ""
+"Configuração concluida. O sistema de ficheiros a ser criado tem\n"
+"as seguintes propriedades:"
+
+msgid "Creating new encrypted volume."
+msgstr "A criar um novo volume cifrado"
+
+msgid "Directory not created."
+msgstr "Directoria não criada."
+
+msgid "Each file contains 8 byte header with unique IV data.\n"
+msgstr ""
+
+msgid ""
+"Enable block authentication code headers\n"
+"on every block in a file?  This adds about 12 bytes per block\n"
+"to the storage requirements for a file, and significantly affects\n"
+"performance but it also means [almost] any modifications or errors\n"
+"within a block will be caught and will cause a read error."
+msgstr ""
+
+msgid ""
+"Enable file-hole pass-through?\n"
+"This avoids writing encrypted blocks when file holes are created."
 msgstr ""
 
 msgid ""
@@ -303,78 +226,146 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Enable file-hole pass-through?\n"
-"This avoids writing encrypted blocks when file holes are created."
+"Enable per-file initialization vectors?\n"
+"This adds about 8 bytes per file to the storage requirements.\n"
+"It should not affect performance except possibly with applications\n"
+"which rely on block-aligned file io for performance."
 msgstr ""
 
-msgid "Creating new encrypted volume."
-msgstr "A criar um novo volume cifrado"
+msgid "EncFS Password: "
+msgstr "senha de EncFS "
 
+msgid "Enter current Encfs password\n"
+msgstr "Introduza a senha actual de Encfs\n"
+
+msgid "Enter new Encfs password\n"
+msgstr "Introduza a nova senha Encfs\n"
+
+msgid "Enter the number corresponding to your choice: "
+msgstr "Insira o número correspondente à sua escolha: "
+
+msgid "Error creating key\n"
+msgstr ""
+
+msgid "Error creating salt\n"
+msgstr ""
+
+msgid "Error decoding volume key, password incorrect\n"
+msgstr "Erro ao descodificar a chave do volume, senha incorrecta\n"
+
+msgid "Error saving modified config file.\n"
+msgstr "Erro ao guardar o ficheiro de configurações modificado.\n"
+
+#, c-format
 msgid ""
-"Please choose from one of the following options:\n"
-" enter \"x\" for expert configuration mode,\n"
-" enter \"p\" for pre-configured paranoia mode,\n"
-" anything else, or an empty line will select standard mode.\n"
-"?> "
+"Example: \n"
+"%s info ~/.crypt\n"
 msgstr ""
-"Por favor seleccione uma das seguintes opções:\n"
-" prima \"x\" para o modo de configuração avançado,\n"
-" prima \"p\" para o modo pré-condigurado paranoico,\n"
-" outro, ou uma linha em branco irá seleccionar o modo padrão.\n"
-"?> "
-
-#, fuzzy
-msgid "Paranoia configuration not supported for reverse encryption"
-msgstr "Seleccionada configuração paranoica"
-
-msgid "Paranoia configuration selected."
-msgstr "Seleccionada configuração paranoica"
-
-msgid "Standard configuration selected."
-msgstr "Seleccionada configuração padrão"
-
-msgid ""
-"Sorry, unable to locate cipher for predefined configuration...\n"
-"Falling through to Manual configuration mode."
-msgstr ""
-"Desculpe, foi impossível localizar a cifra para a configuração pré-"
-"definida...\n"
-"A regressar para o modo de configuração manual."
-
-msgid "Manual configuration mode selected."
-msgstr "Modo de configuração manual seleccionado."
-
-msgid "reverse encryption - chained IV and MAC disabled"
-msgstr ""
+"Exemplo: \n"
+"%s info ~/.crypt\n"
 
 msgid ""
 "External chained IV disabled, as both 'IV chaining'\n"
 "and 'unique IV' features are required for this option."
 msgstr ""
 
+msgid "Failure generating new volume key! Please report this error."
+msgstr "Falha ao gerar nova chave de volume! Por favor reporte esse erro."
+
+msgid "File data IV is chained to filename IV.\n"
+msgstr ""
+
+msgid "File holes passed through to ciphertext.\n"
+msgstr ""
+
 #, c-format
-msgid "Unable to instanciate cipher %s, key size %i, block size %i"
+msgid "Filename encoding: \"%s\", version %i:%i:%i"
 msgstr ""
-"Incapaz de instanciar a cifra %s, tamanho de chave %i, tamanho de bloco %i"
+
+msgid "Filenames encoded using IV chaining mode.\n"
+msgstr ""
+
+#, c-format
+msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
+msgstr "cifra do sistema de ficheiros: \"%s\", versão %i:%i:%i"
+
+msgid "For more information, see the man page encfs(1)"
+msgstr "Para mais informação, consulte as páginas de man encfs(1)"
+
+#, c-format
+msgid "Found %i invalid file."
+msgid_plural "Found %i invalid files."
+msgstr[0] "Encontrado %i ficheiro inválido"
+msgstr[1] "Encontrados %i ficheiros inválidos"
+
+#, fuzzy, c-format
+msgid "Found config file %s, but failed to load - exiting"
+msgstr "Ficheiro de configuração %s encontrado, mas foi impossível carregá-lo"
+
+#, c-format
+msgid "In directory %s: \n"
+msgstr "Na directoria %s: \n"
+
+msgid "Incorrect number of arguments"
+msgstr ""
+
+#, c-format
+msgid "Incorrect number of arguments for command \"%s\""
+msgstr "Número incorrecto de argumentos para o comando \"%s\""
+
+#, c-format
+msgid "Internal error: Caught exception from main loop: %s"
+msgstr "Erro interno: Apanhada excepção do ciclo principal: %s"
+
+msgid "Internal error: Caught unexpected exception"
+msgstr "Erro interno: excepção inesperada apanhada"
+
+msgid "Internal error: failed to exec program"
+msgstr "Erro interno: falha ao tentar exectuar programa"
+
+msgid "Internal error: fork() failed"
+msgstr "Erro interno: fork() falhado"
+
+msgid "Internal error: socketpair() failed"
+msgstr "Erro interno: socketpair() falhou"
+
+msgid "Invalid password\n"
+msgstr "Senha inválida\n"
+
+msgid "Invalid selection."
+msgstr "Selecção inválida."
+
+#, c-format
+msgid "Key Size: %i bits"
+msgstr "obter tamanho: %i bits"
+
+#, c-format
+msgid "MAC comparison failure in block %li"
+msgstr "falha na comparação do MAC no bloco %li"
+
+msgid "MAC comparison failure, refusing to read"
+msgstr "falha na comparação do MAC, a recusar a leitura"
+
+msgid "Manual configuration mode selected."
+msgstr "Modo de configuração manual seleccionado."
+
+msgid "Missing one or more arguments, aborting."
+msgstr "Falta de um ou mais argumentos, a abortar."
+
+msgid "Must set password program when using mount-on-demand"
+msgstr ""
+
+msgid "Name coding interface not supported"
+msgstr "Interface de codificação de nome não suportado"
+
+msgid "New Encfs Password: "
+msgstr "Nova senha de Encfs "
 
 msgid ""
-"Configuration finished.  The filesystem to be created has\n"
-"the following properties:"
-msgstr ""
-"Configuração concluida. O sistema de ficheiros a ser criado tem\n"
-"as seguintes propriedades:"
-
-msgid "-------------------------- WARNING --------------------------\n"
-msgstr "-------------------------- ATENÇÃO --------------------------\n"
-
-msgid ""
-"The external initialization-vector chaining option has been\n"
-"enabled.  This option disables the use of hard links on the\n"
-"filesystem. Without hard links, some programs may not work.\n"
-"The programs 'mutt' and 'procmail' are known to fail.  For\n"
-"more information, please see the encfs mailing list.\n"
-"If you would like to choose another configuration setting,\n"
-"please press CTRL-C now to abort and start over."
+"Note: requested single-threaded mode, but an idle\n"
+"timeout was specified.  The filesystem will operate\n"
+"single-threaded, but threads will still be used to\n"
+"implement idle checking."
 msgstr ""
 
 msgid ""
@@ -390,38 +381,40 @@ msgstr ""
 "posteriormente usando encfsctl.\n"
 "\n"
 
-msgid "Failure generating new volume key! Please report this error."
-msgstr "Falha ao gerar nova chave de volume! Por favor reporte esse erro."
+#, fuzzy
+msgid "Paranoia configuration not supported for reverse encryption"
+msgstr "Seleccionada configuração paranoica"
 
-msgid "Name coding interface not supported"
-msgstr "Interface de codificação de nome não suportado"
+msgid "Paranoia configuration selected."
+msgstr "Seleccionada configuração paranoica"
 
-msgid "The filename encoding interface requested is not available"
+msgid "Passwords did not match, please try again\n"
+msgstr "As senhas não coincidem, por favor tente novamente\n"
+
+msgid ""
+"Please choose from one of the following options:\n"
+" enter \"x\" for expert configuration mode,\n"
+" enter \"p\" for pre-configured paranoia mode,\n"
+" anything else, or an empty line will select standard mode.\n"
+"?> "
 msgstr ""
-"O interface de codificação do nome de ficheiro requisitado não está "
-"disponível"
+"Por favor seleccione uma das seguintes opções:\n"
+" prima \"x\" para o modo de configuração avançado,\n"
+" prima \"p\" para o modo pré-condigurado paranoico,\n"
+" outro, ou uma linha em branco irá seleccionar o modo padrão.\n"
+"?> "
 
 #, c-format
-msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
-msgstr "cifra do sistema de ficheiros: \"%s\", versão %i:%i:%i"
-
-msgid " (NOT supported)\n"
-msgstr " (NÃO suportodo)\n"
-
-#, c-format
-msgid " (using %i:%i:%i)\n"
-msgstr " (a usar %i:%i:%i)\n"
-
-#, c-format
-msgid "Filename encoding: \"%s\", version %i:%i:%i"
+msgid ""
+"Please select a key size in bits.  The cipher you have chosen\n"
+"supports sizes from %i to %i bits in increments of %i bits.\n"
+"For example: "
 msgstr ""
+"Por favor, seleccione um tamanho de chave em bits. A cifra que seleccionou\n"
+"suporta tamanhos de %i até %i bits em incrementos de %i bits.\n"
+"Por exemplo: "
 
-#, c-format
-msgid "Key Size: %i bits"
-msgstr "obter tamanho: %i bits"
-
-#, c-format
-msgid "Using PBKDF2, with %i iterations"
+msgid "Remount failed"
 msgstr ""
 
 #, c-format
@@ -429,55 +422,32 @@ msgid "Salt Size: %i bits"
 msgstr ""
 
 #, c-format
-msgid "Block Size: %i bytes + %i byte MAC header"
-msgstr "Tamanho de bloco: %i bytes + %i byte de cabeçalho MAC"
+msgid ""
+"Select a block size in bytes.  The cipher you have chosen\n"
+"supports sizes from %i to %i bytes in increments of %i.\n"
+"Or just hit enter for the default (%i bytes)\n"
+msgstr ""
+"Selecciona um tamanho de bloco em bytes. A cifra que escolheu\n"
+"suporta tamanhos de %i até %i butes em incrementos de %i.\n"
+"Ou simplesmente carregue em enter para o valor de omissão (%i bytes)\n"
 
 #, c-format
-msgid "Block Size: %i bytes, including %i byte MAC header"
-msgstr "Tamanho de bloco: %i bytes, incluindo %i byte de cabeçalho MAC"
+msgid "Selected algorithm \"%s\""
+msgstr "Algoritmo seleccionado \"%s\""
 
-#, c-format
-msgid "Block Size: %i bytes"
-msgstr "Tamanho de bloco: %i bytes"
+msgid "Selected key size: "
+msgstr "Tamanho da chave seleccionada: "
 
-msgid "Each file contains 8 byte header with unique IV data.\n"
+msgid ""
+"Sorry, unable to locate cipher for predefined configuration...\n"
+"Falling through to Manual configuration mode."
 msgstr ""
+"Desculpe, foi impossível localizar a cifra para a configuração pré-"
+"definida...\n"
+"A regressar para o modo de configuração manual."
 
-msgid "Filenames encoded using IV chaining mode.\n"
-msgstr ""
-
-msgid "File data IV is chained to filename IV.\n"
-msgstr ""
-
-msgid "File holes passed through to ciphertext.\n"
-msgstr ""
-
-msgid "Error creating salt\n"
-msgstr ""
-
-msgid "EncFS Password: "
-msgstr "senha de EncFS "
-
-msgid "Zero length password not allowed\n"
-msgstr "Senhas com tamanho zero não são permitidas\n"
-
-msgid "Internal error: socketpair() failed"
-msgstr "Erro interno: socketpair() falhou"
-
-msgid "Internal error: fork() failed"
-msgstr "Erro interno: fork() falhado"
-
-msgid "Internal error: failed to exec program"
-msgstr "Erro interno: falha ao tentar exectuar programa"
-
-msgid "New Encfs Password: "
-msgstr "Nova senha de Encfs "
-
-msgid "Verify Encfs Password: "
-msgstr "Verifique a senha de Encfs "
-
-msgid "Passwords did not match, please try again\n"
-msgstr "As senhas não coincidem, por favor tente novamente\n"
+msgid "Standard configuration selected."
+msgstr "Seleccionada configuração padrão"
 
 msgid "The configuration disabled MAC, but you passed --require-macs\n"
 msgstr ""
@@ -486,37 +456,85 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr ""
 
 #, c-format
-msgid "Unable to find cipher %s, version %i:%i:%i"
-msgstr "Incapaz de localizar a cifra %s, versão %i:%i:%i"
+msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
+msgstr "A directoria \"%s\" não existe. Deverá ser criada? (y,n) "
+
+msgid ""
+"The external initialization-vector chaining option has been\n"
+"enabled.  This option disables the use of hard links on the\n"
+"filesystem. Without hard links, some programs may not work.\n"
+"The programs 'mutt' and 'procmail' are known to fail.  For\n"
+"more information, please see the encfs mailing list.\n"
+"If you would like to choose another configuration setting,\n"
+"please press CTRL-C now to abort and start over."
+msgstr ""
+
+msgid "The filename encoding interface requested is not available"
+msgstr ""
+"O interface de codificação do nome de ficheiro requisitado não está "
+"disponível"
+
+msgid "The following cipher algorithms are available:"
+msgstr "Os seguintes algorítmos de cifra estão disponíveis"
+
+msgid "The following filename encoding algorithms are available:"
+msgstr "Os seguintes algoritmos de codificação estão disponíveis:"
+
+msgid "The raw directory may not be a subdirectory of the mount point."
+msgstr ""
 
 msgid "The requested cipher interface is not available\n"
 msgstr "O interface da cifra requisitado não se encontra disponível\n"
-
-msgid "Error decoding volume key, password incorrect\n"
-msgstr "Erro ao descodificar a chave do volume, senha incorrecta\n"
-
-#, c-format
-msgid "Unable to find nameio interface %s, version %i:%i:%i"
-msgstr "Incapaz de localizar o interface nameio %s, versão %i:%i:%i"
 
 msgid "The requested filename coding interface is not available\n"
 msgstr ""
 "O interface de codificação do nome de ficheiro requisitado não se encontra "
 "disponível\n"
 
-msgid "Remount failed"
+msgid ""
+"This version of EncFS doesn't support filesystems created before 2004-08-13"
 msgstr ""
 
-#, c-format
-msgid "MAC comparison failure in block %li"
-msgstr "falha na comparação do MAC no bloco %li"
-
-msgid "MAC comparison failure, refusing to read"
-msgstr "falha na comparação do MAC, a recusar a leitura"
+msgid "Unable to create directory: "
+msgstr "Incapaz de criar directoria: "
 
 #, c-format
-msgid "Build: encfs version %s"
-msgstr "Criação: encfs versão %s"
+msgid "Unable to find cipher %s, version %i:%i:%i"
+msgstr "Incapaz de localizar a cifra %s, versão %i:%i:%i"
+
+#, c-format
+msgid "Unable to find nameio interface %s, version %i:%i:%i"
+msgstr "Incapaz de localizar o interface nameio %s, versão %i:%i:%i"
+
+#, c-format
+msgid "Unable to find specified cipher \"%s\"\n"
+msgstr "Incapaz de localizar a cifra especificada \"%s\"\n"
+
+msgid "Unable to initialize encrypted filesystem - check path.\n"
+msgstr ""
+"Incapaz de inicializar o sistema de ficheiros cifrado - verifique o "
+"caminho.\n"
+
+#, c-format
+msgid "Unable to instanciate cipher %s, key size %i, block size %i"
+msgstr ""
+"Incapaz de instanciar a cifra %s, tamanho de chave %i, tamanho de bloco %i"
+
+msgid "Unable to load or parse config file\n"
+msgstr "Incapaz de carregar ou analizar o ficheiro de configurações\n"
+
+msgid "Unable to locate mount point, aborting."
+msgstr "Incapaz de localizar ponto de montagem, a abortar."
+
+msgid "Unable to locate root directory, aborting."
+msgstr "Incapaz de localizar a directoria raiz, a abortar."
+
+#, c-format
+msgid "Unmounting filesystem %s due to inactivity"
+msgstr ""
+
+msgid "Usage:\n"
+msgstr "Utilização:\n"
 
 #, c-format
 msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
@@ -524,53 +542,53 @@ msgstr ""
 "Utilização: %s [opções] directoria-raiz ponto-de-montagem [--[Opções de "
 "montagem FUSE]]"
 
-msgid ""
-"Common Options:\n"
-"  -H\t\t\tshow optional FUSE Mount Options\n"
-"  -s\t\t\tdisable multithreaded operation\n"
-"  -f\t\t\trun in foreground (don't spawn daemon).\n"
-"\t\t\tError messages will be sent to stderr\n"
-"\t\t\tinstead of syslog.\n"
+#, c-format
+msgid "Using PBKDF2, with %i iterations"
 msgstr ""
-"Opções comuns:\n"
-"  -H\t\t\tmostrar opções opcionais de montegem de FUSE\n"
-"  -s\t\t\tdesactivar operações multithreaded\n"
-"  -f\t\t\tcorrer em primeiro plano (não gera daemon)\n"
-"\t\t\tMensagens de erro serão enviadas para o stderr\n"
-"\t\t\tinvés do syslog.\n"
+
+#, c-format
+msgid "Using filesystem block size of %i bytes"
+msgstr "A utilizar blocos do Sistema de ficheiros com o tamanho de %i bytes"
+
+#, c-format
+msgid "Using key size of %i bits"
+msgstr "A usar chave de tamanho de %i bits"
+
+msgid "Verify Encfs Password: "
+msgstr "Verifique a senha de Encfs "
+
+#, c-format
+msgid "Version 3 configuration; created by %s\n"
+msgstr "Configuração da versão 3; criada por %s\n"
+
+#, c-format
+msgid "Version 4 configuration; created by %s\n"
+msgstr "Configuração da versão 4; criada por %s\n"
+
+#, c-format
+msgid "Version 5 configuration; created by %s (revision %i)\n"
+msgstr "Confuguração da versão 5; criada por %s (revisão %i)\n"
+
+#, c-format
+msgid "Version 6 configuration; created by %s (revision %i)\n"
+msgstr ""
+
+msgid "Volume Key successfully updated.\n"
+msgstr "Chave de volume actualizada com sucesso.\n"
 
 msgid ""
-"  -v, --verbose\t\tverbose: output encfs debug messages\n"
-"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
-"  --anykey\t\tDo not verify correct key is being used\n"
-"  --forcedecode\t\tdecode data even if an error is detected\n"
-"\t\t\t(for filesystems using MAC block headers)\n"
-msgstr ""
-"  -v, --verbose\t\tverbose: emite messagens de debug do encfs\n"
-"  -i, --idle=MINUTOS\tAutomaticamente desmonta após período de inactividade\n"
-"  --anykey\t\tdescodifica os dados mesmo que algum erro seja detectado\n"
-"\t\t\t(para sistemas de ficheiros que usem cabeçalhos de bloco MAC)\n"
-
-msgid ""
-"  --public\t\tact as a typical multi-user filesystem\n"
-"\t\t\t(encfs must be run as root)\n"
-msgstr ""
-"  --public\t\tage como um típico sistema de ficheiros multi-utilizadores\n"
-"\t\t\t(encfs tem que ser executado como super-utilizador)\n"
-
-msgid "  --reverse\t\treverse encryption\n"
+"When specifying daemon mode, you must use absolute paths (beginning with '/')"
 msgstr ""
 
-msgid ""
-"  --extpass=program\tUse external program for password prompt\n"
-"\n"
-"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
-"    encfs ~/.crypt ~/crypt\n"
-"\n"
+msgid "You must use mount-on-demand with delay-mount"
 msgstr ""
 
-msgid "For more information, see the man page encfs(1)"
-msgstr "Para mais informação, consulte as páginas de man encfs(1)"
+msgid "Zero length password not allowed\n"
+msgstr "Senhas com tamanho zero não são permitidas\n"
+
+#, c-format
+msgid "directory %s does not exist.\n"
+msgstr "directoria %s não existe.\n"
 
 msgid ""
 "encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
@@ -580,42 +598,16 @@ msgstr ""
 "FUSE]\n"
 "as seguintes opções de montegem FUSE são válidas:\n"
 
-msgid "option '--public' ignored for non-root user"
-msgstr ""
-"opção '--public' ignorada para utilizadores que não sejam super-utilizadores"
-
 #, c-format
 msgid "encfs version %s"
 msgstr "encfs versão %s"
 
-msgid "Missing one or more arguments, aborting."
-msgstr "Falta de um ou mais argumentos, a abortar."
+#, c-format
+msgid "encfsctl version %s"
+msgstr "encfsctl versão %s"
 
-msgid ""
-"When specifying daemon mode, you must use absolute paths (beginning with '/')"
-msgstr ""
-
-msgid "The raw directory may not be a subdirectory of the mount point."
-msgstr ""
-
-msgid "You must use mount-on-demand with delay-mount"
-msgstr ""
-
-msgid "Must set password program when using mount-on-demand"
-msgstr ""
-
-msgid "Unable to locate root directory, aborting."
-msgstr "Incapaz de localizar a directoria raiz, a abortar."
-
-msgid "Unable to locate mount point, aborting."
-msgstr "Incapaz de localizar ponto de montagem, a abortar."
-
-msgid ""
-"Note: requested single-threaded mode, but an idle\n"
-"timeout was specified.  The filesystem will operate\n"
-"single-threaded, but threads will still be used to\n"
-"implement idle checking."
-msgstr ""
+msgid "filesystem block size: "
+msgstr "tamanho de bloco do sistema de ficheiro "
 
 msgid ""
 "fuse failed.  Common problems:\n"
@@ -627,23 +619,31 @@ msgstr ""
 " - opções inválidas -- veja a mensagem de utilização\n"
 
 #, c-format
-msgid "Internal error: Caught exception from main loop: %s"
-msgstr "Erro interno: Apanhada excepção do ciclo principal: %s"
-
-msgid "Internal error: Caught unexpected exception"
-msgstr "Erro interno: excepção inesperada apanhada"
+msgid "getopt error: %i"
+msgstr "erro getopt: %i"
 
 #, c-format
-msgid "Unmounting filesystem %s due to inactivity"
+msgid "invalid command: \"%s\""
+msgstr "Comando inválido: \"%s\""
+
+msgid "option '--public' ignored for non-root user"
 msgstr ""
+"opção '--public' ignorada para utilizadores que não sejam super-utilizadores"
+
+msgid "reverse encryption - chained IV and MAC disabled"
+msgstr ""
+
+#, c-format
+msgid "truncate failure: read %i bytes, partial block of %i"
+msgstr ""
+
+#~ msgid "8 byte block cipher"
+#~ msgstr "cifra com blocos de 8 bytes"
 
 #~ msgid "Block encoding, hides file name size somewhat"
 #~ msgstr ""
 #~ "Codificação de bloco. esconde o tamanho do nome do ficheiro de alguma "
 #~ "forma"
-
-#~ msgid "8 byte block cipher"
-#~ msgstr "cifra com blocos de 8 bytes"
 
 #~ msgid "Stream encoding, keeps filenames as short as possible"
 #~ msgstr ""

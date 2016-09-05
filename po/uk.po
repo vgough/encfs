@@ -21,14 +21,12 @@ msgstr ""
 "X-Launchpad-Export-Date: 2015-03-14 00:04+0000\n"
 "X-Generator: Launchpad (build 17389)\n"
 
-#, c-format
-msgid "truncate failure: read %i bytes, partial block of %i"
-msgstr "помилка відсікання: прочитано %i байтів, частина блоку %i"
-
-msgid "  -- show information (Default command)"
-msgstr "  --показати інформацію (Команда по-замовченню)"
-
-msgid "  -- show key"
+msgid ""
+"\n"
+"\n"
+"You specified --require-macs.  Enabling block authentication code "
+"headers...\n"
+"\n"
 msgstr ""
 
 msgid "  -- change password for volume"
@@ -41,163 +39,64 @@ msgstr ""
 "  --змінити пароль для розділу, узяти пароль зі стандартнного вводу.\n"
 "\tНіяких підказок немає."
 
-msgid "  -- show undecodable filenames in the volume"
-msgstr "  --показати імена файлів у розділі, що не розшифровуються"
+msgid "  -- decodes name and prints plaintext version"
+msgstr "  --розшифровує ім'я та виводить у вигляді тексту"
 
 msgid "  -- decodes the file and cats it to standard out"
 msgstr "  --розшифровує файл та виводить результат"
 
-msgid "  -- decodes name and prints plaintext version"
-msgstr "  --розшифровує ім'я та виводить у вигляді тексту"
+msgid "  -- decrypts a volume and writes results to path"
+msgstr "  --розшифовує розділ та записує результат по вказаному шляху"
 
 msgid "  -- encodes a filename and print result"
 msgstr "  --розшифровує ім'я та виводить результат"
 
-msgid "  -- decrypts a volume and writes results to path"
-msgstr "  --розшифовує розділ та записує результат по вказаному шляху"
-
 msgid "  -- print version number and exit"
 msgstr "  --показати номер версії та вийти"
 
-#, c-format
-msgid "encfsctl version %s"
-msgstr "версія  \tencfsctl %s"
+msgid "  -- show information (Default command)"
+msgstr "  --показати інформацію (Команда по-замовченню)"
 
-msgid "Usage:\n"
-msgstr "Використання:\n"
-
-#, c-format
-msgid ""
-"%s (root dir)\n"
-"  -- displays information about the filesystem, or \n"
+msgid "  -- show key"
 msgstr ""
-"%s (коренева директорія)\n"
-"  --показує інформацію про файлову систему або \n"
 
-#, c-format
-msgid ""
-"Example: \n"
-"%s info ~/.crypt\n"
-msgstr ""
-"Наприклад: \n"
-"%s info ~/.cryp\n"
-
-#, c-format
-msgid "directory %s does not exist.\n"
-msgstr "директорія %s не існує\n"
-
-msgid "Unable to load or parse config file\n"
-msgstr "Неможливо прочитати конфігураційний файл\n"
+msgid "  -- show undecodable filenames in the volume"
+msgstr "  --показати імена файлів у розділі, що не розшифровуються"
 
 msgid ""
-"A really old EncFS filesystem was found. \n"
-"It is not supported in this EncFS build.\n"
+"  --extpass=program\tUse external program for password prompt\n"
+"\n"
+"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
+"    encfs ~/.crypt ~/crypt\n"
+"\n"
 msgstr ""
-"Знайдена стара файлова система EncFS. \n"
-"Вона не підтримується цією версією EncFS.\n"
-
-#, c-format
-msgid "Version 3 configuration; created by %s\n"
-msgstr "Конфігурація 3-ої версії; створена %s\n"
-
-#, c-format
-msgid "Version 4 configuration; created by %s\n"
-msgstr "Конфігурація 4-ої версії. створеної %s\n"
-
-#, c-format
-msgid "Version 5 configuration; created by %s (revision %i)\n"
-msgstr "Конфігурація 5 версії; створена %s (виправлення %i)\n"
-
-#, c-format
-msgid "Version 6 configuration; created by %s (revision %i)\n"
-msgstr ""
-
-#, c-format
-msgid "getopt error: %i"
-msgstr "помилка getopt: %i"
-
-msgid "Incorrect number of arguments"
-msgstr ""
-
-msgid "Unable to initialize encrypted filesystem - check path.\n"
-msgstr ""
-"Неможливо інітиалізувати зашифровану файлову систему - перевірка "
-"місцеположення\n"
-
-#, c-format
-msgid "In directory %s: \n"
-msgstr "У теці %s \n"
-
-#, c-format
-msgid "Found %i invalid file."
-msgid_plural "Found %i invalid files."
-msgstr[0] "Знайдено %i зіпсований файл."
-msgstr[1] "Знайдено %i зіпсованих файлів."
-msgstr[2] "Знайдено %i зіпсованих файлів."
-
-#, c-format
-msgid "Unable to find specified cipher \"%s\"\n"
-msgstr "Неможливо знайти шифр \"%s\"\n"
-
-msgid "Enter current Encfs password\n"
-msgstr "Введіть Ваш Encfs пароль\n"
-
-msgid "Invalid password\n"
-msgstr "Невірний пароль\n"
-
-msgid "Enter new Encfs password\n"
-msgstr "Введіть новий Encfs пароль\n"
-
-msgid "Volume Key successfully updated.\n"
-msgstr "Регулятор гучності успішно оновлений.\n"
-
-msgid "Error saving modified config file.\n"
-msgstr "Помилка збереження модифікованого файла конфігурації.\n"
-
-msgid "Error creating key\n"
-msgstr ""
-
-#, c-format
-msgid "invalid command: \"%s\""
-msgstr "невірна команда: \"%s\""
-
-#, c-format
-msgid "Incorrect number of arguments for command \"%s\""
-msgstr "Некоректне число аргументів для команди \"%s\""
-
-#, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Папки \"%s\" не існує. Створити її? (y,n) "
-
-msgid "Unable to create directory: "
-msgstr "Неможливо створити папку: "
-
-msgid "Directory not created."
-msgstr "Папка не створена."
-
-#, fuzzy, c-format
-msgid "Found config file %s, but failed to load - exiting"
-msgstr "Знайдено конфігураційний файл \"%s\", але його завантажити не вдалося"
-
-#, c-format
-msgid ""
-"Config subversion %i found, but this version of encfs only supports up to "
-"version %i."
-msgstr ""
-"Конфігураційне порушення %i знайдено, але версія encfs підтримує тільки до %i"
 
 msgid ""
-"This version of EncFS doesn't support filesystems created before 2004-08-13"
+"  --public\t\tact as a typical multi-user filesystem\n"
+"\t\t\t(encfs must be run as root)\n"
 msgstr ""
-"Дана версія EncFS не підтримує файлові системи, що були створені до "
-"2004-08-13"
 
-msgid "The following cipher algorithms are available:"
-msgstr "Наступні алгоритми шифрування зараз доступні:"
+msgid "  --reverse\t\treverse encryption\n"
+msgstr ""
+
+msgid ""
+"  -v, --verbose\t\tverbose: output encfs debug messages\n"
+"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
+"  --anykey\t\tDo not verify correct key is being used\n"
+"  --forcedecode\t\tdecode data even if an error is detected\n"
+"\t\t\t(for filesystems using MAC block headers)\n"
+msgstr ""
+
+msgid " (NOT supported)\n"
+msgstr " (НЕ підтримується)\n"
 
 #, c-format
-msgid " -- key length %i bits"
-msgstr " -- довжина ключа %i біт(а)"
+msgid " (using %i:%i:%i)\n"
+msgstr " (використовує %i:%i:%i)\n"
+
+#, c-format
+msgid " -- Supports block sizes of %i to %i bytes"
+msgstr " -- Підтримується розмір блоку від %i до %i байт"
 
 #, c-format
 msgid " -- Supports key lengths of %i to %i bits"
@@ -208,71 +107,26 @@ msgid " -- block size %i bytes"
 msgstr " -- розмір блоку %i байт"
 
 #, c-format
-msgid " -- Supports block sizes of %i to %i bytes"
-msgstr " -- Підтримується розмір блоку від %i до %i байт"
-
-msgid "Enter the number corresponding to your choice: "
-msgstr "Введіть номер. котрий є Вашим вибором: "
-
-msgid "Invalid selection."
-msgstr "Помилка при виборі"
-
-#, c-format
-msgid "Selected algorithm \"%s\""
-msgstr "Обраний алгоритм \"%s\""
-
-msgid "The following filename encoding algorithms are available:"
-msgstr "Доступні наступні алгоритми шифрування:"
-
-#, c-format
-msgid "Using key size of %i bits"
-msgstr "Використання ключа. розмір якого %i біт(а)"
+msgid " -- key length %i bits"
+msgstr " -- довжина ключа %i біт(а)"
 
 #, c-format
 msgid ""
-"Please select a key size in bits.  The cipher you have chosen\n"
-"supports sizes from %i to %i bits in increments of %i bits.\n"
-"For example: "
+"%s (root dir)\n"
+"  -- displays information about the filesystem, or \n"
 msgstr ""
-"Будь ласка виберіть розмір ключа в бітах. Шифр, котрий Ви обрали\n"
-"підтримує розміри від %i до %i біт в зростанні %i біт.\n"
-"Наприклад: "
+"%s (коренева директорія)\n"
+"  --показує інформацію про файлову систему або \n"
 
-msgid "Selected key size: "
-msgstr "Оберіть розмір символів: "
-
-#, c-format
-msgid "Using filesystem block size of %i bytes"
-msgstr "Використовується розмір блоку файлової системи рівний %i байтам"
-
-#, c-format
-msgid ""
-"Select a block size in bytes.  The cipher you have chosen\n"
-"supports sizes from %i to %i bytes in increments of %i.\n"
-"Or just hit enter for the default (%i bytes)\n"
-msgstr ""
-"Оберіть розмір блоку в байтах. Обраний вами шифр\n"
-"підтримує розмір від %i до %i байта з кроком у %i байт.\n"
-"Або натисніть Enter для вибору по замовченню (%i байт)\n"
-
-msgid "filesystem block size: "
-msgstr "розмір блоку файлової системи: "
+msgid "-------------------------- WARNING --------------------------\n"
+msgstr "-------------------------- УВАГА --------------------------\n"
 
 msgid ""
-"Enable block authentication code headers\n"
-"on every block in a file?  This adds about 12 bytes per block\n"
-"to the storage requirements for a file, and significantly affects\n"
-"performance but it also means [almost] any modifications or errors\n"
-"within a block will be caught and will cause a read error."
+"A really old EncFS filesystem was found. \n"
+"It is not supported in this EncFS build.\n"
 msgstr ""
-
-msgid ""
-"\n"
-"\n"
-"You specified --require-macs.  Enabling block authentication code "
-"headers...\n"
-"\n"
-msgstr ""
+"Знайдена стара файлова система EncFS. \n"
+"Вона не підтримується цією версією EncFS.\n"
 
 msgid ""
 "Add random bytes to each block header?\n"
@@ -290,11 +144,65 @@ msgstr ""
 "до великої втрати швидкодії. \n"
 "Введіть кількість байт від 0 (не випадковий байт) до 8: "
 
+#, c-format
+msgid "Block Size: %i bytes"
+msgstr "Розмір блоку: %i байт"
+
+#, c-format
+msgid "Block Size: %i bytes + %i byte MAC header"
+msgstr "Розмір блоку: %i байт + %i біт MAC заголовку"
+
+#, c-format
+msgid "Block Size: %i bytes, including %i byte MAC header"
+msgstr "Розмір блоку: %i байт, включаючи %i байт MAC заголовку"
+
+#, c-format
+msgid "Build: encfs version %s"
+msgstr "Зборка: encfs версії %s"
+
 msgid ""
-"Enable per-file initialization vectors?\n"
-"This adds about 8 bytes per file to the storage requirements.\n"
-"It should not affect performance except possibly with applications\n"
-"which rely on block-aligned file io for performance."
+"Common Options:\n"
+"  -H\t\t\tshow optional FUSE Mount Options\n"
+"  -s\t\t\tdisable multithreaded operation\n"
+"  -f\t\t\trun in foreground (don't spawn daemon).\n"
+"\t\t\tError messages will be sent to stderr\n"
+"\t\t\tinstead of syslog.\n"
+msgstr ""
+
+#, c-format
+msgid ""
+"Config subversion %i found, but this version of encfs only supports up to "
+"version %i."
+msgstr ""
+"Конфігураційне порушення %i знайдено, але версія encfs підтримує тільки до %i"
+
+msgid ""
+"Configuration finished.  The filesystem to be created has\n"
+"the following properties:"
+msgstr ""
+"Конфігурація завершена. Файлова система була створена\n"
+"з наступними властивостями:"
+
+msgid "Creating new encrypted volume."
+msgstr "Створення нового зашифрованого розділу."
+
+msgid "Directory not created."
+msgstr "Папка не створена."
+
+msgid "Each file contains 8 byte header with unique IV data.\n"
+msgstr "Кожен файл містить 8 байт заголовку з унікальними IV даними.\n"
+
+msgid ""
+"Enable block authentication code headers\n"
+"on every block in a file?  This adds about 12 bytes per block\n"
+"to the storage requirements for a file, and significantly affects\n"
+"performance but it also means [almost] any modifications or errors\n"
+"within a block will be caught and will cause a read error."
+msgstr ""
+
+msgid ""
+"Enable file-hole pass-through?\n"
+"This avoids writing encrypted blocks when file holes are created."
 msgstr ""
 
 msgid ""
@@ -313,12 +221,177 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Enable file-hole pass-through?\n"
-"This avoids writing encrypted blocks when file holes are created."
+"Enable per-file initialization vectors?\n"
+"This adds about 8 bytes per file to the storage requirements.\n"
+"It should not affect performance except possibly with applications\n"
+"which rely on block-aligned file io for performance."
 msgstr ""
 
-msgid "Creating new encrypted volume."
-msgstr "Створення нового зашифрованого розділу."
+msgid "EncFS Password: "
+msgstr "Пароль EncFS: "
+
+msgid "Enter current Encfs password\n"
+msgstr "Введіть Ваш Encfs пароль\n"
+
+msgid "Enter new Encfs password\n"
+msgstr "Введіть новий Encfs пароль\n"
+
+msgid "Enter the number corresponding to your choice: "
+msgstr "Введіть номер. котрий є Вашим вибором: "
+
+msgid "Error creating key\n"
+msgstr ""
+
+msgid "Error creating salt\n"
+msgstr ""
+
+msgid "Error decoding volume key, password incorrect\n"
+msgstr "Помилка дешифрування ключа розділа. Невірний пароль\n"
+
+msgid "Error saving modified config file.\n"
+msgstr "Помилка збереження модифікованого файла конфігурації.\n"
+
+#, c-format
+msgid ""
+"Example: \n"
+"%s info ~/.crypt\n"
+msgstr ""
+"Наприклад: \n"
+"%s info ~/.cryp\n"
+
+msgid ""
+"External chained IV disabled, as both 'IV chaining'\n"
+"and 'unique IV' features are required for this option."
+msgstr ""
+
+msgid "Failure generating new volume key! Please report this error."
+msgstr ""
+"Помилка генерації нового ключа для розділу! Будь ласка повідомте про помилку "
+"програми."
+
+msgid "File data IV is chained to filename IV.\n"
+msgstr "Файл даних IV пов'язаний з іменем файлу IV. (бред якийсь)\n"
+
+msgid "File holes passed through to ciphertext.\n"
+msgstr ""
+
+#, c-format
+msgid "Filename encoding: \"%s\", version %i:%i:%i"
+msgstr "Дешифрування імені файлу: \"%s\", версії %i:%i:%i"
+
+msgid "Filenames encoded using IV chaining mode.\n"
+msgstr "Файлові імена зашифровані з використанням IV моду.\n"
+
+#, c-format
+msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
+msgstr "Шифр файлової системи: \"%s\", версія %i:%i:%i"
+
+msgid "For more information, see the man page encfs(1)"
+msgstr "Для додаткової інформації зверніться до довідки encfs(1)"
+
+#, c-format
+msgid "Found %i invalid file."
+msgid_plural "Found %i invalid files."
+msgstr[0] "Знайдено %i зіпсований файл."
+msgstr[1] "Знайдено %i зіпсованих файлів."
+msgstr[2] "Знайдено %i зіпсованих файлів."
+
+#, fuzzy, c-format
+msgid "Found config file %s, but failed to load - exiting"
+msgstr "Знайдено конфігураційний файл \"%s\", але його завантажити не вдалося"
+
+#, c-format
+msgid "In directory %s: \n"
+msgstr "У теці %s \n"
+
+msgid "Incorrect number of arguments"
+msgstr ""
+
+#, c-format
+msgid "Incorrect number of arguments for command \"%s\""
+msgstr "Некоректне число аргументів для команди \"%s\""
+
+#, c-format
+msgid "Internal error: Caught exception from main loop: %s"
+msgstr "Внутрішня помилка: Виникло виключення з головного циклу: %s"
+
+msgid "Internal error: Caught unexpected exception"
+msgstr "Внутрішня помилка: Непередбачуване виключення"
+
+msgid "Internal error: failed to exec program"
+msgstr "Внутрішня помилка: failed to exec program"
+
+msgid "Internal error: fork() failed"
+msgstr "Внутрішня помилка: помилка fork()"
+
+msgid "Internal error: socketpair() failed"
+msgstr "Внутрішня помилка: помилка socketpair()"
+
+msgid "Invalid password\n"
+msgstr "Невірний пароль\n"
+
+msgid "Invalid selection."
+msgstr "Помилка при виборі"
+
+#, c-format
+msgid "Key Size: %i bits"
+msgstr "Розмір ключе: %i біт"
+
+#, c-format
+msgid "MAC comparison failure in block %li"
+msgstr "Помилка MAC порівняння у блоці %li"
+
+msgid "MAC comparison failure, refusing to read"
+msgstr "Помилка MAC порівнянн. Відміна читання"
+
+msgid "Manual configuration mode selected."
+msgstr "Обрана ручна конфігурація"
+
+msgid "Missing one or more arguments, aborting."
+msgstr "Неправильний один або декілька аргументів. Зупинено."
+
+msgid "Must set password program when using mount-on-demand"
+msgstr "При використанні монтування через демон необхідно вказати пароль"
+
+msgid "Name coding interface not supported"
+msgstr "Ім'я кодового інтерфейсу не підтримується"
+
+msgid "New Encfs Password: "
+msgstr "Новий пароль Encfs: "
+
+msgid ""
+"Note: requested single-threaded mode, but an idle\n"
+"timeout was specified.  The filesystem will operate\n"
+"single-threaded, but threads will still be used to\n"
+"implement idle checking."
+msgstr ""
+"Примітка: запущений однопоточний режим, але не вказано\n"
+"час простою. Файлова система буде працювати в\n"
+"однопоточному режимі, а потоки будуть здійснювати\n"
+"перевірку часу простою."
+
+msgid ""
+"Now you will need to enter a password for your filesystem.\n"
+"You will need to remember this password, as there is absolutely\n"
+"no recovery mechanism.  However, the password can be changed\n"
+"later using encfsctl.\n"
+"\n"
+msgstr ""
+"Зараз ви маєте ввести пароль для вашої файлової системи.\n"
+"Ви повинні запам'ятати цей пароль, тому, що ви більше не\n"
+"будете мати змоги відновити його. У будь якому випадку\n"
+"пароль може бути змінений пізніше за допомогою encfsctl.\n"
+"\n"
+
+#, fuzzy
+msgid "Paranoia configuration not supported for reverse encryption"
+msgstr "Режим таємності не підтримується для --reverse"
+
+msgid "Paranoia configuration selected."
+msgstr "Обраний режим максимальної таємності."
+
+msgid "Passwords did not match, please try again\n"
+msgstr "Паролі не співпадають, спробуйте ще раз\n"
 
 msgid ""
 "Please choose from one of the following options:\n"
@@ -333,15 +406,39 @@ msgstr ""
 " або іншу букву чи пусту лінію для стандартного режиму.\n"
 "?> "
 
-#, fuzzy
-msgid "Paranoia configuration not supported for reverse encryption"
-msgstr "Режим таємності не підтримується для --reverse"
+#, c-format
+msgid ""
+"Please select a key size in bits.  The cipher you have chosen\n"
+"supports sizes from %i to %i bits in increments of %i bits.\n"
+"For example: "
+msgstr ""
+"Будь ласка виберіть розмір ключа в бітах. Шифр, котрий Ви обрали\n"
+"підтримує розміри від %i до %i біт в зростанні %i біт.\n"
+"Наприклад: "
 
-msgid "Paranoia configuration selected."
-msgstr "Обраний режим максимальної таємності."
+msgid "Remount failed"
+msgstr "Помилка перейменування"
 
-msgid "Standard configuration selected."
-msgstr "Обраний режим стандартної конфігурації."
+#, c-format
+msgid "Salt Size: %i bits"
+msgstr ""
+
+#, c-format
+msgid ""
+"Select a block size in bytes.  The cipher you have chosen\n"
+"supports sizes from %i to %i bytes in increments of %i.\n"
+"Or just hit enter for the default (%i bytes)\n"
+msgstr ""
+"Оберіть розмір блоку в байтах. Обраний вами шифр\n"
+"підтримує розмір від %i до %i байта з кроком у %i байт.\n"
+"Або натисніть Enter для вибору по замовченню (%i байт)\n"
+
+#, c-format
+msgid "Selected algorithm \"%s\""
+msgstr "Обраний алгоритм \"%s\""
+
+msgid "Selected key size: "
+msgstr "Оберіть розмір символів: "
 
 msgid ""
 "Sorry, unable to locate cipher for predefined configuration...\n"
@@ -350,30 +447,19 @@ msgstr ""
 "Неможливо підібрати шифр для обраної конфігурації...\n"
 "Повернення до режиму ручної конфігурації."
 
-msgid "Manual configuration mode selected."
-msgstr "Обрана ручна конфігурація"
+msgid "Standard configuration selected."
+msgstr "Обраний режим стандартної конфігурації."
 
-msgid "reverse encryption - chained IV and MAC disabled"
-msgstr ""
+#, fuzzy
+msgid "The configuration disabled MAC, but you passed --require-macs\n"
+msgstr "Завантажена конфігурація не допустима з --reverse\n"
 
-msgid ""
-"External chained IV disabled, as both 'IV chaining'\n"
-"and 'unique IV' features are required for this option."
-msgstr ""
+msgid "The configuration loaded is not compatible with --reverse\n"
+msgstr "Завантажена конфігурація не допустима з --reverse\n"
 
 #, c-format
-msgid "Unable to instanciate cipher %s, key size %i, block size %i"
-msgstr "Неможливо встановите шифр %s, розмір ключа %i та розмір блоку %i"
-
-msgid ""
-"Configuration finished.  The filesystem to be created has\n"
-"the following properties:"
-msgstr ""
-"Конфігурація завершена. Файлова система була створена\n"
-"з наступними властивостями:"
-
-msgid "-------------------------- WARNING --------------------------\n"
-msgstr "-------------------------- УВАГА --------------------------\n"
+msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
+msgstr "Папки \"%s\" не існує. Створити її? (y,n) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"
@@ -392,186 +478,124 @@ msgstr ""
 "Якщо ви бажаєте обрати інші налаштування конфігурації\n"
 "будь-ласка натисність CTRL+C і розпочніть спочатку."
 
-msgid ""
-"Now you will need to enter a password for your filesystem.\n"
-"You will need to remember this password, as there is absolutely\n"
-"no recovery mechanism.  However, the password can be changed\n"
-"later using encfsctl.\n"
-"\n"
-msgstr ""
-"Зараз ви маєте ввести пароль для вашої файлової системи.\n"
-"Ви повинні запам'ятати цей пароль, тому, що ви більше не\n"
-"будете мати змоги відновити його. У будь якому випадку\n"
-"пароль може бути змінений пізніше за допомогою encfsctl.\n"
-"\n"
-
-msgid "Failure generating new volume key! Please report this error."
-msgstr ""
-"Помилка генерації нового ключа для розділу! Будь ласка повідомте про помилку "
-"програми."
-
-msgid "Name coding interface not supported"
-msgstr "Ім'я кодового інтерфейсу не підтримується"
-
 msgid "The filename encoding interface requested is not available"
 msgstr "Інтерфейс дешифрування імен файлів не доступний"
 
-#, c-format
-msgid "Filesystem cipher: \"%s\", version %i:%i:%i"
-msgstr "Шифр файлової системи: \"%s\", версія %i:%i:%i"
+msgid "The following cipher algorithms are available:"
+msgstr "Наступні алгоритми шифрування зараз доступні:"
 
-msgid " (NOT supported)\n"
-msgstr " (НЕ підтримується)\n"
+msgid "The following filename encoding algorithms are available:"
+msgstr "Доступні наступні алгоритми шифрування:"
 
-#, c-format
-msgid " (using %i:%i:%i)\n"
-msgstr " (використовує %i:%i:%i)\n"
+msgid "The raw directory may not be a subdirectory of the mount point."
+msgstr "Папка не може бути підкаталогом точки монтування."
 
-#, c-format
-msgid "Filename encoding: \"%s\", version %i:%i:%i"
-msgstr "Дешифрування імені файлу: \"%s\", версії %i:%i:%i"
+msgid "The requested cipher interface is not available\n"
+msgstr "Інтерфейс шифру не доступний.\n"
 
-#, c-format
-msgid "Key Size: %i bits"
-msgstr "Розмір ключе: %i біт"
+msgid "The requested filename coding interface is not available\n"
+msgstr "Даний інтерфейс кодування файлового імені не доступний\n"
 
-#, c-format
-msgid "Using PBKDF2, with %i iterations"
+msgid ""
+"This version of EncFS doesn't support filesystems created before 2004-08-13"
 msgstr ""
+"Дана версія EncFS не підтримує файлові системи, що були створені до "
+"2004-08-13"
 
-#, c-format
-msgid "Salt Size: %i bits"
-msgstr ""
-
-#, c-format
-msgid "Block Size: %i bytes + %i byte MAC header"
-msgstr "Розмір блоку: %i байт + %i біт MAC заголовку"
-
-#, c-format
-msgid "Block Size: %i bytes, including %i byte MAC header"
-msgstr "Розмір блоку: %i байт, включаючи %i байт MAC заголовку"
-
-#, c-format
-msgid "Block Size: %i bytes"
-msgstr "Розмір блоку: %i байт"
-
-msgid "Each file contains 8 byte header with unique IV data.\n"
-msgstr "Кожен файл містить 8 байт заголовку з унікальними IV даними.\n"
-
-msgid "Filenames encoded using IV chaining mode.\n"
-msgstr "Файлові імена зашифровані з використанням IV моду.\n"
-
-msgid "File data IV is chained to filename IV.\n"
-msgstr "Файл даних IV пов'язаний з іменем файлу IV. (бред якийсь)\n"
-
-msgid "File holes passed through to ciphertext.\n"
-msgstr ""
-
-msgid "Error creating salt\n"
-msgstr ""
-
-msgid "EncFS Password: "
-msgstr "Пароль EncFS: "
-
-msgid "Zero length password not allowed\n"
-msgstr "Пароль довжиною 0 не можливий\n"
-
-msgid "Internal error: socketpair() failed"
-msgstr "Внутрішня помилка: помилка socketpair()"
-
-msgid "Internal error: fork() failed"
-msgstr "Внутрішня помилка: помилка fork()"
-
-msgid "Internal error: failed to exec program"
-msgstr "Внутрішня помилка: failed to exec program"
-
-msgid "New Encfs Password: "
-msgstr "Новий пароль Encfs: "
-
-msgid "Verify Encfs Password: "
-msgstr "Підтвердіть пароль EncFS: "
-
-msgid "Passwords did not match, please try again\n"
-msgstr "Паролі не співпадають, спробуйте ще раз\n"
-
-#, fuzzy
-msgid "The configuration disabled MAC, but you passed --require-macs\n"
-msgstr "Завантажена конфігурація не допустима з --reverse\n"
-
-msgid "The configuration loaded is not compatible with --reverse\n"
-msgstr "Завантажена конфігурація не допустима з --reverse\n"
+msgid "Unable to create directory: "
+msgstr "Неможливо створити папку: "
 
 #, c-format
 msgid "Unable to find cipher %s, version %i:%i:%i"
 msgstr "Неможливо знайти шифр  %s, версії %i:%i:%i"
 
-msgid "The requested cipher interface is not available\n"
-msgstr "Інтерфейс шифру не доступний.\n"
-
-msgid "Error decoding volume key, password incorrect\n"
-msgstr "Помилка дешифрування ключа розділа. Невірний пароль\n"
-
 #, c-format
 msgid "Unable to find nameio interface %s, version %i:%i:%i"
 msgstr "Неможливо знайти nameio інтерфейс %s, версії %i:%i:%i"
 
-msgid "The requested filename coding interface is not available\n"
-msgstr "Даний інтерфейс кодування файлового імені не доступний\n"
+#, c-format
+msgid "Unable to find specified cipher \"%s\"\n"
+msgstr "Неможливо знайти шифр \"%s\"\n"
 
-msgid "Remount failed"
-msgstr "Помилка перейменування"
+msgid "Unable to initialize encrypted filesystem - check path.\n"
+msgstr ""
+"Неможливо інітиалізувати зашифровану файлову систему - перевірка "
+"місцеположення\n"
 
 #, c-format
-msgid "MAC comparison failure in block %li"
-msgstr "Помилка MAC порівняння у блоці %li"
+msgid "Unable to instanciate cipher %s, key size %i, block size %i"
+msgstr "Неможливо встановите шифр %s, розмір ключа %i та розмір блоку %i"
 
-msgid "MAC comparison failure, refusing to read"
-msgstr "Помилка MAC порівнянн. Відміна читання"
+msgid "Unable to load or parse config file\n"
+msgstr "Неможливо прочитати конфігураційний файл\n"
+
+msgid "Unable to locate mount point, aborting."
+msgstr "Неможливо знайти точку монтування. Аварійне завершення."
+
+msgid "Unable to locate root directory, aborting."
+msgstr "Неможливо знайти кореневу папку. Аварійне завершення."
 
 #, c-format
-msgid "Build: encfs version %s"
-msgstr "Зборка: encfs версії %s"
+msgid "Unmounting filesystem %s due to inactivity"
+msgstr "Розмонтування файлової системи %s через її бездіяльність"
+
+msgid "Usage:\n"
+msgstr "Використання:\n"
 
 #, c-format
 msgid "Usage: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
 msgstr ""
 "Використовується: %s [options] rootDir mountPoint [-- [FUSE Mount Options]]"
 
-msgid ""
-"Common Options:\n"
-"  -H\t\t\tshow optional FUSE Mount Options\n"
-"  -s\t\t\tdisable multithreaded operation\n"
-"  -f\t\t\trun in foreground (don't spawn daemon).\n"
-"\t\t\tError messages will be sent to stderr\n"
-"\t\t\tinstead of syslog.\n"
+#, c-format
+msgid "Using PBKDF2, with %i iterations"
 msgstr ""
+
+#, c-format
+msgid "Using filesystem block size of %i bytes"
+msgstr "Використовується розмір блоку файлової системи рівний %i байтам"
+
+#, c-format
+msgid "Using key size of %i bits"
+msgstr "Використання ключа. розмір якого %i біт(а)"
+
+msgid "Verify Encfs Password: "
+msgstr "Підтвердіть пароль EncFS: "
+
+#, c-format
+msgid "Version 3 configuration; created by %s\n"
+msgstr "Конфігурація 3-ої версії; створена %s\n"
+
+#, c-format
+msgid "Version 4 configuration; created by %s\n"
+msgstr "Конфігурація 4-ої версії. створеної %s\n"
+
+#, c-format
+msgid "Version 5 configuration; created by %s (revision %i)\n"
+msgstr "Конфігурація 5 версії; створена %s (виправлення %i)\n"
+
+#, c-format
+msgid "Version 6 configuration; created by %s (revision %i)\n"
+msgstr ""
+
+msgid "Volume Key successfully updated.\n"
+msgstr "Регулятор гучності успішно оновлений.\n"
 
 msgid ""
-"  -v, --verbose\t\tverbose: output encfs debug messages\n"
-"  -i, --idle=MINUTES\tAuto unmount after period of inactivity\n"
-"  --anykey\t\tDo not verify correct key is being used\n"
-"  --forcedecode\t\tdecode data even if an error is detected\n"
-"\t\t\t(for filesystems using MAC block headers)\n"
+"When specifying daemon mode, you must use absolute paths (beginning with '/')"
+msgstr ""
+"Коли запускається у режимі демона, необхідно вказати повний шлях "
+"(починається з '/')"
+
+msgid "You must use mount-on-demand with delay-mount"
 msgstr ""
 
-msgid ""
-"  --public\t\tact as a typical multi-user filesystem\n"
-"\t\t\t(encfs must be run as root)\n"
-msgstr ""
+msgid "Zero length password not allowed\n"
+msgstr "Пароль довжиною 0 не можливий\n"
 
-msgid "  --reverse\t\treverse encryption\n"
-msgstr ""
-
-msgid ""
-"  --extpass=program\tUse external program for password prompt\n"
-"\n"
-"Example, to mount at ~/crypt with raw storage in ~/.crypt :\n"
-"    encfs ~/.crypt ~/crypt\n"
-"\n"
-msgstr ""
-
-msgid "For more information, see the man page encfs(1)"
-msgstr "Для додаткової інформації зверніться до довідки encfs(1)"
+#, c-format
+msgid "directory %s does not exist.\n"
+msgstr "директорія %s не існує\n"
 
 msgid ""
 "encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
@@ -580,47 +604,16 @@ msgstr ""
 "encfs [options] rootDir mountPoint -- [FUSE Mount Options]\n"
 "Доступні наступн опції монтування:\n"
 
-msgid "option '--public' ignored for non-root user"
-msgstr "опція '--public' ігнорується для всіх користувачів окрім root"
-
 #, c-format
 msgid "encfs version %s"
 msgstr ""
 
-msgid "Missing one or more arguments, aborting."
-msgstr "Неправильний один або декілька аргументів. Зупинено."
+#, c-format
+msgid "encfsctl version %s"
+msgstr "версія  \tencfsctl %s"
 
-msgid ""
-"When specifying daemon mode, you must use absolute paths (beginning with '/')"
-msgstr ""
-"Коли запускається у режимі демона, необхідно вказати повний шлях "
-"(починається з '/')"
-
-msgid "The raw directory may not be a subdirectory of the mount point."
-msgstr "Папка не може бути підкаталогом точки монтування."
-
-msgid "You must use mount-on-demand with delay-mount"
-msgstr ""
-
-msgid "Must set password program when using mount-on-demand"
-msgstr "При використанні монтування через демон необхідно вказати пароль"
-
-msgid "Unable to locate root directory, aborting."
-msgstr "Неможливо знайти кореневу папку. Аварійне завершення."
-
-msgid "Unable to locate mount point, aborting."
-msgstr "Неможливо знайти точку монтування. Аварійне завершення."
-
-msgid ""
-"Note: requested single-threaded mode, but an idle\n"
-"timeout was specified.  The filesystem will operate\n"
-"single-threaded, but threads will still be used to\n"
-"implement idle checking."
-msgstr ""
-"Примітка: запущений однопоточний режим, але не вказано\n"
-"час простою. Файлова система буде працювати в\n"
-"однопоточному режимі, а потоки будуть здійснювати\n"
-"перевірку часу простою."
+msgid "filesystem block size: "
+msgstr "розмір блоку файлової системи: "
 
 msgid ""
 "fuse failed.  Common problems:\n"
@@ -632,24 +625,31 @@ msgstr ""
 " - невірна опція -- перегляньте довідку\n"
 
 #, c-format
-msgid "Internal error: Caught exception from main loop: %s"
-msgstr "Внутрішня помилка: Виникло виключення з головного циклу: %s"
-
-msgid "Internal error: Caught unexpected exception"
-msgstr "Внутрішня помилка: Непередбачуване виключення"
+msgid "getopt error: %i"
+msgstr "помилка getopt: %i"
 
 #, c-format
-msgid "Unmounting filesystem %s due to inactivity"
-msgstr "Розмонтування файлової системи %s через її бездіяльність"
+msgid "invalid command: \"%s\""
+msgstr "невірна команда: \"%s\""
 
-#~ msgid "Block encoding, hides file name size somewhat"
-#~ msgstr "Блокова дешифровка частково приховує розмір імені файлу"
+msgid "option '--public' ignored for non-root user"
+msgstr "опція '--public' ігнорується для всіх користувачів окрім root"
+
+msgid "reverse encryption - chained IV and MAC disabled"
+msgstr ""
+
+#, c-format
+msgid "truncate failure: read %i bytes, partial block of %i"
+msgstr "помилка відсікання: прочитано %i байтів, частина блоку %i"
 
 #~ msgid "--reverse specified, not using unique/chained IV"
 #~ msgstr "--reverse специфікація не використовує unique/chained IV"
 
 #~ msgid "8 byte block cipher"
 #~ msgstr "8-ми байтовий блоковий шифр"
+
+#~ msgid "Block encoding, hides file name size somewhat"
+#~ msgstr "Блокова дешифровка частково приховує розмір імені файлу"
 
 #~ msgid "Stream encoding, keeps filenames as short as possible"
 #~ msgstr "Шифрування потоку зберігає імена файлів короткими по можливості"
