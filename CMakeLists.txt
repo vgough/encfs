@@ -9,15 +9,14 @@ set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}.${ENCFS_PATCH}")
 set (ENCFS_SOVERSION "1.9")
 set (ENCFS_NAME "Encrypted Filesystem")
 
-option(IWYU "Build with IWYU analyais." OFF)
-
-set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
-  "${CMAKE_SOURCE_DIR}/cmake")
-
+option (IWYU "Build with IWYU analyais." OFF)
 option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
 option (INSTALL_LIBENCFS "install libencfs" OFF)
+
+set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
+  "${CMAKE_SOURCE_DIR}/cmake")
 
 # We need C++ 11
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
@@ -104,6 +103,8 @@ if (HAVE_SYSLOG_H)
   message ("-- Enabled syslog logging support")
   add_definitions(-DELPP_SYSLOG)
 endif (HAVE_SYSLOG_H)
+# Include top-level path to find logging files.
+include_directories (${CMAKE_SOURCE_DIR})
 
 # Packaging config.
 set (CPACK_PACKAGE_NAME "encfs")
@@ -114,13 +115,6 @@ set (CPACK_SOURCE_IGNORE_FILES
   "/build/")
 include (CPack)
 
-# Compile-time configuration.
-configure_file (${CMAKE_SOURCE_DIR}/config.h.cmake
-  ${CMAKE_BINARY_DIR}/config.h)
-
-include_directories (${CMAKE_BINARY_DIR})
-include_directories (${CMAKE_SOURCE_DIR})
-
 # Translations
 if (ENABLE_NLS)
   add_subdirectory(po)
@@ -129,102 +123,13 @@ if (ENABLE_NLS)
   add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_PREFIX}/share/locale")
 endif (ENABLE_NLS)
 
-set(SOURCE_FILES
-  encfs/autosprintf.cpp
-  encfs/base64.cpp
-  encfs/BlockFileIO.cpp
-  encfs/BlockNameIO.cpp
-  encfs/Cipher.cpp
-  encfs/CipherFileIO.cpp
-  encfs/CipherKey.cpp
-  encfs/ConfigReader.cpp
-  encfs/ConfigVar.cpp
-  encfs/Context.cpp
-  encfs/DirNode.cpp
-  encfs/encfs.cpp
-  encfs/Error.cpp
-  encfs/FileIO.cpp
-  encfs/FileNode.cpp
-  encfs/FileUtils.cpp
-  encfs/Interface.cpp
-  encfs/MACFileIO.cpp
-  encfs/MemoryPool.cpp
-  encfs/NameIO.cpp
-  encfs/NullCipher.cpp
-  encfs/NullNameIO.cpp
-  encfs/openssl.cpp
-  encfs/RawFileIO.cpp
-  encfs/readpassphrase.cpp
-  encfs/SSL_Cipher.cpp
-  encfs/StreamNameIO.cpp
-  encfs/XmlReader.cpp
-)
-add_library(encfs ${SOURCE_FILES})
-set_target_properties(encfs PROPERTIES
-  VERSION ${ENCFS_VERSION}
-  SOVERSION ${ENCFS_SOVERSION})
-target_link_libraries(encfs
-  ${FUSE_LIBRARIES}
-  ${OPENSSL_LIBRARIES}
-  ${TINYXML_LIBRARIES}
-  ${CMAKE_THREAD_LIBS_INIT}
-)
-if (INSTALL_LIBENCFS)
-  install (TARGETS encfs DESTINATION lib)
-endif (INSTALL_LIBENCFS)
-
-if (IWYU)
-  if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.2)
-    find_program(iwyu_path NAMES include-what-you-use iwyu)
-    if (iwyu_path)
-      message ("-- Enabled IWYU")
-      set_property(TARGET encfs PROPERTY CXX_INCLUDE_WHAT_YOU_USE ${iwyu_path})
-    endif()
-  endif()
-endif()
-
-
-# Set RPATH to library install path.
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
-
-add_executable (encfs-bin encfs/main.cpp)
-target_link_libraries (encfs-bin encfs)
-set_target_properties (encfs-bin PROPERTIES OUTPUT_NAME "encfs")
-install (TARGETS encfs-bin DESTINATION bin)
-
-add_executable (encfsctl encfs/encfsctl.cpp)
-target_link_libraries (encfsctl encfs)
-install (TARGETS encfsctl DESTINATION bin)
-
-add_executable (makekey encfs/makeKey.cpp)
-target_link_libraries (makekey encfs)
-
-add_executable (checkops encfs/test.cpp)
-target_link_libraries (checkops encfs)
-
-install (FILES encfs/encfssh DESTINATION bin)
-
-# Reference all headers, to make certain IDEs happy.
-file (GLOB_RECURSE all_headers ${CMAKE_SOURCE_DIR}/*.h)
-add_custom_target (all_placeholder SOURCES ${all_headers})
-
-if (POD2MAN)
-  add_custom_target (encfs-man ALL
-    COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
-            ${CMAKE_SOURCE_DIR}/encfs/encfs.pod encfs.1)
-
-  add_custom_target (encfsctl-man ALL
-    COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
-            ${CMAKE_SOURCE_DIR}/encfs/encfsctl.pod encfsctl.1)
-
-  install (FILES ${CMAKE_BINARY_DIR}/encfs.1 ${CMAKE_BINARY_DIR}/encfsctl.1
-    DESTINATION share/man/man1)
-endif (POD2MAN)
+add_subdirectory (base)
+add_subdirectory (encfs)
 
 # Tests
 enable_testing()
 add_test (NAME checkops
-          COMMAND checkops)
+          COMMAND encfs/checkops)
 
 find_program (PERL_PROGRAM perl)
 if (PERL_PROGRAM)
