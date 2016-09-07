@@ -70,7 +70,7 @@ if (POD2MAN)
     COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
             ${CMAKE_CURRENT_SOURCE_DIR}//encfsctl.pod encfsctl.1)
 
-  install (FILES ${CMAKE_BINARY_DIR}/encfs.1 ${CMAKE_BINARY_DIR}/encfsctl.1
+    install (FILES ${CMAKE_CURRENT_BINARY_DIR}/encfs.1 ${CMAKE_CURRENT_BINARY_DIR}/encfsctl.1
     DESTINATION share/man/man1)
 endif (POD2MAN)
 
