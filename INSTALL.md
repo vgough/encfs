@@ -52,5 +52,5 @@ Compiling on Debian and Ubuntu
 
 See the automated build static in README.md for current build status on Ubuntu systems.
 
-The build configuration files (.drone.yml and circle.yml) always contains up-to-date
+The build configuration files (circle.yml) always contains up-to-date
 instructions to build EncFS on Ubuntu distributions.
