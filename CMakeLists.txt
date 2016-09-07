@@ -124,6 +124,7 @@ if (ENABLE_NLS)
 endif (ENABLE_NLS)
 
 add_subdirectory (base)
+add_subdirectory (cipher)
 add_subdirectory (encfs)
 
 # Tests

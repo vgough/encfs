@@ -9,8 +9,6 @@ add_library (encfs-base
   ConfigVar.cpp
   Error.cpp
   Interface.cpp
-  MemoryPool.cpp
-  readpassphrase.cpp
   XmlReader.cpp
 )
 

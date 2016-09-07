@@ -24,6 +24,8 @@
 #include <string>
 #include <unistd.h>
 
+#include "internal/easylogging++.h"
+
 #include "Cipher.h"
 #include "CipherKey.h"
 #include "openssl.h"

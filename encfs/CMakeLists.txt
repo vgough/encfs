@@ -1,14 +1,14 @@
 include_directories (${CMAKE_SOURCE_DIR}/base)
 link_directories (${CMAKE_SOURCE_DIR}/base)
+include_directories (${CMAKE_SOURCE_DIR}/cipher)
+link_directories (${CMAKE_SOURCE_DIR}/cipher)
 
 include_directories (${CMAKE_BINARY_DIR}/base)
 
 set(SOURCE_FILES
   BlockFileIO.cpp
   BlockNameIO.cpp
-  Cipher.cpp
   CipherFileIO.cpp
-  CipherKey.cpp
   Context.cpp
   DirNode.cpp
   encfs.cpp
@@ -17,11 +17,8 @@ set(SOURCE_FILES
   FileUtils.cpp
   MACFileIO.cpp
   NameIO.cpp
-  NullCipher.cpp
   NullNameIO.cpp
-  openssl.cpp
   RawFileIO.cpp
-  SSL_Cipher.cpp
   StreamNameIO.cpp
 )
 add_library(encfs ${SOURCE_FILES})
@@ -30,6 +27,7 @@ set_target_properties(encfs PROPERTIES
   SOVERSION ${ENCFS_SOVERSION})
 target_link_libraries(encfs
   encfs-base
+  encfs-cipher
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}

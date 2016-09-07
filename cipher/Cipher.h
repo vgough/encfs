@@ -30,7 +30,6 @@
 #include "CipherKey.h"
 #include "Interface.h"
 #include "Range.h"
-#include "encfs.h"
 
 namespace encfs {
 
