@@ -196,7 +196,11 @@ string Cipher::encodeAsString(const CipherKey &key,
   B64ToAscii(b64Key, b64Len);
   b64Key[b64Len - 1] = '\0';
 
-  return string((const char *)b64Key);
+  string str((const char *)b64Key);
+  delete[] b64Key;
+  delete[] keyBuf;
+
+  return str;
 }
 
 }  // namespace encfs
