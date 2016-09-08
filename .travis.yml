@@ -16,9 +16,12 @@ env:
    - secure: "KuAAwjiIqkk4vqSX/M3ZZIvQs6edm+tV8IADiklTUYZIFyxu8FgZ6RbDdMD2sef5bNZA1OZhlcbeRtiKff5CfMtvzc607Lg3NUkpi+ShMynWgqS/e0uCMf9ogEJlUiZMxf4juBi7v6DyMl/WV6pAdJmdfHtzcj8GF2mgTfQjkO8="
 
 before_install:
-  - sudo apt-get update -qq
-  - sudo apt-get install -qq cmake libfuse-dev libgettextpo-dev
-  - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
+  - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca
+  #  - sudo apt-get update -qq
+  #- sudo apt-get install -qq cmake libfuse-dev libgettextpo-dev
+
+install:
+  - if [ "$CXX" = "g++" ]; then export CXX="g++-4.8" CC="gcc-4.8"; fi
 
 before_script:
   - mkdir build
@@ -38,4 +41,14 @@ addons:
     build_command_prepend: "cd build && make clean"
     build_command:   "make -j 4"
     branch_pattern: coverity_scan
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - gcc-4.8
+      - g++-4.8
+      - clang
+      - cmake
+      - libfuse-dev
+      - libgettextpo-dev
 
