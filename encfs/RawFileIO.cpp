@@ -82,7 +82,8 @@ Interface RawFileIO::interface() const { return RawFileIO_iface; }
     be called with a lock around it so that there won't be a race condition
     with calls to lstat picking up the wrong permissions.
 
-    This works around the problem described in https://github.com/vgough/encfs/issues/181
+    This works around the problem described in
+   https://github.com/vgough/encfs/issues/181
     Without this, "umask 0777 ; echo foo > bar" fails.
 */
 static int open_readonly_workaround(const char *path, int flags) {

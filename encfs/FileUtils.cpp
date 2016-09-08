@@ -866,8 +866,9 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
           "performance but it also means [almost] any modifications or errors\n"
           "within a block will be caught and will cause a read error."));
   } else {
-    cout << "\n\n" << _("You specified --require-macs.  "
-                        "Enabling block authentication code headers...")
+    cout << "\n\n"
+         << _("You specified --require-macs.  "
+              "Enabling block authentication code headers...")
          << "\n\n";
     addMAC = true;
   }
@@ -1545,8 +1546,7 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
-      if (config->uniqueIV == false)
-        opts->readOnly = false;
+      if (config->uniqueIV == false) opts->readOnly = false;
     }
 
     // first, instanciate the cipher.

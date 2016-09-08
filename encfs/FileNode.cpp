@@ -100,8 +100,7 @@ static bool setIV(const std::shared_ptr<FileIO> &io, uint64_t iv) {
 bool FileNode::setName(const char *plaintextName_, const char *cipherName_,
                        uint64_t iv, bool setIVFirst) {
   // Lock _lock( mutex );
-  if (cipherName_)
-    VLOG(1) << "calling setIV on " << cipherName_;
+  if (cipherName_) VLOG(1) << "calling setIV on " << cipherName_;
 
   if (setIVFirst) {
     if (fsConfig->config->externalIVChaining && !setIV(io, iv)) return false;

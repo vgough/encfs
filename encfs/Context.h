@@ -81,8 +81,9 @@ class EncFS_Context {
    * us.
    */
 
-  typedef std::unordered_map<
-      std::string, std::forward_list<std::shared_ptr<FileNode>>> FileMap;
+  typedef std::unordered_map<std::string,
+                             std::forward_list<std::shared_ptr<FileNode>>>
+      FileMap;
 
   mutable pthread_mutex_t contextMutex;
   FileMap openFiles;

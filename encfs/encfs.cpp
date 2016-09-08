@@ -220,7 +220,7 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         st.st_ino = inode;
         st.st_mode = fileType << 12;
 
-        // TODO: add offset support.
+// TODO: add offset support.
 #if defined(fuse_fill_dir_flags)
         if (filler(buf, name.c_str(), &st, 0, 0)) break;
 #else
