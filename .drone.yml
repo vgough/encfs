@@ -1,8 +1,0 @@
-image: encfs_worker
-script:
-  - sh devmode -DCMAKE_INSTALL_PREFIX:PATH=/tmp/encfs
-  - cd build
-  - make
-  - make test
-  - make install
-  - /tmp/encfs/bin/encfsctl --version
