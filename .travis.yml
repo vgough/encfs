@@ -1,24 +1,32 @@
+language: cpp
+
+compiler:
+  - gcc
+  - clang
+
+branches:
+  only:
+    - master
+    - coverity_scan
+
 env:
   global:
    # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
    #   via the "travis encrypt" command using the project repo's public key
    - secure: "KuAAwjiIqkk4vqSX/M3ZZIvQs6edm+tV8IADiklTUYZIFyxu8FgZ6RbDdMD2sef5bNZA1OZhlcbeRtiKff5CfMtvzc607Lg3NUkpi+ShMynWgqS/e0uCMf9ogEJlUiZMxf4juBi7v6DyMl/WV6pAdJmdfHtzcj8GF2mgTfQjkO8="
 
-language: cpp
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get install -qq cmake libfuse-dev libgettextpo-dev
+  - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
 
-compiler:
- - gcc
- - clang
+before_script:
+  - sh devmode
+  - cd build
 
--before_install:
- - sudo apt-get install -qq cmake libfuse-dev libgettextpo-dev
- - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
-
--script:
- - sh devmode
- - cd build
- - make
- - ./checkops
+script:
+  - make
+  - ./checkops
 
 addons:
   coverity_scan:
