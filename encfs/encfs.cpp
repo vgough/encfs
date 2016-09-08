@@ -564,8 +564,14 @@ int _do_flush(FileNode *fnode) {
   int res = fnode->open(O_RDONLY);
   if (res >= 0) {
     int fh = res;
-    res = close(dup(fh));
-    if (res == -1) res = -errno;
+    int nfh = dup(fh);
+    if (nfh == -1) {
+      return -errno;
+    }
+    res = close(nfh);
+    if (res == -1) {
+      return -errno;
+    }
   }
 
   return res;
