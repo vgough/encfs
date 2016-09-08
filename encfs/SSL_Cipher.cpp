@@ -250,6 +250,12 @@ SSLKey::SSLKey(int keySize_, int ivLength_) {
   // most likely fails unless we're running as root, or a user-page-lock
   // kernel patch is applied..
   mlock(buffer, keySize + ivLength);
+
+  EVP_CIPHER_CTX_init(&block_enc);
+  EVP_CIPHER_CTX_init(&block_dec);
+  EVP_CIPHER_CTX_init(&stream_enc);
+  EVP_CIPHER_CTX_init(&stream_dec);
+  HMAC_CTX_init(&mac_ctx);
 }
 
 SSLKey::~SSLKey() {
@@ -284,11 +290,6 @@ void initKey(const std::shared_ptr<SSLKey> &key, const EVP_CIPHER *_blockCipher,
   Lock lock(key->mutex);
   // initialize the cipher context once so that we don't have to do it for
   // every block..
-  EVP_CIPHER_CTX_init(&key->block_enc);
-  EVP_CIPHER_CTX_init(&key->block_dec);
-  EVP_CIPHER_CTX_init(&key->stream_enc);
-  EVP_CIPHER_CTX_init(&key->stream_dec);
-
   EVP_EncryptInit_ex(&key->block_enc, _blockCipher, NULL, NULL, NULL);
   EVP_DecryptInit_ex(&key->block_dec, _blockCipher, NULL, NULL, NULL);
   EVP_EncryptInit_ex(&key->stream_enc, _streamCipher, NULL, NULL, NULL);
@@ -309,7 +310,6 @@ void initKey(const std::shared_ptr<SSLKey> &key, const EVP_CIPHER *_blockCipher,
   EVP_EncryptInit_ex(&key->stream_enc, NULL, NULL, KeyData(key), NULL);
   EVP_DecryptInit_ex(&key->stream_dec, NULL, NULL, KeyData(key), NULL);
 
-  HMAC_CTX_init(&key->mac_ctx);
   HMAC_Init_ex(&key->mac_ctx, KeyData(key), _keySize, EVP_sha1(), 0);
 }
 
