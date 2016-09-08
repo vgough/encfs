@@ -2,6 +2,7 @@
 
 _Build Status_
  - Circle: [![Circle CI](https://circleci.com/gh/vgough/encfs.svg?style=svg)](https://circleci.com/gh/vgough/encfs)
+ - Analysis: [![Coverity](https://scan.coverity.com/projects/10117/badge.svg)](https://scan.coverity.com/projects/vgough-encfs)
 
 ## About
 
