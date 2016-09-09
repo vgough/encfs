@@ -3,7 +3,7 @@ language: cpp
 sudo: false
 
 compiler:
-  - gcc
+#  - gcc
   - clang
 
 branches:
