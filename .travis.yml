@@ -42,5 +42,4 @@ addons:
       - clang
       - cmake
       - libfuse-dev
-      - libgettextpo-dev
 

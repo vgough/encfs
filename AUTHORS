@@ -1,8 +1,8 @@
 
-Valient Gough <vgough@pobox.com>
+Primary author: Valient Gough <vgough@pobox.com>
 
+For an up-to-date list of code contributors, see
+https://github.com/vgough/encfs/graphs/contributors
 
-Also, thanks to the work of many contributors, encfs as of 1.1.11 now has
-full or partial translations for many languages.  
-See README-NLS and TRANSLATORS for more details.
+For translations, see README-NLS and https://translations.launchpad.net/encfs/main/
 
