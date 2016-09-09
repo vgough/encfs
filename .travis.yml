@@ -3,7 +3,6 @@ language: cpp
 sudo: false
 
 compiler:
-  - gcc
   - clang
 
 branches:
@@ -18,17 +17,13 @@ env:
    #   via the "travis encrypt" command using the project repo's public key
    - secure: "KuAAwjiIqkk4vqSX/M3ZZIvQs6edm+tV8IADiklTUYZIFyxu8FgZ6RbDdMD2sef5bNZA1OZhlcbeRtiKff5CfMtvzc607Lg3NUkpi+ShMynWgqS/e0uCMf9ogEJlUiZMxf4juBi7v6DyMl/WV6pAdJmdfHtzcj8GF2mgTfQjkO8="
 
-install:
-  - if [ "$CXX" = "g++" ]; then export CXX="g++-4.8" CC="gcc-4.8"; fi
-
 before_script:
   - mkdir build
   - cd build
   - cmake ..
 
 script:
-  - make
-  - ./checkops
+  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make && ./checkops ; fi
 
 addons:
   coverity_scan:
@@ -36,7 +31,7 @@ addons:
       name: "vgough/encfs"
       description: "Build submitted via Travis CI"
     notification_email: vgough@pobox.com
-    build_command_prepend: "cd build && make clean"
+    build_command_prepend: "make clean"
     build_command:   "make -j 4"
     branch_pattern: coverity_scan
 
@@ -44,8 +39,6 @@ addons:
     sources:
       - ubuntu-toolchain-r-test
     packages:
-      - gcc-4.8
-      - g++-4.8
       - clang
       - cmake
       - libfuse-dev
