@@ -27,8 +27,7 @@ before_script:
   - cmake ..
 
 script:
-  - make
-  - ./checkops
+  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make && ./checkops ; fi
 
 addons:
   coverity_scan:
