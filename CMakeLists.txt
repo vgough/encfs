@@ -123,6 +123,11 @@ include_directories (${CMAKE_SOURCE_DIR})
 
 # Translations
 if (ENABLE_NLS)
+  find_package (Intl)
+  if (Intl_FOUND)
+    include_directories (${Intl_INCLUDE_DIRS})
+  endif()
+
   add_subdirectory(po)
 
   add_definitions(-DENABLE_NLS)
@@ -168,6 +173,7 @@ target_link_libraries(encfs
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
+  ${Intl_LIBRARIES}
 )
 if (INSTALL_LIBENCFS)
   install (TARGETS encfs DESTINATION lib)
