@@ -19,6 +19,10 @@ option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
 option (INSTALL_LIBENCFS "install libencfs" OFF)
 
+if (NOT DEFINED LIB_INSTALL_DIR)
+  set (LIB_INSTALL_DIR lib)
+endif ()
+
 # We need C++ 11
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
   # CMake 3.1 has built-in CXX standard checks.
@@ -43,11 +47,11 @@ if (APPLE)
    set(CMAKE_MACOSX_RPATH ON)
    set(CMAKE_SKIP_BUILD_RPATH FALSE)
    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-   set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+   set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-   list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
+   list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}" isSystemDir)
    if("${isSystemDir}" STREQUAL "-1")
-     set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+     set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
    endif()
 endif()
 
@@ -176,7 +180,7 @@ target_link_libraries(encfs
   ${Intl_LIBRARIES}
 )
 if (INSTALL_LIBENCFS)
-  install (TARGETS encfs DESTINATION lib)
+  install (TARGETS encfs DESTINATION ${LIB_INSTALL_DIR})
 endif (INSTALL_LIBENCFS)
 
 if (IWYU)
@@ -191,7 +195,7 @@ endif()
 
 
 # Set RPATH to library install path.
-set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
 
 add_executable (encfs-bin encfs/main.cpp)
 target_link_libraries (encfs-bin encfs)

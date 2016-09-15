@@ -1,6 +1,6 @@
 mkdir build
 cd build
-cmake ..
+cmake .. $@
 make -j4
 sudo checkinstall --install=no \
   --pkgname="encfs" \
