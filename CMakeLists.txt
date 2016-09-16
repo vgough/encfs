@@ -4,9 +4,9 @@ project(EncFS C CXX)
 
 set (ENCFS_MAJOR 1)
 set (ENCFS_MINOR 9)
-set (ENCFS_PATCH 0)
+set (ENCFS_PATCH 1)
 set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}.${ENCFS_PATCH}")
-set (ENCFS_SOVERSION "1.9")
+set (ENCFS_SOVERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}")
 set (ENCFS_NAME "Encrypted Filesystem")
 
 option(IWYU "Build with IWYU analyais." OFF)
