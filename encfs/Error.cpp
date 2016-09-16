@@ -13,6 +13,7 @@ void initLogging(bool enable_debug) {
   defaultConf.setToDefault();
   defaultConf.set(el::Level::Verbose, el::ConfigurationType::Format,
                   std::string("%datetime %level [%fbase:%line] %msg"));
+  defaultConf.set(el::Level::Global, el::ConfigurationType::ToFile, "false");
   if (!enable_debug) {
     defaultConf.set(el::Level::Debug, el::ConfigurationType::Enabled, "false");
   }
