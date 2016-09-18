@@ -136,7 +136,7 @@ static int withFileNode(const char *opName, const char *path,
       return op(fnode);
     };
 
-    if (fi != nullptr)
+    if (fi != nullptr && fi->fh != 0)
       res = do_op(reinterpret_cast<FileNode *>(fi->fh));
     else
       res = do_op(FSRoot->lookupNode(path, opName).get());
