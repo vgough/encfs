@@ -12,7 +12,7 @@ set (ENCFS_NAME "Encrypted Filesystem")
 option(IWYU "Build with IWYU analyais." OFF)
 
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
-  "${CMAKE_SOURCE_DIR}/cmake")
+  "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
@@ -67,7 +67,7 @@ include_directories (${OPENSSL_INCLUDE_DIR})
 if (USE_INTERNAL_TINYXML)
   message("-- Using local TinyXML2 copy")
   add_subdirectory(internal/tinyxml2-3.0.0)
-  include_directories(${CMAKE_SOURCE_DIR}/internal/tinyxml2-3.0.0)
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/internal/tinyxml2-3.0.0)
   link_directories(${CMAKE_BINARY_DIR}/internal/tinyxml2-3.0.0)
   set(TINYXML_LIBRARIES tinyxml2)
 else ()
@@ -120,11 +120,11 @@ set (CPACK_SOURCE_IGNORE_FILES
 include (CPack)
 
 # Compile-time configuration.
-configure_file (${CMAKE_SOURCE_DIR}/config.h.cmake
+configure_file (${CMAKE_CURRENT_LIST_DIR}/config.h.cmake
   ${CMAKE_BINARY_DIR}/config.h)
 
 include_directories (${CMAKE_BINARY_DIR})
-include_directories (${CMAKE_SOURCE_DIR})
+include_directories (${CMAKE_CURRENT_LIST_DIR})
 
 # Translations
 if (ENABLE_NLS)
@@ -216,17 +216,17 @@ target_link_libraries (checkops encfs)
 install (FILES encfs/encfssh DESTINATION bin)
 
 # Reference all headers, to make certain IDEs happy.
-file (GLOB_RECURSE all_headers ${CMAKE_SOURCE_DIR}/*.h)
+file (GLOB_RECURSE all_headers ${CMAKE_CURRENT_LIST_DIR}/*.h)
 add_custom_target (all_placeholder SOURCES ${all_headers})
 
 if (POD2MAN)
   add_custom_target (encfs-man ALL
     COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
-            ${CMAKE_SOURCE_DIR}/encfs/encfs.pod encfs.1)
+            ${CMAKE_CURRENT_LIST_DIR}/encfs/encfs.pod encfs.1)
 
   add_custom_target (encfsctl-man ALL
     COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
-            ${CMAKE_SOURCE_DIR}/encfs/encfsctl.pod encfsctl.1)
+            ${CMAKE_CURRENT_LIST_DIR}/encfs/encfsctl.pod encfsctl.1)
 
   install (FILES ${CMAKE_BINARY_DIR}/encfs.1 ${CMAKE_BINARY_DIR}/encfsctl.1
     DESTINATION share/man/man1)
@@ -241,7 +241,7 @@ find_program (PERL_PROGRAM perl)
 if (PERL_PROGRAM)
   file(GLOB pl_test_files "tests/*.t.pl")
   #add_test (NAME scriptedtests
-  #          COMMAND ${PERL_PROGRAM} -I ${CMAKE_SOURCE_DIR}
+  #          COMMAND ${PERL_PROGRAM} -I ${CMAKE_CURRENT_LIST_DIR}
   #             -MTest::Harness
   #             -e "$$Test::Harness::verbose=1; runtests @ARGV;"
   #             ${pl_test_files})
