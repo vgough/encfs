@@ -175,19 +175,26 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
     cfg.assignKeyData(keyBuf, encodedKeySize);
 
     // save config
-    auto name = std::tmpnam(nullptr);
+    //Creation of a temporary file should be more platform independent. On c++17 we could use std::filesystem.
+    string name = "/tmp/encfstestXXXXXX";
+    int tmpFd = mkstemp(&name[0]);
+    rAssert(-1 != tmpFd);
+    //mkstemp opens the temporary file, but we only need its name -> close it
+    rAssert(0 == close(tmpFd));
     {
-      auto ok = writeV6Config(name, &cfg);
+      auto ok = writeV6Config(name.c_str(), &cfg);
       rAssert(ok == true);
     }
 
     // read back in and check everything..
     EncFSConfig cfg2;
     {
-      auto ok = readV6Config(name, &cfg2, nullptr);
+      auto ok = readV6Config(name.c_str(), &cfg2, nullptr);
       rAssert(ok == true);
     }
-
+    //delete the temporary file where we stored the config
+    rAssert(0 == unlink(name.c_str()));
+    
     // check..
     rAssert(cfg.cipherIface.implements(cfg2.cipherIface));
     rAssert(cfg.keySize == cfg2.keySize);
