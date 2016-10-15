@@ -171,6 +171,13 @@ bool XmlReader::load(const char *fileName) {
   return err == tinyxml2::XML_SUCCESS;
 }
 
+bool XmlReader::load(FILE *file) {
+  pd->doc.reset(new tinyxml2::XMLDocument());
+
+  auto err = pd->doc->LoadFile(file);
+  return err == tinyxml2::XML_SUCCESS;
+}
+
 XmlValuePtr XmlReader::operator[](const char *name) const {
   tinyxml2::XMLNode *node = pd->doc->FirstChildElement(name);
   if (node == NULL) {

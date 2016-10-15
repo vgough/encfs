@@ -148,7 +148,10 @@ bool writeV5Config(const char *configFile, const EncFSConfig *config);
 
 bool readV6Config(const char *configFile, EncFSConfig *config,
                   struct ConfigInfo *);
+bool readV6Config(FILE *configFile, EncFSConfig *config,
+                  struct ConfigInfo *);
 bool writeV6Config(const char *configFile, const EncFSConfig *config);
+bool writeV6Config(FILE *configFile, const EncFSConfig *config);
 
 }  // namespace encfs
 

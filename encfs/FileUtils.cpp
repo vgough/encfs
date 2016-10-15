@@ -263,22 +263,14 @@ ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
  * This format is in use since Apr 13, 2008 (commit 6d081f5c)
  */
 // Read a boost::serialization config file using an Xml reader..
-bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
-  (void)info;
-
-  XmlReader rdr;
-  if (!rdr.load(configFile)) {
-    RLOG(ERROR) << "Failed to load config file " << configFile;
-    return false;
-  }
-
-  XmlValuePtr serialization = rdr["boost_serialization"];
+bool readV6Config(XmlReader *rdr, EncFSConfig *cfg, struct ConfigInfo *) {
+  XmlValuePtr serialization = (*rdr)["boost_serialization"];
   XmlValuePtr config = (*serialization)["cfg"];
   if (!config) {
     config = (*serialization)["config"];
   }
   if (!config) {
-    RLOG(ERROR) << "Unable to find XML configuration in file " << configFile;
+    RLOG(ERROR) << "Unable to find XML configuration in config file ";;
     return false;
   }
 
@@ -344,6 +336,28 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
   }
 
   return true;
+}
+
+bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
+  (void)info;
+
+  XmlReader rdr;
+  if (!rdr.load(configFile)) {
+    RLOG(ERROR) << "Failed to load config file " << configFile;
+    return false;
+  }
+  return readV6Config(&rdr, cfg, info);
+}
+
+bool readV6Config(FILE *configFile, EncFSConfig *cfg, ConfigInfo *info) {
+  (void)info;
+
+  XmlReader rdr;
+  if (!rdr.load(configFile)) {
+    RLOG(ERROR) << "Failed to load config file " << configFile;
+    return false;
+  }
+  return readV6Config(&rdr, cfg, info);
 }
 
 /**
@@ -508,8 +522,9 @@ tinyxml2::XMLElement *addEl<>(tinyxml2::XMLDocument &doc,
   return addEl(doc, parent, name, v.c_str());
 }
 
-bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
-  tinyxml2::XMLDocument doc;
+tinyxml2::XMLDocument *writeV6Config(const EncFSConfig *cfg) {
+  tinyxml2::XMLDocument *docptr = new tinyxml2::XMLDocument();
+  tinyxml2::XMLDocument &doc = *docptr;
 
   // Various static tags are included to make the output compatible with
   // older boost-based readers.
@@ -548,8 +563,18 @@ bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
   addEl(doc, config, "saltData", cfg->salt);
   addEl(doc, config, "kdfIterations", cfg->kdfIterations);
   addEl(doc, config, "desiredKDFDuration", (int)cfg->desiredKDFDuration);
+  return docptr;
+}
 
-  auto err = doc.SaveFile(configFile, false);
+bool writeV6Config(FILE *configFile, const EncFSConfig *cfg) {
+  tinyxml2::XMLDocument *doc = writeV6Config(cfg);
+  auto err = doc->SaveFile(configFile, false);
+  return err == tinyxml2::XML_SUCCESS;
+}
+
+bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
+  tinyxml2::XMLDocument *doc = writeV6Config(cfg);
+  auto err = doc->SaveFile(configFile, false);
   return err == tinyxml2::XML_SUCCESS;
 }
 
