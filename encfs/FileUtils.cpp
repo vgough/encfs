@@ -522,8 +522,8 @@ tinyxml2::XMLElement *addEl<>(tinyxml2::XMLDocument &doc,
   return addEl(doc, parent, name, v.c_str());
 }
 
-tinyxml2::XMLDocument *writeV6Config(const EncFSConfig *cfg) {
-  tinyxml2::XMLDocument *docptr = new tinyxml2::XMLDocument();
+std::shared_ptr<tinyxml2::XMLDocument> writeV6Config(const EncFSConfig *cfg) {
+  std::shared_ptr<tinyxml2::XMLDocument> docptr (new tinyxml2::XMLDocument());
   tinyxml2::XMLDocument &doc = *docptr;
 
   // Various static tags are included to make the output compatible with
@@ -567,13 +567,13 @@ tinyxml2::XMLDocument *writeV6Config(const EncFSConfig *cfg) {
 }
 
 bool writeV6Config(FILE *configFile, const EncFSConfig *cfg) {
-  tinyxml2::XMLDocument *doc = writeV6Config(cfg);
+  std::shared_ptr<tinyxml2::XMLDocument> doc (writeV6Config(cfg));
   auto err = doc->SaveFile(configFile, false);
   return err == tinyxml2::XML_SUCCESS;
 }
 
 bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
-  tinyxml2::XMLDocument *doc = writeV6Config(cfg);
+  std::shared_ptr<tinyxml2::XMLDocument> doc (writeV6Config(cfg));
   auto err = doc->SaveFile(configFile, false);
   return err == tinyxml2::XML_SUCCESS;
 }
