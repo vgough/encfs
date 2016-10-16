@@ -36,6 +36,7 @@
 #include "Interface.h"
 #include "Mutex.h"
 #include "Range.h"
+#include "SSL_Compat.h"
 #include "SSL_Cipher.h"
 #include "intl/gettext.h"
 
