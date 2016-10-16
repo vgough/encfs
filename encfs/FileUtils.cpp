@@ -270,7 +270,7 @@ bool readV6Config(XmlReader *rdr, EncFSConfig *cfg, struct ConfigInfo *) {
     config = (*serialization)["config"];
   }
   if (!config) {
-    RLOG(ERROR) << "Unable to find XML configuration in config file ";;
+    RLOG(ERROR) << "Unable to find XML configuration in config file";
     return false;
   }
 
