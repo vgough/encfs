@@ -132,9 +132,9 @@ tampering, by preventing an attacker from disabling MACs in the config file.
 
 =item B<--reverse>
 
-Normally B<EncFS> provides a plaintext view of data on demand.  Normally it
-stores enciphered data and displays plaintext data.  With B<--reverse> it takes
-as source plaintext data and produces enciphered data on-demand.  This can be
+Normally B<EncFS> provides a plaintext view of data on demand: it stores
+enciphered data and displays plaintext data.  With B<--reverse> it takes as
+source plaintext data and produces enciphered data on-demand.  This can be
 useful for creating remote encrypted backups, where you do not wish to keep the
 local files unencrypted.
 
@@ -431,7 +431,7 @@ be very short in the encoded form, where as block encoded filenames are always
 rounded up to the block size of the encryption cipher (8 bytes for Blowfish and
 16 bytes for AES).
 
-The advantage of block encoding mode is that filename lenths all come out as a
+The advantage of block encoding mode is that filename lengths all come out as a
 multiple of the cipher block size.  This means that someone looking at your
 encrypted data can't tell as much about the length of your filenames.  It is
 on by default, as it takes a similar amount of time to using the stream cipher.
@@ -467,12 +467,12 @@ rename will fail.
 
 B<New in 1.1>.  In previous versions of B<EncFS>, each file was encoded in the
 same way.  Each block in a file has always had its own initialization vector,
-but in a deterministic way so that block N in one file is encoded in the same
-was as block N in another file.  That made it possible for someone to tell if
+but in a deterministic way, so that block N in one file was encoded in the same
+way as block N in another file.  That made it possible for someone to tell if
 two files were identical (or parts of the file were identical) by comparing the
 encoded data.
 
-With per-file initialization vectors, each file gets its own 64bit random
+With per-file initialization vectors, each file gets its own 64-bit random
 initialization vector, so that each file is encrypted in a different way.
 
 This option is enabled by default.

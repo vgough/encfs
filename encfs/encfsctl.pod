@@ -109,7 +109,7 @@ B<encfs> for complete details.
 
 =head1 AUTHORS
 
-EncFS was written by Valient Gough <vgough@pobox.com>.
+B<EncFS> was written by B<< Valient Gough <vgough@pobox.com> >>.
 
 =head1 SEE ALSO
 
