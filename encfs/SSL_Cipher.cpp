@@ -488,19 +488,15 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
 /**
  * Write "len" bytes of random data into "buf"
  *
- * See "man 3 RAND_bytes" for the effect of strongRandom
+ * We ignore the @strongRandom parameter because OpenSSL
+ * does not * offer a "weak" random generator
  */
 bool SSL_Cipher::randomize(unsigned char *buf, int len,
-                           bool strongRandom) const {
+                           bool /*strongRandom*/) const {
   // to avoid warnings of uninitialized data from valgrind
   memset(buf, 0, len);
-  int result;
-  if (strongRandom) {
-    result = RAND_bytes(buf, len);
-  } else {
-    result = RAND_pseudo_bytes(buf, len);
-  }
 
+  int result = RAND_bytes(buf, len);
   if (result != 1) {
     char errStr[120];  // specs require string at least 120 bytes long..
     unsigned long errVal = 0;
