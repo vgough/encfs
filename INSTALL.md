@@ -46,6 +46,8 @@ EncFS depends on a number of libraries:
     * tinyxml2 : for reading and writing XML configuration files
     * gettext : internationalization support
     * libintl : internationalization support
+    * cmake : version 3.2 or newer
+    * GNU make or ninja-build : to run the build for cmake
 
 Compiling on Debian and Ubuntu
 ==============================
@@ -54,3 +56,6 @@ See the automated build static in README.md for current build status on Ubuntu s
 
 The build configuration files (circle.yml) always contains up-to-date
 instructions to build EncFS on Ubuntu distributions.
+
+On Debian Stable, additional installations from Backports branch might be
+required (cmake 3.x for example, see https://backports.debian.org/ for instructions).
