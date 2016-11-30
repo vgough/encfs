@@ -41,7 +41,6 @@
 #include <attr/xattr.h>
 #endif
 
-#include "internal/easylogging++.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -93,20 +92,19 @@ static int withCipherPath(const char *opName, const char *path,
 
   try {
     string cyName = FSRoot->cipherPath(path);
-    VLOG(1) << "op: " << opName << " : " << cyName;
+    LOG->debug("op: {} : {}", opName, cyName);
 
     res = op(ctx, cyName);
 
     if (res == -1) {
       int eno = errno;
-      VLOG(1) << "op: " << opName << " error: " << strerror(eno);
+      LOG->debug("op: {} error: {}", opName, strerror(eno));
       res = -eno;
     } else if (!passReturnCode) {
       res = ESUCCESS;
     }
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "withCipherPath: error caught in " << opName << ": "
-                << err.what();
+    LOG->error("withCipherPath: error caught in {}: {}", opName, err.what());
   }
   return res;
 }
@@ -125,12 +123,12 @@ static int withFileNode(const char *opName, const char *path,
 
     auto do_op = [&FSRoot, opName, &op](FileNode *fnode) {
       rAssert(fnode != nullptr);
-      VLOG(1) << "op: " << opName << " : " << fnode->cipherName();
+      LOG->debug("op: {} : {}", opName, fnode->cipherName());
 
       // check that we're not recursing into the mount point itself
       if (FSRoot->touchesMountpoint(fnode->cipherName())) {
-        VLOG(1) << "op: " << opName << " error: Tried to touch mountpoint: '"
-                << fnode->cipherName() << "'";
+        LOG->debug("op: {} error: Tried to touch mountpoint: '{}''", opName,
+                   fnode->cipherName());
         return -EIO;
       }
       return op(fnode);
@@ -142,11 +140,10 @@ static int withFileNode(const char *opName, const char *path,
       res = do_op(FSRoot->lookupNode(path, opName).get());
 
     if (res < 0) {
-      RLOG(DEBUG) << "op: " << opName << " error: " << strerror(-res);
+      LOG->debug("op: {} error: {}", opName, strerror(-res));
     }
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "withFileNode: error caught in " << opName << ": "
-                << err.what();
+    LOG->error("withFileNode: error caught in {}: {}", opName, err.what());
   }
   return res;
 }
@@ -208,7 +205,7 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
     DirTraverse dt = FSRoot->openDir(path);
 
-    VLOG(1) << "readdir on " << FSRoot->cipherPath(path);
+    LOG->debug("readdir on {}", FSRoot->cipherPath(path));
 
     if (dt.valid()) {
       int fileType = 0;
@@ -230,12 +227,12 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         name = dt.nextPlaintextName(&fileType, &inode);
       }
     } else {
-      VLOG(1) << "readdir request invalid, path: '" << path << "'";
+      LOG->debug("readdir request invalid, path: '{}'", path);
     }
 
     return res;
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "Error caught in readdir";
+    LOG->error("Error caught in readdir");
     return -EIO;
   }
 }
@@ -252,8 +249,7 @@ int encfs_mknod(const char *path, mode_t mode, dev_t rdev) {
   try {
     std::shared_ptr<FileNode> fnode = FSRoot->lookupNode(path, "mknod");
 
-    VLOG(1) << "mknod on " << fnode->cipherName() << ", mode " << mode
-            << ", dev " << rdev;
+    LOG->debug("mknod on {}, mode {}, dev {}", fnode->cipherName(), mode, rdev);
 
     uid_t uid = 0;
     gid_t gid = 0;
@@ -267,7 +263,7 @@ int encfs_mknod(const char *path, mode_t mode, dev_t rdev) {
     if (ctx->publicFilesystem && -res == EACCES) {
       // try again using the parent dir's group
       string parent = fnode->plaintextParent();
-      VLOG(1) << "trying public filesystem workaround for " << parent;
+      LOG->debug("trying public filesystem workaround for {}", parent);
       std::shared_ptr<FileNode> dnode =
           FSRoot->lookupNode(parent.c_str(), "mknod");
 
@@ -276,7 +272,7 @@ int encfs_mknod(const char *path, mode_t mode, dev_t rdev) {
         res = fnode->mknod(mode, rdev, uid, st.st_gid);
     }
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in mknod: " << err.what();
+    LOG->error("error caught in mknod: {}", err.what());
   }
   return res;
 }
@@ -311,7 +307,7 @@ int encfs_mkdir(const char *path, mode_t mode) {
         res = FSRoot->mkdir(path, mode, uid, st.st_gid);
     }
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in mkdir: " << err.what();
+    LOG->error("error caught in mkdir: {}", err.what());
   }
   return res;
 }
@@ -330,7 +326,7 @@ int encfs_unlink(const char *path) {
     // conditions
     res = FSRoot->unlink(path);
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in unlink: " << err.what();
+    LOG->error("error caught in unlink: {}", err.what());
   }
   return res;
 }
@@ -359,7 +355,7 @@ int _do_readlink(EncFS_Context *ctx, const string &cyName, char *buf,
   try {
     decodedName = FSRoot->plainPath(buf);
   } catch (...) {
-    VLOG(1) << "caught error decoding path";
+    LOG->debug("caught error decoding path");
   }
 
   if (!decodedName.empty()) {
@@ -368,7 +364,7 @@ int _do_readlink(EncFS_Context *ctx, const string &cyName, char *buf,
 
     return ESUCCESS;
   } else {
-    RLOG(WARNING) << "Error decoding link";
+    LOG->warn("Error decoding link");
     return -1;
   }
 }
@@ -395,7 +391,7 @@ int encfs_symlink(const char *to, const char *from) {
     // allow fully qualified names in symbolic links.
     string toCName = FSRoot->relativeCipherPath(to);
 
-    VLOG(1) << "symlink " << fromCName << " -> " << toCName;
+    LOG->debug("symlink {} -> {}", fromCName, toCName);
 
     // use setfsuid / setfsgid so that the new link will be owned by the
     // uid/gid provided by the fuse_context.
@@ -415,7 +411,7 @@ int encfs_symlink(const char *to, const char *from) {
     else
       res = ESUCCESS;
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in symlink: " << err.what();
+    LOG->error("error caught in symlink: {}", err.what());
   }
   return res;
 }
@@ -432,7 +428,7 @@ int encfs_link(const char *from, const char *to) {
   try {
     res = FSRoot->link(from, to);
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in link: " << err.what();
+    LOG->error("error caught in link: {}", err.what());
   }
   return res;
 }
@@ -449,7 +445,7 @@ int encfs_rename(const char *from, const char *to) {
   try {
     res = FSRoot->rename(from, to);
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in rename: " << err.what();
+    LOG->error("error caught in rename: {}", err.what());
   }
   return res;
 }
@@ -531,8 +527,8 @@ int encfs_open(const char *path, struct fuse_file_info *file) {
         FSRoot->openNode(path, "open", file->flags, &res);
 
     if (fnode) {
-      VLOG(1) << "encfs_open for " << fnode->cipherName() << ", flags "
-              << file->flags;
+      LOG->debug("encfs_open for {}, flags {}", fnode->cipherName(),
+                 file->flags);
 
       if (res >= 0) {
         file->fh =
@@ -541,7 +537,7 @@ int encfs_open(const char *path, struct fuse_file_info *file) {
       }
     }
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in open: " << err.what();
+    LOG->error("error caught in open: {}", err.what());
   }
 
   return res;
@@ -594,7 +590,7 @@ int encfs_release(const char *path, struct fuse_file_info *finfo) {
     ctx->eraseNode(path, reinterpret_cast<FileNode *>(finfo->fh));
     return ESUCCESS;
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in release: " << err.what();
+    LOG->error("error caught in release: {}", err.what());
     return -EIO;
   }
 }
@@ -642,7 +638,7 @@ int encfs_statfs(const char *path, struct statvfs *st) {
     rAssert(st != NULL);
     string cyName = ctx->rootCipherDir;
 
-    VLOG(1) << "doing statfs of " << cyName;
+    LOG->debug("doing statfs of {}", cyName);
     res = statvfs(cyName.c_str(), st);
     if (!res) {
       // adjust maximum name length..
@@ -650,7 +646,7 @@ int encfs_statfs(const char *path, struct statvfs *st) {
     }
     if (res == -1) res = -errno;
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "error caught in statfs: " << err.what();
+    LOG->error("error caught in statfs: {}", err.what());
   }
   return res;
 }

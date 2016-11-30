@@ -42,7 +42,7 @@ static void clearCache(IORequest &req, int blockSize) {
 
 BlockFileIO::BlockFileIO(int blockSize, const FSConfigPtr &cfg)
     : _blockSize(blockSize), _allowHoles(cfg->config->allowHoles) {
-  CHECK(_blockSize > 1);
+  rAssert(_blockSize > 1);
   _cache.data = new unsigned char[_blockSize];
   _noCache = cfg->opts->noCache;
 }
@@ -59,8 +59,8 @@ BlockFileIO::~BlockFileIO() {
  * returned data as neccessary.
  */
 ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
-  CHECK(req.dataLen <= _blockSize);
-  CHECK(req.offset % _blockSize == 0);
+  rAssert(req.dataLen <= _blockSize);
+  rAssert(req.offset % _blockSize == 0);
 
   /* we can satisfy the request even if _cache.dataLen is too short, because
    * we always request a full block during reads. This just means we are
@@ -113,7 +113,7 @@ bool BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
  * lower layer.
  */
 ssize_t BlockFileIO::read(const IORequest &req) const {
-  CHECK(_blockSize != 0);
+  rAssert(_blockSize != 0);
 
   int partialOffset = req.offset % _blockSize;
   off_t blockNum = req.offset / _blockSize;
@@ -150,7 +150,7 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
       if (readSize <= partialOffset) break;  // didn't get enough bytes
 
       int cpySize = min((size_t)(readSize - partialOffset), size);
-      CHECK(cpySize <= readSize);
+      rAssert(cpySize <= readSize);
 
       // if we read to a temporary buffer, then move the data
       if (blockReq.data != out)
@@ -172,7 +172,7 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
 }
 
 bool BlockFileIO::write(const IORequest &req) {
-  CHECK(_blockSize != 0);
+  rAssert(_blockSize != 0);
 
   off_t fileSize = getSize();
   if (fileSize < 0) return false;
@@ -194,7 +194,7 @@ bool BlockFileIO::write(const IORequest &req) {
     padFile(fileSize, req.offset, forceWrite);
   }
 
-  // check against edge cases where we can just let the base class handle the
+  // rAssert against edge cases where we can just let the base class handle the
   // request as-is..
   if (partialOffset == 0 && req.dataLen <= _blockSize) {
     // if writing a full block.. pretty safe..
@@ -297,7 +297,7 @@ void BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
         cacheWriteOneBlock(req);
       }
     } else
-      VLOG(1) << "optimization: not padding last block";
+      LOG->debug("optimization: not padding last block");
   } else {
     mb = MemoryPool::allocate(_blockSize);
     req.data = mb.data;
@@ -311,7 +311,7 @@ void BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
 
     // 1. req.dataLen == 0, iff oldSize was already a multiple of blocksize
     if (req.dataLen != 0) {
-      VLOG(1) << "padding block " << oldLastBlock;
+      LOG->debug("padding block {}", oldLastBlock);
       memset(mb.data, 0, _blockSize);
       cacheReadOneBlock(req);
       req.dataLen = _blockSize;  // expand to full block size
@@ -322,7 +322,7 @@ void BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
     // 2, pad zero blocks unless holes are allowed
     if (!_allowHoles) {
       for (; oldLastBlock != newLastBlock; ++oldLastBlock) {
-        VLOG(1) << "padding block " << oldLastBlock;
+        LOG->debug("padding block {}", oldLastBlock);
         req.offset = oldLastBlock * _blockSize;
         req.dataLen = _blockSize;
         memset(mb.data, 0, req.dataLen);
@@ -382,8 +382,8 @@ int BlockFileIO::truncateBase(off_t size, FileIO *base) {
 
     if ((rdSz < 0) || (!wrRes)) {
       // rwarning - unlikely to ever occur..
-      RLOG(WARNING) << "truncate failure: read " << rdSz
-                    << " bytes, partial block of " << partialBlock;
+      LOG->warn("truncate failure: read {}  bytes, partial block of ", rdSz,
+                partialBlock);
     }
 
     MemoryPool::release(mb);

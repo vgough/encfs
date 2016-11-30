@@ -20,7 +20,6 @@
 
 #include "StreamNameIO.h"
 
-#include "internal/easylogging++.h"
 #include <cstring>
 
 #include "Cipher.h"
@@ -174,8 +173,8 @@ int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
 
   BUFFER_RESET(tmpBuf);
   if (mac2 != mac) {
-    VLOG(1) << "checksum mismatch: expected " << mac << ", got " << mac2;
-    VLOG(1) << "on decode of " << decodedStreamLen << " bytes";
+    LOG->debug("checksum mismatch: expected {}, got {}", mac, mac2);
+    LOG->debug("on decode of {} bytes", decodedStreamLen);
     throw Error("checksum mismatch in filename decode");
   }
 

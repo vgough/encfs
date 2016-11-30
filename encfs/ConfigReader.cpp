@@ -55,8 +55,8 @@ bool ConfigReader::load(const char *fileName) {
   close(fd);
 
   if (res != size) {
-    RLOG(WARNING) << "Partial read of config file, expecting " << size
-                  << " bytes, got " << res;
+    LOG->warn("Partial read of config file, expecting {} bytes, got {}", size,
+              res);
     delete[] buf;
     return false;
   }
@@ -79,7 +79,7 @@ bool ConfigReader::loadFromVar(ConfigVar &in) {
     in >> key >> value;
 
     if (key.length() == 0) {
-      RLOG(ERROR) << "Invalid key encoding in buffer";
+      LOG->error("Invalid key encoding in buffer");
       return false;
     }
     ConfigVar newVar(value);
@@ -98,11 +98,11 @@ bool ConfigReader::save(const char *fileName) const {
     int retVal = ::write(fd, out.buffer(), out.size());
     close(fd);
     if (retVal != out.size()) {
-      RLOG(ERROR) << "Error writing to config file " << fileName;
+      LOG->error("Error writing to config file {}", fileName);
       return false;
     }
   } else {
-    RLOG(ERROR) << "Unable to open or create file " << fileName;
+    LOG->error("Unable to open or create file {}", fileName);
     return false;
   }
 

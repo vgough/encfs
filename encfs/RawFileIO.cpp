@@ -21,7 +21,6 @@
 #ifdef linux
 #define _XOPEN_SOURCE 500  // pick up pread , pwrite
 #endif
-#include "internal/easylogging++.h"
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -96,7 +95,7 @@ static int open_readonly_workaround(const char *path, int flags) {
     fd = ::open(path, flags);
     chmod(path, stbuf.st_mode);
   } else {
-    RLOG(INFO) << "can't stat file " << path;
+    LOG->info("can't stat file {}", path);
   }
 
   return fd;
@@ -113,13 +112,13 @@ static int open_readonly_workaround(const char *path, int flags) {
 */
 int RawFileIO::open(int flags) {
   bool requestWrite = ((flags & O_RDWR) || (flags & O_WRONLY));
-  VLOG(1) << "open call, requestWrite = " << requestWrite;
+  LOG->debug("open call, requestWrite = {]}", requestWrite);
 
   int result = 0;
 
   // if we have a descriptor and it is writable, or we don't need writable..
   if ((fd >= 0) && (canWrite || !requestWrite)) {
-    VLOG(1) << "using existing file descriptor";
+    LOG->debug("using existing file descriptor");
     result = fd;  // success
   } else {
     int finalFlags = requestWrite ? O_RDWR : O_RDONLY;
@@ -132,17 +131,17 @@ int RawFileIO::open(int flags) {
 
     int newFd = ::open(name.c_str(), finalFlags);
 
-    VLOG(1) << "open file with flags " << finalFlags << ", result = " << newFd;
+    LOG->debug("open file with flags {}, result = {}", finalFlags, newFd);
 
     if ((newFd == -1) && (errno == EACCES)) {
-      VLOG(1) << "using readonly workaround for open";
+      LOG->debug("using readonly workaround for open");
       newFd = open_readonly_workaround(name.c_str(), finalFlags);
     }
 
     if (newFd >= 0) {
       if (oldfd >= 0) {
-        RLOG(ERROR) << "leaking FD?: oldfd = " << oldfd << ", fd = " << fd
-                    << ", newfd = " << newFd;
+        LOG->error("leaking FD?: oldfd = {}, fs = {}, newfd = {}", oldfd, fd,
+                   newFd);
       }
 
       // the old fd might still be in use, so just keep it around for
@@ -152,7 +151,7 @@ int RawFileIO::open(int flags) {
       result = fd = newFd;
     } else {
       result = -errno;
-      RLOG(DEBUG) << "::open error: " << strerror(errno);
+      LOG->debug("::open error: {}", strerror(errno));
     }
   }
 
@@ -164,7 +163,7 @@ int RawFileIO::getAttr(struct stat *stbuf) const {
   int eno = errno;
 
   if (res < 0) {
-    RLOG(DEBUG) << "getAttr error on " << name << ": " << strerror(eno);
+    LOG->debug("getAttr error on {}: {}", name, strerror(eno));
   }
 
   return (res < 0) ? -eno : 0;
@@ -185,7 +184,7 @@ off_t RawFileIO::getSize() const {
       const_cast<RawFileIO *>(this)->knownSize = true;
       return fileSize;
     } else {
-      RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(errno);
+      LOG->error("getSize on {} failed: {}", name, strerror(errno));
       return -1;
     }
   } else {
@@ -199,8 +198,8 @@ ssize_t RawFileIO::read(const IORequest &req) const {
   ssize_t readSize = pread(fd, req.data, req.dataLen, req.offset);
 
   if (readSize < 0) {
-    RLOG(WARNING) << "read failed at offset " << req.offset << " for "
-                  << req.dataLen << " bytes: " << strerror(errno);
+    LOG->warn("read failed at offset {} for {} bytes: {}", req.offset,
+              req.dataLen, strerror(errno));
   }
 
   return readSize;
@@ -220,8 +219,8 @@ bool RawFileIO::write(const IORequest &req) {
 
     if (writeSize < 0) {
       knownSize = false;
-      RLOG(WARNING) << "write failed at offset " << offset << " for " << bytes
-                    << " bytes: " << strerror(errno);
+      LOG->warn("write failed at offset {} for {} bytes: {}", offset, bytes,
+                strerror(errno));
       return false;
     }
 
@@ -232,8 +231,8 @@ bool RawFileIO::write(const IORequest &req) {
   }
 
   if (bytes != 0) {
-    RLOG(ERROR) << "Write error: wrote " << req.dataLen - bytes << " bytes of "
-                << req.dataLen << ", max retries reached";
+    LOG->error("Write error: wrote {} bytes of {}, max retries reached",
+               req.dataLen - bytes, req.dataLen);
     knownSize = false;
     return false;
   } else {
@@ -259,8 +258,8 @@ int RawFileIO::truncate(off_t size) {
 
   if (res < 0) {
     int eno = errno;
-    RLOG(WARNING) << "truncate failed for " << name << " (" << fd << ") size "
-                  << size << ", error " << strerror(eno);
+    LOG->warn("truncate failed for {} ({}) size {}, error {}", name, fd, size,
+              strerror(eno));
     res = -eno;
     knownSize = false;
   } else {

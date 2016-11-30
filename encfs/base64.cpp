@@ -203,7 +203,7 @@ bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inLen) {
   while (in < end) {
     unsigned char v = *in++;
     if (v > 'z') {
-      RLOG(ERROR) << "Invalid character: " << (unsigned int)v;
+      LOG->error("Invalid character: {}", (unsigned int)v);
       return false;
     }
     unsigned char c = d[v];
@@ -212,7 +212,7 @@ bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inLen) {
       case WHITESPACE:
         continue; /* skip whitespace */
       case INVALID:
-        RLOG(ERROR) << "Invalid character: " << (unsigned int)v;
+        LOG->error("Invalid character: {}", (unsigned int)v);
         return false; /* invalid input, return error */
       case EQUALS:    /* pad character, end of data */
         in = end;

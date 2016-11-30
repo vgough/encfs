@@ -38,7 +38,7 @@ XmlValuePtr XmlValue::operator[](const char *path) const { return find(path); }
 
 XmlValuePtr XmlValue::find(const char *path) const {
   // Shouldn't get here.
-  RLOG(ERROR) << "in XmlValue::find for path " << path;
+  LOG->error("in XmlValue::find for path {}", path);
   return XmlValuePtr();
 }
 
@@ -93,13 +93,12 @@ bool XmlValue::readB64(const char *path, unsigned char *data,
 
   int decodedSize = B64ToB256Bytes(s.size());
   if (decodedSize != length) {
-    RLOG(ERROR) << "decoding bytes len " << s.size()
-                << ", expecting output len " << length << ", got "
-                << decodedSize;
+    LOG->error("decoding bytes len {}, expecting output len {}, got {}",
+               s.size(), length, decodedSize);
     return false;
   }
   if (!B64StandardDecode(data, (unsigned char *)s.data(), s.size())) {
-    RLOG(ERROR) << "B64 decode failure on \"" << s << "\"";
+    LOG->error("B64 decode failure on \"{}\"", s);
     return false;
   }
 
@@ -174,13 +173,13 @@ bool XmlReader::load(const char *fileName) {
 XmlValuePtr XmlReader::operator[](const char *name) const {
   tinyxml2::XMLNode *node = pd->doc->FirstChildElement(name);
   if (node == NULL) {
-    RLOG(ERROR) << "Xml node " << name << " not found";
+    LOG->error("Xml node {} not found", name);
     return XmlValuePtr(new XmlValue());
   }
 
   tinyxml2::XMLElement *element = node->ToElement();
   if (element == NULL) {
-    RLOG(ERROR) << "Xml node " << name << " not element";
+    LOG->error("Xml node {} not element", name);
     return XmlValuePtr(new XmlValue());
   }
 

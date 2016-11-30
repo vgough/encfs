@@ -53,8 +53,6 @@ using namespace std;
 using gnu::autosprintf;
 using namespace encfs;
 
-INITIALIZE_EASYLOGGINGPP
-
 static int showInfo(int argc, char **argv);
 static int showVersion(int argc, char **argv);
 static int chpasswd(int argc, char **argv);
@@ -234,7 +232,7 @@ static RootPtr initRootInfo(int &argc, char **&argv) {
         opts->passwordProgram.assign(optarg);
         break;
       default:
-        RLOG(WARNING) << "getopt error: " << res;
+        LOG->warn("getopt error: {}", res);
         break;
     }
   }
@@ -714,7 +712,6 @@ static int ckpasswdAutomaticly(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-  START_EASYLOGGINGPP(argc, argv);
   encfs::initLogging();
 
 #if defined(ENABLE_NLS) && defined(LOCALEDIR)
@@ -733,7 +730,7 @@ int main(int argc, char **argv) {
 
   // Skip over uninteresting args.
   while (argc > 2 && *argv[1] == '-') {
-    VLOG(1) << "skipping arg " << argv[1];
+    LOG->debug("skipping arg {}", argv[1]);
     argc--;
     argv[1] = argv[0];
     argv++;

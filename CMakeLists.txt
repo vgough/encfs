@@ -4,7 +4,7 @@ project(EncFS C CXX)
 
 set (ENCFS_MAJOR 1)
 set (ENCFS_MINOR 9)
-set (ENCFS_PATCH 1)
+set (ENCFS_PATCH 2)
 set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}.${ENCFS_PATCH}")
 set (ENCFS_SOVERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}")
 set (ENCFS_NAME "Encrypted Filesystem")
@@ -64,6 +64,8 @@ add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 find_package (OpenSSL REQUIRED)
 include_directories (${OPENSSL_INCLUDE_DIR})
 
+include_directories (${CMAKE_CURRENT_LIST_DIR}/internal)
+
 if (USE_INTERNAL_TINYXML)
   message("-- Using local TinyXML2 copy")
   add_subdirectory(internal/tinyxml2-3.0.0)
@@ -102,12 +104,10 @@ set (CMAKE_THREAD_PREFER_PTHREAD)
 find_package (Threads REQUIRED)
 
 # Logging.
-add_definitions (-DELPP_THREAD_SAFE -DELPP_DISABLE_DEFAULT_CRASH_HANDLING)
-add_definitions (-DELPP_NO_DEFAULT_LOG_FILE)
 check_include_file_cxx (syslog.h HAVE_SYSLOG_H)
 if (HAVE_SYSLOG_H)
   message ("-- Enabled syslog logging support")
-  add_definitions(-DELPP_SYSLOG)
+  add_definitions(-DSPDLOG_ENABLE_SYSLOG)
 endif (HAVE_SYSLOG_H)
 
 # Packaging config.

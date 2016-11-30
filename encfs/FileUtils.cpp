@@ -18,13 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-// defines needed for RedHat 7.3...
-#ifdef linux
-#define _XOPEN_SOURCE 500  // make sure pwrite() is pulled in
-#endif
-#define _BSD_SOURCE  // pick up setenv on RH7.3
-
-#include "internal/easylogging++.h"
 #include <cctype>
 #include <cerrno>
 #include <cstdio>
@@ -214,11 +207,10 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
         return nm->type;
       }
     } catch (encfs::Error &err) {
-      RLOG(ERROR) << "readConfig error: " << err.what();
+      LOG->error("readConfig error: {}", err.what());
     }
 
-    RLOG(ERROR) << "Found config file " << path
-                << ", but failed to load - exiting";
+    LOG->error("Found config file {}, but failed to load - exiting", path);
     exit(1);
   } else {
     // No load function - must be an unsupported type..
@@ -239,9 +231,9 @@ ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
       char *envFile = getenv(nm->environmentOverride);
       if (envFile != NULL) {
         if (!fileExists(envFile)) {
-          RLOG(ERROR)
-              << "fatal: config file specified by environment does not exist: "
-              << envFile;
+          LOG->error(
+              "fatal: config file specified by environment does not exist: {}",
+              envFile);
           exit(1);
         }
         return readConfig_load(nm, envFile, config);
@@ -268,7 +260,7 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
 
   XmlReader rdr;
   if (!rdr.load(configFile)) {
-    RLOG(ERROR) << "Failed to load config file " << configFile;
+    LOG->error("Failed to load config file {}", configFile);
     return false;
   }
 
@@ -278,34 +270,34 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
     config = (*serialization)["config"];
   }
   if (!config) {
-    RLOG(ERROR) << "Unable to find XML configuration in file " << configFile;
+    LOG->error("Unable to find XML configuration in file {}", configFile);
     return false;
   }
 
   int version;
   if (!config->read("version", &version) &&
       !config->read("@version", &version)) {
-    RLOG(ERROR) << "Unable to find version in config file";
+    LOG->error("Unable to find version in config file");
     return false;
   }
 
   // version numbering was complicated by boost::archive
   if (version == 20 || version >= 20100713) {
-    VLOG(1) << "found new serialization format";
+    LOG->debug("found new serialization format");
     cfg->subVersion = version;
   } else if (version == 26800) {
-    VLOG(1) << "found 20080816 version";
+    LOG->debug("found 20080816 version");
     cfg->subVersion = 20080816;
   } else if (version == 26797) {
-    VLOG(1) << "found 20080813";
+    LOG->debug("found 20080813");
     cfg->subVersion = 20080813;
   } else if (version < V5SubVersion) {
-    RLOG(ERROR) << "Invalid version " << version << " - please fix config file";
+    LOG->error("Invalid version {} - please fix config file", version);
   } else {
-    VLOG(1) << "Boost <= 1.41 compatibility mode";
+    LOG->debug("Boost <= 1.41 compatibility mode");
     cfg->subVersion = version;
   }
-  VLOG(1) << "subVersion = " << cfg->subVersion;
+  LOG->debug("subVersion = {}", cfg->subVersion);
 
   config->read("creator", &cfg->creator);
   config->read("cipherAlg", &cfg->cipherIface);
@@ -363,14 +355,16 @@ bool readV5Config(const char *configFile, EncFSConfig *config,
       if (config->subVersion > info->currentSubVersion) {
         /* config file specifies a version outside our supported
          range..   */
-        RLOG(WARNING) << "Config subversion " << config->subVersion
-                      << " found, which is newer than supported version "
-                      << info->currentSubVersion;
+        LOG->warn(
+            "Config subversion {} found, which is newer than supported version "
+            "{}",
+            config->subVersion, info->currentSubVersion);
         return false;
       }
       if (config->subVersion < 20040813) {
-        RLOG(ERROR) << "This version of EncFS doesn't support "
-                       "filesystems created before 2004-08-13";
+        LOG->error(
+            "This version of EncFS doesn't support "
+            "filesystems created before 2004-08-13");
         return false;
       }
 
@@ -391,8 +385,8 @@ bool readV5Config(const char *configFile, EncFSConfig *config,
 
       ok = true;
     } catch (encfs::Error &err) {
-      RLOG(WARNING) << err.what();
-      VLOG(1) << "Error parsing data in config file " << configFile;
+      LOG->warn(err.what());
+      LOG->debug("Error parsing data in config file {}", configFile);
       ok = false;
     }
   }
@@ -431,8 +425,8 @@ bool readV4Config(const char *configFile, EncFSConfig *config,
 
       ok = true;
     } catch (encfs::Error &err) {
-      RLOG(WARNING) << err.what();
-      VLOG(1) << "Error parsing config file " << configFile;
+      LOG->warn(err.what());
+      LOG->debug("Error parsing config file {}", configFile);
       ok = false;
     }
   }
@@ -457,7 +451,7 @@ bool saveConfig(ConfigType type, const string &rootDir,
       try {
         ok = (*nm->saveFunc)(path.c_str(), config);
       } catch (encfs::Error &err) {
-        RLOG(WARNING) << err.what();
+        LOG->warn(err.what());
         ok = false;
       }
       break;
@@ -956,9 +950,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
   const std::string passwordProgram = opts->passwordProgram;
   bool useStdin = opts->useStdin;
   bool reverseEncryption = opts->reverseEncryption;
-  ConfigMode configMode = (useStdin &&
-                           opts->configMode == Config_Prompt) ? Config_Standard
-                                                              : opts->configMode;
+  ConfigMode configMode = (useStdin && opts->configMode == Config_Prompt)
+                              ? Config_Standard
+                              : opts->configMode;
   bool annotate = opts->annotate;
 
   RootPtr rootInfo;
@@ -1104,8 +1098,8 @@ RootPtr createV6Config(EncFS_Context *ctx,
         alg.name.c_str(), keySize, blockSize);
     return rootInfo;
   } else {
-    VLOG(1) << "Using cipher " << alg.name << ", key size " << keySize
-            << ", block size " << blockSize;
+    LOG->debug("Using cipher {}, key size {}, block size ", alg.name, keySize,
+               blockSize);
   }
 
   std::shared_ptr<EncFSConfig> config(new EncFSConfig);
@@ -1162,7 +1156,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
 
   // get user key and use it to encode volume key
   CipherKey userKey;
-  VLOG(1) << "useStdin: " << useStdin;
+  LOG->debug("useStdin: {}", useStdin);
   if (useStdin) {
     if (annotate) cerr << "$PROMPT$ new_passwd" << endl;
     userKey = config->getUserKey(useStdin);
@@ -1171,8 +1165,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   else
     userKey = config->getNewUserKey();
 
-  if (userKey == nullptr)
-    return rootInfo;
+  if (userKey == nullptr) return rootInfo;
 
   cipher->writeKey(volumeKey, encodedKey, userKey);
   userKey.reset();
@@ -1439,7 +1432,7 @@ CipherKey EncFSConfig::getUserKey(const std::string &passProg,
     perror(_("Internal error: socketpair() failed"));
     return result;
   }
-  VLOG(1) << "getUserKey: fds = " << fds[0] << ", " << fds[1];
+  LOG->debug("getUserKey: fds = {}, {}", fds[0], fds[1]);
 
   pid = fork();
   if (pid == -1) {
@@ -1577,7 +1570,7 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
     CipherKey userKey;
 
     if (opts->passwordProgram.empty()) {
-      VLOG(1) << "useStdin: " << opts->useStdin;
+      LOG->debug("useStdin: {}", opts->useStdin);
       if (opts->annotate) cerr << "$PROMPT$ passwd" << endl;
       userKey = config->getUserKey(opts->useStdin);
     } else
@@ -1585,7 +1578,7 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
 
     if (!userKey) return rootInfo;
 
-    VLOG(1) << "cipher key size = " << cipher->encodedKeySize();
+    LOG->debug("cipher key size = {}", cipher->encodedKeySize());
     // decode volume key..
     CipherKey volumeKey =
         cipher->readKey(config->getKeyData(), userKey, opts->checkKey);
@@ -1639,14 +1632,14 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
 }
 
 int remountFS(EncFS_Context *ctx) {
-  VLOG(1) << "Attempting to reinitialize filesystem";
+  LOG->debug("Attempting to reinitialize filesystem");
 
   RootPtr rootInfo = initFS(ctx, ctx->opts);
   if (rootInfo) {
     ctx->setRoot(rootInfo->root);
     return 0;
   } else {
-    RLOG(WARNING) << "Remount failed";
+    LOG->warn("Remount failed");
     return -EACCES;
   }
 }

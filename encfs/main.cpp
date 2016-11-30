@@ -58,8 +58,6 @@ using namespace std;
 using namespace encfs;
 using gnu::autosprintf;
 
-INITIALIZE_EASYLOGGINGPP
-
 namespace encfs {
 
 class DirNode;
@@ -342,9 +340,9 @@ static bool processArgs(int argc, char *argv[],
         out->opts->passwordProgram.assign(optarg);
         break;
       case 'P':
-        if (geteuid() != 0)
-          RLOG(WARNING) << "option '--public' ignored for non-root user";
-        else {
+        if (geteuid() != 0) {
+          cerr << _("option '--public' ignored for non-root user");
+        } else {
           out->opts->ownerCreate = true;
           // add 'allow_other' option
           // add 'default_permissions' option (default)
@@ -368,7 +366,7 @@ static bool processArgs(int argc, char *argv[],
         // missing parameter for option..
         break;
       default:
-        RLOG(WARNING) << "getopt error: " << res;
+        LOG->warn("getopt error: {}", res);
         break;
     }
   }
@@ -493,25 +491,24 @@ void *encfs_init(fuse_conn_info *conn) {
 
   if (ctx->args->isDaemon) {
     // Switch to using syslog.
-    encfs::rlogAction = el::base::DispatchAction::SysLog;
+    encfs::enable_syslog();
   }
 
   // if an idle timeout is specified, then setup a thread to monitor the
   // filesystem.
   if (ctx->args->idleTimeout > 0) {
-    VLOG(1) << "starting idle monitoring thread";
+    LOG->debug("starting idle monitoring thread");
     ctx->running = true;
 
     int res = pthread_create(&ctx->monitorThread, 0, idleMonitor, (void *)ctx);
     if (res != 0) {
-      RLOG(ERROR) << "error starting idle monitor thread, "
-                     "res = "
-                  << res << ", errno = " << errno;
+      LOG->error("error starting idle monitor thread, res = {}, errno = {}",
+                 res, errno);
     }
   }
 
   if (ctx->args->isDaemon && oldStderr >= 0) {
-    VLOG(1) << "Closing stderr";
+    LOG->debug("Closing stderr");
     close(oldStderr);
     oldStderr = -1;
   }
@@ -539,14 +536,10 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  if (encfsArgs->isVerbose) {
-    el::Loggers::setVerboseLevel(1);
-  }
-
   encfs::initLogging(encfsArgs->isVerbose);
 
-  VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
-  VLOG(1) << "Fuse arguments: " << encfsArgs->toString();
+  LOG->debug("Root directory: {}", encfsArgs->opts->rootDir);
+  LOG->debug("Fuse arguments: {}", encfsArgs->toString());
 
   fuse_operations encfs_oper;
   // in case this code is compiled against a newer FUSE library and new
@@ -669,22 +662,22 @@ int main(int argc, char *argv[]) {
         fclose(out);
       }
     } catch (std::exception &ex) {
-      RLOG(ERROR) << "Internal error: Caught exception from main loop: "
-                  << ex.what();
+      LOG->error("Internal error: Caught exception from main loop: {}",
+                 ex.what());
     } catch (...) {
-      RLOG(ERROR) << "Internal error: Caught unexpected exception";
+      LOG->error("Internal error: Caught unexpected exception");
     }
 
     if (ctx->args->idleTimeout > 0) {
       ctx->running = false;
       // wake up the thread if it is waiting..
-      VLOG(1) << "waking up monitoring thread";
+      LOG->debug("waking up monitoring thread");
       pthread_mutex_lock(&ctx->wakeupMutex);
       pthread_cond_signal(&ctx->wakeupCond);
       pthread_mutex_unlock(&ctx->wakeupMutex);
-      VLOG(1) << "joining with idle monitoring thread";
+      LOG->debug("joining with idle monitoring thread");
       pthread_join(ctx->monitorThread, 0);
-      VLOG(1) << "join done";
+      LOG->debug("join done");
     }
   }
 
@@ -734,14 +727,13 @@ static void *idleMonitor(void *_arg) {
           break;
         }
       } else {
-        RLOG(WARNING) << "Filesystem " << arg->opts->mountPoint
-                      << " inactivity detected, but still " << openCount
-                      << " opened files";
+        LOG->warn("Filesystem {} inactivity detected, but still {} open files",
+                  arg->opts->mountPoint, openCount);
       }
     }
 
-    VLOG(1) << "idle cycle count: " << idleCycles << ", timeout after "
-            << timeoutCycles;
+    LOG->debug("idle cycle count: {}, timeout after {}", idleCycles,
+               timeoutCycles);
 
     struct timeval currentTime;
     gettimeofday(&currentTime, 0);
@@ -753,7 +745,7 @@ static void *idleMonitor(void *_arg) {
 
   pthread_mutex_unlock(&ctx->wakeupMutex);
 
-  VLOG(1) << "Idle monitoring thread exiting";
+  LOG->debug("Idle monitoring thread exiting");
 
   return 0;
 }
@@ -761,15 +753,15 @@ static void *idleMonitor(void *_arg) {
 static bool unmountFS(EncFS_Context *ctx) {
   std::shared_ptr<EncFS_Args> arg = ctx->args;
   if (arg->opts->mountOnDemand) {
-    VLOG(1) << "Detaching filesystem due to inactivity: "
-            << arg->opts->mountPoint;
+    LOG->debug("Detaching filesystem due to inactivity: {}",
+               arg->opts->mountPoint);
 
     ctx->setRoot(std::shared_ptr<DirNode>());
     return false;
   } else {
     // Time to unmount!
-    RLOG(WARNING) << "Unmounting filesystem due to inactivity: "
-                  << arg->opts->mountPoint;
+    LOG->warn("Unmounting filesystem due to inactivity: {},",
+              arg->opts->mountPoint);
     fuse_unmount(arg->opts->mountPoint.c_str());
     return true;
   }

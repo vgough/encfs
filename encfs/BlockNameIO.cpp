@@ -29,7 +29,6 @@
 #include "Interface.h"
 #include "NameIO.h"
 #include "base64.h"
-#include "internal/easylogging++.h"
 #include "intl/gettext.h"
 
 namespace encfs {
@@ -187,7 +186,7 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
 
   // don't bother trying to decode files which are too small
   if (decodedStreamLen < _bs) {
-    VLOG(1) << "Rejecting filename " << encodedName;
+    LOG->debug("Rejecting filename {}", encodedName);
     throw Error("Filename too small to decode");
   }
 
@@ -218,8 +217,7 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
 
   // might happen if there is an error decoding..
   if (padding > _bs || finalSize < 0) {
-    VLOG(1) << "padding, _bx, finalSize = " << padding << ", " << _bs << ", "
-            << finalSize;
+    LOG->debug("padding, _bx, finalSize = {}, {}, {}", padding, _bs, finalSize);
     throw Error("invalid padding size");
   }
 
@@ -235,8 +233,8 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
   BUFFER_RESET(tmpBuf);
 
   if (mac2 != mac) {
-    VLOG(1) << "checksum mismatch: expected " << mac << ", got " << mac2
-            << " on decode of " << finalSize << " bytes";
+    LOG->debug("checksum mismatch: expected {}, got {} on decode of {} bytes",
+               mac, mac2, finalSize);
     throw Error("checksum mismatch in filename decode");
   }
 

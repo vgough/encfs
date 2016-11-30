@@ -1,23 +1,29 @@
 #include "Error.h"
+#include <sys/syslog.h>
 
 namespace encfs {
-
-el::base::DispatchAction rlogAction = el::base::DispatchAction::NormalLog;
 
 Error::Error(const char *msg) : runtime_error(msg) {}
 
 void initLogging(bool enable_debug) {
-  el::Loggers::addFlag(el::LoggingFlag::ColoredTerminalOutput);
+  // Multithreaded console logger(with color support)
+  auto console = spdlog::stdout_color_mt("global");
 
-  el::Configurations defaultConf;
-  defaultConf.setToDefault();
-  defaultConf.set(el::Level::Verbose, el::ConfigurationType::Format,
-                  std::string("%datetime %level [%fbase:%line] %msg"));
-  defaultConf.set(el::Level::Global, el::ConfigurationType::ToFile, "false");
-  if (!enable_debug) {
-    defaultConf.set(el::Level::Debug, el::ConfigurationType::Enabled, "false");
+  if (enable_debug) {
+    console->set_level(spdlog::level::debug);
+  } else {
+    console->set_level(spdlog::level::info);
   }
-  el::Loggers::reconfigureLogger("default", defaultConf);
+}
+
+void enable_syslog() {
+  spdlog::drop("global");
+  std::string ident = "encfs";
+#ifdef SPDLOG_ENABLE_SYSLOG
+  auto logger = spdlog::syslog_logger("global", ident, LOG_PID);
+#else
+  LOG->info("syslog not supported")
+#endif
 }
 
 }  // namespace encfs

@@ -20,7 +20,6 @@
 
 #include "MACFileIO.h"
 
-#include "internal/easylogging++.h"
 #include <cstring>
 #include <inttypes.h>
 #include <sys/stat.h>
@@ -67,9 +66,9 @@ MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
       warnOnly(cfg->opts->forceDecode) {
   rAssert(macBytes >= 0 && macBytes <= 8);
   rAssert(randBytes >= 0);
-  VLOG(1) << "fs block size = " << cfg->config->blockSize
-          << ", macBytes = " << cfg->config->blockMACBytes
-          << ", randBytes = " << cfg->config->blockMACRandBytes;
+  LOG->debug("fs block size = {}, macBytes = {}, randBytes = {}",
+             cfg->config->blockSize, cfg->config->blockMACBytes,
+             cfg->config->blockMACRandBytes);
 }
 
 MACFileIO::~MACFileIO() {}
@@ -187,7 +186,7 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
       if (fail > 0) {
         // uh oh..
         long blockNum = req.offset / bs;
-        RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
+        LOG->warn("MAC comparison failure in block {}", blockNum);
         if (!warnOnly) {
           MemoryPool::release(mb);
           throw Error(_("MAC comparison failure, refusing to read"));
@@ -199,7 +198,7 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
     readSize -= headerSize;
     memcpy(req.data, tmp.data + headerSize, readSize);
   } else {
-    VLOG(1) << "readSize " << readSize << " at offset " << req.offset;
+    LOG->debug("readSize {} at offset {}", readSize, req.offset);
     if (readSize > 0) readSize = 0;
   }
 

@@ -38,7 +38,6 @@
 #include "NameIO.h"
 #include "Range.h"
 #include "StreamNameIO.h"
-#include "internal/easylogging++.h"
 
 #define NO_DES
 #include <openssl/ssl.h>
@@ -48,8 +47,6 @@
 
 using namespace std;
 using namespace encfs;
-
-INITIALIZE_EASYLOGGINGPP
 
 const int FSBlockSize = 256;
 
@@ -138,8 +135,9 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
   }
   CipherKey key = cipher->newRandomKey();
 
-  if (verbose) cerr << "Testing key save / restore :";
   {
+    if (verbose) cerr << "Testing key save / restore :";
+
     CipherKey encodingKey = cipher->newRandomKey();
     int encodedKeySize = cipher->encodedKeySize();
     unsigned char keyBuf[encodedKeySize];
@@ -159,8 +157,9 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
     }
   }
 
-  if (verbose) cerr << "Testing Config interface load / store :";
   {
+    if (verbose) cerr << "Testing Config interface load / store :";
+
     CipherKey encodingKey = cipher->newRandomKey();
     int encodedKeySize = cipher->encodedKeySize();
     unsigned char keyBuf[encodedKeySize];
@@ -175,11 +174,12 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
     cfg.assignKeyData(keyBuf, encodedKeySize);
 
     // save config
-    //Creation of a temporary file should be more platform independent. On c++17 we could use std::filesystem.
+    // Creation of a temporary file should be more platform independent. On
+    // c++17 we could use std::filesystem.
     string name = "/tmp/encfstestXXXXXX";
     int tmpFd = mkstemp(&name[0]);
     rAssert(-1 != tmpFd);
-    //mkstemp opens the temporary file, but we only need its name -> close it
+    // mkstemp opens the temporary file, but we only need its name -> close it
     rAssert(0 == close(tmpFd));
     {
       auto ok = writeV6Config(name.c_str(), &cfg);
@@ -192,9 +192,9 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
       auto ok = readV6Config(name.c_str(), &cfg2, nullptr);
       rAssert(ok == true);
     }
-    //delete the temporary file where we stored the config
+    // delete the temporary file where we stored the config
     rAssert(0 == unlink(name.c_str()));
-    
+
     // check..
     rAssert(cfg.cipherIface.implements(cfg2.cipherIface));
     rAssert(cfg.keySize == cfg2.keySize);
@@ -222,9 +222,10 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
   fsCfg->config.reset(new EncFSConfig);
   fsCfg->config->blockSize = FSBlockSize;
 
-  if (verbose)
-    cerr << "Testing name encode/decode (stream coding w/ IV chaining)\n";
   {
+    if (verbose)
+      cerr << "Testing name encode/decode (stream coding w/ IV chaining)\n";
+
     fsCfg->opts.reset(new EncFS_Opts);
     fsCfg->opts->idleTracking = false;
     fsCfg->config->uniqueIV = false;
@@ -238,9 +239,10 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
     if (!testNameCoding(dirNode, verbose)) return false;
   }
 
-  if (verbose)
-    cerr << "Testing name encode/decode (block coding w/ IV chaining)\n";
   {
+    if (verbose)
+      cerr << "Testing name encode/decode (block coding w/ IV chaining)\n";
+
     fsCfg->opts->idleTracking = false;
     fsCfg->config->uniqueIV = false;
     fsCfg->nameCoding.reset(new BlockNameIO(BlockNameIO::CurrentInterface(),
@@ -253,10 +255,11 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
     if (!testNameCoding(dirNode, verbose)) return false;
   }
 
-  if (verbose)
-    cerr
-        << "Testing name encode/decode (block coding w/ IV chaining, base32)\n";
   {
+    if (verbose)
+      cerr << "Testing name encode/decode (block coding w/ IV chaining, "
+              "base32)\n";
+
     fsCfg->opts->idleTracking = false;
     fsCfg->config->uniqueIV = false;
     fsCfg->nameCoding.reset(new BlockNameIO(BlockNameIO::CurrentInterface(),
@@ -294,8 +297,9 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
     }
   }
 
-  if (verbose) cerr << "Testing block encode/decode on full block -  ";
   {
+    if (verbose) cerr << "Testing block encode/decode on full block -  ";
+
     int numErrors = checkErrorPropogation(cipher, FSBlockSize, -1, key);
     if (numErrors) {
       if (verbose) cerr << " FAILED!\n";
@@ -304,8 +308,9 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
       if (verbose) cerr << " OK\n";
     }
   }
-  if (verbose) cerr << "Testing block encode/decode on partial block -  ";
   {
+    if (verbose) cerr << "Testing block encode/decode on partial block -  ";
+
     int numErrors = checkErrorPropogation(cipher, FSBlockSize - 1, -1, key);
     if (numErrors) {
       if (verbose) cerr << " FAILED!\n";
@@ -315,8 +320,9 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
     }
   }
 
-  if (verbose) cerr << "Checking error propogation in partial block:\n";
   {
+    if (verbose) cerr << "Checking error propogation in partial block:\n";
+
     int minChanges = FSBlockSize - 1;
     int maxChanges = 0;
     int minAt = 0;
@@ -341,8 +347,9 @@ bool runTests(const std::shared_ptr<Cipher> &cipher, bool verbose) {
            << maxAt << "\n";
     }
   }
-  if (verbose) cerr << "Checking error propogation on full block:\n";
   {
+    if (verbose) cerr << "Checking error propogation on full block:\n";
+
     int minChanges = FSBlockSize;
     int maxChanges = 0;
     int minAt = 0;
@@ -397,7 +404,6 @@ static bool testCipherSize(const string &name, int keySize, int blockSize,
 }
 
 int main(int argc, char *argv[]) {
-  START_EASYLOGGINGPP(argc, argv);
   encfs::initLogging();
 
   SSL_load_error_strings();

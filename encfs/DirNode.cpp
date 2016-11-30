@@ -27,6 +27,7 @@
 #include <utime.h>
 
 #include "DirNode.h"
+#include "Error.h"
 #include "FSConfig.h"
 #include "FileNode.h"
 #include "FileUtils.h"
@@ -35,11 +36,9 @@
 #include <sys/fsuid.h>
 #endif
 
-#include "internal/easylogging++.h"
 #include <cstring>
 
 #include "Context.h"
-#include "Error.h"
 #include "Mutex.h"
 
 using namespace std;
@@ -101,7 +100,7 @@ std::string DirTraverse::nextPlaintextName(int *fileType, ino_t *inode) {
       return naming->decodePath(de->d_name, &localIv);
     } catch (encfs::Error &ex) {
       // .. .problem decoding, ignore it and continue on to next name..
-      VLOG(1) << "error decoding filename: " << de->d_name;
+      LOG->debug("error decoding filename: {}", de->d_name);
     }
   }
 
@@ -175,7 +174,7 @@ bool RenameOp::apply() {
   try {
     while (last != renameList->end()) {
       // backing store rename.
-      VLOG(1) << "renaming " << last->oldCName << " -> " << last->newCName;
+      LOG->debug("renaming {} -> {}", last->oldCName, last->newCName);
 
       struct stat st;
       bool preserve_mtime = ::stat(last->oldCName.c_str(), &st) == 0;
@@ -185,8 +184,7 @@ bool RenameOp::apply() {
 
       // rename on disk..
       if (::rename(last->oldCName.c_str(), last->newCName.c_str()) == -1) {
-        RLOG(WARNING) << "Error renaming " << last->oldCName << ": "
-                      << strerror(errno);
+        LOG->warn("Error renaming {}: {}", last->oldCName, strerror(errno));
         dn->renameNode(last->newPName.c_str(), last->oldPName.c_str(), false);
         return false;
       }
@@ -203,16 +201,16 @@ bool RenameOp::apply() {
 
     return true;
   } catch (encfs::Error &err) {
-    RLOG(WARNING) << err.what();
+    LOG->warn(err.what());
     return false;
   }
 }
 
 void RenameOp::undo() {
-  VLOG(1) << "in undoRename";
+  LOG->debug("in undoRename");
 
   if (last == renameList->begin()) {
-    VLOG(1) << "nothing to undo";
+    LOG->debug("nothing to undo");
     return;  // nothing to undo
   }
 
@@ -224,19 +222,19 @@ void RenameOp::undo() {
   while (it != renameList->begin()) {
     --it;
 
-    VLOG(1) << "undo: renaming " << it->newCName << " -> " << it->oldCName;
+    LOG->debug("undo: renaming {} -> {}", it->newCName, it->oldCName);
 
     ::rename(it->newCName.c_str(), it->oldCName.c_str());
     try {
       dn->renameNode(it->newPName.c_str(), it->oldPName.c_str(), false);
     } catch (encfs::Error &err) {
-      RLOG(WARNING) << err.what();
+      LOG->warn(err.what());
       // continue on anyway...
     }
     ++undoCount;
   };
 
-  RLOG(WARNING) << "Undo rename count: " << undoCount;
+  LOG->warn("Undo rename count: {}", undoCount);
 }
 
 DirNode::DirNode(EncFS_Context *_ctx, const string &sourceDir,
@@ -329,7 +327,7 @@ string DirNode::plainPath(const char *cipherPath_) {
     // Default.
     return naming->decodePath(cipherPath_);
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "decode err: " << err.what();
+    LOG->error("decode err: {}", err.what());
     return string();
   }
 }
@@ -345,7 +343,7 @@ string DirNode::relativeCipherPath(const char *plaintextPath) {
 
     return naming->encodePath(plaintextPath);
   } catch (encfs::Error &err) {
-    RLOG(ERROR) << "encode err: " << err.what();
+    LOG->error("encode err: {}", err.what());
     return string();
   }
 }
@@ -355,7 +353,7 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
 
   DIR *dir = ::opendir(cyName.c_str());
   if (dir == NULL) {
-    VLOG(1) << "opendir error " << strerror(errno);
+    LOG->debug("opendir error: {}", strerror(errno));
     return DirTraverse(shared_ptr<DIR>(), 0, std::shared_ptr<NameIO>());
   } else {
     std::shared_ptr<DIR> dp(dir, DirDeleter());
@@ -366,7 +364,7 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
     try {
       if (naming->getChainedNameIV()) naming->encodePath(plaintextPath, &iv);
     } catch (encfs::Error &err) {
-      RLOG(ERROR) << "encode err: " << err.what();
+      LOG->error("encode err: {}", err.what());
     }
     return DirTraverse(dp, iv, naming);
   }
@@ -387,7 +385,7 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
   if (fromIV == toIV) return true;
 
   // generate the real destination path, where we expect to find the files..
-  VLOG(1) << "opendir " << sourcePath;
+  LOG->debug("opendir {}", sourcePath);
   std::shared_ptr<DIR> dir =
       std::shared_ptr<DIR>(opendir(sourcePath.c_str()), DirDeleter());
   if (!dir) return false;
@@ -449,15 +447,15 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
         }
       }
 
-      VLOG(1) << "adding file " << oldFull << " to rename list";
+      LOG->debug("adding file {} to rename list", oldFull);
 
       renameList.push_back(ren);
     } catch (encfs::Error &err) {
       // We can't convert this name, because we don't have a valid IV for
       // it (or perhaps a valid key).. It will be inaccessible..
-      RLOG(WARNING) << "Aborting rename: error on file: "
-                    << fromCPart.append(1, '/').append(de->d_name);
-      RLOG(WARNING) << err.what();
+      LOG->warn("Aborting rename: error on file: {}",
+                fromCPart.append(1, '/').append(de->d_name));
+      LOG->warn(err.what());
 
       // abort.. Err on the side of safety and disallow rename, rather
       // then loosing files..
@@ -481,7 +479,7 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
   // Undo everything if we encounter an error!
   std::shared_ptr<list<RenameEl> > renameList(new list<RenameEl>);
   if (!genRenameList(*renameList.get(), fromP, toP)) {
-    RLOG(WARNING) << "Error during generation of recursive rename list";
+    LOG->warn("Error during generation of recursive rename list");
     return std::shared_ptr<RenameOp>();
   } else
     return std::shared_ptr<RenameOp>(new RenameOp(this, renameList));
@@ -492,7 +490,7 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
   string cyName = rootDir + naming->encodePath(plaintextPath);
   rAssert(!cyName.empty());
 
-  VLOG(1) << "mkdir on " << cyName;
+  LOG->debug("mkdir on {}", cyName);
 
   // if uid or gid are set, then that should be the directory owner
   int olduid = -1;
@@ -507,8 +505,7 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
 
   if (res == -1) {
     int eno = errno;
-    RLOG(WARNING) << "mkdir error on " << cyName << " mode " << mode << ": "
-                  << strerror(eno);
+    LOG->warn("mkdir error on {} mode {}: {}", cyName, mode, strerror(eno));
     res = -eno;
   } else
     res = 0;
@@ -524,22 +521,22 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
   rAssert(!fromCName.empty());
   rAssert(!toCName.empty());
 
-  VLOG(1) << "rename " << fromCName << " -> " << toCName;
+  LOG->debug("rename {} -> {}", fromCName, toCName);
 
   std::shared_ptr<FileNode> toNode = findOrCreate(toPlaintext);
 
   std::shared_ptr<RenameOp> renameOp;
   if (hasDirectoryNameDependency() && isDirectory(fromCName.c_str())) {
-    VLOG(1) << "recursive rename begin";
+    LOG->debug("recursive rename begin");
     renameOp = newRenameOp(fromPlaintext, toPlaintext);
 
     if (!renameOp || !renameOp->apply()) {
       if (renameOp) renameOp->undo();
 
-      RLOG(WARNING) << "rename aborted";
+      LOG->warn("rename aborted");
       return -EACCES;
     }
-    VLOG(1) << "recursive rename end";
+    LOG->debug("recursive rename end");
   }
 
   int res = 0;
@@ -564,12 +561,12 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
     }
   } catch (encfs::Error &err) {
     // exception from renameNode, just show the error and continue..
-    RLOG(WARNING) << err.what();
+    LOG->warn(err.what());
     res = -EIO;
   }
 
   if (res != 0) {
-    VLOG(1) << "rename failed: " << strerror(errno);
+    LOG->debug("rename failed: {}", strerror(errno));
     res = -errno;
   }
 
@@ -585,11 +582,11 @@ int DirNode::link(const char *from, const char *to) {
   rAssert(!fromCName.empty());
   rAssert(!toCName.empty());
 
-  VLOG(1) << "link " << fromCName << " -> " << toCName;
+  LOG->debug("link {} -> {}", fromCName, toCName);
 
   int res = -EPERM;
   if (fsConfig->config->externalIVChaining) {
-    VLOG(1) << "hard links not supported with external IV chaining!";
+    LOG->debug("hard links not supported with external IV chaining!");
   } else {
     res = ::link(fromCName.c_str(), toCName.c_str());
     if (res == -1)
@@ -616,14 +613,13 @@ std::shared_ptr<FileNode> DirNode::renameNode(const char *from, const char *to,
     uint64_t newIV = 0;
     string cname = rootDir + naming->encodePath(to, &newIV);
 
-    VLOG(1) << "renaming internal node " << node->cipherName() << " -> "
-            << cname;
+    LOG->debug("renaming internal node {} -> {}", node->cipherName(), cname);
 
     if (node->setName(to, cname.c_str(), newIV, forwardMode)) {
       if (ctx) ctx->renameNode(from, to);
     } else {
       // rename error! - put it back
-      RLOG(ERROR) << "renameNode failed";
+      LOG->error("renameNode failed");
       throw Error("Internal node name change failed!");
     }
   }
@@ -641,7 +637,7 @@ std::shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
 
     if (fsConfig->config->externalIVChaining) node->setName(0, 0, iv);
 
-    VLOG(1) << "created FileNode for " << node->cipherName();
+    LOG->debug("created FileNode for {}", node->cipherName());
   }
 
   return node;
@@ -674,7 +670,7 @@ shared_ptr<FileNode> DirNode::lookupNode(const char *plainName,
 
 int DirNode::unlink(const char *plaintextName) {
   string cyName = naming->encodePath(plaintextName);
-  VLOG(1) << "unlink " << cyName;
+  LOG->debug("unlink {}", cyName);
 
   Lock _lock(mutex);
 
@@ -683,16 +679,17 @@ int DirNode::unlink(const char *plaintextName) {
     // If FUSE is running with "hard_remove" option where it doesn't
     // hide open files for us, then we can't allow an unlink of an open
     // file..
-    RLOG(WARNING) << "Refusing to unlink open file: " << cyName
-                  << ", hard_remove option "
-                     "is probably in effect";
+    LOG->warn(
+        "Refusing to unlink open file: {}, "
+        ", hard_remove option is probably in effect",
+        cyName);
     res = -EBUSY;
   } else {
     string fullName = rootDir + cyName;
     res = ::unlink(fullName.c_str());
     if (res == -1) {
       res = -errno;
-      VLOG(1) << "unlink error: " << strerror(errno);
+      LOG->debug("unlink error: {}", strerror(errno));
     }
   }
 

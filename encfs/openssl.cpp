@@ -44,7 +44,7 @@ void pthreads_locking_callback(int mode, int n, const char *caller_file,
   (void)caller_line;
 
   if (!crypto_locks) {
-    VLOG(1) << "Allocating " << CRYPTO_num_locks() << " locks for OpenSSL";
+    LOG->debug("Allocating {} locks for OpenSSL", CRYPTO_num_locks());
     crypto_locks = new pthread_mutex_t[CRYPTO_num_locks()];
     for (int i = 0; i < CRYPTO_num_locks(); ++i)
       pthread_mutex_init(crypto_locks + i, 0);

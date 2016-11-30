@@ -107,9 +107,8 @@ static int diffSum(const Interface &A, const Interface &B) {
 const int EqualVersion = (1 * 3 + 1) * 3 + 1;
 
 bool Interface::implements(const Interface &B) const {
-  VLOG(1) << "checking if " << name() << "(" << current() << ":" << revision()
-          << ":" << age() << ") implements " << B.name() << "(" << B.current()
-          << ":" << B.revision() << ")";
+  LOG->debug("checking if {} ({}:{}:{}) implements {} ({}:{})", name(),
+             current(), revision(), age(), B.name(), B.current(), B.revision());
 
   if (name() != B.name()) return false;
 

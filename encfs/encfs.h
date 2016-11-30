@@ -21,7 +21,7 @@
 #ifndef _encfs_incl_
 #define _encfs_incl_
 
-#include "internal/easylogging++.h"
+#include "Error.h"
 #include <fuse.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -30,7 +30,7 @@
 
 namespace encfs {
 
-#if defined(HAVE_SYS_XATTR_H) | defined(HAVE_ATTR_XATTR_H)
+#if defined(HAVE_SYS_XATTR_H) || defined(HAVE_ATTR_XATTR_H)
 #define HAVE_XATTR
 #endif
 
@@ -41,7 +41,7 @@ static __inline int setfsuid(uid_t uid) {
   uid_t olduid = geteuid();
 
   if (seteuid(uid) != 0) {
-    VLOG(1) << "seteuid error: " << errno;
+    LOG->debug("seteuid error: {}", errno);
   }
 
   return olduid;
@@ -51,7 +51,7 @@ static __inline int setfsgid(gid_t gid) {
   gid_t oldgid = getegid();
 
   if (setegid(gid) != 0) {
-    VLOG(1) << "setfsgid error: " << errno;
+    LOG->debug("setfsgid error: {}", errno);
   }
 
   return oldgid;

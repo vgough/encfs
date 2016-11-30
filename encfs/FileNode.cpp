@@ -100,7 +100,7 @@ static bool setIV(const std::shared_ptr<FileIO> &io, uint64_t iv) {
 bool FileNode::setName(const char *plaintextName_, const char *cipherName_,
                        uint64_t iv, bool setIVFirst) {
   // Lock _lock( mutex );
-  if (cipherName_) VLOG(1) << "calling setIV on " << cipherName_;
+  if (cipherName_) LOG->debug("calling setIV on {}", cipherName_);
 
   if (setIVFirst) {
     if (fsConfig->config->externalIVChaining && !setIV(io, iv)) return false;
@@ -140,14 +140,14 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
   if (uid != 0) {
     olduid = setfsuid(uid);
     if (olduid == -1) {
-      RLOG(DEBUG) << "setfsuid error: " << strerror(errno);
+      LOG->debug("setfsuid error: {}", strerror(errno));
       return -EPERM;
     }
   }
   if (gid != 0) {
     oldgid = setfsgid(gid);
     if (oldgid == -1) {
-      RLOG(DEBUG) << "setfsgid error: " << strerror(errno);
+      LOG->debug("setfsgid error: {}", strerror(errno));
       return -EPERM;
     }
   }
@@ -170,7 +170,7 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
 
   if (res == -1) {
     int eno = errno;
-    VLOG(1) << "mknod error: " << strerror(eno);
+    LOG->debug("mknod error: {]}", strerror(eno));
     res = -eno;
   }
 
@@ -210,7 +210,7 @@ ssize_t FileNode::read(off_t offset, unsigned char *data, ssize_t size) const {
 }
 
 bool FileNode::write(off_t offset, unsigned char *data, ssize_t size) {
-  VLOG(1) << "FileNode::write offset " << offset << ", data size " << size;
+  LOG->debug("FileNode::write offset {}, data size {}", offset, size);
 
   IORequest req;
   req.offset = offset;
