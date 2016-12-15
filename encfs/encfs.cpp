@@ -741,6 +741,6 @@ int encfs_removexattr(const char *path, const char *name) {
                         bind(_do_removexattr, _1, _2, name));
 }
 
-}  // namespace encfs
-
 #endif  // HAVE_XATTR
+
+}  // namespace encfs
