@@ -182,7 +182,7 @@ Note that encfs arguments cannot be set this way.  If you need to set encfs
 arguments, create a wrapper, such as  encfs-reverse;
 
     #!/bin/sh
-    encfs --reverse $*
+    encfs --reverse "$@"
 
 Then mount using the script path
 
