@@ -6,16 +6,17 @@
 # Contributed by David Rosenstrauch.
 
 canonicalize() {
-	cd "$1"
+	cd "$1" || return
 	pwd
 }
 
 
-if [ -z "$1" -o "$1" = "-h" ]; then
-	echo Usage: encfssh encrypted_directory [unencrypted-directory [-p]]
+case $1 in "" | -h | --help)
+	echo "Usage: encfssh encrypted_directory [unencrypted-directory [-p]]"
 	echo "  -p   mount the unencrypted directory as public"
 	exit 1
-fi
+	;;
+esac
 
 enc_dir=$1
 unenc_dir_given=false
@@ -28,42 +29,74 @@ if [ ! -z "$2" ]; then
 	    mount_public=true
 	fi
     done
-    [ -d "$unenc_dir" ] || mkdir $unenc_dir
+    [ -d "$unenc_dir" ] || mkdir -- "$unenc_dir"
 else
     unenc_dir=$(mktemp -d .XXXXXXXX)
 fi
 
 if [ ! -d "$enc_dir" ]; then
-    mkdir $enc_dir
+    mkdir -- "$enc_dir"
 fi
 
 enc_dir=$(canonicalize "$enc_dir")
 unenc_dir=$(canonicalize "$unenc_dir")
 
-options=""
-if $unenc_dir_given; then
-    if $mount_public; then
-	options="-- -o allow_other"
+# clear command-line argument list; hereafter used for options
+set --
+if [ "$unenc_dir_given" = "true" ]; then
+    if [ "$mount_public" = "true" ]; then
+	set -- -- -o allow_other
     fi
 fi
 
 # Attach the directory and change into it
-if encfs $enc_dir $unenc_dir $options; then :; else
+if encfs "$enc_dir" "$unenc_dir" "$@"; then :; else
     echo "encfs failed"
-    rmdir $unenc_dir
+    rmdir -- "$unenc_dir"
     exit 1
 fi
-if ! $unenc_dir_given; then
-    chmod 700 $unenc_dir
+if ! [ "$unenc_dir_given" = "true" ]; then
+    chmod 700 "$unenc_dir"
 fi
 echo "Directory is $unenc_dir"
-orig_dir=$(pwd)
-cd $unenc_dir
+cd "$unenc_dir" || exit
 
 # Fall back to umount if fusermount is not available (e.g., on OS X)
-FUSE_UMOUNT="$(which 2>/dev/null fusermount)"
+FUSE_UMOUNT="$(command -v fusermount)"
 FUSE_UMOUNT="${FUSE_UMOUNT:+fusermount -u}"
 FUSE_UMOUNT="${FUSE_UMOUNT:-umount}"
 
 # Set the shell up
-exec /bin/sh -c "$SHELL ; cd $orig_dir ; $FUSE_UMOUNT $unenc_dir ; if ! $unenc_dir_given; then rmdir $unenc_dir; fi"
+#
+# Arguments are passed out-of-band to make all eval invocations explicit.
+# (Using double quotes to generate the script passed to sh -c can lead to
+# unintentional eval of content intended to be treated as data rather than code
+# -- consider for example the case where `unenc_dir=$'/tmp/evil\n/$(rm -rf $HOME)\'$(rm -rf $HOME)\'/')`.
+#
+# Note that there are two ways FUSE_UMOUNT can be parsed:
+# - With eval (process command substitutions, redirections, etc., and honors
+#   quotes; should only be done with human-generated/reviewed/trusted content,
+#   see [BashFAQ #48](http://mywiki.wooledge.org/BashFAQ/048))
+# - Without (can't run all possible commands this way, see
+#   [BashFAQ #50](http://mywiki.wooledge.org/BashFAQ/050)).
+#
+# Since the expectation is that this will be user-controlled, flexibility is
+# presumably more important than security, so opting for the eval approach.
+
+# Q: Why are we handing off to /bin/sh at all, rather than doing this from here?
+
+# Note: all-caps variable names may be reserved; use lower-case names
+# exclusively in child shell.  Avoids breakage if SHELL is read-only, f/e.
+# See http://pubs.opengroup.org/onlinepubs/009695399/basedefs/xbd_chap08.html
+# specifying (only!) lower-case names as guaranteed to be available for
+# application use.
+exec /bin/sh -c '
+fuse_umount=$1; shell=$2; unenc_dir=$3; unenc_dir_given=$4
+"$shell"; retval=$?
+cd /
+eval "$fuse_umount \"\$unenc_dir\""
+if ! [ "$unenc_dir_given" = true ]; then
+	rmdir -- "$unenc_dir"
+fi
+exit "$retval"
+' _ "$FUSE_UMOUNT" "$SHELL" "$unenc_dir" "$unenc_dir_given"
