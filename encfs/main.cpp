@@ -43,11 +43,6 @@
 #include "i18n.h"
 #include "openssl.h"
 
-// Fuse version >= 26 requires another argument to fuse_unmount, which we
-// don't have.  So use the backward compatible call instead..
-extern "C" void fuse_unmount_compat22(const char *mountpoint);
-#define fuse_unmount fuse_unmount_compat22
-
 /* Arbitrary identifiers for long options that do
  * not have a short version */
 #define LONG_OPT_ANNOTATE 513
@@ -768,9 +763,20 @@ static bool unmountFS(EncFS_Context *ctx) {
     return false;
   } else {
     // Time to unmount!
-    RLOG(WARNING) << "Unmounting filesystem due to inactivity: "
-                  << arg->opts->mountPoint;
-    fuse_unmount(arg->opts->mountPoint.c_str());
-    return true;
+    int rc=1;
+    if (access("/bin/umount", F_OK) != -1)
+      rc = system(("/bin/umount "+std::string(arg->opts->mountPoint)).c_str());
+    else
+      rc = system(("/sbin/umount "+std::string(arg->opts->mountPoint)).c_str());
+    if (!rc) {
+      RLOG(WARNING) << "Filesystem " << arg->opts->mountPoint
+                    << " inactivity detected, unmounted";
+      return true;
+    }
+    else {
+      RLOG(ERROR) << "Filesystem " << arg->opts->mountPoint
+                  << " inactivity detected, but failed to unmount";
+      return false;
+    }
   }
 }
