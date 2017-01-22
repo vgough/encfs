@@ -74,20 +74,15 @@ void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
 
 bool EncFS_Context::isMounted() { return root.get() != nullptr; }
 
-int EncFS_Context::getAndResetUsageCounter() {
+void EncFS_Context::getAndResetUsageCounter(int *usage, int *openCount) {
   Lock lock(contextMutex);
 
-  int count = usageCount;
+  *usage = usageCount;
   usageCount = 0;
 
-  return count;
+  *openCount = openFiles.size();
 }
 
-int EncFS_Context::openFileCount() const {
-  Lock lock(contextMutex);
-
-  return openFiles.size();
-}
 std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
   Lock lock(contextMutex);
 
