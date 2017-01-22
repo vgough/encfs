@@ -726,7 +726,7 @@ static void *idleMonitor(void *_arg) {
     else {
       if (idleCycles >= timeoutCycles)
         RLOG(WARNING) << "Filesystem " << arg->opts->mountPoint
-                      << " no more inactive"
+                      << " no more inactive";
       idleCycles = 0;
     }
 
