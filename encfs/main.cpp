@@ -729,9 +729,8 @@ static void *idleMonitor(void *_arg) {
           break;
         }
       } else {
-        RLOG(WARNING) << "Filesystem " << arg->opts->mountPoint
-                      << " inactive, but still " << openCount
-                      << " opened files";
+        RLOG(WARNING) << "Filesystem inactive, but " << openCount
+                      << " files opened: " << arg->opts->mountPoint;
       }
     }
 
@@ -769,13 +768,11 @@ static bool unmountFS(EncFS_Context *ctx) {
     else
       rc = system(("/sbin/umount "+std::string(arg->opts->mountPoint)).c_str());
     if (!rc) {
-      RLOG(WARNING) << "Filesystem " << arg->opts->mountPoint
-                    << " inactive, unmounted";
+      RLOG(WARNING) << "Filesystem inactive, unmounted: " << arg->opts->mountPoint;
       return true;
     }
     else {
-      RLOG(ERROR) << "Filesystem " << arg->opts->mountPoint
-                  << " inactive, but unmount failed";
+      RLOG(ERROR) << "Filesystem inactive, but unmount failed: " << arg->opts->mountPoint;
       return false;
     }
   }
