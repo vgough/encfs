@@ -622,7 +622,7 @@ int _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
   if (fnode->write(offset, ptr, size))
     return size;
   else
-    return -EIO;
+    return -errno;
 }
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,

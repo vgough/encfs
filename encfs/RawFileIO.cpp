@@ -220,8 +220,13 @@ bool RawFileIO::write(const IORequest &req) {
 
     if (writeSize < 0) {
       knownSize = false;
-      RLOG(WARNING) << "write failed at offset " << offset << " for " << bytes
-                    << " bytes: " << strerror(errno);
+      //RLOG(WARNING) << "write failed at offset " << offset << " for " << bytes
+      //              << " bytes: " << strerror(errno);
+      // /!\ Strangely RLOG modifies errno to "Permission denied" !
+      // So here is a crappy workaround, and this issue could be present somewhere else in the code !
+      VLOG(1) << "write failed at offset " << offset << " for " << bytes
+              << " bytes: " << strerror(errno);
+      
       return false;
     }
 
