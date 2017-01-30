@@ -76,28 +76,19 @@ MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
           << ", randBytes = " << cfg->config->blockMACRandBytes;
 }
 
-MACFileIO::~MACFileIO() {
-}
+MACFileIO::~MACFileIO() {}
 
-Interface MACFileIO::interface() const {
-  return MACFileIO_iface;
-}
+Interface MACFileIO::interface() const { return MACFileIO_iface; }
 
-int MACFileIO::open(int flags) {
-  return base->open(flags);
-}
+int MACFileIO::open(int flags) { return base->open(flags); }
 
 void MACFileIO::setFileName(const char *fileName) {
   base->setFileName(fileName);
 }
 
-const char *MACFileIO::getFileName() const {
-  return base->getFileName();
-}
+const char *MACFileIO::getFileName() const { return base->getFileName(); }
 
-bool MACFileIO::setIV(uint64_t iv) {
-  return base->setIV(iv);
-}
+bool MACFileIO::setIV(uint64_t iv) { return base->setIV(iv); }
 
 inline static off_t roundUpDivide(off_t numerator, int denominator) {
   // integer arithmetic always rounds down, so we can round up by adding
@@ -323,8 +314,7 @@ int MACFileIO::truncate(off_t size) {
   return res;
 }
 
-bool MACFileIO::isWritable() const {
-  return (reverse) ? false : base->isWritable();}
+bool MACFileIO::isWritable() const { return (reverse) ? false : base->isWritable();}
 
 }
 // namespace encfs
