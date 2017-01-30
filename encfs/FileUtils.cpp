@@ -855,13 +855,13 @@ static bool boolDefaultYes(const char *prompt) {
 /**
  * Ask the user whether to enable block MAC and random header bytes
  */
-static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
+static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac, bool reverse) {
   bool addMAC = false;
   if (!forceMac) {
     // xgroup(setup)
     addMAC = boolDefaultNo(
         _("Enable block authentication code headers\n"
-          "on every block in a file?  This adds about 12 bytes per block\n"
+          "on every block in a file?  This adds about 8 bytes per block\n"
           "to the storage requirements for a file, and significantly affects\n"
           "performance but it also means [almost] any modifications or errors\n"
           "within a block will be caught and will cause a read error."));
@@ -878,6 +878,14 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
   else
     *macBytes = 0;
 
+  if (reverse) {
+	  cout << _(
+	        "Reverse mode selected: Adding random bytes to each block header\n"
+		    "is not supported. Random bytes set to 0\n");
+	  *macRandBytes = 0;
+	  return;
+
+  }
   // xgroup(setup)
   cout << _(
       "Add random bytes to each block header?\n"
@@ -999,18 +1007,18 @@ RootPtr createV6Config(EncFS_Context *ctx,
   long desiredKDFDuration = NormalKDFDuration;
 
   if (reverseEncryption) {
-    chainedIV = false;
+    /*chainedIV = false;
     externalIV = false;
     uniqueIV = false;
-    blockMACBytes = 0;
+    blockMACBytes = 0;*/
     blockMACRandBytes = 0;
   }
 
   if (configMode == Config_Paranoia || answer[0] == 'p') {
-    if (reverseEncryption) {
+    /*if (reverseEncryption) {
       cerr << _("Paranoia configuration not supported for reverse encryption");
       return rootInfo;
-    }
+    }*/
 
     // xgroup(setup)
     cout << _("Paranoia configuration selected.") << "\n";
@@ -1073,28 +1081,32 @@ RootPtr createV6Config(EncFS_Context *ctx,
     keySize = selectKeySize(alg);
     blockSize = selectBlockSize(alg);
     nameIOIface = selectNameCoding();
-    if (reverseEncryption) {
-      cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
-      uniqueIV = selectUniqueIV(false);
-      /* Reverse mounts are read-only by default (set in main.cpp).
-       * If uniqueIV is off, writing can be allowed, because there
-       * is no header that could be overwritten */
-      if (uniqueIV == false) opts->readOnly = false;
-    } else {
+
+    chainedIV = selectChainedIV();
+    uniqueIV = selectUniqueIV(true);
+    if (chainedIV && uniqueIV)
+      externalIV = selectExternalChainedIV();
+    else {
+          // xgroup(setup)
+          cout << _("External chained IV disabled, as both 'IV chaining'\n"
+                    "and 'unique IV' features are required for this option.")
+               << "\n";
+          externalIV = false;
+    }
+    selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac, reverseEncryption);
+
+    /* Reverse mounts are read-only by default (set in main.cpp).
+     * If uniqueIV is off, writing can be allowed, because there
+     * is no header that could be overwritten */
+    if (uniqueIV == false && blockMACBytes == 0) opts->readOnly = false;
       chainedIV = selectChainedIV();
-      uniqueIV = selectUniqueIV(true);
-      if (chainedIV && uniqueIV)
-        externalIV = selectExternalChainedIV();
-      else {
-        // xgroup(setup)
-        cout << _("External chained IV disabled, as both 'IV chaining'\n"
-                  "and 'unique IV' features are required for this option.")
-             << "\n";
-        externalIV = false;
-      }
-      selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac);
+    if (chainedIV && uniqueIV)
+      externalIV = selectExternalChainedIV();
+
+    if (reverseEncryption) {
       allowHoles = selectZeroBlockPassThrough();
     }
+
   }
 
   std::shared_ptr<Cipher> cipher = Cipher::New(alg.name, keySize);
@@ -1542,10 +1554,11 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
     }
 
     if (opts->reverseEncryption) {
-      if (config->blockMACBytes != 0 || config->blockMACRandBytes != 0 ||
-          config->externalIVChaining || config->chainedNameIV) {
+      if (/*config->blockMACBytes != 0 || */ config->blockMACRandBytes != 0 /*||
+          config->externalIVChaining || config->chainedNameIV*/) {
         cout << _(
-            "The configuration loaded is not compatible with --reverse\n");
+            "The configuration loaded is not compatible with --reverse\n"
+        	"MAC random bytes is not supported in reverse mode");
         return rootInfo;
       }
       /* Reverse mounts are read-only by default (set in main.cpp).

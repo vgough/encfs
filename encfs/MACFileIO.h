@@ -72,6 +72,7 @@ class MACFileIO : public BlockFileIO {
   int macBytes;
   int randBytes;
   bool warnOnly;
+  bool reverse;
 };
 
 }  // namespace encfs

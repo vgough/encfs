@@ -64,12 +64,26 @@ FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
 
   this->fsConfig = cfg;
 
-  // chain RawFileIO & CipherFileIO
-  std::shared_ptr<FileIO> rawIO(new RawFileIO(_cname));
-  io = std::shared_ptr<FileIO>(new CipherFileIO(rawIO, fsConfig));
+  if (cfg->reverseEncryption == false) {
+    // chain RawFileIO & CipherFileIO
+    std::shared_ptr<FileIO> rawIO(new RawFileIO(_cname));
+    io = std::shared_ptr<FileIO>(new CipherFileIO(rawIO, fsConfig));
 
-  if (cfg->config->blockMACBytes || cfg->config->blockMACRandBytes)
-    io = std::shared_ptr<FileIO>(new MACFileIO(io, fsConfig));
+    if (cfg->config->blockMACBytes || cfg->config->blockMACRandBytes)
+      io = std::shared_ptr<FileIO>(new MACFileIO(io, fsConfig));
+
+
+  } else {
+
+    std::shared_ptr<FileIO> rawIO(new RawFileIO(_cname));
+
+    // in reverse mode, MACFile shall be between RawFile (plaintext) and CipherFile (ciphertext)
+    if (cfg->config->blockMACBytes)
+      io = std::shared_ptr<FileIO>(new MACFileIO(rawIO, fsConfig));
+
+    io = std::shared_ptr<FileIO>(new CipherFileIO((cfg->config->blockMACBytes > 0) ? io : rawIO, fsConfig));
+
+  }
 }
 
 FileNode::~FileNode() {

@@ -52,8 +52,11 @@ namespace encfs {
 static Interface MACFileIO_iface("FileIO/MAC", 2, 1, 0);
 
 int dataBlockSize(const FSConfigPtr &cfg) {
-  return cfg->config->blockSize - cfg->config->blockMACBytes -
-         cfg->config->blockMACRandBytes;
+  if (cfg->reverseEncryption)
+    return cfg->config->blockSize;
+  else
+    return cfg->config->blockSize - cfg->config->blockMACBytes
+        - cfg->config->blockMACRandBytes;
 }
 
 MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
@@ -64,7 +67,8 @@ MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
       key(cfg->key),
       macBytes(cfg->config->blockMACBytes),
       randBytes(cfg->config->blockMACRandBytes),
-      warnOnly(cfg->opts->forceDecode) {
+      warnOnly(cfg->opts->forceDecode),
+      reverse(cfg->reverseEncryption) {
   rAssert(macBytes >= 0 && macBytes <= 8);
   rAssert(randBytes >= 0);
   VLOG(1) << "fs block size = " << cfg->config->blockSize
@@ -125,7 +129,7 @@ int MACFileIO::getAttr(struct stat *stbuf) const {
     // have to adjust size field..
     int headerSize = macBytes + randBytes;
     int bs = blockSize() + headerSize;
-    stbuf->st_size = locWithoutHeader(stbuf->st_size, bs, headerSize);
+    stbuf->st_size = (reverse) ? locWithHeader(stbuf->st_size, blockSize(), headerSize) : locWithoutHeader(stbuf->st_size, bs, headerSize);
   }
 
   return res;
@@ -137,78 +141,125 @@ off_t MACFileIO::getSize() const {
   int bs = blockSize() + headerSize;
 
   off_t size = base->getSize();
-  if (size > 0) size = locWithoutHeader(size, bs, headerSize);
+  if (size > 0) size = (reverse) ? locWithHeader(size, blockSize(), headerSize) : locWithoutHeader(size, bs, headerSize);
 
   return size;
 }
 
 ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
-  int headerSize = macBytes + randBytes;
+  if (reverse == false) {
+    int headerSize = macBytes + randBytes;
 
-  int bs = blockSize() + headerSize;
+    int bs = blockSize() + headerSize;
 
-  MemBlock mb = MemoryPool::allocate(bs);
+    MemBlock mb = MemoryPool::allocate(bs);
 
-  IORequest tmp;
-  tmp.offset = locWithHeader(req.offset, bs, headerSize);
-  tmp.data = mb.data;
-  tmp.dataLen = headerSize + req.dataLen;
+    IORequest tmp;
+    tmp.offset = locWithHeader(req.offset, bs, headerSize);
+    tmp.data = mb.data;
+    tmp.dataLen = headerSize + req.dataLen;
 
-  // get the data from the base FileIO layer
-  ssize_t readSize = base->read(tmp);
+    // get the data from the base FileIO layer
+    ssize_t readSize = base->read(tmp);
 
-  // don't store zeros if configured for zero-block pass-through
-  bool skipBlock = true;
-  if (_allowHoles) {
-    for (int i = 0; i < readSize; ++i)
-      if (tmp.data[i] != 0) {
-        skipBlock = false;
-        break;
-      }
-  } else if (macBytes > 0)
-    skipBlock = false;
-
-  if (readSize > headerSize) {
-    if (!skipBlock) {
-      // At this point the data has been decoded.  So, compute the MAC of
-      // the block and check against the checksum stored in the header..
-      uint64_t mac =
-          cipher->MAC_64(tmp.data + macBytes, readSize - macBytes, key);
-
-      // Constant time comparision to prevent timing attacks
-      unsigned char fail = 0;
-      for (int i = 0; i < macBytes; ++i, mac >>= 8) {
-        int test = mac & 0xff;
-        int stored = tmp.data[i];
-
-        fail |= (test ^ stored);
-      }
-
-      if (fail > 0) {
-        // uh oh..
-        long blockNum = req.offset / bs;
-        RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
-        if (!warnOnly) {
-          MemoryPool::release(mb);
-          throw Error(_("MAC comparison failure, refusing to read"));
+    // don't store zeros if configured for zero-block pass-through
+    bool skipBlock = true;
+    if (_allowHoles) {
+      for (int i = 0; i < readSize; ++i)
+        if (tmp.data[i] != 0) {
+          skipBlock = false;
+          break;
         }
+    } else if (macBytes > 0)
+      skipBlock = false;
+
+    if (readSize > headerSize) {
+      if (!skipBlock) {
+        // At this point the data has been decoded.  So, compute the MAC of
+        // the block and check against the checksum stored in the header..
+        uint64_t mac =
+            cipher->MAC_64(tmp.data + macBytes, readSize - macBytes, key);
+
+        // Constant time comparision to prevent timing attacks
+        unsigned char fail = 0;
+        for (int i = 0; i < macBytes; ++i, mac >>= 8) {
+          int test = mac & 0xff;
+          int stored = tmp.data[i];
+
+          fail |= (test ^ stored);
+        }
+
+        if (fail > 0) {
+          // uh oh..
+          long blockNum = req.offset / bs;
+          RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
+          if (!warnOnly) {
+            MemoryPool::release(mb);
+            throw Error(_("MAC comparison failure, refusing to read"));
+          }
+        }
+      }
+
+      // now copy the data to the output buffer
+      readSize -= headerSize;
+      memcpy(req.data, tmp.data + headerSize, readSize);
+    } else {
+      VLOG(1) << "readSize " << readSize << " at offset " << req.offset;
+      if (readSize > 0) readSize = 0;
+    }
+
+    MemoryPool::release(mb);
+
+    return readSize;
+
+  } else {	  //reverse = true
+
+    if (randBytes > 0) {
+      throw Error(_("MAC rand bytes not yet implemented in reverse mode"));
+      return -1;
+    }
+
+    MemBlock mb = MemoryPool::allocate(blockSize());
+
+    IORequest tmp;
+    tmp.offset = locWithoutHeader(req.offset, blockSize(), macBytes);
+    tmp.data = mb.data + macBytes;
+    tmp.dataLen = req.dataLen - macBytes;
+
+    // get the data from the base FileIO layer
+    ssize_t readSize = base->read(tmp);
+    if (readSize == 0) {
+      MemoryPool::release(mb);
+      return 0;
+    }
+
+    if (macBytes > 0) {
+      uint64_t mac = cipher->MAC_64(tmp.data, readSize, key);
+
+      //point to the beginning to write the header
+      tmp.data = mb.data;
+
+      for (int i = 0; i < macBytes; ++i) {
+        tmp.data[i] = mac & 0xff;
+        mac >>= 8;
       }
     }
 
     // now copy the data to the output buffer
-    readSize -= headerSize;
-    memcpy(req.data, tmp.data + headerSize, readSize);
-  } else {
-    VLOG(1) << "readSize " << readSize << " at offset " << req.offset;
-    if (readSize > 0) readSize = 0;
+    memcpy(req.data, tmp.data, readSize + macBytes);
+    MemoryPool::release(mb);
+
+    return readSize + macBytes;
+
   }
-
-  MemoryPool::release(mb);
-
-  return readSize;
 }
 
 bool MACFileIO::writeOneBlock(const IORequest &req) {
+  if (reverse) {
+    throw Error(_("MAC write not implemented in reverse mode"));
+    return false;
+  }
+
   int headerSize = macBytes + randBytes;
 
   int bs = blockSize() + headerSize;
@@ -248,6 +299,11 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
 }
 
 int MACFileIO::truncate(off_t size) {
+  if (reverse) {
+    throw Error(_("MAC write not implemented in reverse mode"));
+    return -1;
+  }
+
   int headerSize = macBytes + randBytes;
   int bs = blockSize() + headerSize;
 
@@ -258,6 +314,7 @@ int MACFileIO::truncate(off_t size) {
   return res;
 }
 
-bool MACFileIO::isWritable() const { return base->isWritable(); }
+bool MACFileIO::isWritable() const { return (reverse) ? false : base->isWritable();}
 
-}  // namespace encfs
+}
+// namespace encfs
