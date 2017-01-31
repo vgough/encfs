@@ -43,7 +43,7 @@ class BlockFileIO : public FileIO {
 
   // implemented in terms of blocks.
   virtual ssize_t read(const IORequest &req) const;
-  virtual bool write(const IORequest &req);
+  virtual int write(const IORequest &req);
 
   virtual int blockSize() const;
 
@@ -54,10 +54,10 @@ class BlockFileIO : public FileIO {
   // same as read(), except that the request.offset field is guarenteed to be
   // block aligned, and the request size will not be larger then 1 block.
   virtual ssize_t readOneBlock(const IORequest &req) const = 0;
-  virtual bool writeOneBlock(const IORequest &req) = 0;
+  virtual int writeOneBlock(const IORequest &req) = 0;
 
   ssize_t cacheReadOneBlock(const IORequest &req) const;
-  bool cacheWriteOneBlock(const IORequest &req);
+  int cacheWriteOneBlock(const IORequest &req);
 
   int _blockSize;
   bool _allowHoles;
