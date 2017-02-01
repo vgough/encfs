@@ -219,7 +219,7 @@ int RawFileIO::write(const IORequest &req) {
   while (bytes && retrys > 0) {
     errno = 0;
     ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
-    eno=errno;
+    eno = errno;
 
     if (writeSize < 0) {
       knownSize = false;
