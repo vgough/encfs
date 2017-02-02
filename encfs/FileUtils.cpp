@@ -1098,8 +1098,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
     /* Reverse mounts are read-only by default (set in main.cpp).
      * If uniqueIV is off, writing can be allowed, because there
      * is no header that could be overwritten */
-    if (uniqueIV == false && blockMACBytes == 0) opts->readOnly = false;
-      chainedIV = selectChainedIV();
+    if (uniqueIV == false && blockMACBytes == 0)
+      opts->readOnly = false;
+    chainedIV = selectChainedIV();
     if (chainedIV && uniqueIV)
       externalIV = selectExternalChainedIV();
 
