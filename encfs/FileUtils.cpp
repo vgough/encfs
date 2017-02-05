@@ -956,9 +956,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   const std::string passwordProgram = opts->passwordProgram;
   bool useStdin = opts->useStdin;
   bool reverseEncryption = opts->reverseEncryption;
-  ConfigMode configMode = (useStdin &&
-                           opts->configMode == Config_Prompt) ? Config_Standard
-                                                              : opts->configMode;
+  ConfigMode configMode = opts->configMode;
   bool annotate = opts->annotate;
 
   RootPtr rootInfo;
@@ -1170,9 +1168,6 @@ RootPtr createV6Config(EncFS_Context *ctx,
     userKey = config->getUserKey(passwordProgram, rootDir);
   else
     userKey = config->getNewUserKey();
-
-  if (userKey == nullptr)
-    return rootInfo;
 
   cipher->writeKey(volumeKey, encodedKey, userKey);
   userKey.reset();
