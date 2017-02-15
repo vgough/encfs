@@ -547,7 +547,7 @@ int main(int argc, char *argv[]) {
   const char *ident = "encfs";
   if (encfsArgs->printUser) {
     struct passwd *pw = getpwuid(geteuid());
-    ident = ("encfs."+std::string(pw->pw_name)).c_str();
+    ident = ("encfs/"+std::string(pw->pw_name)).c_str();
   }
   ELPP_INITIALIZE_SYSLOG(ident, 0, 0); // Does not work being in initLogging()
 
