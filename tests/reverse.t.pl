@@ -3,15 +3,45 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 26;
+use Test::More tests => 66;
 use File::Path;
 use File::Temp;
 use IO::Handle;
-use Errno qw(EROFS);
+use Errno qw(EROFS EIO);
 
 require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
+
+sub calculateCiphertextSize
+{
+	my $psize = shift;
+	my $mode = shift;
+
+	if ($psize == 0) {
+		return 0;
+	}
+
+	if ($mode eq 'standard') {
+		#in standard mode, just add the 8 bytes header for the IV
+		return $psize + 8;
+	}
+
+	if ($mode eq 'paranoia') {
+		#in paranoia mode, calculate the number of plaintext blocks (1024 - 8 MAC bytes)
+		$r = int(($psize + 1016 - 1) / 1016);
+		
+		#then add the 8 MAC bytes to each block
+		$r = $psize + ($r * 8);
+
+		#and finally, add the 8 bytes header for the IV
+		return $r + 8;
+	}
+	
+	#shall not happen
+	return -1;
+}
+
 
 # Helper function
 # Create a new empty working directory
@@ -26,6 +56,8 @@ sub newWorkingDir
     mkdir($ciphertext);
     our $decrypted = "$workingDir/decrypted";
     mkdir($decrypted);
+    our $copy_of_ciphertext = "$workingDir/copy_of_ciphertext";
+    mkdir($copy_of_ciphertext);
 }
 
 # Helper function
@@ -45,8 +77,9 @@ sub cleanup
 # Directory structure: plain -[encrypt]-> ciphertext -[decrypt]-> decrypted
 sub mount
 {
+    my $mode = shift;
     delete $ENV{"ENCFS6_CONFIG"};
-    system("./build/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse --nocache");
+    system("./build/encfs --extpass=\"echo test\" --$mode $plain $ciphertext --reverse --nocache");
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
     my $e = encName(".encfs6.xml");
     ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
@@ -92,6 +125,8 @@ sub symlink_test
 # * check that the decrypted length is correct (stat + read)
 # * check that plaintext and decrypted are identical
 sub grow {
+
+    my $mode = shift;
     # pfh ... plaintext file handle
     open(my $pfh, ">", "$plain/grow");
     # vfh ... verification file handle
@@ -116,7 +151,7 @@ sub grow {
         # autoflush should make sure the write goes to the kernel
         # immediately. Just to be sure, check it here.
         sizeVerify($vfh, $i) or die("unexpected plain file size");
-        sizeVerify($cfh, $i) or $ok = 0;
+        sizeVerify($cfh, calculateCiphertextSize($i, $mode)) or $ok = 0;
         sizeVerify($dfh, $i) or $ok = 0;
         
         if(md5fh($vfh) ne md5fh($dfh))
@@ -132,12 +167,21 @@ sub grow {
 }
 
 sub largeRead {
+
+    my $mode = shift;
+
     writeZeroes("$plain/largeRead", 1024*1024);
+
     # ciphertext file name
     my $cname = encName("largeRead");
     # cfh ... ciphertext file handle
     ok(open(my $cfh, "<", "$ciphertext/$cname"), "open ciphertext largeRead file");
-    ok(sizeVerify($cfh, 1024*1024), "1M file size");
+    ok(sizeVerify($cfh, calculateCiphertextSize(1024*1024, $mode)), "1M file size");
+
+
+    # dfh ... decrypted file handle
+    ok(open(my $dfh, "<", "$decrypted/largeRead"), "open decrypted largeRead file");
+    ok(sizeVerify($dfh, 1024*1024), "1M file size");
 }
 
 # Check that the reverse mount is read-only
@@ -166,13 +210,48 @@ sub writesDenied {
     ok( $! == EROFS, "truncate denied, EROFS");
 }
 
+# Check a file modification outside encfs
+# is detected by MAC headers as an I/O error
+sub checkMAC {
+
+    #first, mount reverse paranoia
+    delete $ENV{"ENCFS6_CONFIG"};
+    system("./build/encfs --extpass=\"echo test\" --paranoia $plain $ciphertext --reverse --nocache");
+    ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
+    my $e = encName(".encfs6.xml");
+    ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
+
+    #second, copy an encrypted file out, and then modify it
+    open(my $pfh, ">", "$plain/MAC_file");
+    print($pfh "abcde") or die("write failed");
+    $pfh->autoflush;
+    my $mac = encName("MAC_file");
+    ok(system("cp $ciphertext/$mac $copy_of_ciphertext")==0, "copying files to ciphertext");
+    ok(waitForFile("$copy_of_ciphertext/$mac"), "copied MAC_file exists") or BAIL_OUT("'$copy_of_ciphertext/$mac'");
+    open(my $cfh, "<", "$copy_of_ciphertext/$mac");
+    ok(sizeVerify($cfh, calculateCiphertextSize(5, "paranoia")), "file size error in MAC test");
+    ok(system("echo a >>  $copy_of_ciphertext/$mac")==0, "modifying ciphertext outside encfs");
+
+    #third, mount in normal mode and try to read the modified file
+    system("ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfs --nocache --extpass=\"echo test\" $copy_of_ciphertext $decrypted");
+    ok(waitForFile("$decrypted/MAC_file"), "decrypted MAC_file exists") or BAIL_OUT("'$decrypted/MAC_file'");
+
+    #fourth, do the read. Test is OK if we get EIO
+    ok(open(my $dfh, "<", "$decrypted/MAC_file"), "open decrypted MAC file");
+    my $data;
+    read($dfh, $data, 1024);
+    ok( $! == EIO, "read denied, EIO"); 
+
+}
+
+#First, run tests in standard mode
 # Setup mounts
 newWorkingDir();
-mount();
+mount("standard");
 
 # Actual tests
-grow();
-largeRead();
+grow("standard");
+largeRead("standard");
 copy_test();
 symlink_test("/"); # absolute
 symlink_test("foo"); # relative
@@ -183,3 +262,33 @@ writesDenied();
 
 # Umount and delete files
 cleanup();
+
+
+
+#Second, run tests in paranoia mode
+# Setup mounts
+newWorkingDir();
+mount("paranoia");
+
+# Actual tests
+grow("paranoia");
+largeRead("paranoia");
+copy_test();
+symlink_test("/"); # absolute
+symlink_test("foo"); # relative
+symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
+symlink_test("!§\$%&/()\\<>#+="); # special characters
+symlink_test("$plain/foo");
+writesDenied();
+
+
+# Umount and delete files
+cleanup();
+
+
+#last, do the MAC header testing
+#we cannot reuse the previous mounts
+newWorkingDir();
+checkMAC();
+cleanup();
+
