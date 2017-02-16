@@ -768,7 +768,7 @@ static bool unmountFS(EncFS_Context *ctx) {
     else
       rc = system(("/sbin/umount "+std::string(arg->opts->mountPoint)).c_str());
     if (!rc) {
-      RLOG(WARNING) << "Filesystem inactive, unmounted: " << arg->opts->mountPoint;
+      RLOG(INFO) << "Filesystem inactive, unmounted: " << arg->opts->mountPoint;
       return true;
     }
     else {
