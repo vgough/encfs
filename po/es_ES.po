@@ -469,7 +469,7 @@ msgstr ""
 
 #, c-format
 msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "El directorio \"%s\" no existe. ¿Deberia ser creado? (s,n) "
+msgstr "El directorio \"%s\" no existe. ¿Deberia ser creado? (y,n) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"
