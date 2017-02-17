@@ -710,6 +710,11 @@ static void *idleMonitor(void *_arg) {
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;
   int idleCycles = -1;
 
+  bool unmountres = false;
+
+  // We will notify when FS will be unmounted, so notify that it has just been mounted
+  RLOG(INFO) << "Filesystem mounted: " << arg->opts->mountPoint;
+
   pthread_mutex_lock(&ctx->wakeupMutex);
 
   while (ctx->running) {
@@ -723,7 +728,8 @@ static void *idleMonitor(void *_arg) {
     if (idleCycles >= timeoutCycles) {
       int openCount = ctx->openFileCount();
       if (openCount == 0) {
-        if (unmountFS(ctx)) {
+        unmountres = unmountFS(ctx);
+        if (unmountres) {
           // wait for main thread to wake us up
           pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
           break;
@@ -746,6 +752,10 @@ static void *idleMonitor(void *_arg) {
   }
 
   pthread_mutex_unlock(&ctx->wakeupMutex);
+
+  // If we are here FS has been unmounted, so if we did not unmount ourselves (manual, kill...), notify
+  if (!unmountres)
+    RLOG(INFO) << "Filesystem unmounted: " << arg->opts->mountPoint;
 
   VLOG(1) << "Idle monitoring thread exiting";
 
