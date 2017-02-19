@@ -544,12 +544,12 @@ int main(int argc, char *argv[]) {
   }
 
   encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
-  const char *defaultident = "encfs";
   struct passwd *pw = getpwuid(geteuid());
-  const char *userident = ("encfs/"+std::string(pw->pw_name)).c_str();
-  const char *ident = defaultident;
+  char ident[5 + 1 + strlen(pw->pw_name) + 1];
+  strcpy(ident, "encfs");
   if (encfsArgs->printUser) {
-    ident = userident;
+    strcat(ident, "/");
+    strcat(ident, pw->pw_name);
   }
   ELPP_INITIALIZE_SYSLOG(ident, 0, 0); // Does not work being in initLogging()
 
