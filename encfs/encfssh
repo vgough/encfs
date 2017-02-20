@@ -58,7 +58,7 @@ fi
 if ! [ "$unenc_dir_given" = "true" ]; then
     chmod 700 "$unenc_dir"
 fi
-echo "Directory is $unenc_dir"
+echo "Directory is $unenc_dir" >&2
 cd "$unenc_dir" || exit
 
 # Fall back to umount if fusermount is not available (e.g., on OS X)
@@ -66,13 +66,14 @@ FUSE_UMOUNT="$(command -v fusermount)"
 FUSE_UMOUNT="${FUSE_UMOUNT:+fusermount -u}"
 FUSE_UMOUNT="${FUSE_UMOUNT:-umount}"
 
-# Set the shell up
-#
-# Arguments are passed out-of-band to make all eval invocations explicit.
-# (Using double quotes to generate the script passed to sh -c can lead to
-# unintentional eval of content intended to be treated as data rather than code
-# -- consider for example the case where `unenc_dir=$'/tmp/evil\n/$(rm -rf $HOME)\'$(rm -rf $HOME)\'/')`.
-#
+# Honor the SHELL environment variable to select a shell to run
+"$SHELL"; retval=$?
+
+# ensure that this shell isn't itself holding the mounted directory open
+# ...but avoid terminating on failure, *or* causing a shellcheck warning for
+#    failing to check exit status from cd.
+cd / ||:
+
 # Note that there are two ways FUSE_UMOUNT can be parsed:
 # - With eval (process command substitutions, redirections, etc., and honors
 #   quotes; should only be done with human-generated/reviewed/trusted content,
@@ -83,20 +84,8 @@ FUSE_UMOUNT="${FUSE_UMOUNT:-umount}"
 # Since the expectation is that this will be user-controlled, flexibility is
 # presumably more important than security, so opting for the eval approach.
 
-# Q: Why are we handing off to /bin/sh at all, rather than doing this from here?
-
-# Note: all-caps variable names may be reserved; use lower-case names
-# exclusively in child shell.  Avoids breakage if SHELL is read-only, f/e.
-# See http://pubs.opengroup.org/onlinepubs/009695399/basedefs/xbd_chap08.html
-# specifying (only!) lower-case names as guaranteed to be available for
-# application use.
-exec /bin/sh -c '
-fuse_umount=$1; shell=$2; unenc_dir=$3; unenc_dir_given=$4
-"$shell"; retval=$?
-cd /
-eval "$fuse_umount \"\$unenc_dir\""
+eval "$FUSE_UMOUNT \"\$unenc_dir\"" # Call hook, honoring any shell syntax/quotes/&c. in same
 if ! [ "$unenc_dir_given" = true ]; then
 	rmdir -- "$unenc_dir"
 fi
 exit "$retval"
-' _ "$FUSE_UMOUNT" "$SHELL" "$unenc_dir" "$unenc_dir_given"
