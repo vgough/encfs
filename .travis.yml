@@ -40,6 +40,7 @@ addons:
     sources:
       - ubuntu-toolchain-r-test
     packages:
+      - attr
       - clang
       - cmake
       - fuse

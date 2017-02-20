@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 26;
+use Test::More tests => 31;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -84,6 +84,9 @@ sub symlink_test
     $dec = readlink("$decrypted/symlink");
     ok( $dec eq $target, "symlink to '$target'") or
         print("# (original) $target' != '$dec' (decrypted)\n");
+    system("attr", "-l", "$decrypted/symlink");
+    my $return_code = $?;
+    is($return_code, 0, "symlink to '$target' extended attributes can be read (return code was $return_code)");
     unlink("$plain/symlink");
 }
 
