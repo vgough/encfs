@@ -62,9 +62,13 @@ echo "Directory is $unenc_dir" >&2
 cd "$unenc_dir" || exit
 
 # Fall back to umount if fusermount is not available (e.g., on OS X)
-FUSE_UMOUNT="$(command -v fusermount)"
-FUSE_UMOUNT="${FUSE_UMOUNT:+fusermount -u}"
-FUSE_UMOUNT="${FUSE_UMOUNT:-umount}"
+fuse_umount() {
+	if command -v fusermount >/dev/null 2>&1; then
+		fusermount -u "$@"
+	else
+		umount "$@" # MacOS case
+	fi
+}
 
 # Honor the SHELL environment variable to select a shell to run
 "$SHELL"; retval=$?
@@ -74,17 +78,9 @@ FUSE_UMOUNT="${FUSE_UMOUNT:-umount}"
 #    failing to check exit status from cd.
 cd / ||:
 
-# Note that there are two ways FUSE_UMOUNT can be parsed:
-# - With eval (process command substitutions, redirections, etc., and honors
-#   quotes; should only be done with human-generated/reviewed/trusted content,
-#   see [BashFAQ #48](http://mywiki.wooledge.org/BashFAQ/048))
-# - Without (can't run all possible commands this way, see
-#   [BashFAQ #50](http://mywiki.wooledge.org/BashFAQ/050)).
-#
-# Since the expectation is that this will be user-controlled, flexibility is
-# presumably more important than security, so opting for the eval approach.
+# if unmount fails, skip rmdir, always use exit status of failure
+fuse_umount "$unenc_dir" || exit
 
-eval "$FUSE_UMOUNT \"\$unenc_dir\"" # Call hook, honoring any shell syntax/quotes/&c. in same
 if ! [ "$unenc_dir_given" = true ]; then
 	rmdir -- "$unenc_dir"
 fi
