@@ -50,12 +50,6 @@ sub mount
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
     my $e = encName(".encfs6.xml");
     ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
-    portable_unmount($ciphertext);
-    system("sed -i.bak 's/<uniqueIV>0/<uniqueIV>1/' $plain/.encfs6.xml");
-    system("./build/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse --nocache");
-    ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
-    my $e = encName(".encfs6.xml");
-    ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
     system("ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfs --nocache --extpass=\"echo test\" $ciphertext $decrypted");
     ok(waitForFile("$decrypted/.encfs6.xml"), "decrypted .encfs6.xml exists") or BAIL_OUT("'$decrypted/.encfs6.xml'");
 }
@@ -185,7 +179,7 @@ symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
 symlink_test("!§\$%&/()\\<>#+="); # special characters
 symlink_test("$plain/foo");
-writesDenied();
+# writesDenied(); # disabled as writes are allowed when (uniqueIV == false), we would need a specific reverse conf with (uniqueIV == true).
 
 # Umount and delete files
 cleanup();
