@@ -46,8 +46,11 @@ sub cleanup
 sub mount
 {
     delete $ENV{"ENCFS6_CONFIG"};
-    system("./build/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse --nocache");
+    system("./build/encfs --extpass=\"echo test\" --standard $plain $ciphertext --nocache");
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
+    portable_unmount($ciphertext);
+    system("sed -i.bak 's/<chainedNameIV>1/<chainedNameIV>0/' $plain/.encfs6.xml");
+    system("./build/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse --nocache");
     my $e = encName(".encfs6.xml");
     ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
     system("ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfs --nocache --extpass=\"echo test\" $ciphertext $decrypted");
