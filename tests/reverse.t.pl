@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 26;
+use Test::More tests => 20;
 use File::Path;
 use File::Temp;
 use IO::Handle;
