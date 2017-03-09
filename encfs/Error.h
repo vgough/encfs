@@ -23,7 +23,7 @@ class Error : public std::runtime_error {
     }                                                \
   } while (0)
 
-void initLogging(bool enable_debug = false);
+void initLogging(bool enable_debug = false, bool is_daemon = false);
 
 // This can be changed to change log action between normal and syslog logging.
 // Not thread-safe, so any change must occur outside of threading context.
