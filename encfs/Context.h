@@ -44,9 +44,8 @@ class EncFS_Context {
 
   std::shared_ptr<FileNode> lookupNode(const char *path);
 
-  int getAndResetUsageCounter();
-  int openFileCount() const;
-
+  void getAndResetUsageCounter(int *usage, int *openCount);
+  
   FileNode *putNode(const char *path, std::shared_ptr<FileNode> &&node);
 
   void eraseNode(const char *path, FileNode *fnode);
