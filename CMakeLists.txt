@@ -150,6 +150,7 @@ if (ENABLE_NLS)
 endif (ENABLE_NLS)
 
 set(SOURCE_FILES
+  internal/easylogging++.cc
   encfs/autosprintf.cpp
   encfs/base64.cpp
   encfs/BlockFileIO.cpp
