@@ -491,11 +491,6 @@ void *encfs_init(fuse_conn_info *conn) {
   // set fuse connection options
   conn->async_read = true;
 
-  if (ctx->args->isDaemon) {
-    // Switch to using syslog.
-    encfs::rlogAction = el::base::DispatchAction::SysLog;
-  }
-
   // if an idle timeout is specified, then setup a thread to monitor the
   // filesystem.
   if (ctx->args->idleTimeout > 0) {
@@ -539,11 +534,7 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  if (encfsArgs->isVerbose) {
-    el::Loggers::setVerboseLevel(1);
-  }
-
-  encfs::initLogging(encfsArgs->isVerbose);
+  encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();
