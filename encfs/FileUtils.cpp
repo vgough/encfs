@@ -1053,6 +1053,12 @@ RootPtr createV6Config(EncFS_Context *ctx,
     if (opts->requireMac) {
       blockMACBytes = 8;
     }
+    if (reverseEncryption) {
+      /* Reverse mounts are read-only by default (set in main.cpp).
+       * If uniqueIV is off, writing can be allowed, because there
+       * is no header that could be overwritten */
+      if (uniqueIV == false) opts->readOnly = false;
+    }
   }
 
   if (answer[0] == 'x' || alg.name.empty()) {
