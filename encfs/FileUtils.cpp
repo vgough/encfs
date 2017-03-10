@@ -171,7 +171,7 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
   // xgroup(setup)
   cerr << autosprintf(
       _("The directory \"%s\" does not exist. Should it be created? "
-        "(y,n) "),
+        "(y,N) "),
       path);
   char answer[10];
   char *res;

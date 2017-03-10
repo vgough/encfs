@@ -458,8 +458,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "Завантажена конфігурація не допустима з --reverse\n"
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Папки \"%s\" не існує. Створити її? (y,n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "Папки \"%s\" не існує. Створити її? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

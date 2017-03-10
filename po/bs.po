@@ -418,7 +418,7 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr ""
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
 msgstr ""
 
 msgid ""
