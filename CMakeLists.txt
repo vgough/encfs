@@ -9,7 +9,7 @@ set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}.${ENCFS_PATCH}")
 set (ENCFS_SOVERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}")
 set (ENCFS_NAME "Encrypted Filesystem")
 
-option(IWYU "Build with IWYU analyais." OFF)
+option(IWYU "Build with IWYU analysis." OFF)
 
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_LIST_DIR}/cmake")
