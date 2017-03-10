@@ -710,6 +710,9 @@ int encfs_getxattr(const char *path, const char *name, char *value,
 
 int _do_listxattr(EncFS_Context *, const string &cyName, char *list,
                   size_t size) {
+#ifndef XATTR_LLIST
+#define llistxattr listxattr
+#endif
 #ifdef XATTR_ADD_OPT
   int options = 0;
   int res = ::llistxattr(cyName.c_str(), list, size, options);

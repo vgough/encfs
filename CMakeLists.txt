@@ -93,6 +93,24 @@ check_cxx_source_compiles ("#include <sys/types.h>
   " XATTR_ADD_OPT)
 set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
 
+# Check if xattr function llistxattr exists.
+# Output error is misleading, so do this test quietly.
+include (CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_QUIET_SAVE ${CMAKE_REQUIRED_QUIET})
+set (CMAKE_REQUIRED_QUIET True)
+if (XATTR_ADD_OPT)
+check_cxx_source_compiles ("#include <sys/types.h>
+  #include <sys/xattr.h>
+  int main() { llistxattr(0,0,0,0); return 1; }
+  " XATTR_LLIST)
+else (XATTR_ADD_OPT)
+check_cxx_source_compiles ("#include <sys/types.h>
+  #include <sys/xattr.h>
+  int main() { llistxattr(0,0,0); return 1; }
+  " XATTR_LLIST)
+endif (XATTR_ADD_OPT)
+set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
+
 # Check if we have some standard functions.
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
