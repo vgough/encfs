@@ -98,14 +98,17 @@ set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
 include (CheckCXXSourceCompiles)
 set(CMAKE_REQUIRED_QUIET_SAVE ${CMAKE_REQUIRED_QUIET})
 set (CMAKE_REQUIRED_QUIET True)
-check_cxx_source_compiles ("#include <sys/types.h>
-  #include <sys/xattr.h>
-  int main() { llistxattr(0,0,0); return 1; }
-  " XATTR_LLIST)
+if (XATTR_ADD_OPT)
 check_cxx_source_compiles ("#include <sys/types.h>
   #include <sys/xattr.h>
   int main() { llistxattr(0,0,0,0); return 1; }
   " XATTR_LLIST)
+else (XATTR_ADD_OPT)
+check_cxx_source_compiles ("#include <sys/types.h>
+  #include <sys/xattr.h>
+  int main() { llistxattr(0,0,0); return 1; }
+  " XATTR_LLIST)
+endif (XATTR_ADD_OPT)
 set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
 
 # Check if we have some standard functions.
