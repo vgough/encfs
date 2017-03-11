@@ -40,6 +40,10 @@ else ()
   endif()
 endif ()
 
+# Some compilers add -Wl,--no-undefined which leads to easylogging undefined references (see #291)
+# So here is a workaround
+string(REPLACE "-Wl,--no-undefined" "" CMAKE_SHARED_LINKER_FLAGS ${CMAKE_SHARED_LINKER_FLAGS})
+
 add_definitions( -DPACKAGE="encfs" )
 
 # http://www.cmake.org/Wiki/CMake_RPATH_handling#Mac_OS_X_and_the_RPATH
