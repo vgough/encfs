@@ -619,10 +619,11 @@ int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
 }
 
 int _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
-  if (fnode->write(offset, ptr, size))
+  int res = fnode->write(offset, ptr, size);
+  if (!res)
     return size;
   else
-    return -EIO;
+    return res;
 }
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,

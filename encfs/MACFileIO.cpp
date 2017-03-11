@@ -208,7 +208,7 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
   return readSize;
 }
 
-bool MACFileIO::writeOneBlock(const IORequest &req) {
+int MACFileIO::writeOneBlock(const IORequest &req) {
   int headerSize = macBytes + randBytes;
 
   int bs = blockSize() + headerSize;
@@ -225,7 +225,7 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   memcpy(newReq.data + headerSize, req.data, req.dataLen);
   if (randBytes > 0) {
     if (!cipher->randomize(newReq.data + macBytes, randBytes, false))
-      return false;
+      return -EBADMSG;
   }
 
   if (macBytes > 0) {
@@ -240,11 +240,11 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   }
 
   // now, we can let the next level have it..
-  bool ok = base->write(newReq);
+  int res = base->write(newReq);
 
   MemoryPool::release(mb);
 
-  return ok;
+  return res;
 }
 
 int MACFileIO::truncate(off_t size) {

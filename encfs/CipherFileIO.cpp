@@ -346,12 +346,12 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
   return readSize;
 }
 
-bool CipherFileIO::writeOneBlock(const IORequest &req) {
+int CipherFileIO::writeOneBlock(const IORequest &req) {
 
   if (haveHeader && fsConfig->reverseEncryption) {
     VLOG(1)
         << "writing to a reverse mount with per-file IVs is not implemented";
-    return false;
+    return -EPERM;
   }
 
   int bs = blockSize();
@@ -366,19 +366,20 @@ bool CipherFileIO::writeOneBlock(const IORequest &req) {
     ok = blockWrite(req.data, (int)req.dataLen, blockNum ^ fileIV);
   }
 
+  int res = 0;
   if (ok) {
     if (haveHeader) {
       IORequest tmpReq = req;
       tmpReq.offset += HEADER_SIZE;
-      ok = base->write(tmpReq);
+      res = base->write(tmpReq);
     } else
-      ok = base->write(req);
+      res = base->write(req);
   } else {
     VLOG(1) << "encodeBlock failed for block " << blockNum << ", size "
             << req.dataLen;
-    ok = false;
+    res = -EBADMSG;
   }
-  return ok;
+  return res;
 }
 
 bool CipherFileIO::blockWrite(unsigned char *buf, int size,
