@@ -144,6 +144,8 @@ set(SOURCE_FILES
   encfs/RawFileIO.cpp
   encfs/readpassphrase.cpp
   encfs/SSL_Cipher.cpp
+  encfs/GCrypt_Cipher.cpp
+  encfs/gcrypt.cpp
   encfs/StreamNameIO.cpp
   encfs/XmlReader.cpp
 )
