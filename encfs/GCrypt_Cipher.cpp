@@ -912,10 +912,6 @@ bool GCrypt_Cipher::blockDecode(unsigned char *buf, int size, uint64_t iv64,
   return true;
 }
 
-int GCrypt_Cipher::getIntImplementation() const {return 2;}
-
-//int GCrypt_Cipher::getIntImplementation() const {return typeid(GCrypt_Cipher).name();}
-
 bool GCrypt_Cipher::Enabled() { return true; }
 
 }  // namespace encfs
