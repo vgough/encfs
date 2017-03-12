@@ -133,10 +133,6 @@ class GCrypt_Cipher : public Cipher {
   virtual bool blockDecode(unsigned char *buf, int size, uint64_t iv64,
                            const CipherKey &key) const;
 
-
-  virtual int getIntImplementation() const;
-
-
   // hack to help with static builds
   static bool Enabled();
 
