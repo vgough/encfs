@@ -228,9 +228,9 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
 
     // get the data from the base FileIO layer
     ssize_t readSize = base->read(tmp);
-    if (readSize == 0) {
+    if (readSize <= 0) {
       MemoryPool::release(mb);
-      return 0;
+      return readSize;
     }
 
     if (macBytes > 0) {
