@@ -41,16 +41,22 @@ fi
 enc_dir=$(canonicalize "$enc_dir")
 unenc_dir=$(canonicalize "$unenc_dir")
 
-# clear command-line argument list; hereafter used for options
-set --
+options=
 if [ "$unenc_dir_given" = "true" ]; then
     if [ "$mount_public" = "true" ]; then
-	set -- -- -o allow_other
+	options="-- -o allow_other"
     fi
 fi
 
 # Attach the directory and change into it
-if encfs "$enc_dir" "$unenc_dir" "$@"; then :; else
+
+## options can only have one of two values (empty, or "-- -o allow_other"), so
+## this unquoted expansion is safe; disabling relevant shellcheck warning.
+## See code review feedback requesting this attached to
+## https://github.com/vgough/encfs/pull/258/files/09b9fc5efb7c2694976baffe7dd21172fd182027
+## ...and that warning's explanation at https://github.com/koalaman/shellcheck/wiki/SC2086
+# shellcheck disable=SC2086
+if encfs "$enc_dir" "$unenc_dir" $options; then :; else
     echo "encfs failed"
     rmdir -- "$unenc_dir"
     exit 1
