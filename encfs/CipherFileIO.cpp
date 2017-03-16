@@ -337,7 +337,7 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
     if (!ok) {
       VLOG(1) << "decodeBlock failed for block " << blockNum << ", size "
               << readSize;
-      readSize = -1;
+      readSize = -EBADMSG;
     }
   } else {
     VLOG(1) << "readSize zero for offset " << req.offset;

@@ -190,7 +190,7 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
         RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
         if (!warnOnly) {
           MemoryPool::release(mb);
-          throw Error(_("MAC comparison failure, refusing to read"));
+          return -EBADMSG;
         }
       }
     }

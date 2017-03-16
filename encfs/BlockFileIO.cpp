@@ -147,6 +147,10 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
       }
 
       ssize_t readSize = cacheReadOneBlock(blockReq);
+      if (readSize < 0) {
+        result = readSize;
+        break;
+      }
       if (readSize <= partialOffset) break;  // didn't get enough bytes
 
       int cpySize = min((size_t)(readSize - partialOffset), size);
