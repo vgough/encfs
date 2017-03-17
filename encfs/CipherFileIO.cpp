@@ -186,7 +186,8 @@ int CipherFileIO::initHeader() {
     req.dataLen = 8;
     base->read(req);
 
-    cipher->streamDecode(buf, sizeof(buf), externalIV, key);
+    if(!cipher->streamDecode(buf, sizeof(buf), externalIV, key))
+      return -EBADMSG;
 
     fileIV = 0;
     for (int i = 0; i < 8; ++i) fileIV = (fileIV << 8) | (uint64_t)buf[i];
@@ -210,7 +211,8 @@ int CipherFileIO::initHeader() {
     } while (fileIV == 0);  // don't accept 0 as an option..
 
     if (base->isWritable()) {
-      cipher->streamEncode(buf, sizeof(buf), externalIV, key);
+      if(!cipher->streamEncode(buf, sizeof(buf), externalIV, key))
+        return -EBADMSG;
 
       IORequest req;
       req.offset = 0;
@@ -247,7 +249,8 @@ bool CipherFileIO::writeHeader() {
     fileIV >>= 8;
   }
 
-  cipher->streamEncode(buf, sizeof(buf), externalIV, key);
+  if(!cipher->streamEncode(buf, sizeof(buf), externalIV, key))
+    return false;
 
   IORequest req;
   req.offset = 0;
@@ -271,7 +274,7 @@ bool CipherFileIO::writeHeader() {
  * the IV. This guarantees unpredictability and prevents watermarking
  * attacks.
  */
-void CipherFileIO::generateReverseHeader(unsigned char *headerBuf) {
+int CipherFileIO::generateReverseHeader(unsigned char *headerBuf) {
 
   struct stat stbuf;
   int res = getAttr(&stbuf);
@@ -305,7 +308,9 @@ void CipherFileIO::generateReverseHeader(unsigned char *headerBuf) {
   VLOG(1) << "fileIV=" << fileIV;
 
   // Encrypt externally-visible header
-  cipher->streamEncode(headerBuf, HEADER_SIZE, externalIV, key);
+  if(!cipher->streamEncode(headerBuf, HEADER_SIZE, externalIV, key))
+    return -EBADMSG;
+  return 0;
 }
 
 /**
@@ -481,7 +486,9 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
   // generate the file IV header
   // this is needed in any case - without IV the file cannot be decoded
   unsigned char headerBuf[HEADER_SIZE];
-  const_cast<CipherFileIO *>(this)->generateReverseHeader(headerBuf);
+  int res = const_cast<CipherFileIO *>(this)->generateReverseHeader(headerBuf);
+  if (res < 0)
+    return res;
 
   // Copy the request so we can modify it without affecting the caller
   IORequest req = origReq;
