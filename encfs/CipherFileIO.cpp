@@ -109,7 +109,8 @@ bool CipherFileIO::setIV(uint64_t iv) {
           return false;
         }
       }
-      initHeader();
+      if (initHeader() < 0)
+        return false;
     }
 
     uint64_t oldIV = externalIV;
@@ -170,7 +171,7 @@ off_t CipherFileIO::getSize() const {
   return size;
 }
 
-void CipherFileIO::initHeader() {
+int CipherFileIO::initHeader() {
   // check if the file has a header, and read it if it does..  Otherwise,
   // create one.
   off_t rawSize = base->getSize();
@@ -196,8 +197,10 @@ void CipherFileIO::initHeader() {
 
     unsigned char buf[8] = {0};
     do {
-      if (!cipher->randomize(buf, 8, false))
-        throw Error("Unable to generate a random file IV");
+      if (!cipher->randomize(buf, 8, false)) {
+        RLOG(ERROR) << "Unable to generate a random file IV";
+        return -EBADMSG;
+      }
 
       fileIV = 0;
       for (int i = 0; i < 8; ++i) fileIV = (fileIV << 8) | (uint64_t)buf[i];
@@ -220,6 +223,7 @@ void CipherFileIO::initHeader() {
     }
   }
   VLOG(1) << "initHeader finished, fileIV = " << fileIV;
+  return 0;
 }
 
 bool CipherFileIO::writeHeader() {
@@ -324,8 +328,11 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
 
   bool ok;
   if (readSize > 0) {
-    if (haveHeader && fileIV == 0)
-      const_cast<CipherFileIO *>(this)->initHeader();
+    if (haveHeader && fileIV == 0) {
+      int res = const_cast<CipherFileIO *>(this)->initHeader();
+      if (res < 0)
+        return res;
+    }
 
     if (readSize != bs) {
       VLOG(1) << "streamRead(data, " << readSize << ", IV)";
@@ -357,7 +364,11 @@ int CipherFileIO::writeOneBlock(const IORequest &req) {
   int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
-  if (haveHeader && fileIV == 0) initHeader();
+  if (haveHeader && fileIV == 0) {
+    int res = initHeader();
+    if (res < 0)
+      return res;
+  }
 
   bool ok;
   if (req.dataLen != bs) {
@@ -437,7 +448,9 @@ int CipherFileIO::truncate(off_t size) {
         if (base->open(newFlags) < 0)
           VLOG(1) << "writeHeader failed to re-open for write";
       }
-      initHeader();
+      int res = initHeader();
+      if (res < 0)
+        return res;
     }
 
     // can't let BlockFileIO call base->truncate(), since it would be using

@@ -68,7 +68,7 @@ class CipherFileIO : public BlockFileIO {
   virtual int writeOneBlock(const IORequest &req);
   virtual void generateReverseHeader(unsigned char *data);
 
-  void initHeader();
+  int initHeader();
   bool writeHeader();
   bool blockRead(unsigned char *buf, int size, uint64_t iv64) const;
   bool streamRead(unsigned char *buf, int size, uint64_t iv64) const;
