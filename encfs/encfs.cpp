@@ -712,9 +712,9 @@ int _do_listxattr(EncFS_Context *, const string &cyName, char *list,
                   size_t size) {
 #ifdef XATTR_ADD_OPT
   int options = 0;
-  int res = ::listxattr(cyName.c_str(), list, size, options);
+  int res = ::llistxattr(cyName.c_str(), list, size, options);
 #else
-  int res = ::listxattr(cyName.c_str(), list, size);
+  int res = ::llistxattr(cyName.c_str(), list, size);
 #endif
   return (res == -1) ? -errno : res;
 }

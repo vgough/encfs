@@ -1,6 +1,6 @@
 language: cpp
 
-sudo: false
+sudo: true
 
 compiler:
   - clang
@@ -18,12 +18,13 @@ env:
    - secure: "KuAAwjiIqkk4vqSX/M3ZZIvQs6edm+tV8IADiklTUYZIFyxu8FgZ6RbDdMD2sef5bNZA1OZhlcbeRtiKff5CfMtvzc607Lg3NUkpi+ShMynWgqS/e0uCMf9ogEJlUiZMxf4juBi7v6DyMl/WV6pAdJmdfHtzcj8GF2mgTfQjkO8="
 
 before_script:
+  - sudo modprobe fuse
   - mkdir build
   - cd build
   - cmake ..
 
 script:
-  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make && ./checkops ; fi
+  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make && ./checkops && cd .. && ./test.sh ; fi
 
 addons:
   coverity_scan:
@@ -39,7 +40,8 @@ addons:
     sources:
       - ubuntu-toolchain-r-test
     packages:
+      - attr
       - clang
       - cmake
+      - fuse
       - libfuse-dev
-

@@ -964,9 +964,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   const std::string passwordProgram = opts->passwordProgram;
   bool useStdin = opts->useStdin;
   bool reverseEncryption = opts->reverseEncryption;
-  ConfigMode configMode = (useStdin &&
-                           opts->configMode == Config_Prompt) ? Config_Standard
-                                                              : opts->configMode;
+  ConfigMode configMode = opts->configMode;
   bool annotate = opts->annotate;
 
   RootPtr rootInfo;
@@ -1060,6 +1058,12 @@ RootPtr createV6Config(EncFS_Context *ctx,
 
     if (opts->requireMac) {
       blockMACBytes = 8;
+    }
+    if (reverseEncryption) {
+      /* Reverse mounts are read-only by default (set in main.cpp).
+       * If uniqueIV is off, writing can be allowed, because there
+       * is no header that could be overwritten */
+      if (uniqueIV == false) opts->readOnly = false;
     }
   }
 
@@ -1183,9 +1187,6 @@ RootPtr createV6Config(EncFS_Context *ctx,
     userKey = config->getUserKey(passwordProgram, rootDir);
   else
     userKey = config->getNewUserKey();
-
-  if (userKey == nullptr)
-    return rootInfo;
 
   cipher->writeKey(volumeKey, encodedKey, userKey);
   userKey.reset();
@@ -1366,6 +1367,11 @@ CipherKey EncFSConfig::makeKey(const char *password, int passwdLen) {
   CipherKey userKey;
   std::shared_ptr<Cipher> cipher = getCipher();
 
+  if (passwdLen == 0) {
+    cerr << _("fatal: zero-length passwords are not allowed\n");
+    exit(1);
+  }
+
   // if no salt is set and we're creating a new password for a new
   // FS type, then initialize salt..
   if (salt.size() == 0 && kdfIterations == 0 && cfgType >= Config_V6) {
@@ -1407,10 +1413,12 @@ CipherKey EncFSConfig::getUserKey(bool useStdin) {
   }
 
   CipherKey userKey;
-  if (!res)
-    cerr << _("Zero length password not allowed\n");
-  else
+  if (!res) {
+    cerr << _("fatal: error reading password\n");
+    exit(1);
+  } else {
     userKey = makeKey(passBuf, strlen(passBuf));
+  }
 
   memset(passBuf, 0, sizeof(passBuf));
 

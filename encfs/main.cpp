@@ -718,15 +718,19 @@ static void *idleMonitor(void *_arg) {
   pthread_mutex_lock(&ctx->wakeupMutex);
 
   while (ctx->running) {
-    int usage = ctx->getAndResetUsageCounter();
+    int usage, openCount;
+    ctx->getAndResetUsageCounter(&usage, &openCount);
 
     if (usage == 0 && ctx->isMounted())
       ++idleCycles;
-    else
+    else {
+      if (idleCycles >= timeoutCycles)
+        RLOG(INFO) << "Filesystem no longer inactive: "
+                   << arg->opts->mountPoint;
       idleCycles = 0;
+    }
 
     if (idleCycles >= timeoutCycles) {
-      int openCount = ctx->openFileCount();
       if (openCount == 0) {
         if (unmountFS(ctx)) {
           // wait for main thread to wake us up
