@@ -195,7 +195,9 @@ int BlockFileIO::write(const IORequest &req) {
   if (req.offset > fileSize) {
     // extend file first to fill hole with 0's..
     const bool forceWrite = false;
-    padFile(fileSize, req.offset, forceWrite);
+    int res = padFile(fileSize, req.offset, forceWrite);
+    if (res)
+      return res;
   }
 
   // check against edge cases where we can just let the base class handle the
@@ -244,7 +246,10 @@ int BlockFileIO::write(const IORequest &req) {
       } else {
         // have to merge with existing block data..
         blockReq.dataLen = _blockSize;
-        blockReq.dataLen = cacheReadOneBlock(blockReq);
+        if ((blockReq.dataLen = cacheReadOneBlock(blockReq)) < 0) {
+          res = blockReq.dataLen;
+          break;
+        }
 
         // extend data if necessary..
         if (partialOffset + toCopy > blockReq.dataLen)
@@ -274,10 +279,11 @@ int BlockFileIO::write(const IORequest &req) {
 
 int BlockFileIO::blockSize() const { return _blockSize; }
 
-void BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
+int BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
   off_t oldLastBlock = oldSize / _blockSize;
   off_t newLastBlock = newSize / _blockSize;
   int newBlockSize = newSize % _blockSize;
+  int res = 0;
 
   IORequest req;
   MemBlock mb;
@@ -296,9 +302,10 @@ void BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
 
       if (outSize) {
         memset(mb.data, 0, outSize);
-        cacheReadOneBlock(req);
-        req.dataLen = outSize;
-        cacheWriteOneBlock(req);
+        if ((res = cacheReadOneBlock(req)) >= 0) {
+          req.dataLen = outSize;
+          res = cacheWriteOneBlock(req);
+        }
       }
     } else
       VLOG(1) << "optimization: not padding last block";
@@ -317,33 +324,36 @@ void BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
     if (req.dataLen != 0) {
       VLOG(1) << "padding block " << oldLastBlock;
       memset(mb.data, 0, _blockSize);
-      cacheReadOneBlock(req);
-      req.dataLen = _blockSize;  // expand to full block size
-      cacheWriteOneBlock(req);
+      if ((res = cacheReadOneBlock(req)) >= 0) {
+        req.dataLen = _blockSize;  // expand to full block size
+        res = cacheWriteOneBlock(req);
+      }
       ++oldLastBlock;
     }
 
     // 2, pad zero blocks unless holes are allowed
     if (!_allowHoles) {
-      for (; oldLastBlock != newLastBlock; ++oldLastBlock) {
+      for (; !res && (oldLastBlock != newLastBlock); ++oldLastBlock) {
         VLOG(1) << "padding block " << oldLastBlock;
         req.offset = oldLastBlock * _blockSize;
         req.dataLen = _blockSize;
         memset(mb.data, 0, req.dataLen);
-        cacheWriteOneBlock(req);
+        res = cacheWriteOneBlock(req);
       }
     }
 
     // 3. only necessary if write is forced and block is non 0 length
-    if (forceWrite && newBlockSize) {
+    if (!res && forceWrite && newBlockSize) {
       req.offset = newLastBlock * _blockSize;
       req.dataLen = newBlockSize;
       memset(mb.data, 0, req.dataLen);
-      cacheWriteOneBlock(req);
+      res = cacheWriteOneBlock(req);
     }
   }
 
   if (mb.data) MemoryPool::release(mb);
+
+  return res;
 }
 
 int BlockFileIO::truncateBase(off_t size, FileIO *base) {
@@ -357,10 +367,11 @@ int BlockFileIO::truncateBase(off_t size, FileIO *base) {
     // states that it will pad with 0's.
     // do the truncate so that the underlying filesystem can allocate
     // the space, and then we'll fill it in padFile..
-    if (base) base->truncate(size);
+    if (base) res = base->truncate(size);
 
     const bool forceWrite = true;
-    padFile(oldSize, size, forceWrite);
+    if (!res)
+      res = padFile(oldSize, size, forceWrite);
   } else if (size == oldSize) {
     // the easiest case, but least likely....
   } else if (partialBlock) {
@@ -376,19 +387,17 @@ int BlockFileIO::truncateBase(off_t size, FileIO *base) {
     req.data = mb.data;
 
     ssize_t rdSz = cacheReadOneBlock(req);
+    if (rdSz < 0)
+      res = rdSz;
 
     // do the truncate
-    if (base) res = base->truncate(size);
+    else if (base)
+      res = base->truncate(size);
 
     // write back out partial block
     req.dataLen = partialBlock;
-    int wrRes = cacheWriteOneBlock(req);
-
-    if ((rdSz < 0) || (wrRes)) {
-      // rwarning - unlikely to ever occur..
-      RLOG(WARNING) << "truncate failure: read " << rdSz
-                    << " bytes, partial block of " << partialBlock;
-    }
+    if (!res)
+      res = cacheWriteOneBlock(req);
 
     MemoryPool::release(mb);
   } else {

@@ -95,20 +95,20 @@ bool CipherFileIO::setIV(uint64_t iv) {
   } else if (haveHeader) {
     // we have an old IV, and now a new IV, so we need to update the fileIV
     // on disk.
-    if (fileIV == 0) {
-      // ensure the file is open for read/write..
-      int newFlags = lastFlags | O_RDWR;
-      int res = base->open(newFlags);
-      if (res < 0) {
-        if (res == -EISDIR) {
-          // duh -- there are no file headers for directories!
-          externalIV = iv;
-          return base->setIV(iv);
-        } else {
-          VLOG(1) << "writeHeader failed to re-open for write";
-          return false;
-        }
+    // ensure the file is open for read/write..
+    int newFlags = lastFlags | O_RDWR;
+    int res = base->open(newFlags);
+    if (res < 0) {
+      if (res == -EISDIR) {
+        // duh -- there are no file headers for directories!
+        externalIV = iv;
+        return base->setIV(iv);
+      } else {
+        VLOG(1) << "setIV failed to re-open for write";
+        return false;
       }
+    }
+    if (fileIV == 0) {
       if (initHeader() < 0)
         return false;
     }
@@ -184,7 +184,9 @@ int CipherFileIO::initHeader() {
     req.offset = 0;
     req.data = buf;
     req.dataLen = 8;
-    base->read(req);
+    ssize_t readSize = base->read(req);
+    if(readSize < 0)
+      return readSize;
 
     if(!cipher->streamDecode(buf, sizeof(buf), externalIV, key))
       return -EBADMSG;
@@ -219,7 +221,9 @@ int CipherFileIO::initHeader() {
       req.data = buf;
       req.dataLen = 8;
 
-      base->write(req);
+      int res = base->write(req);
+      if (res)
+        return res;
     } else {
       VLOG(1) << "base not writable, IV not written..";
     }
@@ -229,15 +233,6 @@ int CipherFileIO::initHeader() {
 }
 
 bool CipherFileIO::writeHeader() {
-  if (!base->isWritable()) {
-    // open for write..
-    int newFlags = lastFlags | O_RDWR;
-    if (base->open(newFlags) < 0) {
-      VLOG(1) << "writeHeader failed to re-open for write";
-      return false;
-    }
-  }
-
   if (fileIV == 0) {
     RLOG(ERROR) << "Internal error: fileIV == 0 in writeHeader!!!";
   }
@@ -257,7 +252,8 @@ bool CipherFileIO::writeHeader() {
   req.data = buf;
   req.dataLen = 8;
 
-  base->write(req);
+  if (base->write(req))
+    return false;
 
   return true;
 }
@@ -351,7 +347,7 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
               << readSize;
       readSize = -EBADMSG;
     }
-  } else {
+  } else if (readSize == 0) {
     VLOG(1) << "readSize zero for offset " << req.offset;
   }
 
@@ -450,8 +446,11 @@ int CipherFileIO::truncate(off_t size) {
       if (!base->isWritable()) {
         // open for write..
         int newFlags = lastFlags | O_RDWR;
-        if (base->open(newFlags) < 0)
-          VLOG(1) << "writeHeader failed to re-open for write";
+        int res = base->open(newFlags);
+        if (res < 0) {
+          VLOG(1) << "truncate failed to re-open for write";
+          return res;
+        }
       }
       int res = initHeader();
       if (res < 0)
@@ -462,7 +461,7 @@ int CipherFileIO::truncate(off_t size) {
     // the wrong size..
     res = BlockFileIO::truncateBase(size, 0);
 
-    if (res == 0) base->truncate(size + HEADER_SIZE);
+    if (res == 0) res = base->truncate(size + HEADER_SIZE);
   }
   return res;
 }

@@ -49,7 +49,7 @@ class BlockFileIO : public FileIO {
 
  protected:
   int truncateBase(off_t size, FileIO *base);
-  void padFile(off_t oldSize, off_t newSize, bool forceWrite);
+  int padFile(off_t oldSize, off_t newSize, bool forceWrite);
 
   // same as read(), except that the request.offset field is guarenteed to be
   // block aligned, and the request size will not be larger then 1 block.
