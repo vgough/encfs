@@ -356,11 +356,7 @@ int _do_readlink(EncFS_Context *ctx, const string &cyName, char *buf,
 
   buf[res] = '\0';  // ensure null termination
   string decodedName;
-  try {
-    decodedName = FSRoot->plainPath(buf);
-  } catch (...) {
-    VLOG(1) << "caught error decoding path";
-  }
+  decodedName = FSRoot->plainPath(buf);
 
   if (!decodedName.empty()) {
     strncpy(buf, decodedName.c_str(), size - 1);
