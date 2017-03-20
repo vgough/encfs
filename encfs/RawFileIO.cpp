@@ -92,13 +92,11 @@ static int open_readonly_workaround(const char *path, int flags) {
   memset(&stbuf, 0, sizeof(struct stat));
   if (lstat(path, &stbuf) != -1) {
     // make sure user has read/write permission..
-    chmod(path, stbuf.st_mode | 0600);
-    fd = ::open(path, flags);
-    chmod(path, stbuf.st_mode);
-  } else {
-    RLOG(INFO) << "can't stat file " << path;
+    if (chmod(path, stbuf.st_mode | 0600) != -1) {
+      fd = ::open(path, flags);
+      chmod(path, stbuf.st_mode);
+    }
   }
-
   return fd;
 }
 
@@ -131,10 +129,11 @@ int RawFileIO::open(int flags) {
 #endif
 
     int newFd = ::open(name.c_str(), finalFlags);
+    int eno = errno;
 
     VLOG(1) << "open file with flags " << finalFlags << ", result = " << newFd;
 
-    if ((newFd == -1) && (errno == EACCES)) {
+    if ((newFd == -1) && (eno == EACCES)) {
       VLOG(1) << "using readonly workaround for open";
       newFd = open_readonly_workaround(name.c_str(), finalFlags);
     }
@@ -152,7 +151,7 @@ int RawFileIO::open(int flags) {
       result = fd = newFd;
     } else {
       result = -errno;
-      RLOG(DEBUG) << "::open error: " << strerror(errno);
+      RLOG(DEBUG) << "::open error: " << strerror(-result);
     }
   }
 
@@ -185,8 +184,9 @@ off_t RawFileIO::getSize() const {
       const_cast<RawFileIO *>(this)->knownSize = true;
       return fileSize;
     } else {
-      RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(errno);
-      return -1;
+      int eno = errno;
+      RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(eno);
+      return -eno;
     }
   } else {
     return fileSize;
@@ -199,8 +199,9 @@ ssize_t RawFileIO::read(const IORequest &req) const {
   ssize_t readSize = pread(fd, req.data, req.dataLen, req.offset);
 
   if (readSize < 0) {
+    readSize = -errno;
     RLOG(WARNING) << "read failed at offset " << req.offset << " for "
-                  << req.dataLen << " bytes: " << strerror(errno);
+                  << req.dataLen << " bytes: " << strerror(-readSize);
   }
 
   return readSize;
@@ -254,9 +255,6 @@ int RawFileIO::truncate(off_t size) {
 
   if (fd >= 0 && canWrite) {
     res = ::ftruncate(fd, size);
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
-    ::fdatasync(fd);
-#endif
   } else
     res = ::truncate(name.c_str(), size);
 
@@ -271,6 +269,12 @@ int RawFileIO::truncate(off_t size) {
     fileSize = size;
     knownSize = true;
   }
+
+#if !defined(__FreeBSD__) && !defined(__APPLE__)
+  if (fd >= 0 && canWrite) {
+    ::fdatasync(fd);
+  }
+#endif
 
   return res;
 }

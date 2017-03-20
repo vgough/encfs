@@ -140,14 +140,16 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
   if (uid != 0) {
     olduid = setfsuid(uid);
     if (olduid == -1) {
-      RLOG(DEBUG) << "setfsuid error: " << strerror(errno);
+      int eno = errno;
+      RLOG(DEBUG) << "setfsuid error: " << strerror(eno);
       return -EPERM;
     }
   }
   if (gid != 0) {
     oldgid = setfsgid(gid);
     if (oldgid == -1) {
-      RLOG(DEBUG) << "setfsgid error: " << strerror(errno);
+      int eno = errno;
+      RLOG(DEBUG) << "setfsgid error: " << strerror(eno);
       return -EPERM;
     }
   }
@@ -165,14 +167,14 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
   else
     res = ::mknod(_cname.c_str(), mode, rdev);
 
-  if (olduid >= 0) setfsuid(olduid);
-  if (oldgid >= 0) setfsgid(oldgid);
-
   if (res == -1) {
     int eno = errno;
     VLOG(1) << "mknod error: " << strerror(eno);
     res = -eno;
   }
+
+  if (olduid >= 0) setfsuid(olduid);
+  if (oldgid >= 0) setfsgid(oldgid);
 
   return res;
 }
