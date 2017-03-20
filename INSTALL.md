@@ -21,7 +21,7 @@ Optional, but strongly recommended, is running the test suite
 to verify that the generated binaries work as expected
 (runtime: 20 seconds)
 
-    make test
+    make check
 
 The compilation process creates two executables, encfs and encfsctl in
 the encfs directory.  You can install to in a system directory via

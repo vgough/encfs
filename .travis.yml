@@ -26,7 +26,7 @@ before_script:
   - ../ci/cmake/bin/cmake ..
 
 script:
-  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make && ./checkops && cd .. && ./test.sh ; fi
+  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make && make check ; fi
 
 addons:
   coverity_scan:
