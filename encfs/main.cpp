@@ -41,7 +41,8 @@
 #include "encfs.h"
 #include "fuse.h"
 #include "i18n.h"
-#include "openssl.h"
+//#include "openssl.h"
+#include "gcrypt.h"
 
 // Fuse version >= 26 requires another argument to fuse_unmount, which we
 // don't have.  So use the backward compatible call instead..
@@ -612,7 +613,8 @@ int main(int argc, char *argv[]) {
   encfs_oper.utimens = encfs_utimens;
   // encfs_oper.bmap = encfs_bmap;
 
-  openssl_init(encfsArgs->isThreaded);
+  //openssl_init(encfsArgs->isThreaded);
+  gcrypt_init();
 
   // context is not a smart pointer because it will live for the life of
   // the filesystem.
@@ -698,7 +700,7 @@ int main(int argc, char *argv[]) {
   ctx->setRoot(std::shared_ptr<DirNode>());
 
   MemoryPool::destroyAll();
-  openssl_shutdown(encfsArgs->isThreaded);
+  //openssl_shutdown(encfsArgs->isThreaded);
 
   return returnCode;
 }

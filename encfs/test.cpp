@@ -39,12 +39,15 @@
 #include "Range.h"
 #include "StreamNameIO.h"
 #include "internal/easylogging++.h"
+#include "gcrypt.h"
 
+/*
 #define NO_DES
 #include <openssl/ssl.h>
 #ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
 #endif
+*/
 
 using namespace std;
 using namespace encfs;
@@ -393,6 +396,7 @@ int main(int argc, char *argv[]) {
   START_EASYLOGGINGPP(argc, argv);
   encfs::initLogging();
 
+/*
   SSL_load_error_strings();
   SSL_library_init();
 
@@ -402,6 +406,9 @@ int main(int argc, char *argv[]) {
   ENGINE_register_all_digests();
   ENGINE_register_all_RAND();
 #endif
+*/
+
+  gcrypt_init();
 
   srand(time(0));
 

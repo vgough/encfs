@@ -32,7 +32,8 @@
 // run-time, to ensure that the linker doesn't optimize them away.
 #include "NullCipher.h"
 #include "Range.h"
-#include "SSL_Cipher.h"
+//#include "SSL_Cipher.h"
+#include "GCrypt_Cipher.h"
 #include "base64.h"
 
 using namespace std;
@@ -43,7 +44,8 @@ namespace encfs {
   if (!TYPE::Enabled()) cerr << "referenceModule: should never happen\n";
 
 static void AddSymbolReferences() {
-  REF_MODULE(SSL_Cipher)
+  REF_MODULE(GCrypt_Cipher);
+//  REF_MODULE(SSL_Cipher)
   REF_MODULE(NullCipher)
 }
 

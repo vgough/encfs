@@ -30,7 +30,8 @@
 #include <vector>
 
 #define NO_DES
-#include <openssl/ssl.h>
+//#include <openssl/ssl.h>
+#include "gcrypt.h"
 
 #include "Cipher.h"
 #include "CipherKey.h"
@@ -724,8 +725,9 @@ int main(int argc, char **argv) {
   textdomain(PACKAGE);
 #endif
 
-  SSL_load_error_strings();
-  SSL_library_init();
+//  SSL_load_error_strings();
+//  SSL_library_init();
+  gcrypt_init();
 
   if (argc < 2) {
     usage(argv[0]);

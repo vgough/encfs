@@ -26,7 +26,8 @@
 
 #include "Cipher.h"
 #include "CipherKey.h"
-#include "openssl.h"
+//#include "openssl.h"
+#include "gcrypt.h"
 
 using namespace std;
 using namespace encfs;
@@ -54,7 +55,8 @@ int main(int argc, char **argv) {
   const char *type = argv[1];
   int size = atoi(argv[2]);
 
-  openssl_init(false);
+  //openssl_init(false);
+  gcrypt_init();
 
   // get a list of the available algorithms
   std::shared_ptr<Cipher> cipher = Cipher::New(type, size);
