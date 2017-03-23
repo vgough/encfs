@@ -215,8 +215,8 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
   } else {	  //reverse = true
 
     if (randBytes > 0) {
-      throw Error(_("MAC rand bytes not yet implemented in reverse mode"));
-      return -1;
+      RLOG(ERROR) << "MAC rand bytes not yet implemented in reverse mode";
+      return -EPERM;
     }
 
     MemBlock mb = MemoryPool::allocate(blockSize());
@@ -256,7 +256,7 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
 
 bool MACFileIO::writeOneBlock(const IORequest &req) {
   if (reverse) {
-    throw Error(_("MAC write not implemented in reverse mode"));
+    RLOG(ERROR) << "MAC write not implemented in reverse mode";
     return false;
   }
 
@@ -300,8 +300,8 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
 
 int MACFileIO::truncate(off_t size) {
   if (reverse) {
-    throw Error(_("MAC write not implemented in reverse mode"));
-    return -1;
+    RLOG(ERROR) << "MAC write not implemented in reverse mode";
+    return -EPERM;
   }
 
   int headerSize = macBytes + randBytes;
