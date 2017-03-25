@@ -441,10 +441,10 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr ""
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
 msgstr ""
-"Chưa có thư mục \"%s\" trong hệ thống. Bạn có muốn tạo thư mục đó không? (c,"
-"k) "
+"Chưa có thư mục \"%s\" trong hệ thống. Bạn có muốn tạo thư mục đó không? (y,"
+"N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

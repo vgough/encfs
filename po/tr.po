@@ -477,8 +477,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "Yüklenen ayarlar --reverse ile uyumlu değil\n"
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "\"%s\" dizini mevcut değil. Yaratılmasını ister misiniz? (e,h) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "\"%s\" dizini mevcut değil. Yaratılmasını ister misiniz? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

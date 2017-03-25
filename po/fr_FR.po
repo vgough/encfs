@@ -482,8 +482,8 @@ msgstr ""
 "La configuration chargée n'est pas compatible avec l'option --reverse\n"
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Le répertoire \"%s\" n'existe pas. Faut-il le créer ? (y/n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "Le répertoire \"%s\" n'existe pas. Faut-il le créer ? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

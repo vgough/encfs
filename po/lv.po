@@ -475,8 +475,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr ""
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Mape \"%s\" neeksistē. Vai radīt to? (y,n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "Mape \"%s\" neeksistē. Vai radīt to? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"
