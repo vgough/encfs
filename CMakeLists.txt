@@ -83,15 +83,25 @@ check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
 check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
 
 # Check if xattr functions take extra arguments, as they do on OSX.
-# Output error is misleading, so do this test quietly.
 include (CheckCXXSourceCompiles)
-set(CMAKE_REQUIRED_QUIET_SAVE ${CMAKE_REQUIRED_QUIET})
-set (CMAKE_REQUIRED_QUIET True)
 check_cxx_source_compiles ("#include <sys/types.h>
   #include <sys/xattr.h>
   int main() { getxattr(0,0,0,0,0,0); return 1; }
   " XATTR_ADD_OPT)
-set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
+
+# Check if xattr function llistxattr exists.
+include (CheckCXXSourceCompiles)
+if (XATTR_ADD_OPT)
+check_cxx_source_compiles ("#include <sys/types.h>
+  #include <sys/xattr.h>
+  int main() { llistxattr(0,0,0,0); return 1; }
+  " XATTR_LLIST)
+else (XATTR_ADD_OPT)
+check_cxx_source_compiles ("#include <sys/types.h>
+  #include <sys/xattr.h>
+  int main() { llistxattr(0,0,0); return 1; }
+  " XATTR_LLIST)
+endif (XATTR_ADD_OPT)
 
 # Check if we have some standard functions.
 include (CheckFuncs)
