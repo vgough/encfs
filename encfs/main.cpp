@@ -80,6 +80,7 @@ struct EncFS_Args {
   int idleTimeout;  // 0 == idle time in minutes to trigger unmount
   const char *fuseArgv[MaxFuseArgs];
   int fuseArgc;
+  std::string syslogTag;  // syslog tag to use when logging using syslog
 
   std::shared_ptr<EncFS_Opts> opts;
 
@@ -190,6 +191,7 @@ static bool processArgs(int argc, char *argv[],
   out->isVerbose = false;
   out->idleTimeout = 0;
   out->fuseArgc = 0;
+  out->syslogTag = "encfs";
   out->opts->idleTracking = false;
   out->opts->checkKey = true;
   out->opts->forceDecode = false;
@@ -225,6 +227,7 @@ static bool processArgs(int argc, char *argv[],
       {"extpass", 1, 0, 'p'},           // external password program
       // {"single-thread", 0, 0, 's'},  // single-threaded mode
       {"stdinpass", 0, 0, 'S'},  // read password from stdin
+      {"syslogtag", 1, 0, 't'},         // syslog tag
       {"annotate", 0, 0,
        LONG_OPT_ANNOTATE},                  // Print annotation lines to stderr
       {"nocache", 0, 0, LONG_OPT_NOCACHE},  // disable caching
@@ -247,8 +250,9 @@ static bool processArgs(int argc, char *argv[],
     // 'm' : mount-on-demand
     // 'S' : password from stdin
     // 'o' : arguments meant for fuse
+    // 't' : syslog tag
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfvdmi:o:t:", long_options, &option_index);
 
     if (res == -1) break;
 
@@ -264,6 +268,9 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 'S':
         out->opts->useStdin = true;
+        break;
+      case 't':
+        out->syslogTag = optarg;
         break;
       case LONG_OPT_ANNOTATE:
         out->opts->annotate = true;
@@ -535,6 +542,7 @@ int main(int argc, char *argv[]) {
   }
 
   encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
+  ELPP_INITIALIZE_SYSLOG(encfsArgs->syslogTag.c_str(), 0, 0);
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();
