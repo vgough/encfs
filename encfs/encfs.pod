@@ -66,6 +66,11 @@ Normally these logging messages are disabled and have no effect.  It is
 recommended that you run in foreground (B<-f>) mode when running with verbose
 enabled.
 
+=item B<-t>, B<--syslogtag>
+
+This option allows to set the syslog tag which will be used when messages are
+logged via syslog. By default the syslog tag is set to B<encfs>.
+
 =item B<-s>
 
 The B<-s> (I<single threaded>) option causes B<EncFS> to run in single threaded
