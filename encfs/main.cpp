@@ -31,6 +31,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
+#include <pwd.h>
 
 #include "Context.h"
 #include "Error.h"
@@ -76,6 +77,7 @@ const int MaxFuseArgs = 32;
 struct EncFS_Args {
   bool isDaemon;    // true == spawn in background, log to syslog
   bool isThreaded;  // true == threaded
+  bool printUser;   // false == do not append username to syslog ident
   bool isVerbose;   // false == only enable warning/error messages
   int idleTimeout;  // 0 == idle time in minutes to trigger unmount
   const char *fuseArgv[MaxFuseArgs];
@@ -133,7 +135,9 @@ static void usage(const char *name) {
             "\t\t\tinstead of syslog.\n")
 
        // xgroup(usage)
-       << _("  -v, --verbose\t\t"
+       << _("  -u\t\t\t"
+            "append username to syslog ident\n"
+            "  -v, --verbose\t\t"
             "verbose: output encfs debug messages\n"
             "  -i, --idle=MINUTES\t"
             "Auto unmount after period of inactivity\n"
@@ -187,6 +191,7 @@ static bool processArgs(int argc, char *argv[],
   // set defaults
   out->isDaemon = true;
   out->isThreaded = true;
+  out->printUser = false;
   out->isVerbose = false;
   out->idleTimeout = 0;
   out->fuseArgc = 0;
@@ -241,6 +246,7 @@ static bool processArgs(int argc, char *argv[],
 
     // 's' : single-threaded mode
     // 'f' : foreground mode
+    // 'u' : append username to syslog ident
     // 'v' : verbose mode (same as --verbose)
     // 'd' : fuse debug mode (same as --fusedebug)
     // 'i' : idle-timeout, takes argument
@@ -248,7 +254,7 @@ static bool processArgs(int argc, char *argv[],
     // 'S' : password from stdin
     // 'o' : arguments meant for fuse
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfuvdmi:o:", long_options, &option_index);
 
     if (res == -1) break;
 
@@ -275,6 +281,9 @@ static bool processArgs(int argc, char *argv[],
         out->isDaemon = false;
         // this option was added in fuse 2.x
         PUSHARG("-f");
+        break;
+      case 'u':
+        out->printUser = true;
         break;
       case 'v':
         out->isVerbose = true;
@@ -491,11 +500,6 @@ void *encfs_init(fuse_conn_info *conn) {
   // set fuse connection options
   conn->async_read = true;
 
-  if (ctx->args->isDaemon) {
-    // Switch to using syslog.
-    encfs::rlogAction = el::base::DispatchAction::SysLog;
-  }
-
   // if an idle timeout is specified, then setup a thread to monitor the
   // filesystem.
   if (ctx->args->idleTimeout > 0) {
@@ -539,11 +543,15 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  if (encfsArgs->isVerbose) {
-    el::Loggers::setVerboseLevel(1);
+  encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
+  struct passwd *pw = getpwuid(geteuid());
+  char ident[5 + 1 + strlen(pw->pw_name) + 1];
+  strcpy(ident, "encfs");
+  if (encfsArgs->printUser) {
+    strcat(ident, "/");
+    strcat(ident, pw->pw_name);
   }
-
-  encfs::initLogging(encfsArgs->isVerbose);
+  ELPP_INITIALIZE_SYSLOG(ident, 0, 0); // Does not work being in initLogging()
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();
