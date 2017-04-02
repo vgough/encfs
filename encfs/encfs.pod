@@ -20,9 +20,14 @@ B<encfs> [B<--version>] [B<-s>] [B<-f>] [B<-v>|B<--verbose>]
 [B<-i MINUTES>|B<--idle=MINUTES>] [B<--extpass=program>] 
 [B<-S>|B<--stdinpass>] [B<--anykey>] [B<--forcedecode>] 
 [B<-d>|B<--fuse-debug>] [B<--public>] [B<--no-default-flags>]
-[B<--ondemand>] [B<--delaymount>] [B<--reverse>] [B<--standard>] 
+[B<--ondemand>] [B<--delaymount>] [B<--reverse>] [B<--standard>] [B<--paranoia>]
+[B<--require-macs>] [B<--nocache>] [B<--mount>] [B<--config=path>] 
 [B<-o FUSE_OPTION>]
 I<rootdir> I<mountPoint> 
+[B<--> [I<Fuse Mount Options>]]
+
+B<encfs> B<--unmount> [B<I<options>>] 
+I<mountPoint> 
 [B<--> [I<Fuse Mount Options>]]
 
 =head1 DESCRIPTION
@@ -247,6 +252,22 @@ which will not remain the same if the primary password is changed.
 
 B<Warning>: Use this option at your own risk.
 
+=item B<--mount>
+
+Specifies that B<EncFS> I<must> mount the given filesystem, meaning that the filesystem
+must already exist.  B<EncFS> will not create the filesystem if it is non-existant 
+with this option enabled. 
+
+=item B<--unmount>
+
+Unmount the filesystem as specified by I<mountPoint>.  Note that this option cannot be 
+used with B<--mount> and must only specify I<mountPoint>. 
+
+=item B<--config=path>
+
+Specifies which config file to use, overriding environment variable ENCFS6_CONFIG.  Refer 
+to the warnings specified by I<ENCFS6_CONFIG> below. 
+
 =back
 
 =head1 ENVIRONMENT VARIABLES
@@ -294,6 +315,10 @@ there, they can be seen in encrypted form in I<~/.crypt>.  To unmount the
 filesystem, use I<fusermount> with the B<-u> (unmount) option:
 
     % fusermount -u ~/crypt
+
+or by running I<encfs> with the B<--unmount> option: 
+
+    % encfs --unmount ~/crypt
 
 Another example.  To mount the same filesystem, but have fusermount name the
 mount point '/dev/foo' (as shown in I<df> and other tools which read
