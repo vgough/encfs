@@ -1,7 +1,7 @@
-# 3.2.0 preferred, but we can often get by with 2.8.
+# 3.0 preferred, but we can often get by with 2.8.
 cmake_minimum_required(VERSION 2.8)
-if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} LESS 3.2)
-  message(WARNING "You should use cmake 3.2.0 or newer for configuration to run correctly.")
+if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION} LESS 3.0.2)
+  message(WARNING "You should use cmake 3.0.2 or newer for configuration to run correctly.")
 endif()
 
 project(EncFS C CXX)
