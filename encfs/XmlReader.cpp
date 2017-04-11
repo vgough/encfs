@@ -23,6 +23,8 @@
 #include <algorithm>  // for remove_if
 #include <cstring>    // for NULL
 #include <memory>     // for shared_ptr
+#include <fstream>    // for ifstream
+#include <sstream>    // for ostringstream
 
 #include <tinyxml2.h>  // for XMLElement, XMLNode, XMLDocument (ptr only)
 
@@ -167,7 +169,12 @@ XmlReader::~XmlReader() {}
 bool XmlReader::load(const char *fileName) {
   pd->doc.reset(new tinyxml2::XMLDocument());
 
-  auto err = pd->doc->LoadFile(fileName);
+  std::ifstream in(fileName);
+  if (!in) return false;
+
+  std::ostringstream fileContent;
+  fileContent << in.rdbuf();
+  auto err = pd->doc->Parse(fileContent.str().c_str());
   return err == tinyxml2::XML_SUCCESS;
 }
 
