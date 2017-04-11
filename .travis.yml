@@ -21,6 +21,7 @@ before_script:
   - sudo modprobe fuse
   - mkdir build
   - cd build
+  - type cmake
   - cmake --version
   - cmake ..
 
