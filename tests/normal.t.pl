@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 104;
+use Test::More tests => 106;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -48,6 +48,7 @@ sub runTests
     &grow;
     &umask0777;
 
+    &configFromPipe;
     &cleanup;
 }
 
@@ -305,11 +306,19 @@ sub mount
     mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
 
     delete $ENV{"ENCFS6_CONFIG"};
+    remount($args);
+    ok( $? == 0, "encfs command returns 0") || BAIL_OUT("");
+    ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
+}
+
+# Helper function
+# Mount without any prior checks
+sub remount
+{
+    my $args = shift;
     my $cmdline = "./build/encfs --extpass=\"echo test\" $args $raw $crypt 2>&1";
     #                                  This makes sure we get to see stderr ^
-    my $status = system($cmdline);
-    ok( $status == 0, "encfs command returns 0") || BAIL_OUT("");
-    ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
+    system($cmdline);
 }
 
 # Helper function
@@ -333,4 +342,21 @@ sub umask0777
     ok(open(my $fh, "+>$crypt/umask0777"), "open with umask 0777");
     close($fh);
     umask($old);
+}
+
+# Test that we can read the configuration from a named pipe
+# Regression test for https://github.com/vgough/encfs/issues/253
+sub configFromPipe
+{
+    portable_unmount($crypt);
+    rename("$raw/.encfs6.xml", "$raw/.encfs6.xml.orig");
+    system("mkfifo $raw/.encfs6.xml");
+    my $child = fork();
+    unless ($child) {
+        &remount("--standard");
+        exit;
+    }
+    system("cat $raw/.encfs6.xml.orig > $raw/.encfs6.xml");
+    waitpid($child, 0);
+    ok( 0 == $?, "encfs mount with named pipe based config failed");
 }
