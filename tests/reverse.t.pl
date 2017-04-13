@@ -132,6 +132,11 @@ sub grow {
         last unless $ok;
     }
     ok($ok, "ciphertext and decrypted size of file grown to $i bytes");
+    close($pfh);
+    close($vfh);
+    close($cfh);
+    close($dfh);
+    unlink("$plain/grow"); 
 }
 
 sub largeRead {
