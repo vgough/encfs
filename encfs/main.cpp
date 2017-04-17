@@ -43,6 +43,7 @@
 #include "i18n.h"
 #include "openssl.h"
 
+
 // Fuse version >= 26 requires another argument to fuse_unmount, which we
 // don't have.  So use the backward compatible call instead..
 extern "C" void fuse_unmount_compat22(const char *mountpoint);
