@@ -41,7 +41,6 @@
 #include <attr/xattr.h>
 #endif
 
-#include "internal/easylogging++.h"
 #include <functional>
 #include <string>
 #include <vector>

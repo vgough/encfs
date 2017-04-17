@@ -20,7 +20,6 @@
 
 #include "StreamNameIO.h"
 
-#include "internal/easylogging++.h"
 #include <cstring>
 
 #include "Cipher.h"
