@@ -29,8 +29,9 @@
 #include "Interface.h"
 #include "NameIO.h"
 #include "base64.h"
-#include "internal/easylogging++.h"
 #include "intl/gettext.h"
+#include <iostream>
+#define VLOG(LEVEL, ...) std::cerr
 
 namespace encfs {
 
