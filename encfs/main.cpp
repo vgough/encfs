@@ -78,6 +78,7 @@ struct EncFS_Args {
   int idleTimeout;  // 0 == idle time in minutes to trigger unmount
   const char *fuseArgv[MaxFuseArgs];
   int fuseArgc;
+  std::string syslogTag
 
   std::shared_ptr<EncFS_Opts> opts;
 
