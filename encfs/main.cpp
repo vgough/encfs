@@ -523,6 +523,7 @@ void *encfs_init(fuse_conn_info *conn) {
 void encfs_destroy(void *_ctx) {}
 
 int main(int argc, char *argv[]) {
+  std::cerr.setstate(std::ios::failbit) ;
 #if defined(ENABLE_NLS) && defined(LOCALEDIR)
   setlocale(LC_ALL, "");
   bindtextdomain(PACKAGE, LOCALEDIR);
