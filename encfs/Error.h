@@ -3,8 +3,8 @@
 
 // Provides compatibility with RLog's rAssert, which throws an Error exception.
 
-#include "internal/easylogging++.h"
 #include <stdexcept>
+#include <iostream>
 
 namespace encfs {
 
@@ -27,10 +27,8 @@ void initLogging(bool enable_debug = false, bool is_daemon = false);
 
 // This can be changed to change log action between normal and syslog logging.
 // Not thread-safe, so any change must occur outside of threading context.
-extern el::base::DispatchAction rlogAction;
 
-#define RLOG(LEVEL, ...) \
-  C##LEVEL(el::base::Writer, rlogAction, ELPP_CURR_FILE_LOGGER_ID)
+#define RLOG(LEVEL, ...) std::cerr
 
 }  // namespace encfs
 

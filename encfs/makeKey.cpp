@@ -31,8 +31,6 @@
 using namespace std;
 using namespace encfs;
 
-INITIALIZE_EASYLOGGINGPP
-
 void genKey(const std::shared_ptr<Cipher> &cipher) {
   CipherKey key = cipher->newRandomKey();
 

@@ -20,7 +20,8 @@
 
 #include "CipherFileIO.h"
 
-#include "internal/easylogging++.h"
+#include <iostream>
+#define CHECK_EQ(...) std::cerr
 #include <cerrno>
 #include <fcntl.h>
 #include <inttypes.h>

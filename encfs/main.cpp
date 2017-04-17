@@ -58,8 +58,6 @@ using namespace std;
 using namespace encfs;
 using gnu::autosprintf;
 
-INITIALIZE_EASYLOGGINGPP
-
 namespace encfs {
 
 class DirNode;
@@ -80,7 +78,6 @@ struct EncFS_Args {
   int idleTimeout;  // 0 == idle time in minutes to trigger unmount
   const char *fuseArgv[MaxFuseArgs];
   int fuseArgc;
-  std::string syslogTag;  // syslog tag to use when logging using syslog
 
   std::shared_ptr<EncFS_Opts> opts;
 
@@ -542,7 +539,6 @@ int main(int argc, char *argv[]) {
   }
 
   encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
-  ELPP_INITIALIZE_SYSLOG(encfsArgs->syslogTag.c_str(), 0, 0);
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();

@@ -53,8 +53,6 @@ using namespace std;
 using gnu::autosprintf;
 using namespace encfs;
 
-INITIALIZE_EASYLOGGINGPP
-
 static int showInfo(int argc, char **argv);
 static int showVersion(int argc, char **argv);
 static int chpasswd(int argc, char **argv);
@@ -714,7 +712,6 @@ static int ckpasswdAutomaticly(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-  START_EASYLOGGINGPP(argc, argv);
   encfs::initLogging();
 
 #if defined(ENABLE_NLS) && defined(LOCALEDIR)
