@@ -49,8 +49,6 @@
 using namespace std;
 using namespace encfs;
 
-INITIALIZE_EASYLOGGINGPP
-
 const int FSBlockSize = 256;
 
 static int checkErrorPropogation(const std::shared_ptr<Cipher> &cipher,

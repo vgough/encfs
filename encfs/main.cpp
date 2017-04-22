@@ -58,8 +58,6 @@ using namespace std;
 using namespace encfs;
 using gnu::autosprintf;
 
-INITIALIZE_EASYLOGGINGPP
-
 namespace encfs {
 
 class DirNode;
