@@ -1,5 +1,7 @@
 #include "Error.h"
 
+INITIALIZE_EASYLOGGINGPP
+
 namespace encfs {
 
 el::base::DispatchAction rlogAction = el::base::DispatchAction::NormalLog;
