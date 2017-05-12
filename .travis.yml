@@ -46,3 +46,4 @@ addons:
       - clang
       - fuse
       - libfuse-dev
+      - gettext
