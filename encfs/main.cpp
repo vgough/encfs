@@ -552,8 +552,8 @@ int main(int argc, char *argv[]) {
   memset(&encfs_oper, 0, sizeof(fuse_operations));
 
   encfs_oper.getattr = encfs_getattr;
+  encfs_oper.fgetattr = encfs_fgetattr;   // removed from libfuse 3.0.0 !
   encfs_oper.readlink = encfs_readlink;
-  encfs_oper.readdir = encfs_readdir;
   encfs_oper.mknod = encfs_mknod;
   encfs_oper.mkdir = encfs_mkdir;
   encfs_oper.unlink = encfs_unlink;
@@ -564,7 +564,7 @@ int main(int argc, char *argv[]) {
   encfs_oper.chmod = encfs_chmod;
   encfs_oper.chown = encfs_chown;
   encfs_oper.truncate = encfs_truncate;
-  encfs_oper.utime = encfs_utime;  // deprecated for utimens
+  encfs_oper.ftruncate = encfs_ftruncate; // removed from libfuse 3.0.0 !
   encfs_oper.open = encfs_open;
   encfs_oper.read = encfs_read;
   encfs_oper.write = encfs_write;
@@ -579,18 +579,23 @@ int main(int argc, char *argv[]) {
   encfs_oper.removexattr = encfs_removexattr;
 #endif  // HAVE_XATTR
   // encfs_oper.opendir = encfs_opendir;
-  // encfs_oper.readdir = encfs_readdir;
+  encfs_oper.readdir = encfs_readdir;
   // encfs_oper.releasedir = encfs_releasedir;
   // encfs_oper.fsyncdir = encfs_fsyncdir;
   encfs_oper.init = encfs_init;
   encfs_oper.destroy = encfs_destroy;
   // encfs_oper.access = encfs_access;
   encfs_oper.create = encfs_create;
-  encfs_oper.ftruncate = encfs_ftruncate;
-  encfs_oper.fgetattr = encfs_fgetattr;
   // encfs_oper.lock = encfs_lock;
   encfs_oper.utimens = encfs_utimens;
+  encfs_oper.utime = encfs_utime;         // removed from libfuse 3.0.0 !
   // encfs_oper.bmap = encfs_bmap;
+  // encfs_oper.ioctl = encfs_ioctl;
+  // encfs_oper.poll = encfs_poll;
+  // encfs_oper.write_buf = encfs_write_buf;
+  // encfs_oper.read_buf = encfs_read_buf;
+  // encfs_oper.flock = encfs_flock;
+  // encfs_oper.fallocate = encfs_fallocate;
 
   openssl_init(encfsArgs->isThreaded);
 
