@@ -78,7 +78,7 @@ struct EncFS_Args {
   int idleTimeout;  // 0 == idle time in minutes to trigger unmount
   const char *fuseArgv[MaxFuseArgs];
   int fuseArgc;
-  std::string syslogTag;  // syslog tag to use when logging using syslog
+  std::string syslogTag;
 
   std::shared_ptr<EncFS_Opts> opts;
 
@@ -522,6 +522,7 @@ void *encfs_init(fuse_conn_info *conn) {
 void encfs_destroy(void *_ctx) {}
 
 int main(int argc, char *argv[]) {
+  std::cerr.setstate(std::ios::failbit) ;
 #if defined(ENABLE_NLS) && defined(LOCALEDIR)
   setlocale(LC_ALL, "");
   bindtextdomain(PACKAGE, LOCALEDIR);
@@ -540,7 +541,6 @@ int main(int argc, char *argv[]) {
   }
 
   encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
-  ELPP_INITIALIZE_SYSLOG(encfsArgs->syslogTag.c_str(), 0, 0);
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();

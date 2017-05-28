@@ -712,7 +712,6 @@ static int ckpasswdAutomaticly(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-  START_EASYLOGGINGPP(argc, argv);
   encfs::initLogging();
 
 #if defined(ENABLE_NLS) && defined(LOCALEDIR)

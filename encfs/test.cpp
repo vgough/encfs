@@ -38,7 +38,6 @@
 #include "NameIO.h"
 #include "Range.h"
 #include "StreamNameIO.h"
-#include "internal/easylogging++.h"
 
 #define NO_DES
 #include <openssl/ssl.h>
@@ -395,7 +394,6 @@ static bool testCipherSize(const string &name, int keySize, int blockSize,
 }
 
 int main(int argc, char *argv[]) {
-  START_EASYLOGGINGPP(argc, argv);
   encfs::initLogging();
 
   SSL_load_error_strings();

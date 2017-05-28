@@ -23,6 +23,9 @@
 #include "ConfigVar.h"
 #include "Error.h"
 
+#include <iostream>
+#define VLOG(LEVEL, ...) std::cerr
+
 namespace encfs {
 
 Interface::Interface(const char *name_, int Current, int Revision, int Age)

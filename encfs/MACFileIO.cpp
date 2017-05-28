@@ -20,7 +20,6 @@
 
 #include "MACFileIO.h"
 
-#include "internal/easylogging++.h"
 #include <cstring>
 #include <inttypes.h>
 #include <sys/stat.h>

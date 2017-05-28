@@ -21,7 +21,9 @@
 #ifndef _encfs_incl_
 #define _encfs_incl_
 
-#include "internal/easylogging++.h"
+#include <iostream>
+#define VLOG(LEVEL, ...) std::cerr
+#define CHECK(...) std::cerr
 #include <fuse.h>
 #include <sys/types.h>
 #include <unistd.h>

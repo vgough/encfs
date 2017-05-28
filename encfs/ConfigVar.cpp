@@ -20,7 +20,8 @@
 
 #include "ConfigVar.h"
 
-#include "internal/easylogging++.h"
+#include <iostream>
+#define VLOG(LEVEL, ...) std::cerr
 #include <cstring>
 
 #include "Error.h"

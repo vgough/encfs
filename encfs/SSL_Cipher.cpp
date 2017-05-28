@@ -18,7 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "internal/easylogging++.h"
 #include <cstring>
 #include <openssl/crypto.h>
 #include <openssl/err.h>

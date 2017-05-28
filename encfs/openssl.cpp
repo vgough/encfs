@@ -31,6 +31,9 @@
 #include <openssl/engine.h>
 #endif
 
+#include <iostream>
+#define VLOG(LEVEL, ...) std::cerr
+
 #include "Error.h"
 
 namespace encfs {
