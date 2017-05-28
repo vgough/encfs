@@ -43,11 +43,6 @@
 #include "i18n.h"
 #include "openssl.h"
 
-// Fuse version >= 26 requires another argument to fuse_unmount, which we
-// don't have.  So use the backward compatible call instead..
-extern "C" void fuse_unmount_compat22(const char *mountpoint);
-#define fuse_unmount fuse_unmount_compat22
-
 /* Arbitrary identifiers for long options that do
  * not have a short version */
 #define LONG_OPT_ANNOTATE 513
@@ -712,6 +707,11 @@ static void *idleMonitor(void *_arg) {
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;
   int idleCycles = -1;
 
+  bool unmountres = false;
+
+  // We will notify when FS will be unmounted, so notify that it has just been mounted
+  RLOG(INFO) << "Filesystem mounted: " << arg->opts->mountPoint;
+
   pthread_mutex_lock(&ctx->wakeupMutex);
 
   while (ctx->running) {
@@ -729,15 +729,15 @@ static void *idleMonitor(void *_arg) {
 
     if (idleCycles >= timeoutCycles) {
       if (openCount == 0) {
-        if (unmountFS(ctx)) {
+        unmountres = unmountFS(ctx);
+        if (unmountres) {
           // wait for main thread to wake us up
           pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
           break;
         }
       } else {
-        RLOG(WARNING) << "Filesystem " << arg->opts->mountPoint
-                      << " inactivity detected, but still " << openCount
-                      << " opened files";
+        RLOG(WARNING) << "Filesystem inactive, but " << openCount
+                      << " files opened: " << arg->opts->mountPoint;
       }
     }
 
@@ -754,6 +754,10 @@ static void *idleMonitor(void *_arg) {
 
   pthread_mutex_unlock(&ctx->wakeupMutex);
 
+  // If we are here FS has been unmounted, so if we did not unmount ourselves (manual, kill...), notify
+  if (!unmountres)
+    RLOG(INFO) << "Filesystem unmounted: " << arg->opts->mountPoint;
+
   VLOG(1) << "Idle monitoring thread exiting";
 
   return 0;
@@ -769,9 +773,18 @@ static bool unmountFS(EncFS_Context *ctx) {
     return false;
   } else {
     // Time to unmount!
-    RLOG(WARNING) << "Unmounting filesystem due to inactivity: "
-                  << arg->opts->mountPoint;
-    fuse_unmount(arg->opts->mountPoint.c_str());
-    return true;
+    int rc=1;
+    if (access("/bin/umount", F_OK) != -1)
+      rc = system(("/bin/umount "+std::string(arg->opts->mountPoint)).c_str());
+    else
+      rc = system(("/sbin/umount "+std::string(arg->opts->mountPoint)).c_str());
+    if (!rc) {
+      RLOG(INFO) << "Filesystem inactive, unmounted: " << arg->opts->mountPoint;
+      return true;
+    }
+    else {
+      RLOG(ERROR) << "Filesystem inactive, but unmount failed: " << arg->opts->mountPoint;
+      return false;
+    }
   }
 }
