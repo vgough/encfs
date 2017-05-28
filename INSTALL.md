@@ -21,7 +21,7 @@ Optional, but strongly recommended, is running the test suite
 to verify that the generated binaries work as expected
 (runtime: 20 seconds)
 
-    make test
+    make check
 
 The compilation process creates two executables, encfs and encfsctl in
 the encfs directory.  You can install to in a system directory via
@@ -46,7 +46,7 @@ EncFS depends on a number of libraries:
     * tinyxml2 : for reading and writing XML configuration files
     * gettext : internationalization support
     * libintl : internationalization support
-    * cmake : version 3.2 or newer
+    * cmake : version 3.0.2 (Debian jessie version) or newer
     * GNU make or ninja-build : to run the build for cmake
 
 Compiling on Debian and Ubuntu

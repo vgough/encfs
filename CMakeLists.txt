@@ -1,5 +1,9 @@
-# 3.1 preferred, but we can often get by with 2.8.
+# 3.0.2 preferred, but we can often get by with 2.8.
 cmake_minimum_required(VERSION 2.8)
+if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION} LESS 3.0.2)
+  message(WARNING "You should use cmake 3.0.2 or newer for configuration to run correctly.")
+endif()
+
 project(EncFS C CXX)
 
 set (ENCFS_MAJOR 1)
@@ -245,15 +249,26 @@ endif (POD2MAN)
 
 # Tests
 enable_testing()
+
+if (CMAKE_CONFIGURATION_TYPES)
+    add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
+        --force-new-ctest-process --output-on-failure
+        --build-config "$<CONFIGURATION>")
+else()
+    add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
+        --force-new-ctest-process --output-on-failure)
+endif()
+
 add_test (NAME checkops
           COMMAND checkops)
 
 find_program (PERL_PROGRAM perl)
 if (PERL_PROGRAM)
   file(GLOB pl_test_files "tests/*.t.pl")
-  #add_test (NAME scriptedtests
-  #          COMMAND ${PERL_PROGRAM} -I ${CMAKE_CURRENT_LIST_DIR}
-  #             -MTest::Harness
-  #             -e "$$Test::Harness::verbose=1; runtests @ARGV;"
-  #             ${pl_test_files})
+  add_test (NAME scriptedtests
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMAND ${PERL_PROGRAM}
+               -MTest::Harness
+               -e "$$Test::Harness::verbose=1; runtests @ARGV;"
+               ${pl_test_files})
 endif (PERL_PROGRAM)
