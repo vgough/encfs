@@ -94,15 +94,15 @@ ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
   }
 }
 
-bool BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
+int BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
   // cache results of write (before pass-thru, because it may be modified
   // in-place)
   memcpy(_cache.data, req.data, req.dataLen);
   _cache.offset = req.offset;
   _cache.dataLen = req.dataLen;
-  bool ok = writeOneBlock(req);
-  if (!ok) clearCache(_cache, _blockSize);
-  return ok;
+  int res = writeOneBlock(req);
+  if (res) clearCache(_cache, _blockSize);
+  return res;
 }
 
 /**
@@ -171,7 +171,7 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
   return result;
 }
 
-bool BlockFileIO::write(const IORequest &req) {
+int BlockFileIO::write(const IORequest &req) {
   CHECK(_blockSize != 0);
 
   off_t fileSize = getSize();
@@ -213,7 +213,7 @@ bool BlockFileIO::write(const IORequest &req) {
   blockReq.data = NULL;
   blockReq.dataLen = _blockSize;
 
-  bool ok = true;
+  int res = 0;
   size_t size = req.dataLen;
   unsigned char *inPtr = req.data;
   while (size) {
@@ -251,8 +251,8 @@ bool BlockFileIO::write(const IORequest &req) {
     }
 
     // Finally, write the damn thing!
-    if (!cacheWriteOneBlock(blockReq)) {
-      ok = false;
+    res = cacheWriteOneBlock(blockReq);
+    if (res) {
       break;
     }
 
@@ -265,7 +265,7 @@ bool BlockFileIO::write(const IORequest &req) {
 
   if (mb.data) MemoryPool::release(mb);
 
-  return ok;
+  return res;
 }
 
 int BlockFileIO::blockSize() const { return _blockSize; }
@@ -378,9 +378,9 @@ int BlockFileIO::truncateBase(off_t size, FileIO *base) {
 
     // write back out partial block
     req.dataLen = partialBlock;
-    bool wrRes = cacheWriteOneBlock(req);
+    int wrRes = cacheWriteOneBlock(req);
 
-    if ((rdSz < 0) || (!wrRes)) {
+    if ((rdSz < 0) || (wrRes)) {
       // rwarning - unlikely to ever occur..
       RLOG(WARNING) << "truncate failure: read " << rdSz
                     << " bytes, partial block of " << partialBlock;

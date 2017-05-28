@@ -68,7 +68,7 @@ class FileNode {
   off_t getSize() const;
 
   ssize_t read(off_t offset, unsigned char *data, ssize_t size) const;
-  bool write(off_t offset, unsigned char *data, ssize_t size);
+  int write(off_t offset, unsigned char *data, ssize_t size);
 
   // truncate the file to a particular size
   int truncate(off_t size);

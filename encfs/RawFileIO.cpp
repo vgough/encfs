@@ -206,7 +206,7 @@ ssize_t RawFileIO::read(const IORequest &req) const {
   return readSize;
 }
 
-bool RawFileIO::write(const IORequest &req) {
+int RawFileIO::write(const IORequest &req) {
   rAssert(fd >= 0);
   rAssert(true == canWrite);
 
@@ -215,14 +215,17 @@ bool RawFileIO::write(const IORequest &req) {
   ssize_t bytes = req.dataLen;
   off_t offset = req.offset;
 
+  int eno = 0;
   while (bytes && retrys > 0) {
+    errno = 0;
     ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
+    eno = errno;
 
     if (writeSize < 0) {
       knownSize = false;
       RLOG(WARNING) << "write failed at offset " << offset << " for " << bytes
-                    << " bytes: " << strerror(errno);
-      return false;
+                    << " bytes: " << strerror(eno);
+      return -eno;
     }
 
     bytes -= writeSize;
@@ -235,14 +238,14 @@ bool RawFileIO::write(const IORequest &req) {
     RLOG(ERROR) << "Write error: wrote " << req.dataLen - bytes << " bytes of "
                 << req.dataLen << ", max retries reached";
     knownSize = false;
-    return false;
+    return (eno) ? -eno : -EIO;
   } else {
     if (knownSize) {
       off_t last = req.offset + req.dataLen;
       if (last > fileSize) fileSize = last;
     }
 
-    return true;
+    return 0;
   }
 }
 
