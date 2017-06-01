@@ -270,11 +270,13 @@ int RawFileIO::truncate(off_t size) {
     knownSize = true;
   }
 
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
   if (fd >= 0 && canWrite) {
+#ifdef FDATASYNC
     ::fdatasync(fd);
-  }
+#else
+    ::fsync(fd);
 #endif
+  }
 
   return res;
 }
