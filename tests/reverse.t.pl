@@ -13,6 +13,22 @@ require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
+# Find attr binary
+my @binattr = ("attr", "-l");
+if(system("which xattr") == 0)
+{
+  @binattr = ("xattr", "-l");
+}
+if(system("which lsextattr") == 0)
+{
+  @binattr = ("lsextattr", "user");
+}
+if(system("./build/encfs -V 2>&1 | grep -q HAVE_XATTR") != 0)
+{
+  @binattr = ("ls", "-l"); //workaround for binaries without xattr support so that tests will not fail
+}
+
+
 # Helper function
 # Create a new empty working directory
 sub newWorkingDir
@@ -84,7 +100,7 @@ sub symlink_test
     $dec = readlink("$decrypted/symlink");
     ok( $dec eq $target, "symlink to '$target'") or
         print("# (original) $target' != '$dec' (decrypted)\n");
-    system("attr", "-l", "$decrypted/symlink");
+    system(@binattr, "$decrypted/symlink");
     my $return_code = $?;
     is($return_code, 0, "symlink to '$target' extended attributes can be read (return code was $return_code)");
     unlink("$plain/symlink");
