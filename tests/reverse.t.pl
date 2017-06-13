@@ -17,15 +17,16 @@ my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 my @binattr = ("attr", "-l");
 if(system("which xattr") == 0)
 {
-  @binattr = ("xattr", "-l");
+    @binattr = ("xattr", "-l");
 }
 if(system("which lsextattr") == 0)
 {
-  @binattr = ("lsextattr", "user");
+    @binattr = ("lsextattr", "user");
 }
 if(system("./build/encfs -V 2>&1 | grep -q HAVE_XATTR") != 0)
 {
-  @binattr = ("ls", "-l"); //workaround for binaries without xattr support so that tests will not fail
+    # Workaround for binaries without xattr support so that tests will not fail
+    @binattr = ("ls", "-l");
 }
 
 
