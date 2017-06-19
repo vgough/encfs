@@ -13,8 +13,8 @@ if (APPLE)
     set (FUSE_NAMES libosxfuse.dylib fuse)
     set (FUSE_SUFFIXES osxfuse fuse)
 else (APPLE)
-    set (FUSE_NAMES fuse)
-    set (FUSE_SUFFIXES fuse)
+    set (FUSE_NAMES fuse refuse)
+    set (FUSE_SUFFIXES fuse refuse)
 endif (APPLE)
 
 # find includes
