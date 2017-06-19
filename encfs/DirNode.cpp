@@ -42,6 +42,10 @@
 #include "Error.h"
 #include "Mutex.h"
 
+#if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__APPLE__)
+#define _DIRENT_HAVE_D_TYPE
+#endif
+
 using namespace std;
 
 namespace encfs {
@@ -78,7 +82,7 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
 
   if (de) {
     if (fileType) {
-#if defined(_DIRENT_HAVE_D_TYPE) || defined(__FreeBSD__) || defined(__APPLE__)
+#if defined(_DIRENT_HAVE_D_TYPE)
       *fileType = de->d_type;
 #else
 #warning "struct dirent.d_type not supported"
