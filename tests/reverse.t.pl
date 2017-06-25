@@ -26,6 +26,11 @@ if(system("which lsextattr > /dev/null 2>&1") == 0)
     # FreeBSD
     @binattr = ("lsextattr", "user");
 }
+if(system("./build/encfs -V 2>&1 | grep -q HAVE_XATTR") != 0)
+{
+    # Workaround for binaries without xattr support so that tests will not fail
+    @binattr = ("ls", "-l");
+}
 
 # Helper function
 # Create a new empty working directory
