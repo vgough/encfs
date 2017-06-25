@@ -7,6 +7,7 @@ use File::Path;
 use File::Copy;
 use File::Temp;
 use IO::Handle;
+use Cwd;
 
 require("tests/common.pl");
 
@@ -307,7 +308,8 @@ sub mount
 
     delete $ENV{"ENCFS6_CONFIG"};
     remount($args);
-    ok( $? == 0, "encfs command returns 0") || BAIL_OUT("");
+    $cwd = getcwd();
+    ok( $? == 0, "encfs command returns 0") || BAIL_OUT("cwd=$cwd");
     ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
 }
 
