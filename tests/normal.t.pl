@@ -309,7 +309,7 @@ sub mount
     delete $ENV{"ENCFS6_CONFIG"};
     remount($args);
     $cwd = getcwd();
-    ok( $? == 0, "encfs command returns 0") || BAIL_OUT("cwd=$cwd");
+    ok( $? == 0, "encfs command returns 0") || BAIL_OUT("info: cwd=$cwd");
     ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
 }
 
