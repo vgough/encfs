@@ -93,20 +93,6 @@ check_cxx_source_compiles ("#include <sys/types.h>
   int main() { getxattr(0,0,0,0,0,0); return 1; }
   " XATTR_ADD_OPT)
 
-# Check if xattr function llistxattr exists.
-include (CheckCXXSourceCompiles)
-if (XATTR_ADD_OPT)
-check_cxx_source_compiles ("#include <sys/types.h>
-  #include <sys/xattr.h>
-  int main() { llistxattr(0,0,0,0); return 1; }
-  " XATTR_LLIST)
-else (XATTR_ADD_OPT)
-check_cxx_source_compiles ("#include <sys/types.h>
-  #include <sys/xattr.h>
-  int main() { llistxattr(0,0,0); return 1; }
-  " XATTR_LLIST)
-endif (XATTR_ADD_OPT)
-
 # Check if we have some standard functions.
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)

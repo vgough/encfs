@@ -355,6 +355,12 @@ static bool processArgs(int argc, char *argv[],
       case 'V':
         // xgroup(usage)
         cerr << autosprintf(_("encfs version %s"), VERSION) << endl;
+#if defined(HAVE_XATTR)
+        // "--verbose" has to be passed before "--version" for this to work.
+        if (out->isVerbose) {
+            cerr << "Compiled with : HAVE_XATTR" << endl;
+        }
+#endif
         exit(EXIT_SUCCESS);
         break;
       case 'H':

@@ -13,18 +13,30 @@ require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
+if($^O eq "linux" and $tempDir eq "/tmp") {
+   # On Linux, /tmp is often a tmpfs mount that does not support
+   # extended attributes. Use /var/tmp instead.
+   $tempDir = "/var/tmp";
+}
+
 # Find attr binary
 # Linux
 my @binattr = ("attr", "-l");
 if(system("which xattr > /dev/null 2>&1") == 0)
 {
     # Mac OS X
-    @binattr = ("xattr", "-l");
+    @binattr = ("xattr", "-s");
 }
 if(system("which lsextattr > /dev/null 2>&1") == 0)
 {
     # FreeBSD
-    @binattr = ("lsextattr", "user");
+    @binattr = ("lsextattr", "-h", "user");
+}
+# Do we support xattr ?
+my $have_xattr = 1;
+if(system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
+{
+    $have_xattr = 0;
 }
 
 # Helper function
@@ -98,8 +110,7 @@ sub symlink_test
     $dec = readlink("$decrypted/symlink");
     ok( $dec eq $target, "symlink to '$target'") or
         print("# (original) $target' != '$dec' (decrypted)\n");
-    system(@binattr, "$decrypted/symlink");
-    my $return_code = $?;
+    my $return_code = ($have_xattr) ? system(@binattr, "$decrypted/symlink") : 0;
     is($return_code, 0, "symlink to '$target' extended attributes can be read (return code was $return_code)");
     unlink("$plain/symlink");
 }
