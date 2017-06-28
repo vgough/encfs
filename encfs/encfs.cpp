@@ -660,7 +660,7 @@ int encfs_statfs(const char *path, struct statvfs *st) {
 #ifdef XATTR_ADD_OPT
 int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
                  const char *value, size_t size, uint32_t pos) {
-  int options = 0;
+  int options = XATTR_NOFOLLOW;
   return ::setxattr(cyName.c_str(), name, value, size, pos, options);
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
@@ -673,7 +673,7 @@ int encfs_setxattr(const char *path, const char *name, const char *value,
 #else
 int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
                  const char *value, size_t size, int flags) {
-  return ::setxattr(cyName.c_str(), name, value, size, flags);
+  return ::lsetxattr(cyName.c_str(), name, value, size, flags);
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags) {
@@ -686,7 +686,7 @@ int encfs_setxattr(const char *path, const char *name, const char *value,
 #ifdef XATTR_ADD_OPT
 int _do_getxattr(EncFS_Context *, const string &cyName, const char *name,
                  void *value, size_t size, uint32_t pos) {
-  int options = 0;
+  int options = XATTR_NOFOLLOW;
   return ::getxattr(cyName.c_str(), name, value, size, pos, options);
 }
 int encfs_getxattr(const char *path, const char *name, char *value, size_t size,
@@ -698,7 +698,7 @@ int encfs_getxattr(const char *path, const char *name, char *value, size_t size,
 #else
 int _do_getxattr(EncFS_Context *, const string &cyName, const char *name,
                  void *value, size_t size) {
-  return ::getxattr(cyName.c_str(), name, value, size);
+  return ::lgetxattr(cyName.c_str(), name, value, size);
 }
 int encfs_getxattr(const char *path, const char *name, char *value,
                    size_t size) {
@@ -710,12 +710,9 @@ int encfs_getxattr(const char *path, const char *name, char *value,
 
 int _do_listxattr(EncFS_Context *, const string &cyName, char *list,
                   size_t size) {
-#ifndef XATTR_LLIST
-#define llistxattr listxattr
-#endif
 #ifdef XATTR_ADD_OPT
-  int options = 0;
-  int res = ::llistxattr(cyName.c_str(), list, size, options);
+  int options = XATTR_NOFOLLOW;
+  int res = ::listxattr(cyName.c_str(), list, size, options);
 #else
   int res = ::llistxattr(cyName.c_str(), list, size);
 #endif
@@ -729,10 +726,10 @@ int encfs_listxattr(const char *path, char *list, size_t size) {
 
 int _do_removexattr(EncFS_Context *, const string &cyName, const char *name) {
 #ifdef XATTR_ADD_OPT
-  int options = 0;
+  int options = XATTR_NOFOLLOW;
   int res = ::removexattr(cyName.c_str(), name, options);
 #else
-  int res = ::removexattr(cyName.c_str(), name);
+  int res = ::lremovexattr(cyName.c_str(), name);
 #endif
   return (res == -1) ? -errno : res;
 }
