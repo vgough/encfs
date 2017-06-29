@@ -19,12 +19,12 @@ my @binattr = ("attr", "-l");
 if(system("which xattr > /dev/null 2>&1") == 0)
 {
     # Mac OS X
-    @binattr = ("xattr", "-l");
+    @binattr = ("xattr", "-s");
 }
 if(system("which lsextattr > /dev/null 2>&1") == 0)
 {
     # FreeBSD
-    @binattr = ("lsextattr", "user");
+    @binattr = ("lsextattr", "-h", "user");
 }
 
 # Helper function
