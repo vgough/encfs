@@ -26,6 +26,12 @@ if(system("which lsextattr > /dev/null 2>&1") == 0)
     # FreeBSD
     @binattr = ("lsextattr", "-h", "user");
 }
+# Do we support xattr ?
+my $have_xattr = 1;
+if(system("./build/encfs -V 2>&1 | grep -q HAVE_XATTR") != 0)
+{
+    $have_xattr = 0;
+}
 
 # Helper function
 # Create a new empty working directory
@@ -98,8 +104,7 @@ sub symlink_test
     $dec = readlink("$decrypted/symlink");
     ok( $dec eq $target, "symlink to '$target'") or
         print("# (original) $target' != '$dec' (decrypted)\n");
-    system(@binattr, "$decrypted/symlink");
-    my $return_code = $?;
+    my $return_code = ($have_xattr) ? system(@binattr, "$decrypted/symlink") : 0;
     is($return_code, 0, "symlink to '$target' extended attributes can be read (return code was $return_code)");
     unlink("$plain/symlink");
 }

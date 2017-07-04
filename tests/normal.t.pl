@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 106;
+use Test::More tests => 112;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -11,6 +11,29 @@ use IO::Handle;
 require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
+
+# Find attr binary
+# Linux
+my @setattr = ("attr", "-s", "encfs", "-V", "hello");
+my @getattr = ("attr", "-g", "encfs");
+if(system("which xattr > /dev/null 2>&1") == 0)
+{
+    # Mac OS X
+    @setattr = ("xattr", "-sw", "encfs", "hello");
+    @getattr = ("xattr", "-sp", "encfs");
+}
+if(system("which lsextattr > /dev/null 2>&1") == 0)
+{
+    # FreeBSD
+    @setattr = ("setextattr", "-h", "user", "encfs", "hello");
+    @getattr = ("getextattr", "-h", "user", "encfs");
+}
+# Do we support xattr ?
+my $have_xattr = 1;
+if(system("./build/encfs -V 2>&1 | grep -q HAVE_XATTR") != 0)
+{
+    $have_xattr = 0;
+}
 
 # test filesystem in standard config mode
 &runTests('standard');
@@ -268,7 +291,7 @@ sub encName
     return $enc;
 }
 
-# Test symlinks & hardlinks
+# Test symlinks & hardlinks, and extended attributes
 sub links
 {
     my $hardlinkTests = shift;
@@ -293,6 +316,14 @@ sub links
         ok( link("$crypt/data", "$crypt/data.2"), "hard link");
         checkContents("$crypt/data.2", $contents, "hardlink read");
     };
+
+    # extended attributes
+    my $return_code = ($have_xattr) ? system(@setattr, "$crypt/data") : 0;
+    is($return_code, 0, "extended attributes can be set (return code was $return_code)");
+    $return_code = ($have_xattr) ? system(@getattr, "$crypt/data") : 0;
+    is($return_code, 0, "extended attributes can be get (return code was $return_code)");
+    $return_code = ($have_xattr) ? system(@getattr, "$crypt/data-rel") : 1;
+    isnt($return_code, 0, "extended attributes operations do not follow symlinks (return code was $return_code)");
 }
 
 # Test mount
