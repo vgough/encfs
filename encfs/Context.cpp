@@ -120,10 +120,13 @@ void EncFS_Context::eraseNode(const char *path, FileNode *pl) {
   FileMap::iterator it = openFiles.find(std::string(path));
   rAssert(it != openFiles.end());
 
+  auto fn = it->second.front();
+
   it->second.pop_front();
 
   // if no more references to this file, remove the record all together
   if (it->second.empty()) {
+    fn->canary = CANARY_RELEASED;
     openFiles.erase(it);
   }
 }

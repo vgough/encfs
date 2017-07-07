@@ -58,6 +58,8 @@ FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
 
   Lock _lock(mutex);
 
+  this->canary = CANARY_OK;
+
   this->_pname = plaintextName_;
   this->_cname = cipherName_;
   this->parent = parent_;
@@ -76,6 +78,7 @@ FileNode::~FileNode() {
   // FileNode mutex should be locked before the destructor is called
   // pthread_mutex_lock( &mutex );
 
+  canary = CANARY_DESTROYED;
   _pname.assign(_pname.length(), '\0');
   _cname.assign(_cname.length(), '\0');
   io.reset();
