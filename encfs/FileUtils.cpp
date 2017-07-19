@@ -536,12 +536,12 @@ bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
   addEl(doc, config, "nameAlg", cfg->nameIface);
   addEl(doc, config, "keySize", cfg->keySize);
   addEl(doc, config, "blockSize", cfg->blockSize);
-  addEl(doc, config, "uniqueIV", cfg->uniqueIV);
-  addEl(doc, config, "chainedNameIV", cfg->chainedNameIV);
-  addEl(doc, config, "externalIVChaining", cfg->externalIVChaining);
+  addEl(doc, config, "uniqueIV", (int)cfg->uniqueIV);
+  addEl(doc, config, "chainedNameIV", (int)cfg->chainedNameIV);
+  addEl(doc, config, "externalIVChaining", (int)cfg->externalIVChaining);
   addEl(doc, config, "blockMACBytes", cfg->blockMACBytes);
   addEl(doc, config, "blockMACRandBytes", cfg->blockMACRandBytes);
-  addEl(doc, config, "allowHoles", cfg->allowHoles);
+  addEl(doc, config, "allowHoles", (int)cfg->allowHoles);
   addEl(doc, config, "encodedKeySize", (int)cfg->keyData.size());
   addEl(doc, config, "encodedKeyData", cfg->keyData);
   addEl(doc, config, "saltLen", (int)cfg->salt.size());
