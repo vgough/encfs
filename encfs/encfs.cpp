@@ -125,6 +125,16 @@ static int withFileNode(const char *opName, const char *path,
 
     auto do_op = [&FSRoot, opName, &op](FileNode *fnode) {
       rAssert(fnode != nullptr);
+      if(fnode->canary != CANARY_OK) {
+        if(fnode->canary == CANARY_RELEASED) {
+          RLOG(ERROR) << "canary=CANARY_RELEASED. File node accessed after it was released.";
+        } else if(fnode->canary == CANARY_DESTROYED) {
+          RLOG(ERROR) << "canary=CANARY_DESTROYED. File node accessed after it was destroyed.";
+        } else {
+          RLOG(ERROR) << "canary=0x" << std::hex << fnode->canary << ". Corruption?";
+        }
+        throw Error("dead canary");
+      }
       VLOG(1) << "op: " << opName << " : " << fnode->cipherName();
 
       // check that we're not recursing into the mount point itself

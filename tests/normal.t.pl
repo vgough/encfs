@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 112;
+use Test::More tests => 122;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -70,6 +70,7 @@ sub runTests
     &internalModification;
     &grow;
     &umask0777;
+    &create_unmount_remount;
 
     &configFromPipe;
     &cleanup;
@@ -219,7 +220,7 @@ sub fileCreation
     # ensure there is an encrypted version.
     my $c = encName("df.txt");
     cmp_ok( length($c), '>', 8, "encrypted name ok" );
-    ok( -f "$raw/$c", "encrypted file created" );
+    ok( -f "$raw/$c", "encrypted file $raw/$c created" );
 
     # check contents
     my $count = qx(grep -c crypt-$$ "$crypt/df.txt");
@@ -390,4 +391,34 @@ sub configFromPipe
     system("cat $raw/.encfs6.xml.orig > $raw/.encfs6.xml");
     waitpid($child, 0);
     ok( 0 == $?, "encfs mount with named pipe based config failed");
+}
+
+sub create_unmount_remount
+{
+    my $crypt = "$workingDir/create_remount.crypt";
+    my $mnt = "$workingDir/create_remount.mnt";
+    mkdir($crypt) || BAIL_OUT($!);
+    mkdir($mnt)  || BAIL_OUT($!);
+
+    system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");
+    ok( $? == 0, "encfs command returns 0") || return;
+    ok( -f "$crypt/.encfs6.xml",  "created control file") || return;
+
+    # Write some text
+    my $contents = "hello world\n";
+    ok( open(OUT, "> $mnt/test_file_1"), "write content");
+    print OUT $contents;
+    close OUT;
+
+    # Unmount
+    portable_unmount($mnt);
+
+    # Mount again
+    system("./build/encfs --extpass=\"echo test\" $crypt $mnt 2>&1");
+    ok( $? == 0, "encfs command returns 0") || return;
+
+    # Check if content is still there
+    checkContents("$mnt/test_file_1", $contents);
+
+    portable_unmount($mnt);
 }

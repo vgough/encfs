@@ -33,6 +33,10 @@
 #include "FileUtils.h"
 #include "encfs.h"
 
+#define CANARY_OK 0x46040975
+#define CANARY_RELEASED 0x70c5610d
+#define CANARY_DESTROYED 0x52cdad90
+
 namespace encfs {
 
 class Cipher;
@@ -44,6 +48,8 @@ class FileNode {
   FileNode(DirNode *parent, const FSConfigPtr &cfg, const char *plaintextName,
            const char *cipherName);
   ~FileNode();
+
+  uint32_t canary;
 
   const char *plaintextName() const;
   const char *cipherName() const;
