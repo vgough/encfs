@@ -114,6 +114,8 @@ FileNode *EncFS_Context::putNode(const char *path,
   return list.front().get();
 }
 
+// eraseNode is called by encfs_release in response to the RELEASE
+// FUSE-command we get from the kernel.
 void EncFS_Context::eraseNode(const char *path, FileNode *pl) {
   Lock lock(contextMutex);
 

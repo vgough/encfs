@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <string>
 #include <sys/types.h>
+#include <atomic>
 
 #include "CipherKey.h"
 #include "FSConfig.h"
@@ -49,7 +50,9 @@ class FileNode {
            const char *cipherName);
   ~FileNode();
 
-  uint32_t canary;
+  // Use an atomic type. The canary is accessed without holding any
+  // locks.
+  std::atomic<std::uint32_t> canary;
 
   const char *plaintextName() const;
   const char *cipherName() const;

@@ -111,6 +111,25 @@ static int withCipherPath(const char *opName, const char *path,
   return res;
 }
 
+static void checkCanary(std::shared_ptr<FileNode> fnode) {
+  if(fnode->canary == CANARY_OK) {
+    return;
+  }
+  if(fnode->canary == CANARY_RELEASED) {
+    // "fnode" may have been released after it was retrieved by
+    // lookupFuseFh. This is not an error. std::shared_ptr will release
+    // the memory only when all operations on the FileNode have been
+    // completed.
+    return;
+  }
+  if(fnode->canary == CANARY_DESTROYED) {
+    RLOG(ERROR) << "canary=CANARY_DESTROYED. FileNode accessed after it was destroyed.";
+  } else {
+    RLOG(ERROR) << "canary=0x" << std::hex << fnode->canary << ". Memory corruption?";
+  }
+  throw Error("dead canary");
+}
+
 // helper function -- apply a functor to a node
 static int withFileNode(const char *opName, const char *path,
                         struct fuse_file_info *fi,
@@ -125,16 +144,7 @@ static int withFileNode(const char *opName, const char *path,
 
     auto do_op = [&FSRoot, opName, &op](FileNode *fnode) {
       rAssert(fnode != nullptr);
-      if(fnode->canary != CANARY_OK) {
-        if(fnode->canary == CANARY_RELEASED) {
-          RLOG(ERROR) << "canary=CANARY_RELEASED. File node accessed after it was released.";
-        } else if(fnode->canary == CANARY_DESTROYED) {
-          RLOG(ERROR) << "canary=CANARY_DESTROYED. File node accessed after it was destroyed.";
-        } else {
-          RLOG(ERROR) << "canary=0x" << std::hex << fnode->canary << ". Corruption?";
-        }
-        throw Error("dead canary");
-      }
+      checkCanary(fnode);
       VLOG(1) << "op: " << opName << " : " << fnode->cipherName();
 
       // check that we're not recursing into the mount point itself
