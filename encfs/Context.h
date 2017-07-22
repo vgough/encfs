@@ -27,6 +27,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <atomic>
 
 #include "encfs.h"
 
@@ -46,9 +47,9 @@ class EncFS_Context {
 
   void getAndResetUsageCounter(int *usage, int *openCount);
   
-  FileNode *putNode(const char *path, std::shared_ptr<FileNode> &&node);
+  void putNode(const char *path, std::shared_ptr<FileNode> node);
 
-  void eraseNode(const char *path, FileNode *fnode);
+  void eraseNode(const char *path, std::shared_ptr<FileNode> fnode);
 
   void renameNode(const char *oldName, const char *newName);
 
@@ -68,6 +69,9 @@ class EncFS_Context {
   pthread_t monitorThread;
   pthread_cond_t wakeupCond;
   pthread_mutex_t wakeupMutex;
+
+  uint64_t nextFuseFh();
+  std::shared_ptr<FileNode> lookupFuseFh(uint64_t);
 
  private:
   /* This placeholder is what is referenced in FUSE context (passed to
@@ -89,6 +93,9 @@ class EncFS_Context {
 
   int usageCount;
   std::shared_ptr<DirNode> root;
+
+  std::atomic<std::uint64_t> currentFuseFh;
+  std::unordered_map<uint64_t, std::shared_ptr<FileNode>> fuseFhMap;
 };
 
 int remountFS(EncFS_Context *ctx);

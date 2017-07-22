@@ -53,7 +53,8 @@ namespace encfs {
 */
 
 FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
-                   const char *plaintextName_, const char *cipherName_) {
+                   const char *plaintextName_, const char *cipherName_, uint64_t fuseFh) {
+
   pthread_mutex_init(&mutex, 0);
 
   Lock _lock(mutex);
@@ -65,6 +66,8 @@ FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
   this->parent = parent_;
 
   this->fsConfig = cfg;
+
+  this->fuseFh = fuseFh;
 
   // chain RawFileIO & CipherFileIO
   std::shared_ptr<FileIO> rawIO(new RawFileIO(_cname));

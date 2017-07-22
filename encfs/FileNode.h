@@ -47,12 +47,15 @@ class FileIO;
 class FileNode {
  public:
   FileNode(DirNode *parent, const FSConfigPtr &cfg, const char *plaintextName,
-           const char *cipherName);
+           const char *cipherName, uint64_t fuseFh);
   ~FileNode();
 
   // Use an atomic type. The canary is accessed without holding any
   // locks.
   std::atomic<std::uint32_t> canary;
+
+  // FUSE file handle that is passed to the kernel
+  uint64_t fuseFh;
 
   const char *plaintextName() const;
   const char *cipherName() const;

@@ -644,8 +644,9 @@ std::shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
   if (!node) {
     uint64_t iv = 0;
     string cipherName = naming->encodePath(plainName, &iv);
+	uint64_t fuseFh = ctx->nextFuseFh();
     node.reset(new FileNode(this, fsConfig, plainName,
-                            (rootDir + cipherName).c_str()));
+                            (rootDir + cipherName).c_str(), fuseFh));
 
     if (fsConfig->config->externalIVChaining) node->setName(0, 0, iv);
 

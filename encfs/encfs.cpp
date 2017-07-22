@@ -142,7 +142,7 @@ static int withFileNode(const char *opName, const char *path,
 
   try {
 
-    auto do_op = [&FSRoot, opName, &op](FileNode *fnode) {
+    auto do_op = [&FSRoot, opName, &op](std::shared_ptr<FileNode> fnode) {
       rAssert(fnode != nullptr);
       checkCanary(fnode);
       VLOG(1) << "op: " << opName << " : " << fnode->cipherName();
@@ -153,13 +153,19 @@ static int withFileNode(const char *opName, const char *path,
                 << fnode->cipherName() << "'";
         return -EIO;
       }
-      return op(fnode);
+      return op(fnode.get());
     };
 
-    if (fi != nullptr && fi->fh != 0)
-      res = do_op(reinterpret_cast<FileNode *>(fi->fh));
-    else
-      res = do_op(FSRoot->lookupNode(path, opName).get());
+    if (fi != nullptr && fi->fh != 0) {
+      auto node = ctx->lookupFuseFh(fi->fh);
+      if (node == nullptr) {
+        auto msg = "fh=" + std::to_string(fi->fh) + " not found in fuseFhMap";
+        throw Error(msg.c_str());
+      }
+      res = do_op(node);
+    } else {
+      res = do_op(FSRoot->lookupNode(path, opName));
+    }
 
     if (res < 0) {
       RLOG(DEBUG) << "op: " << opName << " error: " << strerror(-res);
@@ -555,8 +561,8 @@ int encfs_open(const char *path, struct fuse_file_info *file) {
               << file->flags;
 
       if (res >= 0) {
-        file->fh =
-            reinterpret_cast<uintptr_t>(ctx->putNode(path, std::move(fnode)));
+        ctx->putNode(path, fnode);
+        file->fh = fnode->fuseFh;
         res = ESUCCESS;
       }
     }
@@ -611,7 +617,8 @@ int encfs_release(const char *path, struct fuse_file_info *finfo) {
   EncFS_Context *ctx = context();
 
   try {
-    ctx->eraseNode(path, reinterpret_cast<FileNode *>(finfo->fh));
+    auto fnode = ctx->lookupFuseFh(finfo->fh);
+    ctx->eraseNode(path, fnode);
     return ESUCCESS;
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in release: " << err.what();
