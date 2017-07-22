@@ -22,6 +22,7 @@ my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 sub runTests
 {
     my $mode = shift;
+    print STDERR "\nrunTests: mode=$mode\n";
 
     &newWorkingDir;
 
@@ -191,8 +192,8 @@ sub truncate
 sub fileCreation
 {
     # create a file
-    qx(df -ah > "$crypt/df.txt" 2> /dev/null);
-    ok( -f "$crypt/df.txt", "file created" );
+    qx(date > "$crypt/df.txt");
+    ok( -f "$crypt/df.txt", "file created" ) || BAIL_OUT("file create failed");
 
     # ensure there is an encrypted version.
     my $c = encName("df.txt");
