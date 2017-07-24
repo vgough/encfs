@@ -21,7 +21,8 @@
 #ifndef _Context_incl_
 #define _Context_incl_
 
-#include <forward_list>
+#include <list>
+#include <algorithm>
 #include <memory>
 #include <pthread.h>
 #include <set>
@@ -85,7 +86,7 @@ class EncFS_Context {
    */
 
   typedef std::unordered_map<std::string,
-                             std::forward_list<std::shared_ptr<FileNode>>>
+                             std::list<std::shared_ptr<FileNode>>>
       FileMap;
 
   mutable pthread_mutex_t contextMutex;

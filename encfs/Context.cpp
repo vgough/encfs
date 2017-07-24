@@ -89,7 +89,7 @@ std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
 
   FileMap::iterator it = openFiles.find(std::string(path));
   if (it != openFiles.end()) {
-    // all the items in the set point to the same node.. so just use the
+    // every entry in the list is fine... so just use the
     // first
     return it->second.front();
   }
@@ -125,16 +125,25 @@ void EncFS_Context::eraseNode(const char *path, std::shared_ptr<FileNode> fnode)
 
   FileMap::iterator it = openFiles.find(std::string(path));
   rAssert(it != openFiles.end());
+  auto &list = it->second;
 
-  auto fn = it->second.front();
+  // Find "fnode" in the list of FileNodes registered under this path.
+  auto findIter = std::find(list.begin(), list.end(), fnode);
+  rAssert(findIter != list.end());
+  list.erase(findIter);
 
-  it->second.pop_front();
+  // If no reference to "fnode" remains, drop the entry from fuseFhMap
+  // and overwrite the canary.
+  findIter = std::find(list.begin(), list.end(), fnode);
+  if (findIter == list.end()) {
+    fuseFhMap.erase(fnode->fuseFh);
+    fnode->canary = CANARY_RELEASED;
+  }
 
-  // if no more references to this file, remove the record all together
-  if (it->second.empty()) {
-    fn->canary = CANARY_RELEASED;
+  // If no FileNode is registered at this path anymore, drop the entry
+  // from openFiles.
+  if (list.empty()) {
     openFiles.erase(it);
-    fuseFhMap.erase(fn->fuseFh);
   }
 }
 
