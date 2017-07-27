@@ -228,7 +228,7 @@ target_link_libraries (makekey encfs)
 add_executable (checkops encfs/test.cpp)
 target_link_libraries (checkops encfs)
 
-install (FILES encfs/encfssh DESTINATION bin)
+install (PROGRAMS encfs/encfssh DESTINATION bin)
 
 # Reference all headers, to make certain IDEs happy.
 file (GLOB_RECURSE all_headers ${CMAKE_CURRENT_LIST_DIR}/*.h)
