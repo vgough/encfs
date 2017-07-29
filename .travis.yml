@@ -6,6 +6,7 @@ sudo: true
 
 compiler:
   - clang
+  - gcc
 
 branches:
   only:
@@ -21,14 +22,10 @@ env:
 
 before_script:
   - sudo modprobe fuse
-  - mkdir build
-  - cd build
   - cmake --version
-  - cmake ..
-
 
 script:
-  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make && make check ; fi
+  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then ./build.sh && ./test.sh && make check -C build ; fi
 
 addons:
   coverity_scan:
