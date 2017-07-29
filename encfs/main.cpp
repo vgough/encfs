@@ -245,7 +245,7 @@ static bool processArgs(int argc, char *argv[],
     // 'o' : arguments meant for fuse
     // 't' : syslog tag
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:t:", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfvdmi:o:t:V", long_options, &option_index);
 
     if (res == -1) break;
 
@@ -355,6 +355,9 @@ static bool processArgs(int argc, char *argv[],
       case 'V':
         // xgroup(usage)
         cerr << autosprintf(_("encfs version %s"), VERSION) << endl;
+#if defined(HAVE_XATTR)
+        cerr << "Compiled with : HAVE_XATTR" << endl;
+#endif
         exit(EXIT_SUCCESS);
         break;
       case 'H':
