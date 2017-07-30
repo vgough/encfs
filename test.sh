@@ -9,6 +9,8 @@ for i in $(mount | grep -e "/tmp/encfs-reverse-tests-\|/tmp/encfs-tests-" | cut 
 	fusermount -u $i || true
 done
 
+set -x
+
 # This is very noisy so run it silently at first. Run it again with
 # output if the first run fails.
 ./build/checkops &> /dev/null || ./build/checkops

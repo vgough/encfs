@@ -233,28 +233,5 @@ if (POD2MAN)
     DESTINATION share/man/man1)
 endif (POD2MAN)
 
-# Tests
-enable_testing()
+add_custom_target(test COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
 
-if (CMAKE_CONFIGURATION_TYPES)
-    add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
-        --force-new-ctest-process --output-on-failure
-        --build-config "$<CONFIGURATION>")
-else()
-    add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND}
-        --force-new-ctest-process --output-on-failure)
-endif()
-
-add_test (NAME checkops
-          COMMAND checkops)
-
-find_program (PERL_PROGRAM perl)
-if (PERL_PROGRAM)
-  file(GLOB pl_test_files "tests/*.t.pl")
-  add_test (NAME scriptedtests
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-            COMMAND ${PERL_PROGRAM}
-               -MTest::Harness
-               -e "$$Test::Harness::verbose=1; runtests @ARGV;"
-               ${pl_test_files})
-endif (PERL_PROGRAM)
