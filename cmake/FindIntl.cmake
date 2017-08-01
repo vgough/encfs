@@ -1,3 +1,8 @@
+# This file comes from https://github.com/Kitware/CMake/blob/master/Modules/FindIntl.cmake
+# It is needed for cmake < 3.2.0 which does not have it.
+# When cmake 3.0.2 (Debian jessie version) will really be outdated, we will be able to
+# delete this file and bump cmake version in CMakeLists.txt and INSTALL.md.
+
 # Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
 # file Copyright.txt or https://cmake.org/licensing for details.
 
