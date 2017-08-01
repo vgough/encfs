@@ -87,7 +87,7 @@ sub runTests
 # Create a new empty working directory
 sub newWorkingDir
 {
-    our $workingDir = mkdtemp("$tempDir/encfs-tests-XXXX")
+    our $workingDir = mkdtemp("$tempDir/encfs-tests-normal-XXXX")
         || BAIL_OUT("Could not create temporary directory");
 
     our $raw = "$workingDir/raw";

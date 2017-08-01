@@ -43,7 +43,7 @@ if(system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
 # Create a new empty working directory
 sub newWorkingDir
 {
-    our $workingDir = mkdtemp("$tempDir/encfs-reverse-tests-XXXX")
+    our $workingDir = mkdtemp("$tempDir/encfs-tests-reverse-XXXX")
         || BAIL_OUT("Could not create temporary directory");
 
     our $plain = "$workingDir/plain";
