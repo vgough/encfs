@@ -56,7 +56,7 @@ struct NameIOAlg {
 };
 
 typedef multimap<string, NameIOAlg> NameIOMap_t;
-static NameIOMap_t *gNameIOMap = 0;
+static NameIOMap_t *gNameIOMap = nullptr;
 
 list<NameIO::Algorithm> NameIO::GetAlgorithmList(bool includeHidden) {
   AddSymbolReferences();
@@ -195,14 +195,14 @@ std::string NameIO::decodePath(const char *cipherPath) const {
 
 std::string NameIO::_encodePath(const char *plaintextPath, uint64_t *iv) const {
   // if chaining is not enabled, then the iv pointer is not used..
-  if (!chainedNameIV) iv = 0;
+  if (!chainedNameIV) iv = nullptr;
   return recodePath(plaintextPath, &NameIO::maxEncodedNameLen,
                     &NameIO::encodeName, iv);
 }
 
 std::string NameIO::_decodePath(const char *cipherPath, uint64_t *iv) const {
   // if chaining is not enabled, then the iv pointer is not used..
-  if (!chainedNameIV) iv = 0;
+  if (!chainedNameIV) iv = nullptr;
   return recodePath(cipherPath, &NameIO::maxDecodedNameLen, &NameIO::decodeName,
                     iv);
 }
@@ -217,12 +217,12 @@ std::string NameIO::decodePath(const char *path, uint64_t *iv) const {
 
 int NameIO::encodeName(const char *input, int length, char *output,
                        int bufferLength) const {
-  return encodeName(input, length, (uint64_t *)0, output, bufferLength);
+  return encodeName(input, length, (uint64_t *)nullptr, output, bufferLength);
 }
 
 int NameIO::decodeName(const char *input, int length, char *output,
                        int bufferLength) const {
-  return decodeName(input, length, (uint64_t *)0, output, bufferLength);
+  return decodeName(input, length, (uint64_t *)nullptr, output, bufferLength);
 }
 
 std::string NameIO::_encodeName(const char *plaintextName, int length) const {
@@ -232,7 +232,7 @@ std::string NameIO::_encodeName(const char *plaintextName, int length) const {
   BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
 
   // code the name
-  int codedLen = encodeName(plaintextName, length, 0, codeBuf, bufSize);
+  int codedLen = encodeName(plaintextName, length, nullptr, codeBuf, bufSize);
   rAssert(codedLen <= approxLen);
   rAssert(codeBuf[codedLen] == '\0');
 
@@ -251,7 +251,7 @@ std::string NameIO::_decodeName(const char *encodedName, int length) const {
   BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
 
   // code the name
-  int codedLen = decodeName(encodedName, length, 0, codeBuf, bufSize);
+  int codedLen = decodeName(encodedName, length, nullptr, codeBuf, bufSize);
   rAssert(codedLen <= approxLen);
   rAssert(codeBuf[codedLen] == '\0');
 

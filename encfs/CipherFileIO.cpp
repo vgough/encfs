@@ -441,7 +441,7 @@ int CipherFileIO::truncate(off_t size) {
 
     // can't let BlockFileIO call base->truncate(), since it would be using
     // the wrong size..
-    res = BlockFileIO::truncateBase(size, 0);
+    res = BlockFileIO::truncateBase(size, nullptr);
 
     if (res == 0) base->truncate(size + HEADER_SIZE);
   }

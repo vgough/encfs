@@ -37,7 +37,7 @@ namespace encfs {
 
 unsigned long pthreads_thread_id() { return (unsigned long)pthread_self(); }
 
-static pthread_mutex_t *crypto_locks = NULL;
+static pthread_mutex_t *crypto_locks = nullptr;
 void pthreads_locking_callback(int mode, int n, const char *caller_file,
                                int caller_line) {
   (void)caller_file;
@@ -47,7 +47,7 @@ void pthreads_locking_callback(int mode, int n, const char *caller_file,
     VLOG(1) << "Allocating " << CRYPTO_num_locks() << " locks for OpenSSL";
     crypto_locks = new pthread_mutex_t[CRYPTO_num_locks()];
     for (int i = 0; i < CRYPTO_num_locks(); ++i)
-      pthread_mutex_init(crypto_locks + i, 0);
+      pthread_mutex_init(crypto_locks + i, nullptr);
   }
 
   if (mode & CRYPTO_LOCK) {
@@ -62,7 +62,7 @@ void pthreads_locking_cleanup() {
     for (int i = 0; i < CRYPTO_num_locks(); ++i)
       pthread_mutex_destroy(crypto_locks + i);
     delete[] crypto_locks;
-    crypto_locks = NULL;
+    crypto_locks = nullptr;
   }
 }
 

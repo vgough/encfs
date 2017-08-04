@@ -18,18 +18,17 @@ void initLogging(bool enable_debug, bool is_daemon) {
   if (is_daemon) {
     prefix = "";
     encfs::rlogAction = el::base::DispatchAction::SysLog;
-  }
-  else {
+  } else {
     el::Loggers::addFlag(el::LoggingFlag::ColoredTerminalOutput);
   }
   if (!enable_debug) {
     suffix = "";
     defaultConf.set(el::Level::Debug, el::ConfigurationType::Enabled, "false");
-  }
-  else {
+  } else {
     el::Loggers::setVerboseLevel(1);
   }
-  defaultConf.setGlobally(el::ConfigurationType::Format, prefix + std::string("%level %msg") + suffix);
+  defaultConf.setGlobally(el::ConfigurationType::Format,
+                          prefix + std::string("%level %msg") + suffix);
   el::Loggers::reconfigureLogger("default", defaultConf);
 }
 

@@ -53,9 +53,10 @@ namespace encfs {
 */
 
 FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
-                   const char *plaintextName_, const char *cipherName_, uint64_t fuseFh) {
+                   const char *plaintextName_, const char *cipherName_,
+                   uint64_t fuseFh) {
 
-  pthread_mutex_init(&mutex, 0);
+  pthread_mutex_init(&mutex, nullptr);
 
   Lock _lock(mutex);
 

@@ -251,7 +251,7 @@ int MACFileIO::truncate(off_t size) {
   int headerSize = macBytes + randBytes;
   int bs = blockSize() + headerSize;
 
-  int res = BlockFileIO::truncateBase(size, 0);
+  int res = BlockFileIO::truncateBase(size, nullptr);
 
   if (res == 0) base->truncate(locWithHeader(size, bs, headerSize));
 

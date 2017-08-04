@@ -61,15 +61,15 @@ static void freeBlock(BlockList *el) {
 }
 
 static pthread_mutex_t gMPoolMutex = PTHREAD_MUTEX_INITIALIZER;
-static BlockList *gMemPool = NULL;
+static BlockList *gMemPool = nullptr;
 
 MemBlock MemoryPool::allocate(int size) {
   pthread_mutex_lock(&gMPoolMutex);
 
-  BlockList *parent = NULL;
+  BlockList *parent = nullptr;
   BlockList *block = gMemPool;
   // check if we already have a large enough block available..
-  while (block != NULL && block->size < size) {
+  while (block != nullptr && block->size < size) {
     parent = block;
     block = block->next;
   }
@@ -84,7 +84,7 @@ MemBlock MemoryPool::allocate(int size) {
   pthread_mutex_unlock(&gMPoolMutex);
 
   if (!block) block = allocBlock(size);
-  block->next = NULL;
+  block->next = nullptr;
 
   MemBlock result;
   result.data = BLOCKDATA(block);
@@ -115,11 +115,11 @@ void MemoryPool::destroyAll() {
   pthread_mutex_lock(&gMPoolMutex);
 
   BlockList *block = gMemPool;
-  gMemPool = NULL;
+  gMemPool = nullptr;
 
   pthread_mutex_unlock(&gMPoolMutex);
 
-  while (block != NULL) {
+  while (block != nullptr) {
     BlockList *next = block->next;
 
     freeBlock(block);

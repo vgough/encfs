@@ -57,7 +57,7 @@ struct CipherAlg {
 };
 
 typedef multimap<string, CipherAlg> CipherMap_t;
-static CipherMap_t *gCipherMap = NULL;
+static CipherMap_t *gCipherMap = nullptr;
 
 std::list<Cipher::CipherAlgorithm> Cipher::GetAlgorithmList(
     bool includeHidden) {

@@ -105,7 +105,7 @@ static void changeBase2Inline(unsigned char *src, int srcLen, int src2Pow,
 void changeBase2Inline(unsigned char *src, int srcLen, int src2Pow, int dst2Pow,
                        bool outputPartialLastByte) {
   changeBase2Inline(src, srcLen, src2Pow, dst2Pow, outputPartialLastByte, 0, 0,
-                    0);
+                    nullptr);
 }
 
 // character set for ascii b64:

@@ -131,7 +131,7 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
     MemBlock mb;         // in case we need to allocate a temporary block..
     IORequest blockReq;  // for requests we may need to make
     blockReq.dataLen = _blockSize;
-    blockReq.data = NULL;
+    blockReq.data = nullptr;
 
     unsigned char *out = req.data;
     while (size) {
@@ -210,7 +210,7 @@ bool BlockFileIO::write(const IORequest &req) {
   MemBlock mb;
 
   IORequest blockReq;
-  blockReq.data = NULL;
+  blockReq.data = nullptr;
   blockReq.dataLen = _blockSize;
 
   bool ok = true;

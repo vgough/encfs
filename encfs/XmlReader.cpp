@@ -22,8 +22,8 @@
 
 #include <algorithm>  // for remove_if
 #include <cstring>    // for NULL
-#include <memory>     // for shared_ptr
 #include <fstream>    // for ifstream
+#include <memory>     // for shared_ptr
 #include <sstream>    // for ostringstream
 
 #include <tinyxml2.h>  // for XMLElement, XMLNode, XMLDocument (ptr only)
@@ -121,7 +121,7 @@ bool XmlValue::read(const char *path, Interface *out) const {
 
 std::string safeValueForNode(const tinyxml2::XMLElement *element) {
   std::string value;
-  if (element == NULL) return value;
+  if (element == nullptr) return value;
 
   const tinyxml2::XMLNode *child = element->FirstChild();
   if (child) {
@@ -180,13 +180,13 @@ bool XmlReader::load(const char *fileName) {
 
 XmlValuePtr XmlReader::operator[](const char *name) const {
   tinyxml2::XMLNode *node = pd->doc->FirstChildElement(name);
-  if (node == NULL) {
+  if (node == nullptr) {
     RLOG(ERROR) << "Xml node " << name << " not found";
     return XmlValuePtr(new XmlValue());
   }
 
   tinyxml2::XMLElement *element = node->ToElement();
-  if (element == NULL) {
+  if (element == nullptr) {
     RLOG(ERROR) << "Xml node " << name << " not element";
     return XmlValuePtr(new XmlValue());
   }

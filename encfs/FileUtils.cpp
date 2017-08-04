@@ -111,12 +111,12 @@ struct ConfigInfo {
     // backward compatible support for older versions
     {".encfs5", Config_V5, "ENCFS5_CONFIG", readV5Config, writeV5Config,
      V5SubVersion, V5SubVersionDefault},
-    {".encfs4", Config_V4, NULL, readV4Config, writeV4Config, 0, 0},
+    {".encfs4", Config_V4, nullptr, readV4Config, writeV4Config, 0, 0},
     // no longer support earlier versions
-    {".encfs3", Config_V3, NULL, NULL, NULL, 0, 0},
-    {".encfs2", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
-    {".encfs", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
-    {NULL, Config_None, NULL, NULL, NULL, 0, 0}};
+    {".encfs3", Config_V3, nullptr, nullptr, nullptr, 0, 0},
+    {".encfs2", Config_Prehistoric, nullptr, nullptr, nullptr, 0, 0},
+    {".encfs", Config_Prehistoric, nullptr, nullptr, nullptr, 0, 0},
+    {nullptr, Config_None, nullptr, nullptr, nullptr, 0, 0}};
 
 EncFS_Root::EncFS_Root() {}
 
@@ -188,7 +188,7 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
   }
   res = fgets(answer, sizeof(answer), stdin);
 
-  if (res != 0 && toupper(answer[0]) == 'Y') {
+  if (res != nullptr && toupper(answer[0]) == 'Y') {
     int result = mkdir(path, mode);
     if (result < 0) {
       perror(_("Unable to create directory: "));
@@ -235,9 +235,9 @@ ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
   ConfigInfo *nm = ConfigFileMapping;
   while (nm->fileName) {
     // allow environment variable to override default config path
-    if (nm->environmentOverride != NULL) {
+    if (nm->environmentOverride != nullptr) {
       char *envFile = getenv(nm->environmentOverride);
-      if (envFile != NULL) {
+      if (envFile != nullptr) {
         if (!fileExists(envFile)) {
           RLOG(ERROR)
               << "fatal: config file specified by environment does not exist: "
@@ -448,10 +448,10 @@ bool saveConfig(ConfigType type, const string &rootDir,
   while (nm->fileName) {
     if (nm->type == type && nm->saveFunc) {
       string path = rootDir + nm->fileName;
-      if (nm->environmentOverride != NULL) {
+      if (nm->environmentOverride != nullptr) {
         // use environment file if specified..
         const char *envFile = getenv(nm->environmentOverride);
-        if (envFile != NULL) path.assign(envFile);
+        if (envFile != nullptr) path.assign(envFile);
       }
 
       try {
@@ -649,7 +649,7 @@ static Cipher::CipherAlgorithm selectCipherAlgorithm() {
     cout << "\n" << _("Enter the number corresponding to your choice: ");
     char answer[10];
     char *res = fgets(answer, sizeof(answer), stdin);
-    int cipherNum = (res == 0 ? 0 : atoi(answer));
+    int cipherNum = (res == nullptr ? 0 : atoi(answer));
     cout << "\n";
 
     if (cipherNum < 1 || cipherNum > (int)algorithms.size()) {
@@ -692,7 +692,7 @@ static Interface selectNameCoding() {
     cout << "\n" << _("Enter the number corresponding to your choice: ");
     char answer[10];
     char *res = fgets(answer, sizeof(answer), stdin);
-    int algNum = (res == 0 ? 0 : atoi(answer));
+    int algNum = (res == nullptr ? 0 : atoi(answer));
     cout << "\n";
 
     if (algNum < 1 || algNum > (int)algorithms.size()) {
@@ -754,7 +754,7 @@ static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
 
   char answer[10];
   char *res = fgets(answer, sizeof(answer), stdin);
-  int keySize = (res == 0 ? 0 : atoi(answer));
+  int keySize = (res == nullptr ? 0 : atoi(answer));
   cout << "\n";
 
   keySize = alg.keyLength.closest(keySize);
@@ -794,7 +794,8 @@ static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
   char *res = fgets(answer, sizeof(answer), stdin);
   cout << "\n";
 
-  if (res != 0 && atoi(answer) >= alg.blockSize.min()) blockSize = atoi(answer);
+  if (res != nullptr && atoi(answer) >= alg.blockSize.min())
+    blockSize = atoi(answer);
 
   blockSize = alg.blockSize.closest(blockSize);
 
@@ -893,7 +894,7 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
   char *res = fgets(answer, sizeof(answer), stdin);
   cout << "\n";
 
-  randSize = (res == 0 ? 0 : atoi(answer));
+  randSize = (res == nullptr ? 0 : atoi(answer));
   if (randSize < 0) randSize = 0;
   if (randSize > 8) randSize = 8;
 
@@ -1462,7 +1463,7 @@ CipherKey EncFSConfig::getUserKey(const std::string &passProg,
     argv[0] = "/bin/sh";
     argv[1] = "-c";
     argv[2] = passProg.c_str();
-    argv[3] = 0;
+    argv[3] = nullptr;
 
     // child process.. run the command and send output to fds[0]
     close(fds[1]);  // we don't use the other half..
@@ -1500,7 +1501,7 @@ CipherKey EncFSConfig::getUserKey(const std::string &passProg,
   string password = readPassword(fds[1]);
   close(fds[1]);
 
-  waitpid(pid, NULL, 0);
+  waitpid(pid, nullptr, 0);
 
   // convert to key..
   result = makeKey(password.c_str(), password.length());

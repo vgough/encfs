@@ -36,8 +36,8 @@
 #include "Interface.h"
 #include "Mutex.h"
 #include "Range.h"
-#include "SSL_Compat.h"
 #include "SSL_Cipher.h"
+#include "SSL_Compat.h"
 #include "intl/gettext.h"
 
 using namespace std;
@@ -66,7 +66,7 @@ inline int MIN(int a, int b) { return (a < b) ? a : b; }
 int BytesToKey(int keyLen, int ivLen, const EVP_MD *md,
                const unsigned char *data, int dataLen, unsigned int rounds,
                unsigned char *key, unsigned char *iv) {
-  if (data == NULL || dataLen == 0)
+  if (data == nullptr || dataLen == 0)
     return 0;  // OpenSSL returns nkey here, but why?  It is a failure..
 
   unsigned char mdBuf[EVP_MAX_MD_SIZE];
@@ -79,13 +79,13 @@ int BytesToKey(int keyLen, int ivLen, const EVP_MD *md,
   EVP_MD_CTX_init(cx);
 
   for (;;) {
-    EVP_DigestInit_ex(cx, md, NULL);
+    EVP_DigestInit_ex(cx, md, nullptr);
     if (addmd++) EVP_DigestUpdate(cx, mdBuf, mds);
     EVP_DigestUpdate(cx, data, dataLen);
     EVP_DigestFinal_ex(cx, mdBuf, &mds);
 
     for (unsigned int i = 1; i < rounds; ++i) {
-      EVP_DigestInit_ex(cx, md, NULL);
+      EVP_DigestInit_ex(cx, md, nullptr);
       EVP_DigestUpdate(cx, mdBuf, mds);
       EVP_DigestFinal_ex(cx, mdBuf, &mds);
     }
@@ -125,13 +125,13 @@ int TimedPBKDF2(const char *pass, int passlen, const unsigned char *salt,
   timeval start, end;
 
   for (;;) {
-    gettimeofday(&start, 0);
+    gettimeofday(&start, nullptr);
     int res =
         PKCS5_PBKDF2_HMAC_SHA1(pass, passlen, const_cast<unsigned char *>(salt),
                                saltlen, iter, keylen, out);
     if (res != 1) return -1;
 
-    gettimeofday(&end, 0);
+    gettimeofday(&end, nullptr);
 
     long delta = time_diff(end, start);
     if (delta < desiredPDFTime / 8) {
@@ -189,8 +189,8 @@ static std::shared_ptr<Cipher> NewAESCipher(const Interface &iface,
 
   keyLen = AESKeyRange.closest(keyLen);
 
-  const EVP_CIPHER *blockCipher = 0;
-  const EVP_CIPHER *streamCipher = 0;
+  const EVP_CIPHER *blockCipher = nullptr;
+  const EVP_CIPHER *streamCipher = nullptr;
 
   switch (keyLen) {
     case 128:
@@ -244,7 +244,7 @@ class SSLKey : public AbstractCipherKey {
 SSLKey::SSLKey(int keySize_, int ivLength_) {
   this->keySize = keySize_;
   this->ivLength = ivLength_;
-  pthread_mutex_init(&mutex, 0);
+  pthread_mutex_init(&mutex, nullptr);
   buffer = (unsigned char *)OPENSSL_malloc(keySize + ivLength);
   memset(buffer, 0, keySize + ivLength);
 
@@ -272,7 +272,7 @@ SSLKey::~SSLKey() {
 
   keySize = 0;
   ivLength = 0;
-  buffer = 0;
+  buffer = nullptr;
 
   EVP_CIPHER_CTX_free(block_enc);
   EVP_CIPHER_CTX_free(block_dec);
@@ -295,10 +295,10 @@ void initKey(const std::shared_ptr<SSLKey> &key, const EVP_CIPHER *_blockCipher,
   Lock lock(key->mutex);
   // initialize the cipher context once so that we don't have to do it for
   // every block..
-  EVP_EncryptInit_ex(key->block_enc, _blockCipher, NULL, NULL, NULL);
-  EVP_DecryptInit_ex(key->block_dec, _blockCipher, NULL, NULL, NULL);
-  EVP_EncryptInit_ex(key->stream_enc, _streamCipher, NULL, NULL, NULL);
-  EVP_DecryptInit_ex(key->stream_dec, _streamCipher, NULL, NULL, NULL);
+  EVP_EncryptInit_ex(key->block_enc, _blockCipher, nullptr, nullptr, nullptr);
+  EVP_DecryptInit_ex(key->block_dec, _blockCipher, nullptr, nullptr, nullptr);
+  EVP_EncryptInit_ex(key->stream_enc, _streamCipher, nullptr, nullptr, nullptr);
+  EVP_DecryptInit_ex(key->stream_dec, _streamCipher, nullptr, nullptr, nullptr);
 
   EVP_CIPHER_CTX_set_key_length(key->block_enc, _keySize);
   EVP_CIPHER_CTX_set_key_length(key->block_dec, _keySize);
@@ -310,12 +310,12 @@ void initKey(const std::shared_ptr<SSLKey> &key, const EVP_CIPHER *_blockCipher,
   EVP_CIPHER_CTX_set_padding(key->stream_enc, 0);
   EVP_CIPHER_CTX_set_padding(key->stream_dec, 0);
 
-  EVP_EncryptInit_ex(key->block_enc, NULL, NULL, KeyData(key), NULL);
-  EVP_DecryptInit_ex(key->block_dec, NULL, NULL, KeyData(key), NULL);
-  EVP_EncryptInit_ex(key->stream_enc, NULL, NULL, KeyData(key), NULL);
-  EVP_DecryptInit_ex(key->stream_dec, NULL, NULL, KeyData(key), NULL);
+  EVP_EncryptInit_ex(key->block_enc, nullptr, nullptr, KeyData(key), nullptr);
+  EVP_DecryptInit_ex(key->block_dec, nullptr, nullptr, KeyData(key), nullptr);
+  EVP_EncryptInit_ex(key->stream_enc, nullptr, nullptr, KeyData(key), nullptr);
+  EVP_DecryptInit_ex(key->stream_dec, nullptr, nullptr, KeyData(key), nullptr);
 
-  HMAC_Init_ex(key->mac_ctx, KeyData(key), _keySize, EVP_sha1(), 0);
+  HMAC_Init_ex(key->mac_ctx, KeyData(key), _keySize, EVP_sha1(), nullptr);
 }
 
 SSL_Cipher::SSL_Cipher(const Interface &iface_, const Interface &realIface_,
@@ -401,7 +401,7 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength) {
     }
   } else {
     // for backward compatibility with filesystems created with 1:0
-    bytes = EVP_BytesToKey(_blockCipher, EVP_sha1(), NULL,
+    bytes = EVP_BytesToKey(_blockCipher, EVP_sha1(), nullptr,
                            (unsigned char *)password, passwdLength, 16,
                            KeyData(key), IVData(key));
   }
@@ -456,7 +456,7 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
   unsigned char md[EVP_MAX_MD_SIZE];
   unsigned int mdLen = EVP_MAX_MD_SIZE;
 
-  HMAC_Init_ex(key->mac_ctx, 0, 0, 0, 0);
+  HMAC_Init_ex(key->mac_ctx, nullptr, 0, nullptr, nullptr);
   HMAC_Update(key->mac_ctx, data, dataLen);
   if (chainedIV) {
     // toss in the chained IV as well
@@ -637,7 +637,7 @@ void SSL_Cipher::setIVec(unsigned char *ivec, uint64_t seed,
     }
 
     // combine ivec and seed with HMAC
-    HMAC_Init_ex(key->mac_ctx, 0, 0, 0, 0);
+    HMAC_Init_ex(key->mac_ctx, nullptr, 0, nullptr, nullptr);
     HMAC_Update(key->mac_ctx, ivec, _ivLength);
     HMAC_Update(key->mac_ctx, md, 8);
     HMAC_Final(key->mac_ctx, md, &mdLen);
@@ -732,7 +732,7 @@ bool SSL_Cipher::streamEncode(unsigned char *buf, int size, uint64_t iv64,
   shuffleBytes(buf, size);
 
   setIVec(ivec, iv64, key);
-  EVP_EncryptInit_ex(key->stream_enc, NULL, NULL, NULL, ivec);
+  EVP_EncryptInit_ex(key->stream_enc, nullptr, nullptr, nullptr, ivec);
   EVP_EncryptUpdate(key->stream_enc, buf, &dstLen, buf, size);
   EVP_EncryptFinal_ex(key->stream_enc, buf + dstLen, &tmpLen);
 
@@ -740,7 +740,7 @@ bool SSL_Cipher::streamEncode(unsigned char *buf, int size, uint64_t iv64,
   shuffleBytes(buf, size);
 
   setIVec(ivec, iv64 + 1, key);
-  EVP_EncryptInit_ex(key->stream_enc, NULL, NULL, NULL, ivec);
+  EVP_EncryptInit_ex(key->stream_enc, nullptr, nullptr, nullptr, ivec);
   EVP_EncryptUpdate(key->stream_enc, buf, &dstLen, buf, size);
   EVP_EncryptFinal_ex(key->stream_enc, buf + dstLen, &tmpLen);
 
@@ -766,7 +766,7 @@ bool SSL_Cipher::streamDecode(unsigned char *buf, int size, uint64_t iv64,
   int dstLen = 0, tmpLen = 0;
 
   setIVec(ivec, iv64 + 1, key);
-  EVP_DecryptInit_ex(key->stream_dec, NULL, NULL, NULL, ivec);
+  EVP_DecryptInit_ex(key->stream_dec, nullptr, nullptr, nullptr, ivec);
   EVP_DecryptUpdate(key->stream_dec, buf, &dstLen, buf, size);
   EVP_DecryptFinal_ex(key->stream_dec, buf + dstLen, &tmpLen);
 
@@ -774,7 +774,7 @@ bool SSL_Cipher::streamDecode(unsigned char *buf, int size, uint64_t iv64,
   flipBytes(buf, size);
 
   setIVec(ivec, iv64, key);
-  EVP_DecryptInit_ex(key->stream_dec, NULL, NULL, NULL, ivec);
+  EVP_DecryptInit_ex(key->stream_dec, nullptr, nullptr, nullptr, ivec);
   EVP_DecryptUpdate(key->stream_dec, buf, &dstLen, buf, size);
   EVP_DecryptFinal_ex(key->stream_dec, buf + dstLen, &tmpLen);
 
@@ -808,7 +808,7 @@ bool SSL_Cipher::blockEncode(unsigned char *buf, int size, uint64_t iv64,
   int dstLen = 0, tmpLen = 0;
   setIVec(ivec, iv64, key);
 
-  EVP_EncryptInit_ex(key->block_enc, NULL, NULL, NULL, ivec);
+  EVP_EncryptInit_ex(key->block_enc, nullptr, nullptr, nullptr, ivec);
   EVP_EncryptUpdate(key->block_enc, buf, &dstLen, buf, size);
   EVP_EncryptFinal_ex(key->block_enc, buf + dstLen, &tmpLen);
   dstLen += tmpLen;
@@ -840,7 +840,7 @@ bool SSL_Cipher::blockDecode(unsigned char *buf, int size, uint64_t iv64,
   int dstLen = 0, tmpLen = 0;
   setIVec(ivec, iv64, key);
 
-  EVP_DecryptInit_ex(key->block_dec, NULL, NULL, NULL, ivec);
+  EVP_DecryptInit_ex(key->block_dec, nullptr, nullptr, nullptr, ivec);
   EVP_DecryptUpdate(key->block_dec, buf, &dstLen, buf, size);
   EVP_DecryptFinal_ex(key->block_dec, buf + dstLen, &tmpLen);
   dstLen += tmpLen;

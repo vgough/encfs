@@ -76,7 +76,7 @@ char *readpassphrase(const char *prompt, char *buf, size_t bufsiz, int flags) {
   /* I suppose we could alloc on demand in this case (XXX). */
   if (bufsiz == 0) {
     errno = EINVAL;
-    return (NULL);
+    return (nullptr);
   }
 
 restart:
@@ -87,7 +87,7 @@ restart:
   if ((input = output = open(_PATH_TTY, O_RDWR)) == -1) {
     if (flags & RPP_REQUIRE_TTY) {
       errno = ENOTTY;
-      return (NULL);
+      return (nullptr);
     }
     input = STDIN_FILENO;
     output = STDERR_FILENO;
@@ -142,13 +142,13 @@ restart:
   /* Restore old terminal settings and signals. */
   if (memcmp(&term, &oterm, sizeof(term)) != 0)
     (void)tcsetattr(input, _T_FLUSH, &oterm);
-  (void)sigaction(SIGINT, &saveint, NULL);
-  (void)sigaction(SIGHUP, &savehup, NULL);
-  (void)sigaction(SIGQUIT, &savequit, NULL);
-  (void)sigaction(SIGTERM, &saveterm, NULL);
-  (void)sigaction(SIGTSTP, &savetstp, NULL);
-  (void)sigaction(SIGTTIN, &savettin, NULL);
-  (void)sigaction(SIGTTOU, &savettou, NULL);
+  (void)sigaction(SIGINT, &saveint, nullptr);
+  (void)sigaction(SIGHUP, &savehup, nullptr);
+  (void)sigaction(SIGQUIT, &savequit, nullptr);
+  (void)sigaction(SIGTERM, &saveterm, nullptr);
+  (void)sigaction(SIGTSTP, &savetstp, nullptr);
+  (void)sigaction(SIGTTIN, &savettin, nullptr);
+  (void)sigaction(SIGTTOU, &savettou, nullptr);
   if (input != STDIN_FILENO) (void)close(input);
 
   /*
@@ -167,7 +167,7 @@ restart:
   }
 
   errno = save_errno;
-  return (nr == -1 ? NULL : buf);
+  return (nr == -1 ? nullptr : buf);
 }
 #endif /* HAVE_READPASSPHRASE */
 
