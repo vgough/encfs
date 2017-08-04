@@ -101,7 +101,7 @@ int BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
   _cache.offset = req.offset;
   _cache.dataLen = req.dataLen;
   int res = writeOneBlock(req);
-  if (res) clearCache(_cache, _blockSize);
+  if (res < 0) clearCache(_cache, _blockSize);
   return res;
 }
 
@@ -201,7 +201,7 @@ int BlockFileIO::write(const IORequest &req) {
     // extend file first to fill hole with 0's..
     const bool forceWrite = false;
     int res = padFile(fileSize, req.offset, forceWrite);
-    if (res)
+    if (res < 0)
       return res;
   }
 
@@ -266,7 +266,7 @@ int BlockFileIO::write(const IORequest &req) {
 
     // Finally, write the damn thing!
     res = cacheWriteOneBlock(blockReq);
-    if (res) {
+    if (res < 0) {
       break;
     }
 
@@ -342,7 +342,7 @@ int BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
 
     // 2, pad zero blocks unless holes are allowed
     if (!_allowHoles) {
-      for (; !res && (oldLastBlock != newLastBlock); ++oldLastBlock) {
+      for (; !(res < 0) && (oldLastBlock != newLastBlock); ++oldLastBlock) {
         VLOG(1) << "padding block " << oldLastBlock;
         req.offset = oldLastBlock * _blockSize;
         req.dataLen = _blockSize;
@@ -352,7 +352,7 @@ int BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
     }
 
     // 3. only necessary if write is forced and block is non 0 length
-    if (!res && forceWrite && newBlockSize) {
+    if (!(res < 0) && forceWrite && newBlockSize) {
       req.offset = newLastBlock * _blockSize;
       req.dataLen = newBlockSize;
       memset(mb.data, 0, req.dataLen);
@@ -379,7 +379,7 @@ int BlockFileIO::truncateBase(off_t size, FileIO *base) {
     if (base) res = base->truncate(size);
 
     const bool forceWrite = true;
-    if (!res)
+    if (!(res < 0))
       res = padFile(oldSize, size, forceWrite);
   } else if (size == oldSize) {
     // the easiest case, but least likely....

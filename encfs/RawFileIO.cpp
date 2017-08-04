@@ -246,7 +246,7 @@ int RawFileIO::write(const IORequest &req) {
       if (last > fileSize) fileSize = last;
     }
 
-    return 0;
+    return 0; //No matter how many bytes we wrote, we of course already know this.
   }
 }
 

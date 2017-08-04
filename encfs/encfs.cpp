@@ -616,10 +616,10 @@ int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
 
 int _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
   int res = fnode->write(offset, ptr, size);
-  if (!res)
-    return size;
-  else
+  if (res < 0)
     return res;
+  else
+    return size;
 }
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,

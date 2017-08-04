@@ -222,7 +222,7 @@ int CipherFileIO::initHeader() {
       req.dataLen = 8;
 
       int res = base->write(req);
-      if (res)
+      if (res < 0)
         return res;
     } else {
       VLOG(1) << "base not writable, IV not written..";
@@ -252,7 +252,7 @@ bool CipherFileIO::writeHeader() {
   req.data = buf;
   req.dataLen = 8;
 
-  if (base->write(req))
+  if (base->write(req) < 0)
     return false;
 
   return true;
@@ -461,7 +461,7 @@ int CipherFileIO::truncate(off_t size) {
     // the wrong size..
     res = BlockFileIO::truncateBase(size, 0);
 
-    if (res == 0) res = base->truncate(size + HEADER_SIZE);
+    if (!(res < 0)) res = base->truncate(size + HEADER_SIZE);
   }
   return res;
 }
