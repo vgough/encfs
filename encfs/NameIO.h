@@ -139,7 +139,7 @@ class NameIO {
       delete[] Name;          \
       Name = Name##_Raw;      \
     }                         \
-  } while (0);
+  } while (false);
 
 }  // namespace encfs
 

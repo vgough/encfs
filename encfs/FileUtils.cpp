@@ -22,7 +22,8 @@
 #ifdef linux
 #define _XOPEN_SOURCE 500  // make sure pwrite() is pulled in
 #endif
-#define _BSD_SOURCE  // pick up setenv on RH7.3
+#define _BSD_SOURCE      // pick up setenv on RH7.3
+#define _DEFAULT_SOURCE  // Replaces _BSD_SOURCE
 
 #include "internal/easylogging++.h"
 #include <cctype>
@@ -1416,7 +1417,7 @@ std::string readPassword(int FD) {
   char buffer[1024];
   string result;
 
-  while (1) {
+  while (true) {
     ssize_t rdSize = recv(FD, buffer, sizeof(buffer), 0);
 
     if (rdSize > 0) {

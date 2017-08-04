@@ -169,7 +169,7 @@ static void FuseUsage() {
   do {                                      \
     rAssert(out->fuseArgc < MaxFuseArgs);   \
     out->fuseArgv[out->fuseArgc++] = (ARG); \
-  } while (0)
+  } while (false)
 
 static string slashTerminate(const string &src) {
   string result = src;
@@ -233,7 +233,7 @@ static bool processArgs(int argc, char *argv[],
       {"require-macs", 0, nullptr, LONG_OPT_REQUIRE_MAC},  // require MACs
       {nullptr, 0, nullptr, 0}};
 
-  while (1) {
+  while (true) {
     int option_index = 0;
 
     // 's' : single-threaded mode

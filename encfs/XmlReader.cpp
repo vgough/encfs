@@ -101,7 +101,7 @@ bool XmlValue::readB64(const char *path, unsigned char *data,
     return false;
   }
   if (!B64StandardDecode(data, (unsigned char *)s.data(), s.size())) {
-    RLOG(ERROR) << "B64 decode failure on \"" << s << "\"";
+    RLOG(ERROR) << R"(B64 decode failure on ")" << s << R"(")";
     return false;
   }
 
