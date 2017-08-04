@@ -29,9 +29,9 @@
 namespace encfs {
 
 EncFS_Context::EncFS_Context() {
-  pthread_cond_init(&wakeupCond, 0);
-  pthread_mutex_init(&wakeupMutex, 0);
-  pthread_mutex_init(&contextMutex, 0);
+  pthread_cond_init(&wakeupCond, nullptr);
+  pthread_mutex_init(&wakeupMutex, nullptr);
+  pthread_mutex_init(&contextMutex, nullptr);
 
   usageCount = 0;
   currentFuseFh = 1;
@@ -70,10 +70,12 @@ void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
   Lock lock(contextMutex);
 
   root = r;
-  if (r) rootCipherDir = r->rootDirectory();
+  if (r) {
+    rootCipherDir = r->rootDirectory();
+  }
 }
 
-bool EncFS_Context::isMounted() { return root.get() != nullptr; }
+bool EncFS_Context::isMounted() { return root != nullptr; }
 
 void EncFS_Context::getAndResetUsageCounter(int *usage, int *openCount) {
   Lock lock(contextMutex);
@@ -87,7 +89,7 @@ void EncFS_Context::getAndResetUsageCounter(int *usage, int *openCount) {
 std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(path));
+  auto it = openFiles.find(std::string(path));
   if (it != openFiles.end()) {
     // every entry in the list is fine... so just use the
     // first
@@ -99,7 +101,7 @@ std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
 void EncFS_Context::renameNode(const char *from, const char *to) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(from));
+  auto it = openFiles.find(std::string(from));
   if (it != openFiles.end()) {
     auto val = it->second;
     openFiles.erase(it);
@@ -109,8 +111,7 @@ void EncFS_Context::renameNode(const char *from, const char *to) {
 
 // putNode stores "node" under key "path" in the "openFiles" map. It
 // increments the reference count if the key already exists.
-void EncFS_Context::putNode(const char *path,
-                                 std::shared_ptr<FileNode> node) {
+void EncFS_Context::putNode(const char *path, std::shared_ptr<FileNode> node) {
   Lock lock(contextMutex);
   auto &list = openFiles[std::string(path)];
   // The length of "list" serves as the reference count.
@@ -120,10 +121,11 @@ void EncFS_Context::putNode(const char *path,
 
 // eraseNode is called by encfs_release in response to the RELEASE
 // FUSE-command we get from the kernel.
-void EncFS_Context::eraseNode(const char *path, std::shared_ptr<FileNode> fnode) {
+void EncFS_Context::eraseNode(const char *path,
+                              std::shared_ptr<FileNode> fnode) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(path));
+  auto it = openFiles.find(std::string(path));
   rAssert(it != openFiles.end());
   auto &list = it->second;
 

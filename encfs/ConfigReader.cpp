@@ -33,23 +33,27 @@ using namespace std;
 
 namespace encfs {
 
-ConfigReader::ConfigReader() {}
+ConfigReader::ConfigReader() = default;
 
-ConfigReader::~ConfigReader() {}
+ConfigReader::~ConfigReader() = default;
 
 // read the entire file into a ConfigVar instance and then use that to decode
 // into mapped variables.
 bool ConfigReader::load(const char *fileName) {
   struct stat stbuf;
   memset(&stbuf, 0, sizeof(struct stat));
-  if (lstat(fileName, &stbuf) != 0) return false;
+  if (lstat(fileName, &stbuf) != 0) {
+    return false;
+  }
 
   int size = stbuf.st_size;
 
   int fd = open(fileName, O_RDONLY);
-  if (fd < 0) return false;
+  if (fd < 0) {
+    return false;
+  }
 
-  char *buf = new char[size];
+  auto *buf = new char[size];
 
   int res = ::read(fd, buf, size);
   close(fd);
@@ -126,11 +130,11 @@ ConfigVar ConfigReader::toVar() const {
 
 ConfigVar ConfigReader::operator[](const std::string &varName) const {
   // read only
-  map<string, ConfigVar>::const_iterator it = vars.find(varName);
-  if (it == vars.end())
+  auto it = vars.find(varName);
+  if (it == vars.end()) {
     return ConfigVar();
-  else
-    return it->second;
+  }
+  return it->second;
 }
 
 ConfigVar &ConfigReader::operator[](const std::string &varName) {

@@ -22,6 +22,7 @@
 
 #include <cstring>
 #include <memory>
+#include <utility>
 
 #include "Cipher.h"
 #include "CipherKey.h"
@@ -38,7 +39,9 @@ static std::shared_ptr<NameIO> NewBlockNameIO(
     const Interface &iface, const std::shared_ptr<Cipher> &cipher,
     const CipherKey &key) {
   int blockSize = 8;
-  if (cipher) blockSize = cipher->cipherBlockSize();
+  if (cipher) {
+    blockSize = cipher->cipherBlockSize();
+  }
 
   return std::shared_ptr<NameIO>(
       new BlockNameIO(iface, cipher, key, blockSize, false));
@@ -48,7 +51,9 @@ static std::shared_ptr<NameIO> NewBlockNameIO32(
     const Interface &iface, const std::shared_ptr<Cipher> &cipher,
     const CipherKey &key) {
   int blockSize = 8;
-  if (cipher) blockSize = cipher->cipherBlockSize();
+  if (cipher) {
+    blockSize = cipher->cipherBlockSize();
+  }
 
   return std::shared_ptr<NameIO>(
       new BlockNameIO(iface, cipher, key, blockSize, true));
@@ -88,26 +93,25 @@ static bool BlockIO32_registered = NameIO::Register(
 */
 Interface BlockNameIO::CurrentInterface(bool caseInsensitive) {
   // implement major version 4 plus support for two prior versions
-  if (caseInsensitive)
+  if (caseInsensitive) {
     return Interface("nameio/block32", 4, 0, 2);
-  else
-    return Interface("nameio/block", 4, 0, 2);
+  }
+  return Interface("nameio/block", 4, 0, 2);
 }
 
-BlockNameIO::BlockNameIO(const Interface &iface,
-                         const std::shared_ptr<Cipher> &cipher,
-                         const CipherKey &key, int blockSize,
+BlockNameIO::BlockNameIO(const Interface &iface, std::shared_ptr<Cipher> cipher,
+                         CipherKey key, int blockSize,
                          bool caseInsensitiveEncoding)
     : _interface(iface.current()),
       _bs(blockSize),
-      _cipher(cipher),
-      _key(key),
+      _cipher(std::move(cipher)),
+      _key(std::move(key)),
       _caseInsensitive(caseInsensitiveEncoding) {
   // just to be safe..
   rAssert(blockSize < 128);
 }
 
-BlockNameIO::~BlockNameIO() {}
+BlockNameIO::~BlockNameIO() = default;
 
 Interface BlockNameIO::interface() const {
   return CurrentInterface(_caseInsensitive);
@@ -118,10 +122,10 @@ int BlockNameIO::maxEncodedNameLen(int plaintextNameLen) const {
   // the size of too much space rather then too little.
   int numBlocks = (plaintextNameLen + _bs) / _bs;
   int encodedNameLen = numBlocks * _bs + 2;  // 2 checksum bytes
-  if (_caseInsensitive)
+  if (_caseInsensitive) {
     return B256ToB32Bytes(encodedNameLen);
-  else
-    return B256ToB64Bytes(encodedNameLen);
+  }
+  return B256ToB64Bytes(encodedNameLen);
 }
 
 int BlockNameIO::maxDecodedNameLen(int encodedNameLen) const {
@@ -135,7 +139,9 @@ int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
 
   // Pad encryption buffer to block boundary..
   int padding = _bs - length % _bs;
-  if (padding == 0) padding = _bs;  // padding a full extra block!
+  if (padding == 0) {
+    padding = _bs;  // padding a full extra block!
+  }
 
   rAssert(bufferLength >= length + 2 + padding);
   memset(encodedName + length + 2, (unsigned char)padding, padding);
@@ -145,7 +151,9 @@ int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
 
   // store the IV before it is modified by the MAC call.
   uint64_t tmpIV = 0;
-  if (iv && _interface >= 3) tmpIV = *iv;
+  if ((iv != nullptr) && _interface >= 3) {
+    tmpIV = *iv;
+  }
 
   // include padding in MAC computation
   unsigned int mac = _cipher->MAC_16((unsigned char *)encodedName + 2,
@@ -207,7 +215,9 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
                      ((unsigned int)((unsigned char)tmpBuf[1]));
 
   uint64_t tmpIV = 0;
-  if (iv && _interface >= 3) tmpIV = *iv;
+  if ((iv != nullptr) && _interface >= 3) {
+    tmpIV = *iv;
+  }
 
   _cipher->blockDecode((unsigned char *)tmpBuf + 2, decodedStreamLen,
                        (uint64_t)mac ^ tmpIV, _key);

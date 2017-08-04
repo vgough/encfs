@@ -22,7 +22,8 @@
 #ifdef linux
 #define _XOPEN_SOURCE 500  // make sure pwrite() is pulled in
 #endif
-#define _BSD_SOURCE  // pick up setenv on RH7.3
+#define _BSD_SOURCE      // pick up setenv on RH7.3
+#define _DEFAULT_SOURCE  // Replaces _BSD_SOURCE
 
 #include "internal/easylogging++.h"
 #include <cctype>
@@ -111,54 +112,45 @@ struct ConfigInfo {
     // backward compatible support for older versions
     {".encfs5", Config_V5, "ENCFS5_CONFIG", readV5Config, writeV5Config,
      V5SubVersion, V5SubVersionDefault},
-    {".encfs4", Config_V4, NULL, readV4Config, writeV4Config, 0, 0},
+    {".encfs4", Config_V4, nullptr, readV4Config, writeV4Config, 0, 0},
     // no longer support earlier versions
-    {".encfs3", Config_V3, NULL, NULL, NULL, 0, 0},
-    {".encfs2", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
-    {".encfs", Config_Prehistoric, NULL, NULL, NULL, 0, 0},
-    {NULL, Config_None, NULL, NULL, NULL, 0, 0}};
+    {".encfs3", Config_V3, nullptr, nullptr, nullptr, 0, 0},
+    {".encfs2", Config_Prehistoric, nullptr, nullptr, nullptr, 0, 0},
+    {".encfs", Config_Prehistoric, nullptr, nullptr, nullptr, 0, 0},
+    {nullptr, Config_None, nullptr, nullptr, nullptr, 0, 0}};
 
-EncFS_Root::EncFS_Root() {}
+EncFS_Root::EncFS_Root() = default;
 
-EncFS_Root::~EncFS_Root() {}
+EncFS_Root::~EncFS_Root() = default;
 
 bool fileExists(const char *fileName) {
   struct stat buf;
-  if (!lstat(fileName, &buf)) {
-    return true;
-  } else {
-    // XXX show perror?
-    return false;
-  }
+  return lstat(fileName, &buf) == 0;
 }
 
 bool isDirectory(const char *fileName) {
   struct stat buf;
-  if (!lstat(fileName, &buf)) {
+  if (lstat(fileName, &buf) == 0) {
     return S_ISDIR(buf.st_mode);
-  } else {
-    return false;
   }
+  return false;
 }
 
 bool isAbsolutePath(const char *fileName) {
-  if (fileName && fileName[0] != '\0' && fileName[0] == '/')
-    return true;
-  else
-    return false;
+  return (fileName != nullptr) && fileName[0] != '\0' && fileName[0] == '/';
 }
 
 const char *lastPathElement(const char *name) {
   const char *loc = strrchr(name, '/');
-  return loc ? loc + 1 : name;
+  return loc != nullptr ? loc + 1 : name;
 }
 
 std::string parentDirectory(const std::string &path) {
   size_t last = path.find_last_of('/');
-  if (last == string::npos)
+  if (last == string::npos) {
     return string("");
-  else
-    return path.substr(0, last);
+  }
+  return path.substr(0, last);
 }
 
 bool userAllowMkdir(const char *path, mode_t mode) {
@@ -188,18 +180,17 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
   }
   res = fgets(answer, sizeof(answer), stdin);
 
-  if (res != 0 && toupper(answer[0]) == 'Y') {
+  if (res != nullptr && toupper(answer[0]) == 'Y') {
     int result = mkdir(path, mode);
     if (result < 0) {
       perror(_("Unable to create directory: "));
       return false;
-    } else
-      return true;
-  } else {
-    // Directory not created, by user request
-    cerr << _("Directory not created.") << "\n";
-    return false;
+    }
+    return true;
   }
+  // Directory not created, by user request
+  cerr << _("Directory not created.") << "\n";
+  return false;
 }
 
 /**
@@ -207,7 +198,7 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
  */
 ConfigType readConfig_load(ConfigInfo *nm, const char *path,
                            EncFSConfig *config) {
-  if (nm->loadFunc) {
+  if (nm->loadFunc != nullptr) {
     try {
       if ((*nm->loadFunc)(path, config, nm)) {
         config->cfgType = nm->type;
@@ -233,11 +224,11 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
  */
 ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
   ConfigInfo *nm = ConfigFileMapping;
-  while (nm->fileName) {
+  while (nm->fileName != nullptr) {
     // allow environment variable to override default config path
-    if (nm->environmentOverride != NULL) {
+    if (nm->environmentOverride != nullptr) {
       char *envFile = getenv(nm->environmentOverride);
-      if (envFile != NULL) {
+      if (envFile != nullptr) {
         if (!fileExists(envFile)) {
           RLOG(ERROR)
               << "fatal: config file specified by environment does not exist: "
@@ -249,8 +240,9 @@ ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
     }
     // the standard place to look is in the root directory
     string path = rootDir + nm->fileName;
-    if (fileExists(path.c_str()))
+    if (fileExists(path.c_str())) {
       return readConfig_load(nm, path.c_str(), config);
+    }
 
     ++nm;
   }
@@ -323,7 +315,7 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
 
   int encodedSize;
   config->read("encodedKeySize", &encodedSize);
-  unsigned char *key = new unsigned char[encodedSize];
+  auto *key = new unsigned char[encodedSize];
   config->readB64("encodedKeyData", key, encodedSize);
   cfg->assignKeyData(key, encodedSize);
   delete[] key;
@@ -331,7 +323,7 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
   if (cfg->subVersion >= 20080816) {
     int saltLen;
     config->read("saltLen", &saltLen);
-    unsigned char *salt = new unsigned char[saltLen];
+    auto *salt = new unsigned char[saltLen];
     config->readB64("saltData", salt, saltLen);
     cfg->assignSaltData(salt, saltLen);
     delete[] salt;
@@ -445,13 +437,15 @@ bool saveConfig(ConfigType type, const string &rootDir,
   bool ok = false;
 
   ConfigInfo *nm = ConfigFileMapping;
-  while (nm->fileName) {
-    if (nm->type == type && nm->saveFunc) {
+  while (nm->fileName != nullptr) {
+    if (nm->type == type && (nm->saveFunc != nullptr)) {
       string path = rootDir + nm->fileName;
-      if (nm->environmentOverride != NULL) {
+      if (nm->environmentOverride != nullptr) {
         // use environment file if specified..
         const char *envFile = getenv(nm->environmentOverride);
-        if (envFile != NULL) path.assign(envFile);
+        if (envFile != nullptr) {
+          path.assign(envFile);
+        }
       }
 
       try {
@@ -592,7 +586,8 @@ static Cipher::CipherAlgorithm findCipherAlgorithm(const char *name,
   Cipher::AlgorithmList algorithms = Cipher::GetAlgorithmList();
   Cipher::AlgorithmList::const_iterator it;
   for (it = algorithms.begin(); it != algorithms.end(); ++it) {
-    if (!strcmp(name, it->name.c_str()) && it->keyLength.allowed(keySize)) {
+    if ((strcmp(name, it->name.c_str()) == 0) &&
+        it->keyLength.allowed(keySize)) {
       return *it;
     }
   }
@@ -649,7 +644,7 @@ static Cipher::CipherAlgorithm selectCipherAlgorithm() {
     cout << "\n" << _("Enter the number corresponding to your choice: ");
     char answer[10];
     char *res = fgets(answer, sizeof(answer), stdin);
-    int cipherNum = (res == 0 ? 0 : atoi(answer));
+    int cipherNum = (res == nullptr ? 0 : atoi(answer));
     cout << "\n";
 
     if (cipherNum < 1 || cipherNum > (int)algorithms.size()) {
@@ -658,8 +653,9 @@ static Cipher::CipherAlgorithm selectCipherAlgorithm() {
     }
 
     it = algorithms.begin();
-    while (--cipherNum)  // numbering starts at 1
+    while (--cipherNum != 0) {  // numbering starts at 1
       ++it;
+    }
 
     Cipher::CipherAlgorithm alg = *it;
 
@@ -692,7 +688,7 @@ static Interface selectNameCoding() {
     cout << "\n" << _("Enter the number corresponding to your choice: ");
     char answer[10];
     char *res = fgets(answer, sizeof(answer), stdin);
-    int algNum = (res == 0 ? 0 : atoi(answer));
+    int algNum = (res == nullptr ? 0 : atoi(answer));
     cout << "\n";
 
     if (algNum < 1 || algNum > (int)algorithms.size()) {
@@ -701,8 +697,9 @@ static Interface selectNameCoding() {
     }
 
     it = algorithms.begin();
-    while (--algNum)  // numbering starts at 1
+    while (--algNum != 0) {  // numbering starts at 1
       ++it;
+    }
 
     // xgroup(setup)
     cout << autosprintf(_("Selected algorithm \"%s\""), it->name.c_str())
@@ -737,13 +734,17 @@ static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
   if (numAvail < 5) {
     // show them all
     for (int i = 0; i <= numAvail; ++i) {
-      if (i) cout << ", ";
+      if (i != 0) {
+        cout << ", ";
+      }
       cout << alg.keyLength.min() + i * alg.keyLength.inc();
     }
   } else {
     // partial
     for (int i = 0; i < 3; ++i) {
-      if (i) cout << ", ";
+      if (i != 0) {
+        cout << ", ";
+      }
       cout << alg.keyLength.min() + i * alg.keyLength.inc();
     }
     cout << " ... " << alg.keyLength.max() - alg.keyLength.inc();
@@ -754,7 +755,7 @@ static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
 
   char answer[10];
   char *res = fgets(answer, sizeof(answer), stdin);
-  int keySize = (res == 0 ? 0 : atoi(answer));
+  int keySize = (res == nullptr ? 0 : atoi(answer));
   cout << "\n";
 
   keySize = alg.keyLength.closest(keySize);
@@ -794,7 +795,9 @@ static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
   char *res = fgets(answer, sizeof(answer), stdin);
   cout << "\n";
 
-  if (res != 0 && atoi(answer) >= alg.blockSize.min()) blockSize = atoi(answer);
+  if (res != nullptr && atoi(answer) >= alg.blockSize.min()) {
+    blockSize = atoi(answer);
+  }
 
   blockSize = alg.blockSize.closest(blockSize);
 
@@ -816,10 +819,11 @@ static bool boolDefault(const char *prompt, bool defaultValue) {
 
   string yesno;
 
-  if (defaultValue == true)
+  if (defaultValue) {
     yesno = "[y]/n: ";
-  else
+  } else {
     yesno = "y/[n]: ";
+  }
 
   string response;
   bool value;
@@ -831,10 +835,12 @@ static bool boolDefault(const char *prompt, bool defaultValue) {
     if (cin.fail() || response == "") {
       value = defaultValue;
       break;
-    } else if (response == "y") {
+    }
+    if (response == "y") {
       value = true;
       break;
-    } else if (response == "n") {
+    }
+    if (response == "n") {
       value = false;
       break;
     }
@@ -873,10 +879,11 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
     addMAC = true;
   }
 
-  if (addMAC)
+  if (addMAC) {
     *macBytes = 8;
-  else
+  } else {
     *macBytes = 0;
+  }
 
   // xgroup(setup)
   cout << _(
@@ -893,9 +900,13 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
   char *res = fgets(answer, sizeof(answer), stdin);
   cout << "\n";
 
-  randSize = (res == 0 ? 0 : atoi(answer));
-  if (randSize < 0) randSize = 0;
-  if (randSize > 8) randSize = 8;
+  randSize = (res == nullptr ? 0 : atoi(answer));
+  if (randSize < 0) {
+    randSize = 0;
+  }
+  if (randSize > 8) {
+    randSize = 8;
+  }
 
   *macRandBytes = randSize;
 }
@@ -976,7 +987,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
         " anything else, or an empty line will select standard mode.\n"
         "?> ");
 
-    if (annotate) cerr << "$PROMPT$ config_option" << endl;
+    if (annotate) {
+      cerr << "$PROMPT$ config_option" << endl;
+    }
 
     char *res = fgets(answer, sizeof(answer), stdin);
     (void)res;
@@ -1055,7 +1068,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
-      if (uniqueIV == false) opts->readOnly = false;
+      if (!uniqueIV) {
+        opts->readOnly = false;
+      }
     }
   }
 
@@ -1083,13 +1098,15 @@ RootPtr createV6Config(EncFS_Context *ctx,
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
-      if (uniqueIV == false) opts->readOnly = false;
+      if (!uniqueIV) {
+        opts->readOnly = false;
+      }
     } else {
       chainedIV = selectChainedIV();
       uniqueIV = selectUniqueIV(true);
-      if (chainedIV && uniqueIV)
+      if (chainedIV && uniqueIV) {
         externalIV = selectExternalChainedIV();
-      else {
+      } else {
         // xgroup(setup)
         cout << _("External chained IV disabled, as both 'IV chaining'\n"
                   "and 'unique IV' features are required for this option.")
@@ -1107,10 +1124,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
         _("Unable to instanciate cipher %s, key size %i, block size %i"),
         alg.name.c_str(), keySize, blockSize);
     return rootInfo;
-  } else {
-    VLOG(1) << "Using cipher " << alg.name << ", key size " << keySize
-            << ", block size " << blockSize;
   }
+  VLOG(1) << "Using cipher " << alg.name << ", key size " << keySize
+          << ", block size " << blockSize;
 
   std::shared_ptr<EncFSConfig> config(new EncFSConfig);
 
@@ -1160,7 +1176,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
       "later using encfsctl.\n\n");
 
   int encodedKeySize = cipher->encodedKeySize();
-  unsigned char *encodedKey = new unsigned char[encodedKeySize];
+  auto *encodedKey = new unsigned char[encodedKeySize];
 
   CipherKey volumeKey = cipher->newRandomKey();
 
@@ -1168,12 +1184,15 @@ RootPtr createV6Config(EncFS_Context *ctx,
   CipherKey userKey;
   VLOG(1) << "useStdin: " << useStdin;
   if (useStdin) {
-    if (annotate) cerr << "$PROMPT$ new_passwd" << endl;
+    if (annotate) {
+      cerr << "$PROMPT$ new_passwd" << endl;
+    }
     userKey = config->getUserKey(useStdin);
-  } else if (!passwordProgram.empty())
+  } else if (!passwordProgram.empty()) {
     userKey = config->getUserKey(passwordProgram, rootDir);
-  else
+  } else {
     userKey = config->getNewUserKey();
+  }
 
   cipher->writeKey(volumeKey, encodedKey, userKey);
   userKey.reset();
@@ -1215,11 +1234,10 @@ RootPtr createV6Config(EncFS_Context *ctx,
   fsConfig->idleTracking = enableIdleTracking;
   fsConfig->opts = opts;
 
-  rootInfo = RootPtr(new EncFS_Root);
+  rootInfo = std::make_shared<encfs::EncFS_Root>();
   rootInfo->cipher = cipher;
   rootInfo->volumeKey = volumeKey;
-  rootInfo->root =
-      std::shared_ptr<DirNode>(new DirNode(ctx, rootDir, fsConfig));
+  rootInfo->root = std::make_shared<DirNode>(ctx, rootDir, fsConfig);
 
   return rootInfo;
 }
@@ -1233,17 +1251,18 @@ void showFSInfo(const EncFSConfig *config) {
         config->cipherIface.name().c_str(), config->cipherIface.current(),
         config->cipherIface.revision(), config->cipherIface.age());
     // check if we support this interface..
-    if (!cipher)
+    if (!cipher) {
       cout << _(" (NOT supported)\n");
-    else {
+    } else {
       // if we're using a newer interface, show the version number
       if (config->cipherIface != cipher->interface()) {
         Interface iface = cipher->interface();
         // xgroup(diag)
         cout << autosprintf(_(" (using %i:%i:%i)\n"), iface.current(),
                             iface.revision(), iface.age());
-      } else
+      } else {
         cout << "\n";
+      }
     }
   }
   {
@@ -1265,8 +1284,9 @@ void showFSInfo(const EncFSConfig *config) {
         Interface iface = nameCoder->interface();
         cout << autosprintf(_(" (using %i:%i:%i)\n"), iface.current(),
                             iface.revision(), iface.age());
-      } else
+      } else {
         cout << "\n";
+      }
     }
   }
   {
@@ -1275,17 +1295,18 @@ void showFSInfo(const EncFSConfig *config) {
     if (!cipher) {
       // xgroup(diag)
       cout << _(" (NOT supported)\n");
-    } else
+    } else {
       cout << "\n";
+    }
   }
-  if (config->kdfIterations > 0 && config->salt.size() > 0) {
+  if (config->kdfIterations > 0 && !config->salt.empty()) {
     cout << autosprintf(_("Using PBKDF2, with %i iterations"),
                         config->kdfIterations)
          << "\n";
     cout << autosprintf(_("Salt Size: %i bits"), (int)(8 * config->salt.size()))
          << "\n";
   }
-  if (config->blockMACBytes || config->blockMACRandBytes) {
+  if ((config->blockMACBytes != 0) || (config->blockMACRandBytes != 0)) {
     if (config->subVersion < 20040813) {
       cout << autosprintf(
                   // xgroup(diag)
@@ -1361,12 +1382,12 @@ CipherKey EncFSConfig::makeKey(const char *password, int passwdLen) {
 
   // if no salt is set and we're creating a new password for a new
   // FS type, then initialize salt..
-  if (salt.size() == 0 && kdfIterations == 0 && cfgType >= Config_V6) {
+  if (salt.empty() && kdfIterations == 0 && cfgType >= Config_V6) {
     // upgrade to using salt
     salt.resize(20);
   }
 
-  if (salt.size() > 0) {
+  if (!salt.empty()) {
     // if iterations isn't known, then we're creating a new key, so
     // randomize the salt..
     if (kdfIterations == 0 &&
@@ -1391,8 +1412,9 @@ CipherKey EncFSConfig::getUserKey(bool useStdin) {
   if (useStdin) {
     res = fgets(passBuf, sizeof(passBuf), stdin);
     // Kill the trailing newline.
-    if (passBuf[strlen(passBuf) - 1] == '\n')
+    if (passBuf[strlen(passBuf) - 1] == '\n') {
       passBuf[strlen(passBuf) - 1] = '\0';
+    }
   } else {
     // xgroup(common)
     res = readpassphrase(_("EncFS Password: "), passBuf, sizeof(passBuf),
@@ -1400,7 +1422,7 @@ CipherKey EncFSConfig::getUserKey(bool useStdin) {
   }
 
   CipherKey userKey;
-  if (!res) {
+  if (res == nullptr) {
     cerr << _("fatal: error reading password\n");
     exit(1);
   } else {
@@ -1416,21 +1438,23 @@ std::string readPassword(int FD) {
   char buffer[1024];
   string result;
 
-  while (1) {
+  while (true) {
     ssize_t rdSize = recv(FD, buffer, sizeof(buffer), 0);
 
     if (rdSize > 0) {
       result.append(buffer, rdSize);
       memset(buffer, 0, sizeof(buffer));
-    } else
+    } else {
       break;
+    }
   }
 
   // chop off trailing "\n" if present..
   // This is done so that we can use standard programs like ssh-askpass
   // without modification, as it returns trailing newline..
-  if (!result.empty() && result[result.length() - 1] == '\n')
+  if (!result.empty() && result[result.length() - 1] == '\n') {
     result.resize(result.length() - 1);
+  }
 
   return result;
 }
@@ -1462,7 +1486,7 @@ CipherKey EncFSConfig::getUserKey(const std::string &passProg,
     argv[0] = "/bin/sh";
     argv[1] = "-c";
     argv[2] = passProg.c_str();
-    argv[3] = 0;
+    argv[3] = nullptr;
 
     // child process.. run the command and send output to fds[0]
     close(fds[1]);  // we don't use the other half..
@@ -1500,7 +1524,7 @@ CipherKey EncFSConfig::getUserKey(const std::string &passProg,
   string password = readPassword(fds[1]);
   close(fds[1]);
 
-  waitpid(pid, NULL, 0);
+  waitpid(pid, nullptr, 0);
 
   // convert to key..
   result = makeKey(password.c_str(), password.length());
@@ -1524,7 +1548,8 @@ CipherKey EncFSConfig::getNewUserKey() {
     char *res2 = readpassphrase(_("Verify Encfs Password: "), passBuf2,
                                 sizeof(passBuf2) - 1, RPP_ECHO_OFF);
 
-    if (res1 && res2 && !strcmp(passBuf, passBuf2)) {
+    if ((res1 != nullptr) && (res2 != nullptr) &&
+        (strcmp(passBuf, passBuf2) == 0)) {
       userKey = makeKey(passBuf, strlen(passBuf));
     } else {
       // xgroup(common) -- probably not common, but group with the others
@@ -1559,7 +1584,9 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
-      if (config->uniqueIV == false) opts->readOnly = false;
+      if (!config->uniqueIV) {
+        opts->readOnly = false;
+      }
     }
 
     // first, instanciate the cipher.
@@ -1575,7 +1602,7 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
     }
 
     if (opts->delayMount) {
-      rootInfo = RootPtr(new EncFS_Root);
+      rootInfo = std::make_shared<encfs::EncFS_Root>();
       rootInfo->cipher = cipher;
       rootInfo->root = std::shared_ptr<DirNode>();
       return rootInfo;
@@ -1586,12 +1613,17 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
 
     if (opts->passwordProgram.empty()) {
       VLOG(1) << "useStdin: " << opts->useStdin;
-      if (opts->annotate) cerr << "$PROMPT$ passwd" << endl;
+      if (opts->annotate) {
+        cerr << "$PROMPT$ passwd" << endl;
+      }
       userKey = config->getUserKey(opts->useStdin);
-    } else
+    } else {
       userKey = config->getUserKey(opts->passwordProgram, opts->rootDir);
+    }
 
-    if (!userKey) return rootInfo;
+    if (!userKey) {
+      return rootInfo;
+    }
 
     VLOG(1) << "cipher key size = " << cipher->encodedKeySize();
     // decode volume key..
@@ -1631,11 +1663,10 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
     fsConfig->reverseEncryption = opts->reverseEncryption;
     fsConfig->opts = opts;
 
-    rootInfo = RootPtr(new EncFS_Root);
+    rootInfo = std::make_shared<encfs::EncFS_Root>();
     rootInfo->cipher = cipher;
     rootInfo->volumeKey = volumeKey;
-    rootInfo->root =
-        std::shared_ptr<DirNode>(new DirNode(ctx, opts->rootDir, fsConfig));
+    rootInfo->root = std::make_shared<DirNode>(ctx, opts->rootDir, fsConfig);
   } else {
     if (opts->createIfNotFound) {
       // creating a new encrypted filesystem
@@ -1653,10 +1684,9 @@ int remountFS(EncFS_Context *ctx) {
   if (rootInfo) {
     ctx->setRoot(rootInfo->root);
     return 0;
-  } else {
-    RLOG(WARNING) << "Remount failed";
-    return -EACCES;
   }
+  RLOG(WARNING) << "Remount failed";
+  return -EACCES;
 }
 
 }  // namespace encfs

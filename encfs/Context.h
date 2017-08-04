@@ -21,14 +21,14 @@
 #ifndef _Context_incl_
 #define _Context_incl_
 
-#include <list>
 #include <algorithm>
+#include <atomic>
+#include <list>
 #include <memory>
 #include <pthread.h>
 #include <set>
 #include <string>
 #include <unordered_map>
-#include <atomic>
 
 #include "encfs.h"
 
@@ -47,7 +47,7 @@ class EncFS_Context {
   std::shared_ptr<FileNode> lookupNode(const char *path);
 
   void getAndResetUsageCounter(int *usage, int *openCount);
-  
+
   void putNode(const char *path, std::shared_ptr<FileNode> node);
 
   void eraseNode(const char *path, std::shared_ptr<FileNode> fnode);
@@ -85,9 +85,8 @@ class EncFS_Context {
    * us.
    */
 
-  typedef std::unordered_map<std::string,
-                             std::list<std::shared_ptr<FileNode>>>
-      FileMap;
+  using FileMap =
+      std::unordered_map<std::string, std::list<std::shared_ptr<FileNode>>>;
 
   mutable pthread_mutex_t contextMutex;
   FileMap openFiles;

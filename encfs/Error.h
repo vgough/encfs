@@ -21,7 +21,7 @@ class Error : public std::runtime_error {
       RLOG(ERROR) << "Assert failed: " << STR(cond); \
       throw encfs::Error(STR(cond));                 \
     }                                                \
-  } while (0)
+  } while (false)
 
 void initLogging(bool enable_debug = false, bool is_daemon = false);
 

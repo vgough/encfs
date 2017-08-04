@@ -48,8 +48,8 @@ struct RenameEl;
 
 class DirTraverse {
  public:
-  DirTraverse(const std::shared_ptr<DIR> &dirPtr, uint64_t iv,
-              const std::shared_ptr<NameIO> &naming);
+  DirTraverse(std::shared_ptr<DIR> dirPtr, uint64_t iv,
+              std::shared_ptr<NameIO> naming);
   DirTraverse(const DirTraverse &src);
   ~DirTraverse();
 

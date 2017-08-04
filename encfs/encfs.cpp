@@ -18,17 +18,17 @@
 #include "encfs.h"
 
 #include <cerrno>
+#include <cinttypes>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <memory>
-#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
-#include <time.h>
 #include <unistd.h>
 #include <utime.h>
 #ifdef linux
@@ -76,7 +76,9 @@ static EncFS_Context *context() {
  * if the argument is NULL.
  */
 static bool isReadOnly(EncFS_Context *ctx) {
-  if (ctx == NULL) ctx = (EncFS_Context *)fuse_get_context()->private_data;
+  if (ctx == nullptr) {
+    ctx = (EncFS_Context *)fuse_get_context()->private_data;
+  }
 
   return ctx->opts->readOnly;
 }
@@ -89,7 +91,9 @@ static int withCipherPath(const char *opName, const char *path,
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
     string cyName = FSRoot->cipherPath(path);
@@ -112,20 +116,22 @@ static int withCipherPath(const char *opName, const char *path,
 }
 
 static void checkCanary(std::shared_ptr<FileNode> fnode) {
-  if(fnode->canary == CANARY_OK) {
+  if (fnode->canary == CANARY_OK) {
     return;
   }
-  if(fnode->canary == CANARY_RELEASED) {
+  if (fnode->canary == CANARY_RELEASED) {
     // "fnode" may have been released after it was retrieved by
     // lookupFuseFh. This is not an error. std::shared_ptr will release
     // the memory only when all operations on the FileNode have been
     // completed.
     return;
   }
-  if(fnode->canary == CANARY_DESTROYED) {
-    RLOG(ERROR) << "canary=CANARY_DESTROYED. FileNode accessed after it was destroyed.";
+  if (fnode->canary == CANARY_DESTROYED) {
+    RLOG(ERROR)
+        << "canary=CANARY_DESTROYED. FileNode accessed after it was destroyed.";
   } else {
-    RLOG(ERROR) << "canary=0x" << std::hex << fnode->canary << ". Memory corruption?";
+    RLOG(ERROR) << "canary=0x" << std::hex << fnode->canary
+                << ". Memory corruption?";
   }
   throw Error("dead canary");
 }
@@ -138,7 +144,9 @@ static int withFileNode(const char *opName, const char *path,
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
 
@@ -214,7 +222,7 @@ int _do_getattr(FileNode *fnode, struct stat *stbuf) {
 }
 
 int encfs_getattr(const char *path, struct stat *stbuf) {
-  return withFileNode("getattr", path, NULL, bind(_do_getattr, _1, stbuf));
+  return withFileNode("getattr", path, nullptr, bind(_do_getattr, _1, stbuf));
 }
 
 int encfs_fgetattr(const char *path, struct stat *stbuf,
@@ -228,7 +236,9 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 
   int res = ESUCCESS;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
 
@@ -250,7 +260,9 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #if defined(fuse_fill_dir_flags)
         if (filler(buf, name.c_str(), &st, 0, 0)) break;
 #else
-        if (filler(buf, name.c_str(), &st, 0)) break;
+        if (filler(buf, name.c_str(), &st, 0) != 0) {
+          break;
+        }
 #endif
 
         name = dt.nextPlaintextName(&fileType, &inode);
@@ -269,11 +281,15 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 int encfs_mknod(const char *path, mode_t mode, dev_t rdev) {
   EncFS_Context *ctx = context();
 
-  if (isReadOnly(ctx)) return -EROFS;
+  if (isReadOnly(ctx)) {
+    return -EROFS;
+  }
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
     std::shared_ptr<FileNode> fnode = FSRoot->lookupNode(path, "mknod");
@@ -298,8 +314,9 @@ int encfs_mknod(const char *path, mode_t mode, dev_t rdev) {
           FSRoot->lookupNode(parent.c_str(), "mknod");
 
       struct stat st;
-      if (dnode->getAttr(&st) == 0)
+      if (dnode->getAttr(&st) == 0) {
         res = fnode->mknod(mode, rdev, uid, st.st_gid);
+      }
     }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in mknod: " << err.what();
@@ -311,11 +328,15 @@ int encfs_mkdir(const char *path, mode_t mode) {
   fuse_context *fctx = fuse_get_context();
   EncFS_Context *ctx = context();
 
-  if (isReadOnly(ctx)) return -EROFS;
+  if (isReadOnly(ctx)) {
+    return -EROFS;
+  }
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
     uid_t uid = 0;
@@ -333,8 +354,9 @@ int encfs_mkdir(const char *path, mode_t mode) {
           FSRoot->lookupNode(parent.c_str(), "mkdir");
 
       struct stat st;
-      if (dnode->getAttr(&st) == 0)
+      if (dnode->getAttr(&st) == 0) {
         res = FSRoot->mkdir(path, mode, uid, st.st_gid);
+      }
     }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in mkdir: " << err.what();
@@ -345,11 +367,15 @@ int encfs_mkdir(const char *path, mode_t mode) {
 int encfs_unlink(const char *path) {
   EncFS_Context *ctx = context();
 
-  if (isReadOnly(ctx)) return -EROFS;
+  if (isReadOnly(ctx)) {
+    return -EROFS;
+  }
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
     // let DirNode handle it atomically so that it can handle race
@@ -366,7 +392,9 @@ int _do_rmdir(EncFS_Context *, const string &cipherPath) {
 }
 
 int encfs_rmdir(const char *path) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withCipherPath("rmdir", path, bind(_do_rmdir, _1, _2));
 }
 
@@ -374,11 +402,15 @@ int _do_readlink(EncFS_Context *ctx, const string &cyName, char *buf,
                  size_t size) {
   int res = ESUCCESS;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   res = ::readlink(cyName.c_str(), buf, size - 1);
 
-  if (res == -1) return -errno;
+  if (res == -1) {
+    return -errno;
+  }
 
   buf[res] = '\0';  // ensure null termination
   string decodedName;
@@ -393,10 +425,9 @@ int _do_readlink(EncFS_Context *ctx, const string &cyName, char *buf,
     buf[size - 1] = '\0';
 
     return ESUCCESS;
-  } else {
-    RLOG(WARNING) << "Error decoding link";
-    return -1;
   }
+  RLOG(WARNING) << "Error decoding link";
+  return -1;
 }
 
 int encfs_readlink(const char *path, char *buf, size_t size) {
@@ -410,11 +441,15 @@ int encfs_readlink(const char *path, char *buf, size_t size) {
 int encfs_symlink(const char *to, const char *from) {
   EncFS_Context *ctx = context();
 
-  if (isReadOnly(ctx)) return -EROFS;
+  if (isReadOnly(ctx)) {
+    return -EROFS;
+  }
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
     string fromCName = FSRoot->cipherPath(from);
@@ -433,13 +468,18 @@ int encfs_symlink(const char *to, const char *from) {
       oldgid = setfsgid(context->gid);
     }
     res = ::symlink(toCName.c_str(), fromCName.c_str());
-    if (olduid >= 0) setfsuid(olduid);
-    if (oldgid >= 0) setfsgid(oldgid);
+    if (olduid >= 0) {
+      setfsuid(olduid);
+    }
+    if (oldgid >= 0) {
+      setfsgid(oldgid);
+    }
 
-    if (res == -1)
+    if (res == -1) {
       res = -errno;
-    else
+    } else {
       res = ESUCCESS;
+    }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in symlink: " << err.what();
   }
@@ -449,11 +489,15 @@ int encfs_symlink(const char *to, const char *from) {
 int encfs_link(const char *from, const char *to) {
   EncFS_Context *ctx = context();
 
-  if (isReadOnly(ctx)) return -EROFS;
+  if (isReadOnly(ctx)) {
+    return -EROFS;
+  }
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
     res = FSRoot->link(from, to);
@@ -466,11 +510,15 @@ int encfs_link(const char *from, const char *to) {
 int encfs_rename(const char *from, const char *to) {
   EncFS_Context *ctx = context();
 
-  if (isReadOnly(ctx)) return -EROFS;
+  if (isReadOnly(ctx)) {
+    return -EROFS;
+  }
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
     res = FSRoot->rename(from, to);
@@ -485,7 +533,9 @@ int _do_chmod(EncFS_Context *, const string &cipherPath, mode_t mode) {
 }
 
 int encfs_chmod(const char *path, mode_t mode) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withCipherPath("chmod", path, bind(_do_chmod, _1, _2, mode));
 }
 
@@ -495,19 +545,25 @@ int _do_chown(EncFS_Context *, const string &cyName, uid_t u, gid_t g) {
 }
 
 int encfs_chown(const char *path, uid_t uid, gid_t gid) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withCipherPath("chown", path, bind(_do_chown, _1, _2, uid, gid));
 }
 
 int _do_truncate(FileNode *fnode, off_t size) { return fnode->truncate(size); }
 
 int encfs_truncate(const char *path, off_t size) {
-  if (isReadOnly(NULL)) return -EROFS;
-  return withFileNode("truncate", path, NULL, bind(_do_truncate, _1, size));
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
+  return withFileNode("truncate", path, nullptr, bind(_do_truncate, _1, size));
 }
 
 int encfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withFileNode("ftruncate", path, fi, bind(_do_truncate, _1, size));
 }
 
@@ -517,7 +573,9 @@ int _do_utime(EncFS_Context *, const string &cyName, struct utimbuf *buf) {
 }
 
 int encfs_utime(const char *path, struct utimbuf *buf) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withCipherPath("utime", path, bind(_do_utime, _1, _2, buf));
 }
 
@@ -538,19 +596,25 @@ int _do_utimens(EncFS_Context *, const string &cyName,
 }
 
 int encfs_utimens(const char *path, const struct timespec ts[2]) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withCipherPath("utimens", path, bind(_do_utimens, _1, _2, ts));
 }
 
 int encfs_open(const char *path, struct fuse_file_info *file) {
   EncFS_Context *ctx = context();
 
-  if (isReadOnly(ctx) && (file->flags & O_WRONLY || file->flags & O_RDWR))
+  if (isReadOnly(ctx) &&
+      (((file->flags & O_WRONLY) != 0) || ((file->flags & O_RDWR) != 0))) {
     return -EROFS;
+  }
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
-  if (!FSRoot) return res;
+  if (!FSRoot) {
+    return res;
+  }
 
   try {
     std::shared_ptr<FileNode> fnode =
@@ -575,7 +639,7 @@ int encfs_open(const char *path, struct fuse_file_info *file) {
 
 int encfs_create(const char *path, mode_t mode, struct fuse_file_info *file) {
   int res = encfs_mknod(path, mode, 0);
-  if (res) {
+  if (res != 0) {
     return res;
   }
 
@@ -641,20 +705,24 @@ int _do_fsync(FileNode *fnode, int dataSync) {
 }
 
 int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withFileNode("fsync", path, file, bind(_do_fsync, _1, dataSync));
 }
 
 int _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
-  if (fnode->write(offset, ptr, size))
+  if (fnode->write(offset, ptr, size)) {
     return size;
-  else
-    return -EIO;
+  }
+  return -EIO;
 }
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
                 struct fuse_file_info *file) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withFileNode("write", path, file,
                       bind(_do_write, _1, (unsigned char *)buf, size, offset));
 }
@@ -666,16 +734,18 @@ int encfs_statfs(const char *path, struct statvfs *st) {
   int res = -EIO;
   try {
     (void)path;  // path should always be '/' for now..
-    rAssert(st != NULL);
+    rAssert(st != nullptr);
     string cyName = ctx->rootCipherDir;
 
     VLOG(1) << "doing statfs of " << cyName;
     res = statvfs(cyName.c_str(), st);
-    if (!res) {
+    if (res == 0) {
       // adjust maximum name length..
       st->f_namemax = 6 * (st->f_namemax - 2) / 8;  // approx..
     }
-    if (res == -1) res = -errno;
+    if (res == -1) {
+      res = -errno;
+    }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in statfs: " << err.what();
   }
@@ -704,7 +774,9 @@ int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
   return withCipherPath("setxattr", path,
                         bind(_do_setxattr, _1, _2, name, value, size, flags));
 }
@@ -762,7 +834,9 @@ int _do_removexattr(EncFS_Context *, const string &cyName, const char *name) {
 }
 
 int encfs_removexattr(const char *path, const char *name) {
-  if (isReadOnly(NULL)) return -EROFS;
+  if (isReadOnly(nullptr)) {
+    return -EROFS;
+  }
 
   return withCipherPath("removexattr", path,
                         bind(_do_removexattr, _1, _2, name));

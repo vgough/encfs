@@ -44,7 +44,7 @@ class MACFileIO : public BlockFileIO {
       result in a warning message from encfs -- the garbled data will still
       be made available..
   */
-  MACFileIO(const std::shared_ptr<FileIO> &base, const FSConfigPtr &cfg);
+  MACFileIO(std::shared_ptr<FileIO> base, const FSConfigPtr &cfg);
   MACFileIO();
   virtual ~MACFileIO();
 

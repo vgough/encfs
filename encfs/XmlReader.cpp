@@ -22,8 +22,8 @@
 
 #include <algorithm>  // for remove_if
 #include <cstring>    // for NULL
-#include <memory>     // for shared_ptr
 #include <fstream>    // for ifstream
+#include <memory>     // for shared_ptr
 #include <sstream>    // for ostringstream
 
 #include <tinyxml2.h>  // for XMLElement, XMLNode, XMLDocument (ptr only)
@@ -34,7 +34,7 @@
 
 namespace encfs {
 
-XmlValue::~XmlValue() {}
+XmlValue::~XmlValue() = default;
 
 XmlValuePtr XmlValue::operator[](const char *path) const { return find(path); }
 
@@ -46,7 +46,9 @@ XmlValuePtr XmlValue::find(const char *path) const {
 
 bool XmlValue::read(const char *path, std::string *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = value->text();
   return true;
@@ -54,7 +56,9 @@ bool XmlValue::read(const char *path, std::string *out) const {
 
 bool XmlValue::read(const char *path, int *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = atoi(value->text().c_str());
   return true;
@@ -62,7 +66,9 @@ bool XmlValue::read(const char *path, int *out) const {
 
 bool XmlValue::read(const char *path, long *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = atol(value->text().c_str());
   return true;
@@ -70,7 +76,9 @@ bool XmlValue::read(const char *path, long *out) const {
 
 bool XmlValue::read(const char *path, double *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = atof(value->text().c_str());
   return true;
@@ -78,16 +86,20 @@ bool XmlValue::read(const char *path, double *out) const {
 
 bool XmlValue::read(const char *path, bool *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
-  *out = atoi(value->text().c_str());
+  *out = (atoi(value->text().c_str()) != 0);
   return true;
 }
 
 bool XmlValue::readB64(const char *path, unsigned char *data,
                        int length) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   std::string s = value->text();
   s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
@@ -101,7 +113,7 @@ bool XmlValue::readB64(const char *path, unsigned char *data,
     return false;
   }
   if (!B64StandardDecode(data, (unsigned char *)s.data(), s.size())) {
-    RLOG(ERROR) << "B64 decode failure on \"" << s << "\"";
+    RLOG(ERROR) << R"(B64 decode failure on ")" << s << R"(")";
     return false;
   }
 
@@ -110,7 +122,9 @@ bool XmlValue::readB64(const char *path, unsigned char *data,
 
 bool XmlValue::read(const char *path, Interface *out) const {
   XmlValuePtr node = find(path);
-  if (!node) return false;
+  if (!node) {
+    return false;
+  }
 
   bool ok = node->read("name", &out->name()) &&
             node->read("major", &out->current()) &&
@@ -121,12 +135,16 @@ bool XmlValue::read(const char *path, Interface *out) const {
 
 std::string safeValueForNode(const tinyxml2::XMLElement *element) {
   std::string value;
-  if (element == NULL) return value;
+  if (element == nullptr) {
+    return value;
+  }
 
   const tinyxml2::XMLNode *child = element->FirstChild();
-  if (child) {
+  if (child != nullptr) {
     const tinyxml2::XMLText *childText = child->ToText();
-    if (childText) value = childText->Value();
+    if (childText != nullptr) {
+      value = childText->Value();
+    }
   }
 
   return value;
@@ -139,22 +157,21 @@ class XmlNode : virtual public XmlValue {
   XmlNode(const tinyxml2::XMLElement *element_)
       : XmlValue(safeValueForNode(element_)), element(element_) {}
 
-  virtual ~XmlNode() {}
+  ~XmlNode() override = default;
 
-  virtual XmlValuePtr find(const char *name) const {
+  XmlValuePtr find(const char *name) const override {
     if (name[0] == '@') {
       const char *value = element->Attribute(name + 1);
-      if (value)
-        return XmlValuePtr(new XmlValue(value));
-      else
-        return XmlValuePtr();
-    } else {
-      const tinyxml2::XMLElement *el = element->FirstChildElement(name);
-      if (el)
-        return XmlValuePtr(new XmlNode(el));
-      else
-        return XmlValuePtr();
+      if (value != nullptr) {
+        return std::make_shared<encfs::XmlValue>(value);
+      }
+      return XmlValuePtr();
     }
+    const tinyxml2::XMLElement *el = element->FirstChildElement(name);
+    if (el != nullptr) {
+      return XmlValuePtr(new XmlNode(el));
+    }
+    return XmlValuePtr();
   }
 };
 
@@ -164,13 +181,15 @@ struct XmlReader::XmlReaderData {
 
 XmlReader::XmlReader() : pd(new XmlReaderData()) {}
 
-XmlReader::~XmlReader() {}
+XmlReader::~XmlReader() = default;
 
 bool XmlReader::load(const char *fileName) {
   pd->doc.reset(new tinyxml2::XMLDocument());
 
   std::ifstream in(fileName);
-  if (!in) return false;
+  if (!in) {
+    return false;
+  }
 
   std::ostringstream fileContent;
   fileContent << in.rdbuf();
@@ -180,15 +199,15 @@ bool XmlReader::load(const char *fileName) {
 
 XmlValuePtr XmlReader::operator[](const char *name) const {
   tinyxml2::XMLNode *node = pd->doc->FirstChildElement(name);
-  if (node == NULL) {
+  if (node == nullptr) {
     RLOG(ERROR) << "Xml node " << name << " not found";
-    return XmlValuePtr(new XmlValue());
+    return std::make_shared<encfs::XmlValue>();
   }
 
   tinyxml2::XMLElement *element = node->ToElement();
-  if (element == NULL) {
+  if (element == nullptr) {
     RLOG(ERROR) << "Xml node " << name << " not element";
-    return XmlValuePtr(new XmlValue());
+    return std::make_shared<encfs::XmlValue>();
   }
 
   return XmlValuePtr(new XmlNode(element));

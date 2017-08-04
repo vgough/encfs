@@ -21,9 +21,10 @@
 #include "MACFileIO.h"
 
 #include "internal/easylogging++.h"
+#include <cinttypes>
 #include <cstring>
-#include <inttypes.h>
 #include <sys/stat.h>
+#include <utility>
 
 #include "BlockFileIO.h"
 #include "Cipher.h"
@@ -56,10 +57,9 @@ int dataBlockSize(const FSConfigPtr &cfg) {
          cfg->config->blockMACRandBytes;
 }
 
-MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
-                     const FSConfigPtr &cfg)
+MACFileIO::MACFileIO(std::shared_ptr<FileIO> _base, const FSConfigPtr &cfg)
     : BlockFileIO(dataBlockSize(cfg), cfg),
-      base(_base),
+      base(std::move(_base)),
       cipher(cfg->cipher),
       key(cfg->key),
       macBytes(cfg->config->blockMACBytes),
@@ -72,7 +72,7 @@ MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
           << ", randBytes = " << cfg->config->blockMACRandBytes;
 }
 
-MACFileIO::~MACFileIO() {}
+MACFileIO::~MACFileIO() = default;
 
 Interface MACFileIO::interface() const { return MACFileIO_iface; }
 
@@ -137,7 +137,9 @@ off_t MACFileIO::getSize() const {
   int bs = blockSize() + headerSize;
 
   off_t size = base->getSize();
-  if (size > 0) size = locWithoutHeader(size, bs, headerSize);
+  if (size > 0) {
+    size = locWithoutHeader(size, bs, headerSize);
+  }
 
   return size;
 }
@@ -160,13 +162,15 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
   // don't store zeros if configured for zero-block pass-through
   bool skipBlock = true;
   if (_allowHoles) {
-    for (int i = 0; i < readSize; ++i)
+    for (int i = 0; i < readSize; ++i) {
       if (tmp.data[i] != 0) {
         skipBlock = false;
         break;
       }
-  } else if (macBytes > 0)
+    }
+  } else if (macBytes > 0) {
     skipBlock = false;
+  }
 
   if (readSize > headerSize) {
     if (!skipBlock) {
@@ -200,7 +204,9 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
     memcpy(req.data, tmp.data + headerSize, readSize);
   } else {
     VLOG(1) << "readSize " << readSize << " at offset " << req.offset;
-    if (readSize > 0) readSize = 0;
+    if (readSize > 0) {
+      readSize = 0;
+    }
   }
 
   MemoryPool::release(mb);
@@ -224,8 +230,9 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   memset(newReq.data, 0, headerSize);
   memcpy(newReq.data + headerSize, req.data, req.dataLen);
   if (randBytes > 0) {
-    if (!cipher->randomize(newReq.data + macBytes, randBytes, false))
+    if (!cipher->randomize(newReq.data + macBytes, randBytes, false)) {
       return false;
+    }
   }
 
   if (macBytes > 0) {
@@ -251,9 +258,11 @@ int MACFileIO::truncate(off_t size) {
   int headerSize = macBytes + randBytes;
   int bs = blockSize() + headerSize;
 
-  int res = BlockFileIO::truncateBase(size, 0);
+  int res = BlockFileIO::truncateBase(size, nullptr);
 
-  if (res == 0) base->truncate(locWithHeader(size, bs, headerSize));
+  if (res == 0) {
+    base->truncate(locWithHeader(size, bs, headerSize));
+  }
 
   return res;
 }

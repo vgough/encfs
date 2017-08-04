@@ -44,7 +44,7 @@ struct BlockList {
 };
 
 static BlockList *allocBlock(int size) {
-  BlockList *block = new BlockList;
+  auto *block = new BlockList;
   block->size = size;
   block->data = BUF_MEM_new();
   BUF_MEM_grow(block->data, size);
@@ -61,30 +61,33 @@ static void freeBlock(BlockList *el) {
 }
 
 static pthread_mutex_t gMPoolMutex = PTHREAD_MUTEX_INITIALIZER;
-static BlockList *gMemPool = NULL;
+static BlockList *gMemPool = nullptr;
 
 MemBlock MemoryPool::allocate(int size) {
   pthread_mutex_lock(&gMPoolMutex);
 
-  BlockList *parent = NULL;
+  BlockList *parent = nullptr;
   BlockList *block = gMemPool;
   // check if we already have a large enough block available..
-  while (block != NULL && block->size < size) {
+  while (block != nullptr && block->size < size) {
     parent = block;
     block = block->next;
   }
 
   // unlink block from list
-  if (block) {
-    if (!parent)
+  if (block != nullptr) {
+    if (parent == nullptr) {
       gMemPool = block->next;
-    else
+    } else {
       parent->next = block->next;
+    }
   }
   pthread_mutex_unlock(&gMPoolMutex);
 
-  if (!block) block = allocBlock(size);
-  block->next = NULL;
+  if (block == nullptr) {
+    block = allocBlock(size);
+  }
+  block->next = nullptr;
 
   MemBlock result;
   result.data = BLOCKDATA(block);
@@ -98,7 +101,7 @@ MemBlock MemoryPool::allocate(int size) {
 void MemoryPool::release(const MemBlock &mb) {
   pthread_mutex_lock(&gMPoolMutex);
 
-  BlockList *block = (BlockList *)mb.internalData;
+  auto *block = (BlockList *)mb.internalData;
 
   // just to be sure there's nothing important left in buffers..
   VALGRIND_MAKE_MEM_UNDEFINED(block->data->data, block->size);
@@ -115,11 +118,11 @@ void MemoryPool::destroyAll() {
   pthread_mutex_lock(&gMPoolMutex);
 
   BlockList *block = gMemPool;
-  gMemPool = NULL;
+  gMemPool = nullptr;
 
   pthread_mutex_unlock(&gMPoolMutex);
 
-  while (block != NULL) {
+  while (block != nullptr) {
     BlockList *next = block->next;
 
     freeBlock(block);
