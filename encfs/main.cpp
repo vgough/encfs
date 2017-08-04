@@ -785,15 +785,14 @@ static bool unmountFS(EncFS_Context *ctx) {
 
     ctx->setRoot(std::shared_ptr<DirNode>());
     return false;
-  } else {
+  }
 // Time to unmount!
 #if FUSE_USE_VERSION < 30
-    fuse_unmount(arg->opts->mountPoint.c_str(), nullptr);
+  fuse_unmount(arg->opts->mountPoint.c_str(), nullptr);
 #else
-    fuse_unmount(fuse_get_context()->fuse);
+  fuse_unmount(fuse_get_context()->fuse);
 #endif
-    // fuse_unmount succeeds and returns void
-    RLOG(INFO) << "Filesystem inactive, unmounted: " << arg->opts->mountPoint;
-    return true;
-  }
+  // fuse_unmount succeeds and returns void
+  RLOG(INFO) << "Filesystem inactive, unmounted: " << arg->opts->mountPoint;
+  return true;
 }

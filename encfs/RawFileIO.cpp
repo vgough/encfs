@@ -185,13 +185,11 @@ off_t RawFileIO::getSize() const {
       const_cast<RawFileIO *>(this)->fileSize = stbuf.st_size;
       const_cast<RawFileIO *>(this)->knownSize = true;
       return fileSize;
-    } else {
-      RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(errno);
-      return -1;
     }
-  } else {
-    return fileSize;
+    RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(errno);
+    return -1;
   }
+  return fileSize;
 }
 
 ssize_t RawFileIO::read(const IORequest &req) const {
@@ -237,14 +235,13 @@ bool RawFileIO::write(const IORequest &req) {
                 << req.dataLen << ", max retries reached";
     knownSize = false;
     return false;
-  } else {
-    if (knownSize) {
-      off_t last = req.offset + req.dataLen;
-      if (last > fileSize) fileSize = last;
-    }
-
-    return true;
   }
+  if (knownSize) {
+    off_t last = req.offset + req.dataLen;
+    if (last > fileSize) fileSize = last;
+  }
+
+  return true;
 }
 
 int RawFileIO::truncate(off_t size) {

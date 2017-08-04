@@ -146,17 +146,14 @@ class XmlNode : virtual public XmlValue {
       const char *value = element->Attribute(name + 1);
       if (value != nullptr) {
         return std::make_shared<encfs::XmlValue>(value);
-      } else {
-        return XmlValuePtr();
       }
-    } else {
-      const tinyxml2::XMLElement *el = element->FirstChildElement(name);
-      if (el != nullptr) {
-        return XmlValuePtr(new XmlNode(el));
-      } else {
-        return XmlValuePtr();
-      }
+      return XmlValuePtr();
     }
+    const tinyxml2::XMLElement *el = element->FirstChildElement(name);
+    if (el != nullptr) {
+      return XmlValuePtr(new XmlNode(el));
+    }
+    return XmlValuePtr();
   }
 };
 

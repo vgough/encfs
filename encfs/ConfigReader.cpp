@@ -129,9 +129,8 @@ ConfigVar ConfigReader::operator[](const std::string &varName) const {
   auto it = vars.find(varName);
   if (it == vars.end()) {
     return ConfigVar();
-  } else {
-    return it->second;
   }
+  return it->second;
 }
 
 ConfigVar &ConfigReader::operator[](const std::string &varName) {

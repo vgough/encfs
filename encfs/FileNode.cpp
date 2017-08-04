@@ -102,9 +102,8 @@ static bool setIV(const std::shared_ptr<FileIO> &io, uint64_t iv) {
   struct stat stbuf;
   if ((io->getAttr(&stbuf) < 0) || S_ISREG(stbuf.st_mode)) {
     return io->setIV(iv);
-  } else {
-    return true;
   }
+  return true;
 }
 
 bool FileNode::setName(const char *plaintextName_, const char *cipherName_,
@@ -261,9 +260,8 @@ int FileNode::sync(bool datasync) {
     if (res == -1) res = -errno;
 
     return res;
-  } else {
-    return fh;
   }
+  return fh;
 }
 
 }  // namespace encfs

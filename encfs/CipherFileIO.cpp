@@ -105,10 +105,9 @@ bool CipherFileIO::setIV(uint64_t iv) {
           // duh -- there are no file headers for directories!
           externalIV = iv;
           return base->setIV(iv);
-        } else {
-          VLOG(1) << "writeHeader failed to re-open for write";
-          return false;
         }
+        VLOG(1) << "writeHeader failed to re-open for write";
+        return false;
       }
       initHeader();
     }
@@ -391,9 +390,8 @@ bool CipherFileIO::blockWrite(unsigned char *buf, int size,
   VLOG(1) << "Called blockWrite";
   if (!fsConfig->reverseEncryption) {
     return cipher->blockEncode(buf, size, _iv64, key);
-  } else {
-    return cipher->blockDecode(buf, size, _iv64, key);
   }
+  return cipher->blockDecode(buf, size, _iv64, key);
 }
 
 bool CipherFileIO::streamWrite(unsigned char *buf, int size,
@@ -401,36 +399,32 @@ bool CipherFileIO::streamWrite(unsigned char *buf, int size,
   VLOG(1) << "Called streamWrite";
   if (!fsConfig->reverseEncryption) {
     return cipher->streamEncode(buf, size, _iv64, key);
-  } else {
-    return cipher->streamDecode(buf, size, _iv64, key);
   }
+  return cipher->streamDecode(buf, size, _iv64, key);
 }
 
 bool CipherFileIO::blockRead(unsigned char *buf, int size,
                              uint64_t _iv64) const {
   if (fsConfig->reverseEncryption) {
     return cipher->blockEncode(buf, size, _iv64, key);
-  } else {
-    if (_allowHoles) {
-      // special case - leave all 0's alone
-      for (int i = 0; i < size; ++i) {
-        if (buf[i] != 0) return cipher->blockDecode(buf, size, _iv64, key);
-      }
-
-      return true;
-    } else {
-      return cipher->blockDecode(buf, size, _iv64, key);
-    }
   }
+  if (_allowHoles) {
+    // special case - leave all 0's alone
+    for (int i = 0; i < size; ++i) {
+      if (buf[i] != 0) return cipher->blockDecode(buf, size, _iv64, key);
+    }
+
+    return true;
+  }
+  return cipher->blockDecode(buf, size, _iv64, key);
 }
 
 bool CipherFileIO::streamRead(unsigned char *buf, int size,
                               uint64_t _iv64) const {
   if (fsConfig->reverseEncryption) {
     return cipher->streamEncode(buf, size, _iv64, key);
-  } else {
-    return cipher->streamDecode(buf, size, _iv64, key);
   }
+  return cipher->streamDecode(buf, size, _iv64, key);
 }
 
 int CipherFileIO::truncate(off_t size) {
@@ -519,11 +513,10 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
   VLOG(1) << "read " << readBytes << " bytes from backing file";
   if (readBytes < 0) {
     return readBytes;  // Return error code
-  } else {
-    ssize_t sum = headerBytes + readBytes;
-    VLOG(1) << "returning sum=" << sum;
-    return sum;
   }
+  ssize_t sum = headerBytes + readBytes;
+  VLOG(1) << "returning sum=" << sum;
+  return sum;
 }
 
 bool CipherFileIO::isWritable() const { return base->isWritable(); }

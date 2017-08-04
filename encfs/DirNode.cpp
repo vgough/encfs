@@ -81,10 +81,9 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
     }
     if (inode != nullptr) *inode = de->d_ino;
     return true;
-  } else {
-    if (fileType != nullptr) *fileType = 0;
-    return false;
   }
+  if (fileType != nullptr) *fileType = 0;
+  return false;
 }
 
 std::string DirTraverse::nextPlaintextName(int *fileType, ino_t *inode) {
@@ -350,19 +349,18 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
   if (dir == nullptr) {
     VLOG(1) << "opendir error " << strerror(errno);
     return DirTraverse(shared_ptr<DIR>(), 0, std::shared_ptr<NameIO>());
-  } else {
-    std::shared_ptr<DIR> dp(dir, DirDeleter());
-
-    uint64_t iv = 0;
-    // if we're using chained IV mode, then compute the IV at this
-    // directory level..
-    try {
-      if (naming->getChainedNameIV()) naming->encodePath(plaintextPath, &iv);
-    } catch (encfs::Error &err) {
-      RLOG(ERROR) << "encode err: " << err.what();
-    }
-    return DirTraverse(dp, iv, naming);
   }
+  std::shared_ptr<DIR> dp(dir, DirDeleter());
+
+  uint64_t iv = 0;
+  // if we're using chained IV mode, then compute the IV at this
+  // directory level..
+  try {
+    if (naming->getChainedNameIV()) naming->encodePath(plaintextPath, &iv);
+  } catch (encfs::Error &err) {
+    RLOG(ERROR) << "encode err: " << err.what();
+  }
+  return DirTraverse(dp, iv, naming);
 }
 
 bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
@@ -477,9 +475,8 @@ std::shared_ptr<RenameOp> DirNode::newRenameOp(const char *fromP,
   if (!genRenameList(*renameList.get(), fromP, toP)) {
     RLOG(WARNING) << "Error during generation of recursive rename list";
     return std::shared_ptr<RenameOp>();
-  } else {
-    return std::make_shared<RenameOp>(this, renameList);
   }
+  return std::make_shared<RenameOp>(this, renameList);
 }
 
 int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
@@ -679,9 +676,8 @@ std::shared_ptr<FileNode> DirNode::openNode(const char *plainName,
 
   if (node && (*result = node->open(flags)) >= 0) {
     return node;
-  } else {
-    return std::shared_ptr<FileNode>();
   }
+  return std::shared_ptr<FileNode>();
 }
 
 int DirNode::unlink(const char *plaintextName) {

@@ -91,9 +91,8 @@ Interface BlockNameIO::CurrentInterface(bool caseInsensitive) {
   // implement major version 4 plus support for two prior versions
   if (caseInsensitive) {
     return Interface("nameio/block32", 4, 0, 2);
-  } else {
-    return Interface("nameio/block", 4, 0, 2);
   }
+  return Interface("nameio/block", 4, 0, 2);
 }
 
 BlockNameIO::BlockNameIO(const Interface &iface, std::shared_ptr<Cipher> cipher,
@@ -121,9 +120,8 @@ int BlockNameIO::maxEncodedNameLen(int plaintextNameLen) const {
   int encodedNameLen = numBlocks * _bs + 2;  // 2 checksum bytes
   if (_caseInsensitive) {
     return B256ToB32Bytes(encodedNameLen);
-  } else {
-    return B256ToB64Bytes(encodedNameLen);
   }
+  return B256ToB64Bytes(encodedNameLen);
 }
 
 int BlockNameIO::maxDecodedNameLen(int encodedNameLen) const {

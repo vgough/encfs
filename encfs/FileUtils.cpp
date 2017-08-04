@@ -127,27 +127,24 @@ bool fileExists(const char *fileName) {
   struct stat buf;
   if (lstat(fileName, &buf) == 0) {
     return true;
-  } else {
-    // XXX show perror?
-    return false;
   }
+  // XXX show perror?
+  return false;
 }
 
 bool isDirectory(const char *fileName) {
   struct stat buf;
   if (lstat(fileName, &buf) == 0) {
     return S_ISDIR(buf.st_mode);
-  } else {
-    return false;
   }
+  return false;
 }
 
 bool isAbsolutePath(const char *fileName) {
   if ((fileName != nullptr) && fileName[0] != '\0' && fileName[0] == '/') {
     return true;
-  } else {
-    return false;
   }
+  return false;
 }
 
 const char *lastPathElement(const char *name) {
@@ -159,9 +156,8 @@ std::string parentDirectory(const std::string &path) {
   size_t last = path.find_last_of('/');
   if (last == string::npos) {
     return string("");
-  } else {
-    return path.substr(0, last);
   }
+  return path.substr(0, last);
 }
 
 bool userAllowMkdir(const char *path, mode_t mode) {
@@ -196,14 +192,12 @@ bool userAllowMkdir(int promptno, const char *path, mode_t mode) {
     if (result < 0) {
       perror(_("Unable to create directory: "));
       return false;
-    } else {
-      return true;
     }
-  } else {
-    // Directory not created, by user request
-    cerr << _("Directory not created.") << "\n";
-    return false;
+    return true;
   }
+  // Directory not created, by user request
+  cerr << _("Directory not created.") << "\n";
+  return false;
 }
 
 /**
@@ -842,10 +836,12 @@ static bool boolDefault(const char *prompt, bool defaultValue) {
     if (cin.fail() || response == "") {
       value = defaultValue;
       break;
-    } else if (response == "y") {
+    }
+    if (response == "y") {
       value = true;
       break;
-    } else if (response == "n") {
+    }
+    if (response == "n") {
       value = false;
       break;
     }
@@ -1119,10 +1115,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
         _("Unable to instanciate cipher %s, key size %i, block size %i"),
         alg.name.c_str(), keySize, blockSize);
     return rootInfo;
-  } else {
-    VLOG(1) << "Using cipher " << alg.name << ", key size " << keySize
-            << ", block size " << blockSize;
   }
+  VLOG(1) << "Using cipher " << alg.name << ", key size " << keySize
+          << ", block size " << blockSize;
 
   std::shared_ptr<EncFSConfig> config(new EncFSConfig);
 
@@ -1672,10 +1667,9 @@ int remountFS(EncFS_Context *ctx) {
   if (rootInfo) {
     ctx->setRoot(rootInfo->root);
     return 0;
-  } else {
-    RLOG(WARNING) << "Remount failed";
-    return -EACCES;
   }
+  RLOG(WARNING) << "Remount failed";
+  return -EACCES;
 }
 
 }  // namespace encfs

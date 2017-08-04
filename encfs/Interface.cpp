@@ -85,11 +85,11 @@ static int sign( int a, int b )
 static int sign(int a, int b) {
   if (a < b) {
     return 0;
-  } else if (a == b) {
-    return 1;
-  } else {
-    return 2;
   }
+  if (a == b) {
+    return 1;
+  }
+  return 2;
 }
 #endif
 
@@ -117,33 +117,29 @@ bool Interface::implements(const Interface &B) const {
 bool operator<(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) < EqualVersion);
-  } else {
-    return A.name() < B.name();
   }
+  return A.name() < B.name();
 }
 
 bool operator>(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) > EqualVersion);
-  } else {
-    return A.name() < B.name();
   }
+  return A.name() < B.name();
 }
 
 bool operator<=(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) <= EqualVersion);
-  } else {
-    return A.name() < B.name();
   }
+  return A.name() < B.name();
 }
 
 bool operator>=(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) >= EqualVersion);
-  } else {
-    return A.name() < B.name();
   }
+  return A.name() < B.name();
 }
 
 ConfigVar &operator<<(ConfigVar &dst, const Interface &iface) {

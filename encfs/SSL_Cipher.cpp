@@ -368,9 +368,9 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
     if (res <= 0) {
       RLOG(WARNING) << "openssl error, PBKDF2 failed";
       return CipherKey();
-    } else {
-      iterationCount = res;
     }
+    iterationCount = res;
+
   } else {
     // known iteration length
     if (PKCS5_PBKDF2_HMAC_SHA1(
@@ -510,9 +510,8 @@ bool SSL_Cipher::randomize(unsigned char *buf, int len,
     }
 
     return false;
-  } else {
-    return true;
   }
+  return true;
 }
 
 uint64_t SSL_Cipher::MAC_64(const unsigned char *data, int len,
@@ -599,9 +598,8 @@ bool SSL_Cipher::compareKey(const CipherKey &A, const CipherKey &B) const {
 
   if (memcmp(key1->buffer, key2->buffer, _keySize + _ivLength) != 0) {
     return false;
-  } else {
-    return true;
   }
+  return true;
 }
 
 int SSL_Cipher::encodedKeySize() const {

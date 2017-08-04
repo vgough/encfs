@@ -73,25 +73,24 @@ ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
     if (_cache.dataLen < len) len = _cache.dataLen;  // Don't read past EOF
     memcpy(req.data, _cache.data, len);
     return len;
-  } else {
-    if (_cache.dataLen > 0) clearCache(_cache, _blockSize);
-
-    // cache results of read -- issue reads for full blocks
-    IORequest tmp;
-    tmp.offset = req.offset;
-    tmp.data = _cache.data;
-    tmp.dataLen = _blockSize;
-    ssize_t result = readOneBlock(tmp);
-    if (result > 0) {
-      _cache.offset = req.offset;
-      _cache.dataLen = result;  // the amount we really have
-      if (result > req.dataLen) {
-        result = req.dataLen;  // only as much as requested
-      }
-      memcpy(req.data, _cache.data, result);
-    }
-    return result;
   }
+  if (_cache.dataLen > 0) clearCache(_cache, _blockSize);
+
+  // cache results of read -- issue reads for full blocks
+  IORequest tmp;
+  tmp.offset = req.offset;
+  tmp.data = _cache.data;
+  tmp.dataLen = _blockSize;
+  ssize_t result = readOneBlock(tmp);
+  if (result > 0) {
+    _cache.offset = req.offset;
+    _cache.dataLen = result;  // the amount we really have
+    if (result > req.dataLen) {
+      result = req.dataLen;  // only as much as requested
+    }
+    memcpy(req.data, _cache.data, result);
+  }
+  return result;
 }
 
 bool BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
@@ -123,51 +122,50 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
     // read completely within a single block -- can be handled as-is by
     // readOneBlock().
     return cacheReadOneBlock(req);
-  } else {
-    size_t size = req.dataLen;
+  }
+  size_t size = req.dataLen;
 
-    // if the request is larger then a block, then request each block
-    // individually
-    MemBlock mb;         // in case we need to allocate a temporary block..
-    IORequest blockReq;  // for requests we may need to make
-    blockReq.dataLen = _blockSize;
-    blockReq.data = nullptr;
+  // if the request is larger then a block, then request each block
+  // individually
+  MemBlock mb;         // in case we need to allocate a temporary block..
+  IORequest blockReq;  // for requests we may need to make
+  blockReq.dataLen = _blockSize;
+  blockReq.data = nullptr;
 
-    unsigned char *out = req.data;
-    while (size != 0u) {
-      blockReq.offset = blockNum * _blockSize;
+  unsigned char *out = req.data;
+  while (size != 0u) {
+    blockReq.offset = blockNum * _blockSize;
 
-      // if we're reading a full block, then read directly into the
-      // result buffer instead of using a temporary
-      if (partialOffset == 0 && size >= (size_t)_blockSize) {
-        blockReq.data = out;
-      } else {
-        if (mb.data == nullptr) mb = MemoryPool::allocate(_blockSize);
-        blockReq.data = mb.data;
-      }
-
-      ssize_t readSize = cacheReadOneBlock(blockReq);
-      if (readSize <= partialOffset) break;  // didn't get enough bytes
-
-      int cpySize = min((size_t)(readSize - partialOffset), size);
-      CHECK(cpySize <= readSize);
-
-      // if we read to a temporary buffer, then move the data
-      if (blockReq.data != out) {
-        memcpy(out, blockReq.data + partialOffset, cpySize);
-      }
-
-      result += cpySize;
-      size -= cpySize;
-      out += cpySize;
-      ++blockNum;
-      partialOffset = 0;
-
-      if (readSize < _blockSize) break;
+    // if we're reading a full block, then read directly into the
+    // result buffer instead of using a temporary
+    if (partialOffset == 0 && size >= (size_t)_blockSize) {
+      blockReq.data = out;
+    } else {
+      if (mb.data == nullptr) mb = MemoryPool::allocate(_blockSize);
+      blockReq.data = mb.data;
     }
 
-    if (mb.data != nullptr) MemoryPool::release(mb);
+    ssize_t readSize = cacheReadOneBlock(blockReq);
+    if (readSize <= partialOffset) break;  // didn't get enough bytes
+
+    int cpySize = min((size_t)(readSize - partialOffset), size);
+    CHECK(cpySize <= readSize);
+
+    // if we read to a temporary buffer, then move the data
+    if (blockReq.data != out) {
+      memcpy(out, blockReq.data + partialOffset, cpySize);
+    }
+
+    result += cpySize;
+    size -= cpySize;
+    out += cpySize;
+    ++blockNum;
+    partialOffset = 0;
+
+    if (readSize < _blockSize) break;
   }
+
+  if (mb.data != nullptr) MemoryPool::release(mb);
 
   return result;
 }

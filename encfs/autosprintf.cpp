@@ -57,9 +57,8 @@ autosprintf::operator char *() const {
     auto *copy = new char[length];
     memcpy(copy, str, length);
     return copy;
-  } else {
-    return nullptr;
   }
+  return nullptr;
 }
 autosprintf::operator std::string() const {
   return std::string(str != nullptr ? str : "(error in autosprintf)");

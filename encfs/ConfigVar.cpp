@@ -45,9 +45,8 @@ ConfigVar::~ConfigVar() { pd.reset(); }
 ConfigVar &ConfigVar::operator=(const ConfigVar &src) {
   if (src.pd == pd) {
     return *this;
-  } else {
-    pd = src.pd;
   }
+  pd = src.pd;
 
   return *this;
 }
@@ -142,9 +141,8 @@ int ConfigVar::readInt(int defaultValue) const {
 
   if (offset >= bytes) {
     return defaultValue;
-  } else {
-    return readInt();
   }
+  return readInt();
 }
 
 bool ConfigVar::readBool(bool defaultValue) const {
