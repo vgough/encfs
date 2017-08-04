@@ -176,6 +176,10 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
   return result;
 }
 
+/**
+ * Returns the very first result returned by RawFileIO::write so :
+ * 0 in case of success, or -errno in case of failure.
+ */
 int BlockFileIO::write(const IORequest &req) {
   CHECK(_blockSize != 0);
 
@@ -280,6 +284,10 @@ int BlockFileIO::write(const IORequest &req) {
 
 int BlockFileIO::blockSize() const { return _blockSize; }
 
+/**
+ * Returns the very first result returned by RawFileIO::write so :
+ * 0 in case of success, or -errno in case of failure.
+ */
 int BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
   off_t oldLastBlock = oldSize / _blockSize;
   off_t newLastBlock = newSize / _blockSize;
