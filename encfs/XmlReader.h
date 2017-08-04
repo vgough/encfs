@@ -64,6 +64,7 @@ class XmlReader {
   ~XmlReader();
 
   bool load(const char *fileName);
+  bool load(FILE *file);
 
   XmlValuePtr operator[](const char *name) const;
 
