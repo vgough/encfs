@@ -22,6 +22,7 @@ option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
 option (INSTALL_LIBENCFS "install libencfs" OFF)
+option (LINT "enable lint output" OFF)
 
 if (NOT DEFINED LIB_INSTALL_DIR)
   set (LIB_INSTALL_DIR lib)
@@ -139,6 +140,16 @@ if (ENABLE_NLS)
   add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_PREFIX}/share/locale")
 endif (ENABLE_NLS)
 
+if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or above.
+  find_program(CLANG_TIDY_EXE NAMES "clang-tidy" DOC "Path to clang-tidy executable")
+  if(NOT CLANG_TIDY_EXE)
+    message(STATUS "clang-tidy not found.")
+  else()
+    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
+    set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-checks=*,-clang-analyzer-alpha.*")
+  endif()
+endif()
+
 set(SOURCE_FILES
   internal/easylogging++.cc
   encfs/autosprintf.cpp
@@ -204,6 +215,11 @@ target_link_libraries (encfs-bin encfs)
 set_target_properties (encfs-bin PROPERTIES OUTPUT_NAME "encfs")
 install (TARGETS encfs-bin DESTINATION bin)
 
+if(LINT AND CLANG_TIDY_EXE)
+  set_target_properties(encfs PROPERTIES CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+  set_target_properties(encfs-bin PROPERTIES CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+endif()
+
 add_executable (encfsctl encfs/encfsctl.cpp)
 target_link_libraries (encfsctl encfs)
 install (TARGETS encfsctl DESTINATION bin)
@@ -233,5 +249,5 @@ if (POD2MAN)
     DESTINATION share/man/man1)
 endif (POD2MAN)
 
-add_custom_target(test COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
+add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
 
