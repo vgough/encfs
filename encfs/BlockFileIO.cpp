@@ -111,6 +111,7 @@ int BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
  * data from the front of the first block if the request is not aligned.
  * Always requests aligned data of the size of one block or less from the
  * lower layer.
+ * Returns the number of bytes read, or -errno in case of failure.
  */
 ssize_t BlockFileIO::read(const IORequest &req) const {
   CHECK(_blockSize != 0);
