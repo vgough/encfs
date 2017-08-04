@@ -85,15 +85,33 @@ struct EncFS_Args {
     ostringstream ss;
     ss << (isDaemon ? "(daemon) " : "(fg) ");
     ss << (isThreaded ? "(threaded) " : "(UP) ");
-    if (idleTimeout > 0) ss << "(timeout " << idleTimeout << ") ";
-    if (opts->checkKey) ss << "(keyCheck) ";
-    if (opts->forceDecode) ss << "(forceDecode) ";
-    if (opts->ownerCreate) ss << "(ownerCreate) ";
-    if (opts->useStdin) ss << "(useStdin) ";
-    if (opts->annotate) ss << "(annotate) ";
-    if (opts->reverseEncryption) ss << "(reverseEncryption) ";
-    if (opts->mountOnDemand) ss << "(mountOnDemand) ";
-    if (opts->delayMount) ss << "(delayMount) ";
+    if (idleTimeout > 0) {
+      ss << "(timeout " << idleTimeout << ") ";
+    }
+    if (opts->checkKey) {
+      ss << "(keyCheck) ";
+    }
+    if (opts->forceDecode) {
+      ss << "(forceDecode) ";
+    }
+    if (opts->ownerCreate) {
+      ss << "(ownerCreate) ";
+    }
+    if (opts->useStdin) {
+      ss << "(useStdin) ";
+    }
+    if (opts->annotate) {
+      ss << "(annotate) ";
+    }
+    if (opts->reverseEncryption) {
+      ss << "(reverseEncryption) ";
+    }
+    if (opts->mountOnDemand) {
+      ss << "(mountOnDemand) ";
+    }
+    if (opts->delayMount) {
+      ss << "(delayMount) ";
+    }
     for (int i = 0; i < fuseArgc; ++i) {
       ss << fuseArgv[i] << ' ';
     }
@@ -174,7 +192,9 @@ static void FuseUsage() {
 
 static string slashTerminate(const string &src) {
   string result = src;
-  if (result[result.length() - 1] != '/') result.append("/");
+  if (result[result.length() - 1] != '/') {
+    result.append("/");
+  }
   return result;
 }
 
@@ -249,7 +269,9 @@ static bool processArgs(int argc, char *argv[],
     int res =
         getopt_long(argc, argv, "HsSfvdmi:o:t:", long_options, &option_index);
 
-    if (res == -1) break;
+    if (res == -1) {
+      break;
+    }
 
     switch (res) {
       case '1':
@@ -381,7 +403,9 @@ static bool processArgs(int argc, char *argv[],
     }
   }
 
-  if (!out->isThreaded) PUSHARG("-s");
+  if (!out->isThreaded) {
+    PUSHARG("-s");
+  }
 
   // we should have at least 2 arguments left over - the source directory and
   // the mount point.
@@ -640,7 +664,9 @@ int main(int argc, char *argv[]) {
     try {
       time_t startTime, endTime;
 
-      if (encfsArgs->opts->annotate) cerr << "$STATUS$ fuse_main_start" << endl;
+      if (encfsArgs->opts->annotate) {
+        cerr << "$STATUS$ fuse_main_start" << endl;
+      }
 
       // FIXME: workaround for fuse_main returning an error on normal
       // exit.  Only print information if fuse_main returned
@@ -654,9 +680,13 @@ int main(int argc, char *argv[]) {
 
       time(&endTime);
 
-      if (encfsArgs->opts->annotate) cerr << "$STATUS$ fuse_main_end" << endl;
+      if (encfsArgs->opts->annotate) {
+        cerr << "$STATUS$ fuse_main_end" << endl;
+      }
 
-      if (res == 0) returnCode = EXIT_SUCCESS;
+      if (res == 0) {
+        returnCode = EXIT_SUCCESS;
+      }
 
       if (res != 0 && encfsArgs->isDaemon && (oldStderr >= 0) &&
           (endTime - startTime <= 1)) {

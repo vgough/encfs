@@ -42,12 +42,16 @@ ConfigReader::~ConfigReader() = default;
 bool ConfigReader::load(const char *fileName) {
   struct stat stbuf;
   memset(&stbuf, 0, sizeof(struct stat));
-  if (lstat(fileName, &stbuf) != 0) return false;
+  if (lstat(fileName, &stbuf) != 0) {
+    return false;
+  }
 
   int size = stbuf.st_size;
 
   int fd = open(fileName, O_RDONLY);
-  if (fd < 0) return false;
+  if (fd < 0) {
+    return false;
+  }
 
   auto *buf = new char[size];
 

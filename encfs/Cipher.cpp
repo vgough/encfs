@@ -65,7 +65,9 @@ std::list<Cipher::CipherAlgorithm> Cipher::GetAlgorithmList(
 
   list<CipherAlgorithm> result;
 
-  if (gCipherMap == nullptr) return result;
+  if (gCipherMap == nullptr) {
+    return result;
+  }
 
   CipherMap_t::const_iterator it;
   CipherMap_t::const_iterator mapEnd = gCipherMap->end();
@@ -98,7 +100,9 @@ bool Cipher::Register(const char *name, const char *description,
                       const Interface &iface, const Range &keyLength,
                       const Range &blockSize, CipherConstructor fn,
                       bool hidden) {
-  if (gCipherMap == nullptr) gCipherMap = new CipherMap_t;
+  if (gCipherMap == nullptr) {
+    gCipherMap = new CipherMap_t;
+  }
 
   CipherAlg ca;
   ca.hidden = hidden;

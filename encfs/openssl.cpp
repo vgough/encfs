@@ -97,7 +97,9 @@ void openssl_shutdown(bool threaded) {
   ENGINE_cleanup();
 #endif
 
-  if (threaded) pthreads_locking_cleanup();
+  if (threaded) {
+    pthreads_locking_cleanup();
+  }
 }
 
 }  // namespace encfs

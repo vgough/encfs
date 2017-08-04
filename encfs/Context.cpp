@@ -70,7 +70,9 @@ void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
   Lock lock(contextMutex);
 
   root = r;
-  if (r) rootCipherDir = r->rootDirectory();
+  if (r) {
+    rootCipherDir = r->rootDirectory();
+  }
 }
 
 bool EncFS_Context::isMounted() { return root.get() != nullptr; }

@@ -81,7 +81,9 @@ int BytesToKey(int keyLen, int ivLen, const EVP_MD *md,
 
   for (;;) {
     EVP_DigestInit_ex(cx, md, nullptr);
-    if ((addmd++) != 0) EVP_DigestUpdate(cx, mdBuf, mds);
+    if ((addmd++) != 0) {
+      EVP_DigestUpdate(cx, mdBuf, mds);
+    }
     EVP_DigestUpdate(cx, data, dataLen);
     EVP_DigestFinal_ex(cx, mdBuf, &mds);
 
@@ -106,7 +108,9 @@ int BytesToKey(int keyLen, int ivLen, const EVP_MD *md,
       niv -= toCopy;
       offset += toCopy;
     }
-    if ((nkey == 0) && (niv == 0)) break;
+    if ((nkey == 0) && (niv == 0)) {
+      break;
+    }
   }
   EVP_MD_CTX_free(cx);
   OPENSSL_cleanse(mdBuf, sizeof(mdBuf));
@@ -130,7 +134,9 @@ int TimedPBKDF2(const char *pass, int passlen, const unsigned char *salt,
     int res =
         PKCS5_PBKDF2_HMAC_SHA1(pass, passlen, const_cast<unsigned char *>(salt),
                                saltlen, iter, keylen, out);
-    if (res != 1) return -1;
+    if (res != 1) {
+      return -1;
+    }
 
     gettimeofday(&end, nullptr);
 
@@ -162,7 +168,9 @@ static Range BFKeyRange(128, 256, 32);
 static Range BFBlockRange(64, 4096, 8);
 
 static std::shared_ptr<Cipher> NewBFCipher(const Interface &iface, int keyLen) {
-  if (keyLen <= 0) keyLen = 160;
+  if (keyLen <= 0) {
+    keyLen = 160;
+  }
 
   keyLen = BFKeyRange.closest(keyLen);
 
@@ -187,7 +195,9 @@ static Range AESBlockRange(64, 4096, 16);
 
 static std::shared_ptr<Cipher> NewAESCipher(const Interface &iface,
                                             int keyLen) {
-  if (keyLen <= 0) keyLen = 192;
+  if (keyLen <= 0) {
+    keyLen = 192;
+  }
 
   keyLen = AESKeyRange.closest(keyLen);
 
@@ -485,7 +495,9 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
   }
 
   auto value = (uint64_t)h[0];
-  for (int i = 1; i < 8; ++i) value = (value << 8) | (uint64_t)h[i];
+  for (int i = 1; i < 8; ++i) {
+    value = (value << 8) | (uint64_t)h[i];
+  }
 
   return value;
 }
@@ -519,7 +531,9 @@ uint64_t SSL_Cipher::MAC_64(const unsigned char *data, int len,
   std::shared_ptr<SSLKey> mk = dynamic_pointer_cast<SSLKey>(key);
   uint64_t tmp = _checksum_64(mk.get(), data, len, chainedIV);
 
-  if (chainedIV != nullptr) *chainedIV = tmp;
+  if (chainedIV != nullptr) {
+    *chainedIV = tmp;
+  }
 
   return tmp;
 }
@@ -702,7 +716,9 @@ static void flipBytes(unsigned char *buf, int size) {
   while (bytesLeft != 0) {
     int toFlip = MIN(sizeof(revBuf), bytesLeft);
 
-    for (int i = 0; i < toFlip; ++i) revBuf[i] = buf[toFlip - (i + 1)];
+    for (int i = 0; i < toFlip; ++i) {
+      revBuf[i] = buf[toFlip - (i + 1)];
+    }
 
     memcpy(buf, revBuf, toFlip);
     bytesLeft -= toFlip;
@@ -712,11 +728,15 @@ static void flipBytes(unsigned char *buf, int size) {
 }
 
 static void shuffleBytes(unsigned char *buf, int size) {
-  for (int i = 0; i < size - 1; ++i) buf[i + 1] ^= buf[i];
+  for (int i = 0; i < size - 1; ++i) {
+    buf[i + 1] ^= buf[i];
+  }
 }
 
 static void unshuffleBytes(unsigned char *buf, int size) {
-  for (int i = size - 1; i != 0; --i) buf[i] ^= buf[i - 1];
+  for (int i = size - 1; i != 0; --i) {
+    buf[i] ^= buf[i - 1];
+  }
 }
 
 /** Partial blocks are encoded with a stream cipher.  We make multiple passes on

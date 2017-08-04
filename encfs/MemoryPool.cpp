@@ -84,7 +84,9 @@ MemBlock MemoryPool::allocate(int size) {
   }
   pthread_mutex_unlock(&gMPoolMutex);
 
-  if (block == nullptr) block = allocBlock(size);
+  if (block == nullptr) {
+    block = allocBlock(size);
+  }
   block->next = nullptr;
 
   MemBlock result;

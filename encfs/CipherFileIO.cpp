@@ -71,7 +71,9 @@ Interface CipherFileIO::interface() const { return CipherFileIO_iface; }
 int CipherFileIO::open(int flags) {
   int res = base->open(flags);
 
-  if (res >= 0) lastFlags = flags;
+  if (res >= 0) {
+    lastFlags = flags;
+  }
 
   return res;
 }
@@ -188,7 +190,9 @@ void CipherFileIO::initHeader() {
     cipher->streamDecode(buf, sizeof(buf), externalIV, key);
 
     fileIV = 0;
-    for (int i = 0; i < 8; ++i) fileIV = (fileIV << 8) | (uint64_t)buf[i];
+    for (int i = 0; i < 8; ++i) {
+      fileIV = (fileIV << 8) | (uint64_t)buf[i];
+    }
 
     rAssert(fileIV != 0);  // 0 is never used..
   } else {
@@ -201,7 +205,9 @@ void CipherFileIO::initHeader() {
       }
 
       fileIV = 0;
-      for (int i = 0; i < 8; ++i) fileIV = (fileIV << 8) | (uint64_t)buf[i];
+      for (int i = 0; i < 8; ++i) {
+        fileIV = (fileIV << 8) | (uint64_t)buf[i];
+      }
 
       if (fileIV == 0) {
         RLOG(WARNING) << "Unexpected result: randomize returned 8 null bytes!";
@@ -360,7 +366,9 @@ bool CipherFileIO::writeOneBlock(const IORequest &req) {
   int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
-  if (haveHeader && fileIV == 0) initHeader();
+  if (haveHeader && fileIV == 0) {
+    initHeader();
+  }
 
   bool ok;
   if (req.dataLen != bs) {
@@ -411,7 +419,9 @@ bool CipherFileIO::blockRead(unsigned char *buf, int size,
   if (_allowHoles) {
     // special case - leave all 0's alone
     for (int i = 0; i < size; ++i) {
-      if (buf[i] != 0) return cipher->blockDecode(buf, size, _iv64, key);
+      if (buf[i] != 0) {
+        return cipher->blockDecode(buf, size, _iv64, key);
+      }
     }
 
     return true;
@@ -448,7 +458,9 @@ int CipherFileIO::truncate(off_t size) {
     // the wrong size..
     res = BlockFileIO::truncateBase(size, nullptr);
 
-    if (res == 0) base->truncate(size + HEADER_SIZE);
+    if (res == 0) {
+      base->truncate(size + HEADER_SIZE);
+    }
   }
   return res;
 }
@@ -497,7 +509,9 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
     memcpy(req.data, &headerBuf[headerOffset], headerBytes);
 
     // the read does not want data beyond the header
-    if (headerBytes == req.dataLen) return headerBytes;
+    if (headerBytes == req.dataLen) {
+      return headerBytes;
+    }
 
     /* The rest of the request will be read from the backing file.
      * As we have already generated n=headerBytes bytes, the request is

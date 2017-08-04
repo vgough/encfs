@@ -83,7 +83,9 @@ list<NameIO::Algorithm> NameIO::GetAlgorithmList(bool includeHidden) {
 bool NameIO::Register(const char *name, const char *description,
                       const Interface &iface, Constructor constructor,
                       bool hidden) {
-  if (gNameIOMap == nullptr) gNameIOMap = new NameIOMap_t;
+  if (gNameIOMap == nullptr) {
+    gNameIOMap = new NameIOMap_t;
+  }
 
   NameIOAlg alg;
   alg.hidden = hidden;
@@ -163,7 +165,9 @@ std::string NameIO::recodePath(
 
       // figure out buffer sizes
       int approxLen = (this->*_length)(len);
-      if (approxLen <= 0) throw Error("Filename too small to decode");
+      if (approxLen <= 0) {
+        throw Error("Filename too small to decode");
+      }
       int bufSize = 0;
 
       BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
@@ -196,14 +200,18 @@ std::string NameIO::decodePath(const char *cipherPath) const {
 
 std::string NameIO::_encodePath(const char *plaintextPath, uint64_t *iv) const {
   // if chaining is not enabled, then the iv pointer is not used..
-  if (!chainedNameIV) iv = nullptr;
+  if (!chainedNameIV) {
+    iv = nullptr;
+  }
   return recodePath(plaintextPath, &NameIO::maxEncodedNameLen,
                     &NameIO::encodeName, iv);
 }
 
 std::string NameIO::_decodePath(const char *cipherPath, uint64_t *iv) const {
   // if chaining is not enabled, then the iv pointer is not used..
-  if (!chainedNameIV) iv = nullptr;
+  if (!chainedNameIV) {
+    iv = nullptr;
+  }
   return recodePath(cipherPath, &NameIO::maxDecodedNameLen, &NameIO::decodeName,
                     iv);
 }

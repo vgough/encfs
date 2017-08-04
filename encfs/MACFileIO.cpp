@@ -137,7 +137,9 @@ off_t MACFileIO::getSize() const {
   int bs = blockSize() + headerSize;
 
   off_t size = base->getSize();
-  if (size > 0) size = locWithoutHeader(size, bs, headerSize);
+  if (size > 0) {
+    size = locWithoutHeader(size, bs, headerSize);
+  }
 
   return size;
 }
@@ -202,7 +204,9 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
     memcpy(req.data, tmp.data + headerSize, readSize);
   } else {
     VLOG(1) << "readSize " << readSize << " at offset " << req.offset;
-    if (readSize > 0) readSize = 0;
+    if (readSize > 0) {
+      readSize = 0;
+    }
   }
 
   MemoryPool::release(mb);
@@ -256,7 +260,9 @@ int MACFileIO::truncate(off_t size) {
 
   int res = BlockFileIO::truncateBase(size, nullptr);
 
-  if (res == 0) base->truncate(locWithHeader(size, bs, headerSize));
+  if (res == 0) {
+    base->truncate(locWithHeader(size, bs, headerSize));
+  }
 
   return res;
 }

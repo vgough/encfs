@@ -450,7 +450,9 @@ bool saveConfig(ConfigType type, const string &rootDir,
       if (nm->environmentOverride != nullptr) {
         // use environment file if specified..
         const char *envFile = getenv(nm->environmentOverride);
-        if (envFile != nullptr) path.assign(envFile);
+        if (envFile != nullptr) {
+          path.assign(envFile);
+        }
       }
 
       try {
@@ -739,13 +741,17 @@ static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
   if (numAvail < 5) {
     // show them all
     for (int i = 0; i <= numAvail; ++i) {
-      if (i != 0) cout << ", ";
+      if (i != 0) {
+        cout << ", ";
+      }
       cout << alg.keyLength.min() + i * alg.keyLength.inc();
     }
   } else {
     // partial
     for (int i = 0; i < 3; ++i) {
-      if (i != 0) cout << ", ";
+      if (i != 0) {
+        cout << ", ";
+      }
       cout << alg.keyLength.min() + i * alg.keyLength.inc();
     }
     cout << " ... " << alg.keyLength.max() - alg.keyLength.inc();
@@ -902,8 +908,12 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
   cout << "\n";
 
   randSize = (res == nullptr ? 0 : atoi(answer));
-  if (randSize < 0) randSize = 0;
-  if (randSize > 8) randSize = 8;
+  if (randSize < 0) {
+    randSize = 0;
+  }
+  if (randSize > 8) {
+    randSize = 8;
+  }
 
   *macRandBytes = randSize;
 }
@@ -984,7 +994,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
         " anything else, or an empty line will select standard mode.\n"
         "?> ");
 
-    if (annotate) cerr << "$PROMPT$ config_option" << endl;
+    if (annotate) {
+      cerr << "$PROMPT$ config_option" << endl;
+    }
 
     char *res = fgets(answer, sizeof(answer), stdin);
     (void)res;
@@ -1063,7 +1075,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
-      if (!uniqueIV) opts->readOnly = false;
+      if (!uniqueIV) {
+        opts->readOnly = false;
+      }
     }
   }
 
@@ -1091,7 +1105,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
-      if (!uniqueIV) opts->readOnly = false;
+      if (!uniqueIV) {
+        opts->readOnly = false;
+      }
     } else {
       chainedIV = selectChainedIV();
       uniqueIV = selectUniqueIV(true);
@@ -1175,7 +1191,9 @@ RootPtr createV6Config(EncFS_Context *ctx,
   CipherKey userKey;
   VLOG(1) << "useStdin: " << useStdin;
   if (useStdin) {
-    if (annotate) cerr << "$PROMPT$ new_passwd" << endl;
+    if (annotate) {
+      cerr << "$PROMPT$ new_passwd" << endl;
+    }
     userKey = config->getUserKey(useStdin);
   } else if (!passwordProgram.empty()) {
     userKey = config->getUserKey(passwordProgram, rootDir);
@@ -1573,7 +1591,9 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
       /* Reverse mounts are read-only by default (set in main.cpp).
        * If uniqueIV is off, writing can be allowed, because there
        * is no header that could be overwritten */
-      if (!config->uniqueIV) opts->readOnly = false;
+      if (!config->uniqueIV) {
+        opts->readOnly = false;
+      }
     }
 
     // first, instanciate the cipher.
@@ -1600,13 +1620,17 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
 
     if (opts->passwordProgram.empty()) {
       VLOG(1) << "useStdin: " << opts->useStdin;
-      if (opts->annotate) cerr << "$PROMPT$ passwd" << endl;
+      if (opts->annotate) {
+        cerr << "$PROMPT$ passwd" << endl;
+      }
       userKey = config->getUserKey(opts->useStdin);
     } else {
       userKey = config->getUserKey(opts->passwordProgram, opts->rootDir);
     }
 
-    if (!userKey) return rootInfo;
+    if (!userKey) {
+      return rootInfo;
+    }
 
     VLOG(1) << "cipher key size = " << cipher->encodedKeySize();
     // decode volume key..

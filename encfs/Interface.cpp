@@ -108,7 +108,9 @@ bool Interface::implements(const Interface &B) const {
           << ":" << age() << ") implements " << B.name() << "(" << B.current()
           << ":" << B.revision() << ")";
 
-  if (name() != B.name()) return false;
+  if (name() != B.name()) {
+    return false;
+  }
 
   int currentDiff = current() - B.current();
   return (currentDiff >= 0 && currentDiff <= age());

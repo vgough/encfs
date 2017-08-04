@@ -56,7 +56,9 @@ void ConfigVar::resetOffset() { pd->offset = 0; }
 int ConfigVar::read(unsigned char *buffer_, int bytes) const {
   int toCopy = MIN(bytes, pd->buffer.size() - pd->offset);
 
-  if (toCopy > 0) memcpy(buffer_, pd->buffer.data() + pd->offset, toCopy);
+  if (toCopy > 0) {
+    memcpy(buffer_, pd->buffer.data() + pd->offset, toCopy);
+  }
 
   pd->offset += toCopy;
 
@@ -106,7 +108,9 @@ void ConfigVar::writeInt(int val) {
   // find the starting point - we only need to output starting at the most
   // significant non-zero digit..
   int start = 0;
-  while (digit[start] == 0x80) ++start;
+  while (digit[start] == 0x80) {
+    ++start;
+  }
 
   write(digit + start, 5 - start);
 }

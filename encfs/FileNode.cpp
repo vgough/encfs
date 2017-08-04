@@ -109,13 +109,19 @@ static bool setIV(const std::shared_ptr<FileIO> &io, uint64_t iv) {
 bool FileNode::setName(const char *plaintextName_, const char *cipherName_,
                        uint64_t iv, bool setIVFirst) {
   // Lock _lock( mutex );
-  if (cipherName_ != nullptr) VLOG(1) << "calling setIV on " << cipherName_;
+  if (cipherName_ != nullptr) {
+    VLOG(1) << "calling setIV on " << cipherName_;
+  }
 
   if (setIVFirst) {
-    if (fsConfig->config->externalIVChaining && !setIV(io, iv)) return false;
+    if (fsConfig->config->externalIVChaining && !setIV(io, iv)) {
+      return false;
+    }
 
     // now change the name..
-    if (plaintextName_ != nullptr) this->_pname = plaintextName_;
+    if (plaintextName_ != nullptr) {
+      this->_pname = plaintextName_;
+    }
     if (cipherName_ != nullptr) {
       this->_cname = cipherName_;
       io->setFileName(cipherName_);
@@ -124,7 +130,9 @@ bool FileNode::setName(const char *plaintextName_, const char *cipherName_,
     std::string oldPName = _pname;
     std::string oldCName = _cname;
 
-    if (plaintextName_ != nullptr) this->_pname = plaintextName_;
+    if (plaintextName_ != nullptr) {
+      this->_pname = plaintextName_;
+    }
     if (cipherName_ != nullptr) {
       this->_cname = cipherName_;
       io->setFileName(cipherName_);
@@ -168,15 +176,21 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
    */
   if (S_ISREG(mode)) {
     res = ::open(_cname.c_str(), O_CREAT | O_EXCL | O_WRONLY, mode);
-    if (res >= 0) res = ::close(res);
+    if (res >= 0) {
+      res = ::close(res);
+    }
   } else if (S_ISFIFO(mode)) {
     res = ::mkfifo(_cname.c_str(), mode);
   } else {
     res = ::mknod(_cname.c_str(), mode, rdev);
   }
 
-  if (olduid >= 0) setfsuid(olduid);
-  if (oldgid >= 0) setfsgid(oldgid);
+  if (olduid >= 0) {
+    setfsuid(olduid);
+  }
+  if (oldgid >= 0) {
+    setfsgid(oldgid);
+  }
 
   if (res == -1) {
     int eno = errno;
@@ -257,7 +271,9 @@ int FileNode::sync(bool datasync) {
     res = fsync(fh);
 #endif
 
-    if (res == -1) res = -errno;
+    if (res == -1) {
+      res = -errno;
+    }
 
     return res;
   }

@@ -38,7 +38,9 @@ namespace gnu {
 autosprintf::autosprintf(const char *format, ...) {
   va_list args;
   va_start(args, format);
-  if (vasprintf(&str, format, args) < 0) str = nullptr;
+  if (vasprintf(&str, format, args) < 0) {
+    str = nullptr;
+  }
   va_end(args);
 }
 

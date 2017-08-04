@@ -52,7 +52,9 @@ void changeBase2(unsigned char *src, int srcLen, int src2Pow,
   }
 
   // now, we could have a partial value left in the work buffer..
-  if ((workBits != 0) && ((dst - origDst) < dstLen)) *dst++ = work & mask;
+  if ((workBits != 0) && ((dst - origDst) < dstLen)) {
+    *dst++ = work & mask;
+  }
 }
 
 /*
@@ -67,7 +69,9 @@ static void changeBase2Inline(unsigned char *src, int srcLen, int src2Pow,
                               unsigned long work, int workBits,
                               unsigned char *outLoc) {
   const int mask = (1 << dst2Pow) - 1;
-  if (outLoc == nullptr) outLoc = src;
+  if (outLoc == nullptr) {
+    outLoc = src;
+  }
 
   // copy the new bits onto the high bits of the stream.
   // The bits that fall off the low end are the output bits.

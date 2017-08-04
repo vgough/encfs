@@ -112,7 +112,9 @@ restart:
   /* Turn off echo if possible. */
   if (tcgetattr(input, &oterm) == 0) {
     memcpy(&term, &oterm, sizeof(term));
-    if ((flags & RPP_ECHO_ON) == 0) term.c_lflag &= ~(ECHO | ECHONL);
+    if ((flags & RPP_ECHO_ON) == 0) {
+      term.c_lflag &= ~(ECHO | ECHONL);
+    }
 #ifdef VSTATUS
     if (term.c_cc[VSTATUS] != _POSIX_VDISABLE)
       term.c_cc[VSTATUS] = _POSIX_VDISABLE;
@@ -127,17 +129,25 @@ restart:
   end = buf + bufsiz - 1;
   for (p = buf; (nr = read(input, &ch, 1)) == 1 && ch != '\n' && ch != '\r';) {
     if (p < end) {
-      if ((flags & RPP_SEVENBIT) != 0) ch &= 0x7f;
+      if ((flags & RPP_SEVENBIT) != 0) {
+        ch &= 0x7f;
+      }
       if (isalpha(ch) != 0) {
-        if ((flags & RPP_FORCELOWER) != 0) ch = tolower(ch);
-        if ((flags & RPP_FORCEUPPER) != 0) ch = toupper(ch);
+        if ((flags & RPP_FORCELOWER) != 0) {
+          ch = tolower(ch);
+        }
+        if ((flags & RPP_FORCEUPPER) != 0) {
+          ch = toupper(ch);
+        }
       }
       *p++ = ch;
     }
   }
   *p = '\0';
   save_errno = errno;
-  if ((term.c_lflag & ECHO) == 0u) (void)write(output, "\n", 1);
+  if ((term.c_lflag & ECHO) == 0u) {
+    (void)write(output, "\n", 1);
+  }
 
   /* Restore old terminal settings and signals. */
   if (memcmp(&term, &oterm, sizeof(term)) != 0) {
@@ -150,7 +160,9 @@ restart:
   (void)sigaction(SIGTSTP, &savetstp, nullptr);
   (void)sigaction(SIGTTIN, &savettin, nullptr);
   (void)sigaction(SIGTTOU, &savettou, nullptr);
-  if (input != STDIN_FILENO) (void)close(input);
+  if (input != STDIN_FILENO) {
+    (void)close(input);
+  }
 
   /*
    * If we were interrupted by a signal, resend it to ourselves

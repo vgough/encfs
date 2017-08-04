@@ -69,9 +69,13 @@ RawFileIO::~RawFileIO() {
   swap(_fd, fd);
   swap(_oldfd, oldfd);
 
-  if (_oldfd != -1) close(_oldfd);
+  if (_oldfd != -1) {
+    close(_oldfd);
+  }
 
-  if (_fd != -1) close(_fd);
+  if (_fd != -1) {
+    close(_fd);
+  }
 }
 
 Interface RawFileIO::interface() const { return RawFileIO_iface; }
@@ -126,7 +130,9 @@ int RawFileIO::open(int flags) {
     int finalFlags = requestWrite ? O_RDWR : O_RDONLY;
 
 #if defined(O_LARGEFILE)
-    if ((flags & O_LARGEFILE) != 0) finalFlags |= O_LARGEFILE;
+    if ((flags & O_LARGEFILE) != 0) {
+      finalFlags |= O_LARGEFILE;
+    }
 #else
 #warning O_LARGEFILE not supported
 #endif
@@ -238,7 +244,9 @@ bool RawFileIO::write(const IORequest &req) {
   }
   if (knownSize) {
     off_t last = req.offset + req.dataLen;
-    if (last > fileSize) fileSize = last;
+    if (last > fileSize) {
+      fileSize = last;
+    }
   }
 
   return true;

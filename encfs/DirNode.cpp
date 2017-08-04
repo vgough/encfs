@@ -79,10 +79,14 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
       *fileType = 0;
 #endif
     }
-    if (inode != nullptr) *inode = de->d_ino;
+    if (inode != nullptr) {
+      *inode = de->d_ino;
+    }
     return true;
   }
-  if (fileType != nullptr) *fileType = 0;
+  if (fileType != nullptr) {
+    *fileType = 0;
+  }
   return false;
 }
 
@@ -356,7 +360,9 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
   // if we're using chained IV mode, then compute the IV at this
   // directory level..
   try {
-    if (naming->getChainedNameIV()) naming->encodePath(plaintextPath, &iv);
+    if (naming->getChainedNameIV()) {
+      naming->encodePath(plaintextPath, &iv);
+    }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "encode err: " << err.what();
   }
@@ -375,13 +381,17 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
   string sourcePath = rootDir + fromCPart;
 
   // ok..... we wish it was so simple.. should almost never happen
-  if (fromIV == toIV) return true;
+  if (fromIV == toIV) {
+    return true;
+  }
 
   // generate the real destination path, where we expect to find the files..
   VLOG(1) << "opendir " << sourcePath;
   std::shared_ptr<DIR> dir =
       std::shared_ptr<DIR>(opendir(sourcePath.c_str()), DirDeleter());
-  if (!dir) return false;
+  if (!dir) {
+    return false;
+  }
 
   struct dirent *de = nullptr;
   while ((de = ::readdir(dir.get())) != nullptr) {
@@ -489,13 +499,21 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
   // if uid or gid are set, then that should be the directory owner
   int olduid = -1;
   int oldgid = -1;
-  if (uid != 0) olduid = setfsuid(uid);
-  if (gid != 0) oldgid = setfsgid(gid);
+  if (uid != 0) {
+    olduid = setfsuid(uid);
+  }
+  if (gid != 0) {
+    oldgid = setfsgid(gid);
+  }
 
   int res = ::mkdir(cyName.c_str(), mode);
 
-  if (olduid >= 0) setfsuid(olduid);
-  if (oldgid >= 0) setfsgid(oldgid);
+  if (olduid >= 0) {
+    setfsuid(olduid);
+  }
+  if (oldgid >= 0) {
+    setfsgid(oldgid);
+  }
 
   if (res == -1) {
     int eno = errno;
@@ -527,7 +545,9 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
     renameOp = newRenameOp(fromPlaintext, toPlaintext);
 
     if (!renameOp || !renameOp->apply()) {
-      if (renameOp) renameOp->undo();
+      if (renameOp) {
+        renameOp->undo();
+      }
 
       RLOG(WARNING) << "rename aborted";
       return -EACCES;
@@ -548,7 +568,9 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
       res = -errno;
       renameNode(toPlaintext, fromPlaintext, false);
 
-      if (renameOp) renameOp->undo();
+      if (renameOp) {
+        renameOp->undo();
+      }
     } else if (preserve_mtime) {
       struct utimbuf ut;
       ut.actime = st.st_atime;
@@ -616,7 +638,9 @@ std::shared_ptr<FileNode> DirNode::renameNode(const char *from, const char *to,
             << cname;
 
     if (node->setName(to, cname.c_str(), newIV, forwardMode)) {
-      if (ctx != nullptr) ctx->renameNode(from, to);
+      if (ctx != nullptr) {
+        ctx->renameNode(from, to);
+      }
     } else {
       // rename error! - put it back
       RLOG(ERROR) << "renameNode failed";
@@ -633,7 +657,9 @@ std::shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
   std::shared_ptr<FileNode> node;
 
   // See if we already have a FileNode for this path.
-  if (ctx != nullptr) node = ctx->lookupNode(plainName);
+  if (ctx != nullptr) {
+    node = ctx->lookupNode(plainName);
+  }
 
   // If we don't, create a new one.
   if (!node) {

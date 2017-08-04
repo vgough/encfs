@@ -46,7 +46,9 @@ XmlValuePtr XmlValue::find(const char *path) const {
 
 bool XmlValue::read(const char *path, std::string *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = value->text();
   return true;
@@ -54,7 +56,9 @@ bool XmlValue::read(const char *path, std::string *out) const {
 
 bool XmlValue::read(const char *path, int *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = atoi(value->text().c_str());
   return true;
@@ -62,7 +66,9 @@ bool XmlValue::read(const char *path, int *out) const {
 
 bool XmlValue::read(const char *path, long *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = atol(value->text().c_str());
   return true;
@@ -70,7 +76,9 @@ bool XmlValue::read(const char *path, long *out) const {
 
 bool XmlValue::read(const char *path, double *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = atof(value->text().c_str());
   return true;
@@ -78,7 +86,9 @@ bool XmlValue::read(const char *path, double *out) const {
 
 bool XmlValue::read(const char *path, bool *out) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   *out = (atoi(value->text().c_str()) != 0);
   return true;
@@ -87,7 +97,9 @@ bool XmlValue::read(const char *path, bool *out) const {
 bool XmlValue::readB64(const char *path, unsigned char *data,
                        int length) const {
   XmlValuePtr value = find(path);
-  if (!value) return false;
+  if (!value) {
+    return false;
+  }
 
   std::string s = value->text();
   s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
@@ -110,7 +122,9 @@ bool XmlValue::readB64(const char *path, unsigned char *data,
 
 bool XmlValue::read(const char *path, Interface *out) const {
   XmlValuePtr node = find(path);
-  if (!node) return false;
+  if (!node) {
+    return false;
+  }
 
   bool ok = node->read("name", &out->name()) &&
             node->read("major", &out->current()) &&
@@ -121,12 +135,16 @@ bool XmlValue::read(const char *path, Interface *out) const {
 
 std::string safeValueForNode(const tinyxml2::XMLElement *element) {
   std::string value;
-  if (element == nullptr) return value;
+  if (element == nullptr) {
+    return value;
+  }
 
   const tinyxml2::XMLNode *child = element->FirstChild();
   if (child != nullptr) {
     const tinyxml2::XMLText *childText = child->ToText();
-    if (childText != nullptr) value = childText->Value();
+    if (childText != nullptr) {
+      value = childText->Value();
+    }
   }
 
   return value;
@@ -169,7 +187,9 @@ bool XmlReader::load(const char *fileName) {
   pd->doc.reset(new tinyxml2::XMLDocument());
 
   std::ifstream in(fileName);
-  if (!in) return false;
+  if (!in) {
+    return false;
+  }
 
   std::ostringstream fileContent;
   fileContent << in.rdbuf();
