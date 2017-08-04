@@ -148,9 +148,9 @@ std::shared_ptr<Cipher> Cipher::New(const Interface &iface, int keyLen) {
   return result;
 }
 
-Cipher::Cipher() {}
+Cipher::Cipher() = default;
 
-Cipher::~Cipher() {}
+Cipher::~Cipher() = default;
 
 unsigned int Cipher::MAC_32(const unsigned char *src, int len,
                             const CipherKey &key, uint64_t *chainedIV) const {

@@ -41,9 +41,9 @@ static Interface NNIOIface("nameio/null", 1, 0, 0);
 static bool NullNameIO_registered =
     NameIO::Register("Null", "No encryption of filenames", NNIOIface, NewNNIO);
 
-NullNameIO::NullNameIO() {}
+NullNameIO::NullNameIO() = default;
 
-NullNameIO::~NullNameIO() {}
+NullNameIO::~NullNameIO() = default;
 
 Interface NullNameIO::interface() const { return NNIOIface; }
 

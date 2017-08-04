@@ -22,6 +22,7 @@
 
 #include <cstring>
 #include <memory>
+#include <utility>
 
 #include "Cipher.h"
 #include "CipherKey.h"
@@ -94,20 +95,19 @@ Interface BlockNameIO::CurrentInterface(bool caseInsensitive) {
     return Interface("nameio/block", 4, 0, 2);
 }
 
-BlockNameIO::BlockNameIO(const Interface &iface,
-                         const std::shared_ptr<Cipher> &cipher,
-                         const CipherKey &key, int blockSize,
+BlockNameIO::BlockNameIO(const Interface &iface, std::shared_ptr<Cipher> cipher,
+                         CipherKey key, int blockSize,
                          bool caseInsensitiveEncoding)
     : _interface(iface.current()),
       _bs(blockSize),
-      _cipher(cipher),
-      _key(key),
+      _cipher(std::move(cipher)),
+      _key(std::move(key)),
       _caseInsensitive(caseInsensitiveEncoding) {
   // just to be safe..
   rAssert(blockSize < 128);
 }
 
-BlockNameIO::~BlockNameIO() {}
+BlockNameIO::~BlockNameIO() = default;
 
 Interface BlockNameIO::interface() const {
   return CurrentInterface(_caseInsensitive);

@@ -41,8 +41,8 @@ class BlockNameIO : public NameIO {
  public:
   static Interface CurrentInterface(bool caseInsensitive = false);
 
-  BlockNameIO(const Interface &iface, const std::shared_ptr<Cipher> &cipher,
-              const CipherKey &key, int blockSize,
+  BlockNameIO(const Interface &iface, std::shared_ptr<Cipher> cipher,
+              CipherKey key, int blockSize,
               bool caseInsensitiveEncoding = false);
   virtual ~BlockNameIO();
 

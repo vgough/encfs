@@ -28,6 +28,7 @@
 #include <memory>
 #include <openssl/sha.h>
 #include <sys/stat.h>
+#include <utility>
 
 #include "BlockFileIO.h"
 #include "Cipher.h"
@@ -47,10 +48,10 @@ static Interface CipherFileIO_iface("FileIO/Cipher", 2, 0, 1);
 
 const int HEADER_SIZE = 8;  // 64 bit initialization vector..
 
-CipherFileIO::CipherFileIO(const std::shared_ptr<FileIO> &_base,
+CipherFileIO::CipherFileIO(std::shared_ptr<FileIO> _base,
                            const FSConfigPtr &cfg)
     : BlockFileIO(cfg->config->blockSize, cfg),
-      base(_base),
+      base(std::move(_base)),
       haveHeader(cfg->config->uniqueIV),
       externalIV(0),
       fileIV(0),
@@ -63,7 +64,7 @@ CipherFileIO::CipherFileIO(const std::shared_ptr<FileIO> &_base,
       << "FS block size must be multiple of cipher block size";
 }
 
-CipherFileIO::~CipherFileIO() {}
+CipherFileIO::~CipherFileIO() = default;
 
 Interface CipherFileIO::interface() const { return CipherFileIO_iface; }
 

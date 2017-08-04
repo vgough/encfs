@@ -21,13 +21,13 @@
 #ifndef _FileNode_incl_
 #define _FileNode_incl_
 
+#include <atomic>
 #include <inttypes.h>
 #include <memory>
 #include <pthread.h>
 #include <stdint.h>
 #include <string>
 #include <sys/types.h>
-#include <atomic>
 
 #include "CipherKey.h"
 #include "FSConfig.h"

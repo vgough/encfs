@@ -127,7 +127,7 @@ std::shared_ptr<NameIO> NameIO::New(const Interface &iface,
 
 NameIO::NameIO() : chainedNameIV(false), reverseEncryption(false) {}
 
-NameIO::~NameIO() {}
+NameIO::~NameIO() = default;
 
 void NameIO::setChainedNameIV(bool enable) { chainedNameIV = enable; }
 

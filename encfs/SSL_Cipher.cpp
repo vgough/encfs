@@ -342,7 +342,7 @@ SSL_Cipher::SSL_Cipher(const Interface &iface_, const Interface &realIface_,
   }
 }
 
-SSL_Cipher::~SSL_Cipher() {}
+SSL_Cipher::~SSL_Cipher() = default;
 
 Interface SSL_Cipher::interface() const { return realIface; }
 

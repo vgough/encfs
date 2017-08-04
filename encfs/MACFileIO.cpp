@@ -24,6 +24,7 @@
 #include <cinttypes>
 #include <cstring>
 #include <sys/stat.h>
+#include <utility>
 
 #include "BlockFileIO.h"
 #include "Cipher.h"
@@ -56,10 +57,9 @@ int dataBlockSize(const FSConfigPtr &cfg) {
          cfg->config->blockMACRandBytes;
 }
 
-MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
-                     const FSConfigPtr &cfg)
+MACFileIO::MACFileIO(std::shared_ptr<FileIO> _base, const FSConfigPtr &cfg)
     : BlockFileIO(dataBlockSize(cfg), cfg),
-      base(_base),
+      base(std::move(_base)),
       cipher(cfg->cipher),
       key(cfg->key),
       macBytes(cfg->config->blockMACBytes),
@@ -72,7 +72,7 @@ MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
           << ", randBytes = " << cfg->config->blockMACRandBytes;
 }
 
-MACFileIO::~MACFileIO() {}
+MACFileIO::~MACFileIO() = default;
 
 Interface MACFileIO::interface() const { return MACFileIO_iface; }
 

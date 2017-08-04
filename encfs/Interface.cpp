@@ -20,6 +20,8 @@
 
 #include "Interface.h"
 
+#include <utility>
+
 #include "ConfigVar.h"
 #include "Error.h"
 
@@ -28,25 +30,19 @@ namespace encfs {
 Interface::Interface(const char *name_, int Current, int Revision, int Age)
     : _name(name_), _current(Current), _revision(Revision), _age(Age) {}
 
-Interface::Interface(const std::string &name_, int Current, int Revision,
-                     int Age)
-    : _name(name_), _current(Current), _revision(Revision), _age(Age) {}
+Interface::Interface(std::string name_, int Current, int Revision, int Age)
+    : _name(std::move(name_)),
+      _current(Current),
+      _revision(Revision),
+      _age(Age) {}
 
 Interface::Interface(const Interface &src)
-    : _name(src._name),
-      _current(src._current),
-      _revision(src._revision),
-      _age(src._age) {}
+
+    = default;
 
 Interface::Interface() : _current(0), _revision(0), _age(0) {}
 
-Interface &Interface::operator=(const Interface &src) {
-  _name = src._name;
-  _current = src._current;
-  _revision = src._revision;
-  _age = src._age;
-  return *this;
-}
+Interface &Interface::operator=(const Interface &src) = default;
 
 const std::string &Interface::name() const { return _name; }
 

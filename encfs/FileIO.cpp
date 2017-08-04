@@ -22,9 +22,9 @@
 
 namespace encfs {
 
-FileIO::FileIO() {}
+FileIO::FileIO() = default;
 
-FileIO::~FileIO() {}
+FileIO::~FileIO() = default;
 
 int FileIO::blockSize() const { return 1; }
 

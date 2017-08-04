@@ -37,6 +37,7 @@
 
 #include "internal/easylogging++.h"
 #include <cstring>
+#include <utility>
 
 #include "Context.h"
 #include "Error.h"
@@ -51,20 +52,13 @@ class DirDeleter {
   void operator()(DIR *d) { ::closedir(d); }
 };
 
-DirTraverse::DirTraverse(const std::shared_ptr<DIR> &_dirPtr, uint64_t _iv,
-                         const std::shared_ptr<NameIO> &_naming)
-    : dir(_dirPtr), iv(_iv), naming(_naming) {}
+DirTraverse::DirTraverse(std::shared_ptr<DIR> _dirPtr, uint64_t _iv,
+                         std::shared_ptr<NameIO> _naming)
+    : dir(std::move(_dirPtr)), iv(_iv), naming(std::move(_naming)) {}
 
-DirTraverse::DirTraverse(const DirTraverse &src)
-    : dir(src.dir), iv(src.iv), naming(src.naming) {}
+DirTraverse::DirTraverse(const DirTraverse &src) = default;
 
-DirTraverse &DirTraverse::operator=(const DirTraverse &src) {
-  dir = src.dir;
-  iv = src.iv;
-  naming = src.naming;
-
-  return *this;
-}
+DirTraverse &DirTraverse::operator=(const DirTraverse &src) = default;
 
 DirTraverse::~DirTraverse() {
   dir.reset();
@@ -143,13 +137,12 @@ class RenameOp {
   list<RenameEl>::const_iterator last;
 
  public:
-  RenameOp(DirNode *_dn, const std::shared_ptr<list<RenameEl> > &_renameList)
-      : dn(_dn), renameList(_renameList) {
+  RenameOp(DirNode *_dn, std::shared_ptr<list<RenameEl> > _renameList)
+      : dn(_dn), renameList(std::move(_renameList)) {
     last = renameList->begin();
   }
 
-  RenameOp(const RenameOp &src)
-      : dn(src.dn), renameList(src.renameList), last(src.last) {}
+  RenameOp(const RenameOp &src) = default;
 
   ~RenameOp();
 
@@ -252,7 +245,7 @@ DirNode::DirNode(EncFS_Context *_ctx, const string &sourceDir,
   naming = fsConfig->nameCoding;
 }
 
-DirNode::~DirNode() {}
+DirNode::~DirNode() = default;
 
 bool DirNode::hasDirectoryNameDependency() const {
   return naming ? naming->getChainedNameIV() : false;

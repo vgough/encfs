@@ -33,9 +33,9 @@ using namespace std;
 
 namespace encfs {
 
-ConfigReader::ConfigReader() {}
+ConfigReader::ConfigReader() = default;
 
-ConfigReader::~ConfigReader() {}
+ConfigReader::~ConfigReader() = default;
 
 // read the entire file into a ConfigVar instance and then use that to decode
 // into mapped variables.

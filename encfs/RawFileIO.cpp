@@ -28,6 +28,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 #include "Error.h"
 #include "FileIO.h"
@@ -53,8 +54,8 @@ inline void swap(int &x, int &y) {
 RawFileIO::RawFileIO()
     : knownSize(false), fileSize(0), fd(-1), oldfd(-1), canWrite(false) {}
 
-RawFileIO::RawFileIO(const std::string &fileName)
-    : name(fileName),
+RawFileIO::RawFileIO(std::string fileName)
+    : name(std::move(fileName)),
       knownSize(false),
       fileSize(0),
       fd(-1),

@@ -34,7 +34,7 @@
 
 namespace encfs {
 
-XmlValue::~XmlValue() {}
+XmlValue::~XmlValue() = default;
 
 XmlValuePtr XmlValue::operator[](const char *path) const { return find(path); }
 
@@ -139,7 +139,7 @@ class XmlNode : virtual public XmlValue {
   XmlNode(const tinyxml2::XMLElement *element_)
       : XmlValue(safeValueForNode(element_)), element(element_) {}
 
-  virtual ~XmlNode() {}
+  virtual ~XmlNode() = default;
 
   virtual XmlValuePtr find(const char *name) const {
     if (name[0] == '@') {
@@ -164,7 +164,7 @@ struct XmlReader::XmlReaderData {
 
 XmlReader::XmlReader() : pd(new XmlReaderData()) {}
 
-XmlReader::~XmlReader() {}
+XmlReader::~XmlReader() = default;
 
 bool XmlReader::load(const char *fileName) {
   pd->doc.reset(new tinyxml2::XMLDocument());

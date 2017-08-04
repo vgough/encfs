@@ -119,9 +119,9 @@ struct ConfigInfo {
     {".encfs", Config_Prehistoric, nullptr, nullptr, nullptr, 0, 0},
     {nullptr, Config_None, nullptr, nullptr, nullptr, 0, 0}};
 
-EncFS_Root::EncFS_Root() {}
+EncFS_Root::EncFS_Root() = default;
 
-EncFS_Root::~EncFS_Root() {}
+EncFS_Root::~EncFS_Root() = default;
 
 bool fileExists(const char *fileName) {
   struct stat buf;

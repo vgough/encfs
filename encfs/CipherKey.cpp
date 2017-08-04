@@ -22,8 +22,8 @@
 
 namespace encfs {
 
-AbstractCipherKey::AbstractCipherKey() {}
+AbstractCipherKey::AbstractCipherKey() = default;
 
-AbstractCipherKey::~AbstractCipherKey() {}
+AbstractCipherKey::~AbstractCipherKey() = default;
 
 }  // namespace encfs

@@ -22,6 +22,7 @@
 
 #include "internal/easylogging++.h"
 #include <cstring>
+#include <utility>
 
 #include "Cipher.h"
 #include "CipherKey.h"
@@ -72,11 +73,12 @@ Interface StreamNameIO::CurrentInterface() {
 }
 
 StreamNameIO::StreamNameIO(const Interface &iface,
-                           const std::shared_ptr<Cipher> &cipher,
-                           const CipherKey &key)
-    : _interface(iface.current()), _cipher(cipher), _key(key) {}
+                           std::shared_ptr<Cipher> cipher, CipherKey key)
+    : _interface(iface.current()),
+      _cipher(std::move(cipher)),
+      _key(std::move(key)) {}
 
-StreamNameIO::~StreamNameIO() {}
+StreamNameIO::~StreamNameIO() = default;
 
 Interface StreamNameIO::interface() const { return CurrentInterface(); }
 
