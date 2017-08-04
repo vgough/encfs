@@ -125,11 +125,7 @@ EncFS_Root::~EncFS_Root() = default;
 
 bool fileExists(const char *fileName) {
   struct stat buf;
-  if (lstat(fileName, &buf) == 0) {
-    return true;
-  }
-  // XXX show perror?
-  return false;
+  return lstat(fileName, &buf) == 0;
 }
 
 bool isDirectory(const char *fileName) {
@@ -141,10 +137,7 @@ bool isDirectory(const char *fileName) {
 }
 
 bool isAbsolutePath(const char *fileName) {
-  if ((fileName != nullptr) && fileName[0] != '\0' && fileName[0] == '/') {
-    return true;
-  }
-  return false;
+  return (fileName != nullptr) && fileName[0] != '\0' && fileName[0] == '/';
 }
 
 const char *lastPathElement(const char *name) {
@@ -1306,7 +1299,7 @@ void showFSInfo(const EncFSConfig *config) {
       cout << "\n";
     }
   }
-  if (config->kdfIterations > 0 && config->salt.size() > 0) {
+  if (config->kdfIterations > 0 && !config->salt.empty()) {
     cout << autosprintf(_("Using PBKDF2, with %i iterations"),
                         config->kdfIterations)
          << "\n";
@@ -1389,12 +1382,12 @@ CipherKey EncFSConfig::makeKey(const char *password, int passwdLen) {
 
   // if no salt is set and we're creating a new password for a new
   // FS type, then initialize salt..
-  if (salt.size() == 0 && kdfIterations == 0 && cfgType >= Config_V6) {
+  if (salt.empty() && kdfIterations == 0 && cfgType >= Config_V6) {
     // upgrade to using salt
     salt.resize(20);
   }
 
-  if (salt.size() > 0) {
+  if (!salt.empty()) {
     // if iterations isn't known, then we're creating a new key, so
     // randomize the salt..
     if (kdfIterations == 0 &&

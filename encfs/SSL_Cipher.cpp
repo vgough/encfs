@@ -414,9 +414,8 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength) {
     }
   } else {
     // for backward compatibility with filesystems created with 1:0
-    bytes = EVP_BytesToKey(_blockCipher, EVP_sha1(), nullptr,
-                           (unsigned char *)password, passwdLength, 16,
-                           KeyData(key), IVData(key));
+    EVP_BytesToKey(_blockCipher, EVP_sha1(), nullptr, (unsigned char *)password,
+                   passwdLength, 16, KeyData(key), IVData(key));
   }
 
   initKey(key, _blockCipher, _streamCipher, _keySize);
@@ -610,10 +609,7 @@ bool SSL_Cipher::compareKey(const CipherKey &A, const CipherKey &B) const {
   rAssert(key1->keySize == _keySize);
   rAssert(key2->keySize == _keySize);
 
-  if (memcmp(key1->buffer, key2->buffer, _keySize + _ivLength) != 0) {
-    return false;
-  }
-  return true;
+  return memcmp(key1->buffer, key2->buffer, _keySize + _ivLength) == 0;
 }
 
 int SSL_Cipher::encodedKeySize() const {

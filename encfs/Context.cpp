@@ -75,7 +75,7 @@ void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
   }
 }
 
-bool EncFS_Context::isMounted() { return root.get() != nullptr; }
+bool EncFS_Context::isMounted() { return root != nullptr; }
 
 void EncFS_Context::getAndResetUsageCounter(int *usage, int *openCount) {
   Lock lock(contextMutex);
