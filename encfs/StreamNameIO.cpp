@@ -96,7 +96,7 @@ int StreamNameIO::encodeName(const char *plaintextName, int length,
                              uint64_t *iv, char *encodedName,
                              int bufferLength) const {
   uint64_t tmpIV = 0;
-  if (iv && _interface >= 2) tmpIV = *iv;
+  if ((iv != nullptr) && _interface >= 2) tmpIV = *iv;
 
   unsigned int mac =
       _cipher->MAC_16((const unsigned char *)plaintextName, length, _key, iv);
@@ -155,7 +155,7 @@ int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
           ((unsigned int)((unsigned char)tmpBuf[1]));
 
     // version 2 adds support for IV chaining..
-    if (iv && _interface >= 2) tmpIV = *iv;
+    if ((iv != nullptr) && _interface >= 2) tmpIV = *iv;
 
     memcpy(plaintextName, tmpBuf + 2, decodedStreamLen);
   } else {

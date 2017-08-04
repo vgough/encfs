@@ -70,8 +70,8 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
                       int *fileType, ino_t *inode) {
   de = ::readdir(dir.get());
 
-  if (de) {
-    if (fileType) {
+  if (de != nullptr) {
+    if (fileType != nullptr) {
 #if defined(_DIRENT_HAVE_D_TYPE) || defined(__FreeBSD__) || defined(__APPLE__)
       *fileType = de->d_type;
 #else
@@ -79,10 +79,10 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
       *fileType = 0;
 #endif
     }
-    if (inode) *inode = de->d_ino;
+    if (inode != nullptr) *inode = de->d_ino;
     return true;
   } else {
-    if (fileType) *fileType = 0;
+    if (fileType != nullptr) *fileType = 0;
     return false;
   }
 }
@@ -477,8 +477,9 @@ std::shared_ptr<RenameOp> DirNode::newRenameOp(const char *fromP,
   if (!genRenameList(*renameList.get(), fromP, toP)) {
     RLOG(WARNING) << "Error during generation of recursive rename list";
     return std::shared_ptr<RenameOp>();
-  } else
+  } else {
     return std::make_shared<RenameOp>(this, renameList);
+  }
 }
 
 int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
@@ -504,8 +505,9 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
     RLOG(WARNING) << "mkdir error on " << cyName << " mode " << mode << ": "
                   << strerror(eno);
     res = -eno;
-  } else
+  } else {
     res = 0;
+  }
 
   return res;
 }
@@ -586,10 +588,11 @@ int DirNode::link(const char *from, const char *to) {
     VLOG(1) << "hard links not supported with external IV chaining!";
   } else {
     res = ::link(fromCName.c_str(), toCName.c_str());
-    if (res == -1)
+    if (res == -1) {
       res = -errno;
-    else
+    } else {
       res = 0;
+    }
   }
 
   return res;
@@ -616,7 +619,7 @@ std::shared_ptr<FileNode> DirNode::renameNode(const char *from, const char *to,
             << cname;
 
     if (node->setName(to, cname.c_str(), newIV, forwardMode)) {
-      if (ctx) ctx->renameNode(from, to);
+      if (ctx != nullptr) ctx->renameNode(from, to);
     } else {
       // rename error! - put it back
       RLOG(ERROR) << "renameNode failed";
@@ -633,7 +636,7 @@ std::shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
   std::shared_ptr<FileNode> node;
 
   // See if we already have a FileNode for this path.
-  if (ctx) node = ctx->lookupNode(plainName);
+  if (ctx != nullptr) node = ctx->lookupNode(plainName);
 
   // If we don't, create a new one.
   if (!node) {
@@ -643,8 +646,9 @@ std::shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
     node.reset(new FileNode(this, fsConfig, plainName,
                             (rootDir + cipherName).c_str(), fuseFh));
 
-    if (fsConfig->config->externalIVChaining)
+    if (fsConfig->config->externalIVChaining) {
       node->setName(nullptr, nullptr, iv);
+    }
 
     VLOG(1) << "created FileNode for " << node->cipherName();
   }
@@ -673,10 +677,11 @@ std::shared_ptr<FileNode> DirNode::openNode(const char *plainName,
 
   std::shared_ptr<FileNode> node = findOrCreate(plainName);
 
-  if (node && (*result = node->open(flags)) >= 0)
+  if (node && (*result = node->open(flags)) >= 0) {
     return node;
-  else
+  } else {
     return std::shared_ptr<FileNode>();
+  }
 }
 
 int DirNode::unlink(const char *plaintextName) {
@@ -686,7 +691,7 @@ int DirNode::unlink(const char *plaintextName) {
   Lock _lock(mutex);
 
   int res = 0;
-  if (ctx && ctx->lookupNode(plaintextName)) {
+  if ((ctx != nullptr) && ctx->lookupNode(plaintextName)) {
     // If FUSE is running with "hard_remove" option where it doesn't
     // hide open files for us, then we can't allow an unlink of an open
     // file..

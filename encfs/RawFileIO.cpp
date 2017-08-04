@@ -113,7 +113,7 @@ static int open_readonly_workaround(const char *path, int flags) {
        it..
 */
 int RawFileIO::open(int flags) {
-  bool requestWrite = ((flags & O_RDWR) || (flags & O_WRONLY));
+  bool requestWrite = (((flags & O_RDWR) != 0) || ((flags & O_WRONLY) != 0));
   VLOG(1) << "open call, requestWrite = " << requestWrite;
 
   int result = 0;
@@ -126,7 +126,7 @@ int RawFileIO::open(int flags) {
     int finalFlags = requestWrite ? O_RDWR : O_RDONLY;
 
 #if defined(O_LARGEFILE)
-    if (flags & O_LARGEFILE) finalFlags |= O_LARGEFILE;
+    if ((flags & O_LARGEFILE) != 0) finalFlags |= O_LARGEFILE;
 #else
 #warning O_LARGEFILE not supported
 #endif
@@ -209,14 +209,14 @@ ssize_t RawFileIO::read(const IORequest &req) const {
 
 bool RawFileIO::write(const IORequest &req) {
   rAssert(fd >= 0);
-  rAssert(true == canWrite);
+  rAssert(canWrite);
 
   int retrys = 10;
   void *buf = req.data;
   ssize_t bytes = req.dataLen;
   off_t offset = req.offset;
 
-  while (bytes && retrys > 0) {
+  while ((bytes != 0) && retrys > 0) {
     ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
 
     if (writeSize < 0) {
@@ -255,8 +255,9 @@ int RawFileIO::truncate(off_t size) {
 #if !defined(__FreeBSD__) && !defined(__APPLE__)
     ::fdatasync(fd);
 #endif
-  } else
+  } else {
     res = ::truncate(name.c_str(), size);
+  }
 
   if (res < 0) {
     int eno = errno;

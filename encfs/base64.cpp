@@ -52,7 +52,7 @@ void changeBase2(unsigned char *src, int srcLen, int src2Pow,
   }
 
   // now, we could have a partial value left in the work buffer..
-  if (workBits && ((dst - origDst) < dstLen)) *dst++ = work & mask;
+  if ((workBits != 0) && ((dst - origDst) < dstLen)) *dst++ = work & mask;
 }
 
 /*
@@ -67,11 +67,11 @@ static void changeBase2Inline(unsigned char *src, int srcLen, int src2Pow,
                               unsigned long work, int workBits,
                               unsigned char *outLoc) {
   const int mask = (1 << dst2Pow) - 1;
-  if (!outLoc) outLoc = src;
+  if (outLoc == nullptr) outLoc = src;
 
   // copy the new bits onto the high bits of the stream.
   // The bits that fall off the low end are the output bits.
-  while (srcLen && workBits < dst2Pow) {
+  while ((srcLen != 0) && workBits < dst2Pow) {
     work |= ((unsigned long)(*src++)) << workBits;
     workBits += src2Pow;
     --srcLen;
@@ -82,7 +82,7 @@ static void changeBase2Inline(unsigned char *src, int srcLen, int src2Pow,
   work >>= dst2Pow;
   workBits -= dst2Pow;
 
-  if (srcLen) {
+  if (srcLen != 0) {
     // more input left, so recurse
     changeBase2Inline(src, srcLen, src2Pow, dst2Pow, outputPartialLastByte,
                       work, workBits, outLoc + 1);
@@ -119,12 +119,14 @@ void B64ToAscii(unsigned char *in, int length) {
   for (int offset = 0; offset < length; ++offset) {
     int ch = in[offset];
     if (ch > 11) {
-      if (ch > 37)
+      if (ch > 37) {
         ch += 'a' - 38;
-      else
+      } else {
         ch += 'A' - 12;
-    } else
+      }
+    } else {
       ch = B642AsciiTable[ch];
+    }
 
     in[offset] = ch;
   }
@@ -139,16 +141,17 @@ void AsciiToB64(unsigned char *in, int length) {
 }
 
 void AsciiToB64(unsigned char *out, const unsigned char *in, int length) {
-  while (length--) {
+  while ((length--) != 0) {
     unsigned char ch = *in++;
     if (ch >= 'A') {
-      if (ch >= 'a')
+      if (ch >= 'a') {
         ch += 38 - 'a';
-      else
+      } else {
         ch += 12 - 'A';
-    } else
+      }
+    } else {
       ch = Ascii2B64Table[ch] - '0';
-
+    }
     *out++ = ch;
   }
 }
@@ -156,10 +159,11 @@ void AsciiToB64(unsigned char *out, const unsigned char *in, int length) {
 void B32ToAscii(unsigned char *buf, int len) {
   for (int offset = 0; offset < len; ++offset) {
     int ch = buf[offset];
-    if (ch >= 0 && ch < 26)
+    if (ch >= 0 && ch < 26) {
       ch += 'A';
-    else
+    } else {
       ch += '2' - 26;
+    }
 
     buf[offset] = ch;
   }
@@ -170,14 +174,14 @@ void AsciiToB32(unsigned char *in, int length) {
 }
 
 void AsciiToB32(unsigned char *out, const unsigned char *in, int length) {
-  while (length--) {
+  while ((length--) != 0) {
     unsigned char ch = *in++;
     int lch = toupper(ch);
-    if (lch >= 'A')
+    if (lch >= 'A') {
       lch -= 'A';
-    else
+    } else {
       lch += 26 - '2';
-
+    }
     *out++ = (unsigned char)lch;
   }
 }
@@ -221,7 +225,7 @@ bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inLen) {
         buf = buf << 6 | c;
 
         /* If the buffer is full, split it into bytes */
-        if (buf & 0x1000000) {
+        if ((buf & 0x1000000) != 0u) {
           *out++ = buf >> 16;
           *out++ = buf >> 8;
           *out++ = buf;
@@ -230,10 +234,10 @@ bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inLen) {
     }
   }
 
-  if (buf & 0x40000) {
+  if ((buf & 0x40000) != 0u) {
     *out++ = buf >> 10;
     *out++ = buf >> 2;
-  } else if (buf & 0x1000) {
+  } else if ((buf & 0x1000) != 0u) {
     *out++ = buf >> 4;
   }
 

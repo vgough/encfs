@@ -65,7 +65,7 @@ std::list<Cipher::CipherAlgorithm> Cipher::GetAlgorithmList(
 
   list<CipherAlgorithm> result;
 
-  if (!gCipherMap) return result;
+  if (gCipherMap == nullptr) return result;
 
   CipherMap_t::const_iterator it;
   CipherMap_t::const_iterator mapEnd = gCipherMap->end();
@@ -98,7 +98,7 @@ bool Cipher::Register(const char *name, const char *description,
                       const Interface &iface, const Range &keyLength,
                       const Range &blockSize, CipherConstructor fn,
                       bool hidden) {
-  if (!gCipherMap) gCipherMap = new CipherMap_t;
+  if (gCipherMap == nullptr) gCipherMap = new CipherMap_t;
 
   CipherAlg ca;
   ca.hidden = hidden;
@@ -114,7 +114,7 @@ bool Cipher::Register(const char *name, const char *description,
 std::shared_ptr<Cipher> Cipher::New(const string &name, int keyLen) {
   std::shared_ptr<Cipher> result;
 
-  if (gCipherMap) {
+  if (gCipherMap != nullptr) {
     CipherMap_t::const_iterator it = gCipherMap->find(name);
     if (it != gCipherMap->end()) {
       CipherConstructor fn = it->second.constructor;
@@ -127,7 +127,7 @@ std::shared_ptr<Cipher> Cipher::New(const string &name, int keyLen) {
 }
 std::shared_ptr<Cipher> Cipher::New(const Interface &iface, int keyLen) {
   std::shared_ptr<Cipher> result;
-  if (gCipherMap) {
+  if (gCipherMap != nullptr) {
     CipherMap_t::const_iterator it;
     CipherMap_t::const_iterator mapEnd = gCipherMap->end();
 

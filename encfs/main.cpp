@@ -94,8 +94,9 @@ struct EncFS_Args {
     if (opts->reverseEncryption) ss << "(reverseEncryption) ";
     if (opts->mountOnDemand) ss << "(mountOnDemand) ";
     if (opts->delayMount) ss << "(delayMount) ";
-    for (int i = 0; i < fuseArgc; ++i) ss << fuseArgv[i] << ' ';
-
+    for (int i = 0; i < fuseArgc; ++i) {
+      ss << fuseArgv[i] << ' ';
+    }
     return ss.str();
   }
 
@@ -343,9 +344,9 @@ static bool processArgs(int argc, char *argv[],
         out->opts->passwordProgram.assign(optarg);
         break;
       case 'P':
-        if (geteuid() != 0)
+        if (geteuid() != 0) {
           RLOG(WARNING) << "option '--public' ignored for non-root user";
-        else {
+        } else {
           out->opts->ownerCreate = true;
           // add 'allow_other' option
           // add 'default_permissions' option (default)
@@ -496,7 +497,7 @@ void *encfs_init(fuse_conn_info *conn) {
   auto *ctx = (EncFS_Context *)fuse_get_context()->private_data;
 
   // set fuse connection options
-  conn->async_read = true;
+  conn->async_read = 1u;
 
   // if an idle timeout is specified, then setup a thread to monitor the
   // filesystem.
@@ -534,8 +535,9 @@ int main(int argc, char *argv[]) {
   // anything that comes from the user should be considered tainted until
   // we've processed it and only allowed through what we support.
   std::shared_ptr<EncFS_Args> encfsArgs(new EncFS_Args);
-  for (int i = 0; i < MaxFuseArgs; ++i)
+  for (int i = 0; i < MaxFuseArgs; ++i) {
     encfsArgs->fuseArgv[i] = nullptr;  // libfuse expects null args..
+  }
 
   if (argc == 1 || !processArgs(argc, argv, encfsArgs)) {
     usage(argv[0]);
@@ -616,7 +618,7 @@ int main(int argc, char *argv[]) {
     ctx->args = encfsArgs;
     ctx->opts = encfsArgs->opts;
 
-    if (encfsArgs->isThreaded == false && encfsArgs->idleTimeout > 0) {
+    if (!encfsArgs->isThreaded && encfsArgs->idleTimeout > 0) {
       // xgroup(usage)
       cerr << _("Note: requested single-threaded mode, but an idle\n"
                 "timeout was specified.  The filesystem will operate\n"
@@ -727,12 +729,13 @@ static void *idleMonitor(void *_arg) {
     int usage, openCount;
     ctx->getAndResetUsageCounter(&usage, &openCount);
 
-    if (usage == 0 && ctx->isMounted())
+    if (usage == 0 && ctx->isMounted()) {
       ++idleCycles;
-    else {
-      if (idleCycles >= timeoutCycles)
+    } else {
+      if (idleCycles >= timeoutCycles) {
         RLOG(INFO) << "Filesystem no longer inactive: "
                    << arg->opts->mountPoint;
+      }
       idleCycles = 0;
     }
 
@@ -765,8 +768,9 @@ static void *idleMonitor(void *_arg) {
 
   // If we are here FS has been unmounted, so if we did not unmount ourselves
   // (manual, kill...), notify
-  if (!unmountres)
+  if (!unmountres) {
     RLOG(INFO) << "Filesystem unmounted: " << arg->opts->mountPoint;
+  }
 
   VLOG(1) << "Idle monitoring thread exiting";
 

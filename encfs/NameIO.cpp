@@ -62,7 +62,7 @@ list<NameIO::Algorithm> NameIO::GetAlgorithmList(bool includeHidden) {
   AddSymbolReferences();
 
   list<Algorithm> result;
-  if (gNameIOMap) {
+  if (gNameIOMap != nullptr) {
     NameIOMap_t::const_iterator it;
     NameIOMap_t::const_iterator end = gNameIOMap->end();
     for (it = gNameIOMap->begin(); it != end; ++it) {
@@ -83,7 +83,7 @@ list<NameIO::Algorithm> NameIO::GetAlgorithmList(bool includeHidden) {
 bool NameIO::Register(const char *name, const char *description,
                       const Interface &iface, Constructor constructor,
                       bool hidden) {
-  if (!gNameIOMap) gNameIOMap = new NameIOMap_t;
+  if (gNameIOMap == nullptr) gNameIOMap = new NameIOMap_t;
 
   NameIOAlg alg;
   alg.hidden = hidden;
@@ -98,7 +98,7 @@ std::shared_ptr<NameIO> NameIO::New(const string &name,
                                     const std::shared_ptr<Cipher> &cipher,
                                     const CipherKey &key) {
   std::shared_ptr<NameIO> result;
-  if (gNameIOMap) {
+  if (gNameIOMap != nullptr) {
     NameIOMap_t::const_iterator it = gNameIOMap->find(name);
     if (it != gNameIOMap->end()) {
       Constructor fn = it->second.constructor;
@@ -111,7 +111,7 @@ std::shared_ptr<NameIO> NameIO::New(const Interface &iface,
                                     const std::shared_ptr<Cipher> &cipher,
                                     const CipherKey &key) {
   std::shared_ptr<NameIO> result;
-  if (gNameIOMap) {
+  if (gNameIOMap != nullptr) {
     NameIOMap_t::const_iterator it;
     NameIOMap_t::const_iterator end = gNameIOMap->end();
     for (it = gNameIOMap->begin(); it != end; ++it) {
@@ -143,15 +143,16 @@ std::string NameIO::recodePath(
     uint64_t *iv) const {
   string output;
 
-  while (*path) {
+  while (*path != 0) {
     if (*path == '/') {
-      if (!output.empty())  // don't start the string with '/'
+      if (!output.empty()) {  // don't start the string with '/'
         output += '/';
+      }
       ++path;
     } else {
       bool isDotFile = (*path == '.');
       const char *next = strchr(path, '/');
-      int len = next ? next - path : strlen(path);
+      int len = next != nullptr ? next - path : strlen(path);
 
       // at this point we know that len > 0
       if (isDotFile && (path[len - 1] == '.') && (len <= 2)) {

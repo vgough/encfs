@@ -160,13 +160,15 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
   // don't store zeros if configured for zero-block pass-through
   bool skipBlock = true;
   if (_allowHoles) {
-    for (int i = 0; i < readSize; ++i)
+    for (int i = 0; i < readSize; ++i) {
       if (tmp.data[i] != 0) {
         skipBlock = false;
         break;
       }
-  } else if (macBytes > 0)
+    }
+  } else if (macBytes > 0) {
     skipBlock = false;
+  }
 
   if (readSize > headerSize) {
     if (!skipBlock) {
@@ -224,8 +226,9 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   memset(newReq.data, 0, headerSize);
   memcpy(newReq.data + headerSize, req.data, req.dataLen);
   if (randBytes > 0) {
-    if (!cipher->randomize(newReq.data + macBytes, randBytes, false))
+    if (!cipher->randomize(newReq.data + macBytes, randBytes, false)) {
       return false;
+    }
   }
 
   if (macBytes > 0) {

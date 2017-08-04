@@ -57,10 +57,11 @@ autosprintf::operator char *() const {
     auto *copy = new char[length];
     memcpy(copy, str, length);
     return copy;
-  } else
+  } else {
     return nullptr;
+  }
 }
 autosprintf::operator std::string() const {
-  return std::string(str ? str : "(error in autosprintf)");
+  return std::string(str != nullptr ? str : "(error in autosprintf)");
 }
-}
+}  // namespace gnu

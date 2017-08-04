@@ -66,21 +66,22 @@ inline int MIN(int a, int b) { return (a < b) ? a : b; }
 int BytesToKey(int keyLen, int ivLen, const EVP_MD *md,
                const unsigned char *data, int dataLen, unsigned int rounds,
                unsigned char *key, unsigned char *iv) {
-  if (data == nullptr || dataLen == 0)
+  if (data == nullptr || dataLen == 0) {
     return 0;  // OpenSSL returns nkey here, but why?  It is a failure..
+  }
 
   unsigned char mdBuf[EVP_MAX_MD_SIZE];
   unsigned int mds = 0;
   int addmd = 0;
-  int nkey = key ? keyLen : 0;
-  int niv = iv ? ivLen : 0;
+  int nkey = key != nullptr ? keyLen : 0;
+  int niv = iv != nullptr ? ivLen : 0;
 
   EVP_MD_CTX *cx = EVP_MD_CTX_new();
   EVP_MD_CTX_init(cx);
 
   for (;;) {
     EVP_DigestInit_ex(cx, md, nullptr);
-    if (addmd++) EVP_DigestUpdate(cx, mdBuf, mds);
+    if ((addmd++) != 0) EVP_DigestUpdate(cx, mdBuf, mds);
     EVP_DigestUpdate(cx, data, dataLen);
     EVP_DigestFinal_ex(cx, mdBuf, &mds);
 
@@ -92,14 +93,14 @@ int BytesToKey(int keyLen, int ivLen, const EVP_MD *md,
 
     int offset = 0;
     int toCopy = MIN(nkey, mds - offset);
-    if (toCopy) {
+    if (toCopy != 0) {
       memcpy(key, mdBuf + offset, toCopy);
       key += toCopy;
       nkey -= toCopy;
       offset += toCopy;
     }
     toCopy = MIN(niv, mds - offset);
-    if (toCopy) {
+    if (toCopy != 0) {
       memcpy(iv, mdBuf + offset, toCopy);
       iv += toCopy;
       niv -= toCopy;
@@ -139,8 +140,9 @@ int TimedPBKDF2(const char *pass, int passlen, const unsigned char *salt,
     } else if (delta < (5 * desiredPDFTime / 6)) {
       // estimate number of iterations to get close to desired time
       iter = (int)((double)iter * (double)desiredPDFTime / (double)delta);
-    } else
+    } else {
       return iter;
+    }
   }
 }
 
@@ -366,8 +368,9 @@ CipherKey SSL_Cipher::newKey(const char *password, int passwdLength,
     if (res <= 0) {
       RLOG(WARNING) << "openssl error, PBKDF2 failed";
       return CipherKey();
-    } else
+    } else {
       iterationCount = res;
+    }
   } else {
     // known iteration length
     if (PKCS5_PBKDF2_HMAC_SHA1(
@@ -425,8 +428,9 @@ CipherKey SSL_Cipher::newRandomKey() {
   int saltLen = 20;
   unsigned char saltBuf[saltLen];
 
-  if (!randomize(tmpBuf, bufLen, true) || !randomize(saltBuf, saltLen, true))
+  if (!randomize(tmpBuf, bufLen, true) || !randomize(saltBuf, saltLen, true)) {
     return CipherKey();
+  }
 
   std::shared_ptr<SSLKey> key(new SSLKey(_keySize, _ivLength));
 
@@ -458,7 +462,7 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
 
   HMAC_Init_ex(key->mac_ctx, nullptr, 0, nullptr, nullptr);
   HMAC_Update(key->mac_ctx, data, dataLen);
-  if (chainedIV) {
+  if (chainedIV != nullptr) {
     // toss in the chained IV as well
     uint64_t tmp = *chainedIV;
     unsigned char h[8];
@@ -476,8 +480,9 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
 
   // chop this down to a 64bit value..
   unsigned char h[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  for (unsigned int i = 0; i < (mdLen - 1); ++i)
+  for (unsigned int i = 0; i < (mdLen - 1); ++i) {
     h[i % 8] ^= (unsigned char)(md[i]);
+  }
 
   auto value = (uint64_t)h[0];
   for (int i = 1; i < 8; ++i) value = (value << 8) | (uint64_t)h[i];
@@ -515,7 +520,7 @@ uint64_t SSL_Cipher::MAC_64(const unsigned char *data, int len,
   std::shared_ptr<SSLKey> mk = dynamic_pointer_cast<SSLKey>(key);
   uint64_t tmp = _checksum_64(mk.get(), data, len, chainedIV);
 
-  if (chainedIV) *chainedIV = tmp;
+  if (chainedIV != nullptr) *chainedIV = tmp;
 
   return tmp;
 }
@@ -529,8 +534,9 @@ CipherKey SSL_Cipher::readKey(const unsigned char *data,
 
   // First N bytes are checksum bytes.
   unsigned int checksum = 0;
-  for (int i = 0; i < KEY_CHECKSUM_BYTES; ++i)
+  for (int i = 0; i < KEY_CHECKSUM_BYTES; ++i) {
     checksum = (checksum << 8) | (unsigned int)data[i];
+  }
 
   memcpy(tmpBuf, data + KEY_CHECKSUM_BYTES, _keySize + _ivLength);
   streamDecode(tmpBuf, _keySize + _ivLength, checksum, masterKey);
@@ -591,10 +597,11 @@ bool SSL_Cipher::compareKey(const CipherKey &A, const CipherKey &B) const {
   rAssert(key1->keySize == _keySize);
   rAssert(key2->keySize == _keySize);
 
-  if (memcmp(key1->buffer, key2->buffer, _keySize + _ivLength) != 0)
+  if (memcmp(key1->buffer, key2->buffer, _keySize + _ivLength) != 0) {
     return false;
-  else
+  } else {
     return true;
+  }
 }
 
 int SSL_Cipher::encodedKeySize() const {
@@ -694,7 +701,7 @@ static void flipBytes(unsigned char *buf, int size) {
   unsigned char revBuf[64];
 
   int bytesLeft = size;
-  while (bytesLeft) {
+  while (bytesLeft != 0) {
     int toFlip = MIN(sizeof(revBuf), bytesLeft);
 
     for (int i = 0; i < toFlip; ++i) revBuf[i] = buf[toFlip - (i + 1)];
@@ -711,7 +718,7 @@ static void shuffleBytes(unsigned char *buf, int size) {
 }
 
 static void unshuffleBytes(unsigned char *buf, int size) {
-  for (int i = size - 1; i; --i) buf[i] ^= buf[i - 1];
+  for (int i = size - 1; i != 0; --i) buf[i] ^= buf[i - 1];
 }
 
 /** Partial blocks are encoded with a stream cipher.  We make multiple passes on
@@ -798,8 +805,9 @@ bool SSL_Cipher::blockEncode(unsigned char *buf, int size, uint64_t iv64,
 
   // data must be integer number of blocks
   const int blockMod = size % EVP_CIPHER_CTX_block_size(key->block_enc);
-  if (blockMod != 0)
+  if (blockMod != 0) {
     throw Error("Invalid data size, not multiple of block size");
+  }
 
   Lock lock(key->mutex);
 
@@ -830,8 +838,9 @@ bool SSL_Cipher::blockDecode(unsigned char *buf, int size, uint64_t iv64,
 
   // data must be integer number of blocks
   const int blockMod = size % EVP_CIPHER_CTX_block_size(key->block_dec);
-  if (blockMod != 0)
+  if (blockMod != 0) {
     throw Error("Invalid data size, not multiple of block size");
+  }
 
   Lock lock(key->mutex);
 

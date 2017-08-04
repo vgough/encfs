@@ -127,10 +127,11 @@ ConfigVar ConfigReader::toVar() const {
 ConfigVar ConfigReader::operator[](const std::string &varName) const {
   // read only
   auto it = vars.find(varName);
-  if (it == vars.end())
+  if (it == vars.end()) {
     return ConfigVar();
-  else
+  } else {
     return it->second;
+  }
 }
 
 ConfigVar &ConfigReader::operator[](const std::string &varName) {

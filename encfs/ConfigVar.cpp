@@ -43,10 +43,11 @@ ConfigVar::ConfigVar(const ConfigVar &src) { pd = src.pd; }
 ConfigVar::~ConfigVar() { pd.reset(); }
 
 ConfigVar &ConfigVar::operator=(const ConfigVar &src) {
-  if (src.pd == pd)
+  if (src.pd == pd) {
     return *this;
-  else
+  } else {
     pd = src.pd;
+  }
 
   return *this;
 }
@@ -122,7 +123,7 @@ int ConfigVar::readInt() const {
 
   do {
     unsigned char tmp = buf[offset++];
-    highBitSet = tmp & 0x80;
+    highBitSet = ((tmp & 0x80) != 0);
 
     value = (value << 7) | (int)(tmp & 0x7f);
   } while (highBitSet && offset < bytes);
@@ -139,10 +140,11 @@ int ConfigVar::readInt(int defaultValue) const {
   int bytes = this->size();
   int offset = at();
 
-  if (offset >= bytes)
+  if (offset >= bytes) {
     return defaultValue;
-  else
+  } else {
     return readInt();
+  }
 }
 
 bool ConfigVar::readBool(bool defaultValue) const {

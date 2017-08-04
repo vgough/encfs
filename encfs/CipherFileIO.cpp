@@ -197,14 +197,16 @@ void CipherFileIO::initHeader() {
 
     unsigned char buf[8] = {0};
     do {
-      if (!cipher->randomize(buf, 8, false))
+      if (!cipher->randomize(buf, 8, false)) {
         throw Error("Unable to generate a random file IV");
+      }
 
       fileIV = 0;
       for (int i = 0; i < 8; ++i) fileIV = (fileIV << 8) | (uint64_t)buf[i];
 
-      if (fileIV == 0)
+      if (fileIV == 0) {
         RLOG(WARNING) << "Unexpected result: randomize returned 8 null bytes!";
+      }
     } while (fileIV == 0);  // don't accept 0 as an option..
 
     if (base->isWritable()) {
@@ -325,8 +327,9 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
 
   bool ok;
   if (readSize > 0) {
-    if (haveHeader && fileIV == 0)
+    if (haveHeader && fileIV == 0) {
       const_cast<CipherFileIO *>(this)->initHeader();
+    }
 
     if (readSize != bs) {
       VLOG(1) << "streamRead(data, " << readSize << ", IV)";
@@ -372,8 +375,9 @@ bool CipherFileIO::writeOneBlock(const IORequest &req) {
       IORequest tmpReq = req;
       tmpReq.offset += HEADER_SIZE;
       ok = base->write(tmpReq);
-    } else
+    } else {
       ok = base->write(req);
+    }
   } else {
     VLOG(1) << "encodeBlock failed for block " << blockNum << ", size "
             << req.dataLen;
@@ -385,43 +389,48 @@ bool CipherFileIO::writeOneBlock(const IORequest &req) {
 bool CipherFileIO::blockWrite(unsigned char *buf, int size,
                               uint64_t _iv64) const {
   VLOG(1) << "Called blockWrite";
-  if (!fsConfig->reverseEncryption)
+  if (!fsConfig->reverseEncryption) {
     return cipher->blockEncode(buf, size, _iv64, key);
-  else
+  } else {
     return cipher->blockDecode(buf, size, _iv64, key);
+  }
 }
 
 bool CipherFileIO::streamWrite(unsigned char *buf, int size,
                                uint64_t _iv64) const {
   VLOG(1) << "Called streamWrite";
-  if (!fsConfig->reverseEncryption)
+  if (!fsConfig->reverseEncryption) {
     return cipher->streamEncode(buf, size, _iv64, key);
-  else
+  } else {
     return cipher->streamDecode(buf, size, _iv64, key);
+  }
 }
 
 bool CipherFileIO::blockRead(unsigned char *buf, int size,
                              uint64_t _iv64) const {
-  if (fsConfig->reverseEncryption)
+  if (fsConfig->reverseEncryption) {
     return cipher->blockEncode(buf, size, _iv64, key);
-  else {
+  } else {
     if (_allowHoles) {
       // special case - leave all 0's alone
-      for (int i = 0; i < size; ++i)
+      for (int i = 0; i < size; ++i) {
         if (buf[i] != 0) return cipher->blockDecode(buf, size, _iv64, key);
+      }
 
       return true;
-    } else
+    } else {
       return cipher->blockDecode(buf, size, _iv64, key);
+    }
   }
 }
 
 bool CipherFileIO::streamRead(unsigned char *buf, int size,
                               uint64_t _iv64) const {
-  if (fsConfig->reverseEncryption)
+  if (fsConfig->reverseEncryption) {
     return cipher->streamEncode(buf, size, _iv64, key);
-  else
+  } else {
     return cipher->streamDecode(buf, size, _iv64, key);
+  }
 }
 
 int CipherFileIO::truncate(off_t size) {
@@ -434,8 +443,9 @@ int CipherFileIO::truncate(off_t size) {
       if (!base->isWritable()) {
         // open for write..
         int newFlags = lastFlags | O_RDWR;
-        if (base->open(newFlags) < 0)
+        if (base->open(newFlags) < 0) {
           VLOG(1) << "writeHeader failed to re-open for write";
+        }
       }
       initHeader();
     }
@@ -483,8 +493,9 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
    * to the data. */
   if (req.offset < 0) {
     headerBytes = -req.offset;
-    if (req.dataLen < headerBytes)
+    if (req.dataLen < headerBytes) {
       headerBytes = req.dataLen;  // only up to the number of bytes requested
+    }
     VLOG(1) << "Adding " << headerBytes << " header bytes";
 
     // copy the header bytes into the data
@@ -506,9 +517,9 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
   // read the payload
   ssize_t readBytes = BlockFileIO::read(req);
   VLOG(1) << "read " << readBytes << " bytes from backing file";
-  if (readBytes < 0)
+  if (readBytes < 0) {
     return readBytes;  // Return error code
-  else {
+  } else {
     ssize_t sum = headerBytes + readBytes;
     VLOG(1) << "returning sum=" << sum;
     return sum;

@@ -80,7 +80,7 @@ bool XmlValue::read(const char *path, bool *out) const {
   XmlValuePtr value = find(path);
   if (!value) return false;
 
-  *out = atoi(value->text().c_str());
+  *out = (atoi(value->text().c_str()) != 0);
   return true;
 }
 
@@ -124,9 +124,9 @@ std::string safeValueForNode(const tinyxml2::XMLElement *element) {
   if (element == nullptr) return value;
 
   const tinyxml2::XMLNode *child = element->FirstChild();
-  if (child) {
+  if (child != nullptr) {
     const tinyxml2::XMLText *childText = child->ToText();
-    if (childText) value = childText->Value();
+    if (childText != nullptr) value = childText->Value();
   }
 
   return value;
@@ -144,16 +144,18 @@ class XmlNode : virtual public XmlValue {
   XmlValuePtr find(const char *name) const override {
     if (name[0] == '@') {
       const char *value = element->Attribute(name + 1);
-      if (value)
+      if (value != nullptr) {
         return std::make_shared<encfs::XmlValue>(value);
-      else
+      } else {
         return XmlValuePtr();
+      }
     } else {
       const tinyxml2::XMLElement *el = element->FirstChildElement(name);
-      if (el)
+      if (el != nullptr) {
         return XmlValuePtr(new XmlNode(el));
-      else
+      } else {
         return XmlValuePtr();
+      }
     }
   }
 };

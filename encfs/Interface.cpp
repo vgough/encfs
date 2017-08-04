@@ -83,12 +83,13 @@ static int sign( int a, int b )
 #else
 // simple, easy to check, unlikely to break due to unforseen events..
 static int sign(int a, int b) {
-  if (a < b)
+  if (a < b) {
     return 0;
-  else if (a == b)
+  } else if (a == b) {
     return 1;
-  else
+  } else {
     return 2;
+  }
 }
 #endif
 
@@ -116,29 +117,33 @@ bool Interface::implements(const Interface &B) const {
 bool operator<(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) < EqualVersion);
-  } else
+  } else {
     return A.name() < B.name();
+  }
 }
 
 bool operator>(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) > EqualVersion);
-  } else
+  } else {
     return A.name() < B.name();
+  }
 }
 
 bool operator<=(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) <= EqualVersion);
-  } else
+  } else {
     return A.name() < B.name();
+  }
 }
 
 bool operator>=(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) >= EqualVersion);
-  } else
+  } else {
     return A.name() < B.name();
+  }
 }
 
 ConfigVar &operator<<(ConfigVar &dst, const Interface &iface) {

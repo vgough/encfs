@@ -252,7 +252,7 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 #if defined(fuse_fill_dir_flags)
         if (filler(buf, name.c_str(), &st, 0, 0)) break;
 #else
-        if (filler(buf, name.c_str(), &st, 0)) break;
+        if (filler(buf, name.c_str(), &st, 0) != 0) break;
 #endif
 
         name = dt.nextPlaintextName(&fileType, &inode);
@@ -300,8 +300,9 @@ int encfs_mknod(const char *path, mode_t mode, dev_t rdev) {
           FSRoot->lookupNode(parent.c_str(), "mknod");
 
       struct stat st;
-      if (dnode->getAttr(&st) == 0)
+      if (dnode->getAttr(&st) == 0) {
         res = fnode->mknod(mode, rdev, uid, st.st_gid);
+      }
     }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in mknod: " << err.what();
@@ -335,8 +336,9 @@ int encfs_mkdir(const char *path, mode_t mode) {
           FSRoot->lookupNode(parent.c_str(), "mkdir");
 
       struct stat st;
-      if (dnode->getAttr(&st) == 0)
+      if (dnode->getAttr(&st) == 0) {
         res = FSRoot->mkdir(path, mode, uid, st.st_gid);
+      }
     }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in mkdir: " << err.what();
@@ -438,10 +440,11 @@ int encfs_symlink(const char *to, const char *from) {
     if (olduid >= 0) setfsuid(olduid);
     if (oldgid >= 0) setfsgid(oldgid);
 
-    if (res == -1)
+    if (res == -1) {
       res = -errno;
-    else
+    } else {
       res = ESUCCESS;
+    }
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in symlink: " << err.what();
   }
@@ -547,8 +550,10 @@ int encfs_utimens(const char *path, const struct timespec ts[2]) {
 int encfs_open(const char *path, struct fuse_file_info *file) {
   EncFS_Context *ctx = context();
 
-  if (isReadOnly(ctx) && (file->flags & O_WRONLY || file->flags & O_RDWR))
+  if (isReadOnly(ctx) &&
+      (((file->flags & O_WRONLY) != 0) || ((file->flags & O_RDWR) != 0))) {
     return -EROFS;
+  }
 
   int res = -EIO;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
@@ -577,7 +582,7 @@ int encfs_open(const char *path, struct fuse_file_info *file) {
 
 int encfs_create(const char *path, mode_t mode, struct fuse_file_info *file) {
   int res = encfs_mknod(path, mode, 0);
-  if (res) {
+  if (res != 0) {
     return res;
   }
 
@@ -648,10 +653,11 @@ int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
 }
 
 int _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
-  if (fnode->write(offset, ptr, size))
+  if (fnode->write(offset, ptr, size)) {
     return size;
-  else
+  } else {
     return -EIO;
+  }
 }
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
@@ -673,7 +679,7 @@ int encfs_statfs(const char *path, struct statvfs *st) {
 
     VLOG(1) << "doing statfs of " << cyName;
     res = statvfs(cyName.c_str(), st);
-    if (!res) {
+    if (res == 0) {
       // adjust maximum name length..
       st->f_namemax = 6 * (st->f_namemax - 2) / 8;  // approx..
     }

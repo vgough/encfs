@@ -43,14 +43,15 @@ void pthreads_locking_callback(int mode, int n, const char *caller_file,
   (void)caller_file;
   (void)caller_line;
 
-  if (!crypto_locks) {
+  if (crypto_locks == nullptr) {
     VLOG(1) << "Allocating " << CRYPTO_num_locks() << " locks for OpenSSL";
     crypto_locks = new pthread_mutex_t[CRYPTO_num_locks()];
-    for (int i = 0; i < CRYPTO_num_locks(); ++i)
+    for (int i = 0; i < CRYPTO_num_locks(); ++i) {
       pthread_mutex_init(crypto_locks + i, nullptr);
+    }
   }
 
-  if (mode & CRYPTO_LOCK) {
+  if ((mode & CRYPTO_LOCK) != 0) {
     pthread_mutex_lock(crypto_locks + n);
   } else {
     pthread_mutex_unlock(crypto_locks + n);
@@ -58,9 +59,10 @@ void pthreads_locking_callback(int mode, int n, const char *caller_file,
 }
 
 void pthreads_locking_cleanup() {
-  if (crypto_locks) {
-    for (int i = 0; i < CRYPTO_num_locks(); ++i)
+  if (crypto_locks != nullptr) {
+    for (int i = 0; i < CRYPTO_num_locks(); ++i) {
       pthread_mutex_destroy(crypto_locks + i);
+    }
     delete[] crypto_locks;
     crypto_locks = nullptr;
   }

@@ -75,15 +75,16 @@ MemBlock MemoryPool::allocate(int size) {
   }
 
   // unlink block from list
-  if (block) {
-    if (!parent)
+  if (block != nullptr) {
+    if (parent == nullptr) {
       gMemPool = block->next;
-    else
+    } else {
       parent->next = block->next;
+    }
   }
   pthread_mutex_unlock(&gMPoolMutex);
 
-  if (!block) block = allocBlock(size);
+  if (block == nullptr) block = allocBlock(size);
   block->next = nullptr;
 
   MemBlock result;
