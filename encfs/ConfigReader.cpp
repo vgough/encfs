@@ -49,7 +49,7 @@ bool ConfigReader::load(const char *fileName) {
   int fd = open(fileName, O_RDONLY);
   if (fd < 0) return false;
 
-  char *buf = new char[size];
+  auto *buf = new char[size];
 
   int res = ::read(fd, buf, size);
   close(fd);
@@ -126,7 +126,7 @@ ConfigVar ConfigReader::toVar() const {
 
 ConfigVar ConfigReader::operator[](const std::string &varName) const {
   // read only
-  map<string, ConfigVar>::const_iterator it = vars.find(varName);
+  auto it = vars.find(varName);
   if (it == vars.end())
     return ConfigVar();
   else

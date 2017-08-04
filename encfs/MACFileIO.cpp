@@ -21,8 +21,8 @@
 #include "MACFileIO.h"
 
 #include "internal/easylogging++.h"
+#include <cinttypes>
 #include <cstring>
-#include <inttypes.h>
 #include <sys/stat.h>
 
 #include "BlockFileIO.h"

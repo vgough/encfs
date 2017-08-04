@@ -219,7 +219,7 @@ void RenameOp::undo() {
   // list has to be processed backwards, otherwise we may rename
   // directories and directory contents in the wrong order!
   int undoCount = 0;
-  list<RenameEl>::const_iterator it = last;
+  auto it = last;
 
   while (it != renameList->begin()) {
     --it;
@@ -485,7 +485,7 @@ std::shared_ptr<RenameOp> DirNode::newRenameOp(const char *fromP,
     RLOG(WARNING) << "Error during generation of recursive rename list";
     return std::shared_ptr<RenameOp>();
   } else
-    return std::shared_ptr<RenameOp>(new RenameOp(this, renameList));
+    return std::make_shared<RenameOp>(this, renameList);
 }
 
 int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,

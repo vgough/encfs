@@ -18,18 +18,18 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <getopt.h>
 #include <iostream>
 #include <memory>
 #include <pthread.h>
 #include <sstream>
-#include <stdlib.h>
 #include <string>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "Context.h"
@@ -493,7 +493,7 @@ static bool processArgs(int argc, char *argv[],
 static void *idleMonitor(void *);
 
 void *encfs_init(fuse_conn_info *conn) {
-  EncFS_Context *ctx = (EncFS_Context *)fuse_get_context()->private_data;
+  auto *ctx = (EncFS_Context *)fuse_get_context()->private_data;
 
   // set fuse connection options
   conn->async_read = true;
@@ -599,7 +599,7 @@ int main(int argc, char *argv[]) {
 
   // context is not a smart pointer because it will live for the life of
   // the filesystem.
-  auto ctx = std::shared_ptr<EncFS_Context>(new EncFS_Context);
+  auto ctx = std::make_shared<EncFS_Context>();
   ctx->publicFilesystem = encfsArgs->opts->ownerCreate;
   RootPtr rootInfo = initFS(ctx.get(), encfsArgs->opts);
 
@@ -709,7 +709,7 @@ const int ActivityCheckInterval = 10;
 static bool unmountFS(EncFS_Context *ctx);
 
 static void *idleMonitor(void *_arg) {
-  EncFS_Context *ctx = (EncFS_Context *)_arg;
+  auto *ctx = (EncFS_Context *)_arg;
   std::shared_ptr<EncFS_Args> arg = ctx->args;
 
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;

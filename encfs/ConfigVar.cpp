@@ -112,7 +112,7 @@ void ConfigVar::writeInt(int val) {
 }
 
 int ConfigVar::readInt() const {
-  const unsigned char *buf = (const unsigned char *)buffer();
+  const auto *buf = (const unsigned char *)buffer();
   int bytes = this->size();
   int offset = at();
   int value = 0;
@@ -184,7 +184,7 @@ const ConfigVar &operator>>(const ConfigVar &src, std::string &result) {
 
   unsigned char tmpBuf[32];
   if (length > (int)sizeof(tmpBuf)) {
-    unsigned char *ptr = new unsigned char[length];
+    auto *ptr = new unsigned char[length];
     readLen = src.read(ptr, length);
     result.assign((char *)ptr, length);
     delete[] ptr;

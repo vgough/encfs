@@ -323,7 +323,7 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
 
   int encodedSize;
   config->read("encodedKeySize", &encodedSize);
-  unsigned char *key = new unsigned char[encodedSize];
+  auto *key = new unsigned char[encodedSize];
   config->readB64("encodedKeyData", key, encodedSize);
   cfg->assignKeyData(key, encodedSize);
   delete[] key;
@@ -331,7 +331,7 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
   if (cfg->subVersion >= 20080816) {
     int saltLen;
     config->read("saltLen", &saltLen);
-    unsigned char *salt = new unsigned char[saltLen];
+    auto *salt = new unsigned char[saltLen];
     config->readB64("saltData", salt, saltLen);
     cfg->assignSaltData(salt, saltLen);
     delete[] salt;
@@ -1161,7 +1161,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
       "later using encfsctl.\n\n");
 
   int encodedKeySize = cipher->encodedKeySize();
-  unsigned char *encodedKey = new unsigned char[encodedKeySize];
+  auto *encodedKey = new unsigned char[encodedKeySize];
 
   CipherKey volumeKey = cipher->newRandomKey();
 
@@ -1216,11 +1216,10 @@ RootPtr createV6Config(EncFS_Context *ctx,
   fsConfig->idleTracking = enableIdleTracking;
   fsConfig->opts = opts;
 
-  rootInfo = RootPtr(new EncFS_Root);
+  rootInfo = std::make_shared<encfs::EncFS_Root>();
   rootInfo->cipher = cipher;
   rootInfo->volumeKey = volumeKey;
-  rootInfo->root =
-      std::shared_ptr<DirNode>(new DirNode(ctx, rootDir, fsConfig));
+  rootInfo->root = std::make_shared<DirNode>(ctx, rootDir, fsConfig);
 
   return rootInfo;
 }
@@ -1576,7 +1575,7 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
     }
 
     if (opts->delayMount) {
-      rootInfo = RootPtr(new EncFS_Root);
+      rootInfo = std::make_shared<encfs::EncFS_Root>();
       rootInfo->cipher = cipher;
       rootInfo->root = std::shared_ptr<DirNode>();
       return rootInfo;
@@ -1632,11 +1631,10 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
     fsConfig->reverseEncryption = opts->reverseEncryption;
     fsConfig->opts = opts;
 
-    rootInfo = RootPtr(new EncFS_Root);
+    rootInfo = std::make_shared<encfs::EncFS_Root>();
     rootInfo->cipher = cipher;
     rootInfo->volumeKey = volumeKey;
-    rootInfo->root =
-        std::shared_ptr<DirNode>(new DirNode(ctx, opts->rootDir, fsConfig));
+    rootInfo->root = std::make_shared<DirNode>(ctx, opts->rootDir, fsConfig);
   } else {
     if (opts->createIfNotFound) {
       // creating a new encrypted filesystem

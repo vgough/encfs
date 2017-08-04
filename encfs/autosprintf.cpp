@@ -27,10 +27,10 @@
 /* Specification.  */
 #include "autosprintf.h"
 
-#include <stdarg.h>  // for va_list
-#include <stdio.h>   // for NULL, vasprintf
-#include <stdlib.h>  // for free
-#include <string.h>  // for strdup
+#include <cstdarg>  // for va_list
+#include <cstdio>   // for NULL, vasprintf
+#include <cstdlib>  // for free
+#include <cstring>  // for strdup
 
 namespace gnu {
 
@@ -54,7 +54,7 @@ autosprintf::~autosprintf() { free(str); }
 autosprintf::operator char *() const {
   if (str != nullptr) {
     size_t length = strlen(str) + 1;
-    char *copy = new char[length];
+    auto *copy = new char[length];
     memcpy(copy, str, length);
     return copy;
   } else

@@ -44,7 +44,7 @@ struct BlockList {
 };
 
 static BlockList *allocBlock(int size) {
-  BlockList *block = new BlockList;
+  auto *block = new BlockList;
   block->size = size;
   block->data = BUF_MEM_new();
   BUF_MEM_grow(block->data, size);
@@ -98,7 +98,7 @@ MemBlock MemoryPool::allocate(int size) {
 void MemoryPool::release(const MemBlock &mb) {
   pthread_mutex_lock(&gMPoolMutex);
 
-  BlockList *block = (BlockList *)mb.internalData;
+  auto *block = (BlockList *)mb.internalData;
 
   // just to be sure there's nothing important left in buffers..
   VALGRIND_MAKE_MEM_UNDEFINED(block->data->data, block->size);

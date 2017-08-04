@@ -87,7 +87,7 @@ void EncFS_Context::getAndResetUsageCounter(int *usage, int *openCount) {
 std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(path));
+  auto it = openFiles.find(std::string(path));
   if (it != openFiles.end()) {
     // every entry in the list is fine... so just use the
     // first
@@ -99,7 +99,7 @@ std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
 void EncFS_Context::renameNode(const char *from, const char *to) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(from));
+  auto it = openFiles.find(std::string(from));
   if (it != openFiles.end()) {
     auto val = it->second;
     openFiles.erase(it);
@@ -123,7 +123,7 @@ void EncFS_Context::eraseNode(const char *path,
                               std::shared_ptr<FileNode> fnode) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(path));
+  auto it = openFiles.find(std::string(path));
   rAssert(it != openFiles.end());
   auto &list = it->second;
 

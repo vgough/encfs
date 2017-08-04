@@ -18,17 +18,17 @@
 #include "encfs.h"
 
 #include <cerrno>
+#include <cinttypes>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <memory>
-#include <stdint.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
-#include <time.h>
 #include <unistd.h>
 #include <utime.h>
 #ifdef linux

@@ -23,9 +23,9 @@
 #endif
 #include "internal/easylogging++.h"
 #include <cerrno>
+#include <cinttypes>
 #include <cstring>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <sys/stat.h>
 #include <unistd.h>
 

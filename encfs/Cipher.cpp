@@ -18,10 +18,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <cstddef>
 #include <iostream>
 #include <list>
 #include <map>
-#include <stddef.h>
 #include <string>
 #include <utility>
 
@@ -184,13 +184,13 @@ bool Cipher::nameDecode(unsigned char *data, int len, uint64_t iv64,
 string Cipher::encodeAsString(const CipherKey &key,
                               const CipherKey &encodingKey) {
   int encodedKeySize = this->encodedKeySize();
-  unsigned char *keyBuf = new unsigned char[encodedKeySize];
+  auto *keyBuf = new unsigned char[encodedKeySize];
 
   // write the key, encoding it with itself.
   this->writeKey(key, keyBuf, encodingKey);
 
   int b64Len = B256ToB64Bytes(encodedKeySize);
-  unsigned char *b64Key = new unsigned char[b64Len + 1];
+  auto *b64Key = new unsigned char[b64Len + 1];
 
   changeBase2(keyBuf, encodedKeySize, 8, b64Key, b64Len, 6);
   B64ToAscii(b64Key, b64Len);

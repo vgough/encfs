@@ -20,7 +20,7 @@
 
 #include "base64.h"
 
-#include <ctype.h>  // for toupper
+#include <cctype>  // for toupper
 
 #include "Error.h"
 
@@ -248,7 +248,7 @@ std::string B64StandardEncode(std::vector<unsigned char> inputBuffer) {
   std::string encodedString;
   encodedString.reserve(B256ToB64Bytes(inputBuffer.size()));
   long temp;
-  std::vector<unsigned char>::iterator cursor = inputBuffer.begin();
+  auto cursor = inputBuffer.begin();
   for (size_t idx = 0; idx < inputBuffer.size() / 3; idx++) {
     temp = (*cursor++) << 16;  // Convert to big endian
     temp += (*cursor++) << 8;

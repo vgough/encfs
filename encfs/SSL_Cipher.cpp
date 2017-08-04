@@ -479,7 +479,7 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
   for (unsigned int i = 0; i < (mdLen - 1); ++i)
     h[i % 8] ^= (unsigned char)(md[i]);
 
-  uint64_t value = (uint64_t)h[0];
+  auto value = (uint64_t)h[0];
   for (int i = 1; i < 8; ++i) value = (value << 8) | (uint64_t)h[i];
 
   return value;

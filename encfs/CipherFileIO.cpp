@@ -22,11 +22,11 @@
 
 #include "internal/easylogging++.h"
 #include <cerrno>
+#include <cinttypes>
+#include <cstring>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <memory>
 #include <openssl/sha.h>
-#include <string.h>
 #include <sys/stat.h>
 
 #include "BlockFileIO.h"

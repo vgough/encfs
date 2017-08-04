@@ -20,9 +20,9 @@
 
 #include "openssl.h"
 
+#include <cstdlib>
 #include <openssl/crypto.h>
 #include <pthread.h>
-#include <stdlib.h>
 
 #define NO_DES
 #include <openssl/rand.h>
