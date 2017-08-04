@@ -161,6 +161,47 @@ int TimedPBKDF2(const char *pass, int passlen, const unsigned char *salt,
 // - Version 3:0 adds a new IV mechanism
 static Interface BlowfishInterface("ssl/blowfish", 3, 0, 2);
 static Interface AESInterface("ssl/aes", 3, 0, 2);
+static Interface CAMELLIAInterface("ssl/camellia",3, 0, 2);
+
+#ifndef OPENSSL_NO_CAMELLIA
+
+static Range CAMELLIAKeyRange(128, 256, 64);
+static Range CAMELLIABlockRange(64, 4096, 16);
+
+static std::shared_ptr<Cipher> NewCAMELLIACipher(const Interface &iface, int keyLen) {
+    if (keyLen <= 0) keyLen = 192;
+
+    keyLen = CAMELLIAKeyRange.closest(keyLen);
+
+    const EVP_CIPHER *blockCipher = 0;
+    const EVP_CIPHER *streamCipher = 0;
+
+    switch (keyLen) {
+        case 128:
+            blockCipher = EVP_camellia_128_cbc();
+            streamCipher = EVP_camellia_128_cfb();
+            break;
+        case 192:
+            blockCipher = EVP_camellia_192_cbc();
+            streamCipher = EVP_camellia_192_cfb();
+            break;
+        case 256:
+        default:
+            blockCipher = EVP_camellia_256_cbc();
+            streamCipher = EVP_camellia_256_cfb();
+            break;
+    }
+
+    return std::shared_ptr<Cipher>(new SSL_Cipher(
+        iface, CAMELLIAInterface, blockCipher, streamCipher, keyLen / 8 ));
+}
+
+static bool CAMELLIA_Cipher_registered =
+    Cipher::Register("CAMELLIA","16 byte block cipher", CAMELLIAInterface, CAMELLIAKeyRange,
+            CAMELLIABlockRange, NewCAMELLIACipher );
+
+#endif
+
 
 #ifndef OPENSSL_NO_BF
 
