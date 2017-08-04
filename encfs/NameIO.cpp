@@ -55,7 +55,7 @@ struct NameIOAlg {
   Interface iface;
 };
 
-typedef multimap<string, NameIOAlg> NameIOMap_t;
+using NameIOMap_t = multimap<string, NameIOAlg>;
 static NameIOMap_t *gNameIOMap = nullptr;
 
 list<NameIO::Algorithm> NameIO::GetAlgorithmList(bool includeHidden) {

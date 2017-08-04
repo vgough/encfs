@@ -56,7 +56,7 @@ struct CipherAlg {
   Range blockSize;
 };
 
-typedef multimap<string, CipherAlg> CipherMap_t;
+using CipherMap_t = multimap<string, CipherAlg>;
 static CipherMap_t *gCipherMap = nullptr;
 
 std::list<Cipher::CipherAlgorithm> Cipher::GetAlgorithmList(

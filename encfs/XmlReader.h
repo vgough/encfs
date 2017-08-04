@@ -29,7 +29,7 @@
 namespace encfs {
 
 class XmlValue;
-typedef std::shared_ptr<XmlValue> XmlValuePtr;
+using XmlValuePtr = std::shared_ptr<XmlValue>;
 
 class XmlValue {
   std::string value;

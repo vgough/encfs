@@ -50,7 +50,7 @@ static bool NullCipher_registered = Cipher::Register(
 class NullKey : public AbstractCipherKey {
  public:
   NullKey() = default;
-  virtual ~NullKey() = default;
+  ~NullKey() override = default;
 };
 
 class NullDestructor {

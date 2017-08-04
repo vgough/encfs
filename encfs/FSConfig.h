@@ -130,7 +130,7 @@ struct FSConfig {
       : forceDecode(false), reverseEncryption(false), idleTracking(false) {}
 };
 
-typedef std::shared_ptr<FSConfig> FSConfigPtr;
+using FSConfigPtr = std::shared_ptr<FSConfig>;
 
 }  // namespace encfs
 

@@ -139,9 +139,9 @@ class XmlNode : virtual public XmlValue {
   XmlNode(const tinyxml2::XMLElement *element_)
       : XmlValue(safeValueForNode(element_)), element(element_) {}
 
-  virtual ~XmlNode() = default;
+  ~XmlNode() override = default;
 
-  virtual XmlValuePtr find(const char *name) const {
+  XmlValuePtr find(const char *name) const override {
     if (name[0] == '@') {
       const char *value = element->Attribute(name + 1);
       if (value)
