@@ -250,5 +250,5 @@ if (POD2MAN)
     DESTINATION share/man/man1)
 endif (POD2MAN)
 
-add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
+add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/tests.sh)
 
