@@ -91,7 +91,7 @@ When not creating a filesystem, this flag does nothing.
 
 =item B<--paranoia>
 
-Same as =item B<--standard>, but for B<paranoia> mode.
+Same as B<--standard>, but for B<paranoia> mode.
 
 =item B<--reverse>
 
