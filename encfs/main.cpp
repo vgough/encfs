@@ -569,7 +569,7 @@ int main(int argc, char *argv[]) {
   }
 
   encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
-  ELPP_INITIALIZE_SYSLOG(encfsArgs->syslogTag.c_str(), LOG_PID, LOG_LOCAL7);
+  ELPP_INITIALIZE_SYSLOG(encfsArgs->syslogTag.c_str(), LOG_PID, LOG_USER);
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();
