@@ -724,7 +724,7 @@ int main(int argc, char *argv[]) {
   rootInfo.reset();
   ctx->setRoot(std::shared_ptr<DirNode>());
 
-  MemoryPool::destroyAll();
+  MemBlock::freeAll();
   openssl_shutdown(encfsArgs->isThreaded);
 
   return returnCode;

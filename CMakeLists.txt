@@ -86,6 +86,7 @@ find_program (POD2MAN pod2man)
 include (CheckIncludeFileCXX)
 check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
 check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
+check_include_file_cxx (valgrind/memcheck.h HAVE_VALGRIND_MEMCHECK_H)
 
 # Check if xattr functions take extra arguments, as they do on OSX.
 include (CheckCXXSourceCompiles)
@@ -98,6 +99,7 @@ check_cxx_source_compiles ("#include <sys/types.h>
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
 check_function_exists_glibc (utimensat HAVE_UTIMENSAT)
+check_function_exists_glibc (fdatasync HAVE_FDATASYNC)
 
 set (CMAKE_THREAD_PREFER_PTHREAD)
 find_package (Threads REQUIRED)

@@ -23,29 +23,43 @@
 
 namespace encfs {
 
-struct MemBlock {
+struct BlockList;
+
+// MemBlock holds a memory block stored in secure memory
+// (if possible with the crypto backend).  Blocks should be
+// of consistent size, as the allocator is meant for working with
+// file crypt blocks.
+//
+// To get a block, construct a MemBlock and call allocate(), or
+// use the constructor with size.  This either grabs a block from
+// the thread-local block queue, or else constructs a new block.
+//
+// When the MemBlock instance is destroyed, the block is returned
+// to the list for reuse.
+class MemBlock {
+public:
+  MemBlock() =default;
+  explicit MemBlock(int size);
+  ~MemBlock();
+
+  bool valid() const;
+  void allocate(int size);
+
+  unsigned char *get() const;
+
+  static void freeAll();
+
+private:
   unsigned char *data;
-
-  void *internalData;
-
-  MemBlock();
+  BlockList *bl;
 };
 
-inline MemBlock::MemBlock() : data(0), internalData(0) {}
+inline bool MemBlock::valid() const {
+  return bl != nullptr;
+}
 
-/*
-    Memory Pool for fixed sized objects.
-
-    Usage:
-    MemBlock mb = MemoryPool::allocate( size );
-    // do things with storage in   mb.data
-    unsigned char *buffer = mb.data;
-    MemoryPool::release( mb );
-*/
-namespace MemoryPool {
-MemBlock allocate(int size);
-void release(const MemBlock &el);
-void destroyAll();
+inline unsigned char *MemBlock::get() const {
+  return data;
 }
 
 }  // namespace encfs

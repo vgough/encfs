@@ -149,11 +149,11 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
 
   int bs = blockSize() + headerSize;
 
-  MemBlock mb = MemoryPool::allocate(bs);
+  MemBlock mb(bs);
 
   IORequest tmp;
   tmp.offset = locWithHeader(req.offset, bs, headerSize);
-  tmp.data = mb.data;
+  tmp.data = mb.get();
   tmp.dataLen = headerSize + req.dataLen;
 
   // get the data from the base FileIO layer
@@ -193,7 +193,6 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
         long blockNum = req.offset / bs;
         RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
         if (!warnOnly) {
-          MemoryPool::release(mb);
           throw Error(_("MAC comparison failure, refusing to read"));
         }
       }
@@ -209,8 +208,6 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
     }
   }
 
-  MemoryPool::release(mb);
-
   return readSize;
 }
 
@@ -220,11 +217,11 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   int bs = blockSize() + headerSize;
 
   // we have the unencrypted data, so we need to attach a header to it.
-  MemBlock mb = MemoryPool::allocate(bs);
+  MemBlock mb(bs);
 
   IORequest newReq;
   newReq.offset = locWithHeader(req.offset, bs, headerSize);
-  newReq.data = mb.data;
+  newReq.data = mb.get();
   newReq.dataLen = headerSize + req.dataLen;
 
   memset(newReq.data, 0, headerSize);
@@ -247,11 +244,7 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   }
 
   // now, we can let the next level have it..
-  bool ok = base->write(newReq);
-
-  MemoryPool::release(mb);
-
-  return ok;
+  return base->write(newReq);
 }
 
 int MACFileIO::truncate(off_t size) {

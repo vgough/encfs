@@ -18,11 +18,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "config.h"
 #include "MemoryPool.h"
 
 #include <cstring>
 #include <openssl/ossl_typ.h>
-#include <pthread.h>
 
 #ifdef HAVE_VALGRIND_MEMCHECK_H
 #include <valgrind/memcheck.h>
@@ -33,100 +33,109 @@
 
 #include <openssl/buffer.h>
 
-#define BLOCKDATA(BLOCK) (unsigned char *)BLOCK->data->data
-
 namespace encfs {
+
+static thread_local BlockList *gMemPool = nullptr;
 
 struct BlockList {
   BlockList *next;
-  int size;
-  BUF_MEM *data;
+  BUF_MEM *buf;
+
+  unsigned char *get();
+  int size();
+  void clear();
+
+  explicit BlockList(int size);
+  ~BlockList();
+
+  BlockList(const BlockList &) = delete;
+  BlockList &operator=(const BlockList &) = delete;
 };
 
-static BlockList *allocBlock(int size) {
-  auto *block = new BlockList;
-  block->size = size;
-  block->data = BUF_MEM_new();
-  BUF_MEM_grow(block->data, size);
-  VALGRIND_MAKE_MEM_NOACCESS(block->data->data, block->data->max);
-
-  return block;
+unsigned char *BlockList::get() {
+  return reinterpret_cast<unsigned char *>(buf->data);
 }
 
-static void freeBlock(BlockList *el) {
-  VALGRIND_MAKE_MEM_UNDEFINED(el->data->data, el->data->max);
-  BUF_MEM_free(el->data);
+int BlockList::size() { return buf->max; }
 
-  delete el;
+void BlockList::clear() {
+  VALGRIND_MAKE_MEM_UNDEFINED(buf->data, buf->max);
+  memset(buf->data, 0, buf->max);
+  VALGRIND_MAKE_MEM_NOACCESS(buf->data, buf->max);
 }
 
-static pthread_mutex_t gMPoolMutex = PTHREAD_MUTEX_INITIALIZER;
-static BlockList *gMemPool = nullptr;
+BlockList::BlockList(int sz) {
+  buf = BUF_MEM_new();
+  BUF_MEM_grow(buf, sz);
+  VALGRIND_MAKE_MEM_NOACCESS(buf->data, buf->max);
+}
 
-MemBlock MemoryPool::allocate(int size) {
-  pthread_mutex_lock(&gMPoolMutex);
+BlockList::~BlockList() {
+  VALGRIND_MAKE_MEM_UNDEFINED(buf->data, buf->max);
+  BUF_MEM_free(buf);
+}
 
+static BlockList *allocateBlock(int size) {
+  // check if we already have a large enough block available..
   BlockList *parent = nullptr;
   BlockList *block = gMemPool;
-  // check if we already have a large enough block available..
-  while (block != nullptr && block->size < size) {
+  while (block != nullptr && block->size() < size) {
     parent = block;
     block = block->next;
   }
 
-  // unlink block from list
-  if (block != nullptr) {
-    if (parent == nullptr) {
-      gMemPool = block->next;
-    } else {
-      parent->next = block->next;
-    }
-  }
-  pthread_mutex_unlock(&gMPoolMutex);
-
   if (block == nullptr) {
-    block = allocBlock(size);
+    // Allocate a new block.
+    return new BlockList(size);
+  }
+
+  // unlink block from list
+  if (parent == nullptr) {
+    gMemPool = block->next;
+  } else {
+    parent->next = block->next;
   }
   block->next = nullptr;
-
-  MemBlock result;
-  result.data = BLOCKDATA(block);
-  result.internalData = block;
-
-  VALGRIND_MAKE_MEM_UNDEFINED(result.data, size);
-
-  return result;
+  VALGRIND_MAKE_MEM_UNDEFINED(block->get(), size);
+  return block;
 }
 
-void MemoryPool::release(const MemBlock &mb) {
-  pthread_mutex_lock(&gMPoolMutex);
+MemBlock::MemBlock(int size) : bl(nullptr) { allocate(size); }
 
-  auto *block = (BlockList *)mb.internalData;
+MemBlock::~MemBlock() {
+  if (bl == nullptr) {
+    return;
+  }
 
-  // just to be sure there's nothing important left in buffers..
-  VALGRIND_MAKE_MEM_UNDEFINED(block->data->data, block->size);
-  memset(BLOCKDATA(block), 0, block->size);
-  VALGRIND_MAKE_MEM_NOACCESS(block->data->data, block->data->max);
-
-  block->next = gMemPool;
-  gMemPool = block;
-
-  pthread_mutex_unlock(&gMPoolMutex);
+  bl->clear();
+  bl->next = gMemPool;
+  gMemPool = bl;
+  bl = nullptr;
+  data = nullptr;
 }
 
-void MemoryPool::destroyAll() {
-  pthread_mutex_lock(&gMPoolMutex);
+void MemBlock::allocate(int size) {
+  if (bl != nullptr) {
+    if (size <= bl->size()) {
+      return;
+    }
 
-  BlockList *block = gMemPool;
-  gMemPool = nullptr;
+    // Return existing block.
+    bl->clear();
+    bl->next = gMemPool;
+    gMemPool = bl;
+  }
 
-  pthread_mutex_unlock(&gMPoolMutex);
+  bl = allocateBlock(size);
+  data = bl->get();
+}
 
-  while (block != nullptr) {
-    BlockList *next = block->next;
+void MemBlock::freeAll() {
+  while (gMemPool != nullptr) {
+    BlockList *next = gMemPool->next;
 
-    freeBlock(block);
-    block = next;
+    delete gMemPool;
+    gMemPool = next;
   }
 }
 

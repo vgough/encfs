@@ -30,6 +30,7 @@
 
 #include <cstring>
 
+#include "config.h"
 #include "CipherFileIO.h"
 #include "Error.h"
 #include "FileIO.h"
@@ -258,7 +259,7 @@ int FileNode::sync(bool datasync) {
   int fh = io->open(O_RDONLY);
   if (fh >= 0) {
     int res = -EIO;
-#ifdef linux
+#if defined(HAVE_FDATASYNC)
     if (datasync) {
       res = fdatasync(fh);
     } else {
@@ -267,7 +268,6 @@ int FileNode::sync(bool datasync) {
 #else
     (void)datasync;
     // no fdatasync support
-    // TODO: use autoconfig to check for it..
     res = fsync(fh);
 #endif
 

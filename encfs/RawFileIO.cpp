@@ -33,6 +33,7 @@
 #include "Error.h"
 #include "FileIO.h"
 #include "RawFileIO.h"
+#include "config.h"
 
 using namespace std;
 
@@ -257,9 +258,6 @@ int RawFileIO::truncate(off_t size) {
 
   if (fd >= 0 && canWrite) {
     res = ::ftruncate(fd, size);
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
-    ::fdatasync(fd);
-#endif
   } else {
     res = ::truncate(name.c_str(), size);
   }
@@ -275,6 +273,12 @@ int RawFileIO::truncate(off_t size) {
     fileSize = size;
     knownSize = true;
   }
+
+#if defined(HAVE_FDATASYNC)
+  if (fd >= 0 && canWrite) {
+    ::fdatasync(fd);
+  }
+#endif
 
   return res;
 }

@@ -54,40 +54,38 @@ const int FSBlockSize = 256;
 static int checkErrorPropogation(const std::shared_ptr<Cipher> &cipher,
                                  int size, int byteToChange,
                                  const CipherKey &key) {
-  MemBlock orig = MemoryPool::allocate(size);
-  MemBlock data = MemoryPool::allocate(size);
+  MemBlock orig(size);
+  MemBlock data(size);
 
   for (int i = 0; i < size; ++i) {
     unsigned char tmp = rand();
-    orig.data[i] = tmp;
-    data.data[i] = tmp;
+    orig.get()[i] = tmp;
+    data.get()[i] = tmp;
   }
 
-  if (size != FSBlockSize)
-    cipher->streamEncode(data.data, size, 0, key);
-  else
-    cipher->blockEncode(data.data, size, 0, key);
+  if (size != FSBlockSize) {
+    cipher->streamEncode(data.get(), size, 0, key);
+  } else {
+    cipher->blockEncode(data.get(), size, 0, key);
+  }
 
   // intoduce an error in the encoded data, so we can check error propogation
   if (byteToChange >= 0 && byteToChange < size) {
-    unsigned char previousValue = data.data[byteToChange];
+    unsigned char previousValue = data.get()[byteToChange];
     do {
-      data.data[byteToChange] = rand();
-    } while (data.data[byteToChange] == previousValue);
+      data.get()[byteToChange] = rand();
+    } while (data.get()[byteToChange] == previousValue);
   }
 
   if (size != FSBlockSize)
-    cipher->streamDecode(data.data, size, 0, key);
+    cipher->streamDecode(data.get(), size, 0, key);
   else
-    cipher->blockDecode(data.data, size, 0, key);
+    cipher->blockDecode(data.get(), size, 0, key);
 
   int numByteErrors = 0;
   for (int i = 0; i < size; ++i) {
-    if (data.data[i] != orig.data[i]) ++numByteErrors;
+    if (data.get()[i] != orig.get()[i]) ++numByteErrors;
   }
-
-  MemoryPool::release(data);
-  MemoryPool::release(orig);
 
   return numByteErrors;
 }
@@ -452,7 +450,7 @@ int main(int argc, char *argv[]) {
     runTests(cipher, true);
   }
 
-  MemoryPool::destroyAll();
+  MemBlock::freeAll();
 
   return 0;
 }
