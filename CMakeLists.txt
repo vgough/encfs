@@ -69,17 +69,6 @@ add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 find_package (OpenSSL REQUIRED)
 include_directories (${OPENSSL_INCLUDE_DIR})
 
-if (USE_INTERNAL_TINYXML)
-  message("-- Using local TinyXML2 copy")
-  add_subdirectory(internal/tinyxml2-3.0.0)
-  include_directories(${CMAKE_CURRENT_LIST_DIR}/internal/tinyxml2-3.0.0)
-  link_directories(${CMAKE_BINARY_DIR}/internal/tinyxml2-3.0.0)
-  set(TINYXML_LIBRARIES tinyxml2)
-else ()
-  find_package (TinyXML REQUIRED)
-  include_directories (${TINYXML_INCLUDE_DIR})
-endif ()
-
 find_program (POD2MAN pod2man)
 
 # Check for include files and stdlib properties.
@@ -150,6 +139,21 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or abo
     #set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,google-readability-redundant-smartptr-get")
   endif()
 endif()
+
+if (USE_INTERNAL_TINYXML)
+  message("-- Using local TinyXML2 copy")
+  set(TINYXML_DIR vendor/github.com/leethomason/tinyxml2)
+  set(BUILD_STATIC_LIBS ON CACHE BOOL "build static libs")
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "build shared libs")
+  set(BUILD_TESTS OFF CACHE BOOL "build tests")
+  add_subdirectory(${TINYXML_DIR})
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR}/)
+  link_directories(${CMAKE_BINARY_DIR}/${TINYXML_DIR}/)
+  set(TINYXML_LIBRARIES tinyxml2)
+else ()
+  find_package (TinyXML REQUIRED)
+  include_directories (${TINYXML_INCLUDE_DIR})
+endif ()
 
 set(SOURCE_FILES
   internal/easylogging++.cc
