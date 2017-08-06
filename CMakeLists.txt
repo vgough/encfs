@@ -288,12 +288,14 @@ if (BUILD_UNIT_TESTS)
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "benchmark tests")
   add_subdirectory(${GOOGLEBENCH_DIR})
   link_directories(${CMAKE_BINARY_DIR}/${GOOGLEBENCH_DIR})
-  set(GOOGLEBENCH_LIBRARIES benchmark)
 
   file(GLOB_RECURSE TEST_SOURCES "encfs/*_test.cpp")
-
   add_executable (unittests ${TEST_SOURCES})
   target_link_libraries(unittests gtest gtest_main encfs)
+
+  file(GLOB_RECURSE BENCH_SOURCES "encfs/*_bench.cpp")
+  add_executable (benchmarks ${BENCH_SOURCES})
+  target_link_libraries(benchmarks benchmark encfs)
 endif ()
 
 add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
