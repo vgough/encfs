@@ -20,7 +20,7 @@
 
 #include "StreamNameIO.h"
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cstring>
 #include <utility>
 

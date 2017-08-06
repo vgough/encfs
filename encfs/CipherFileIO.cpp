@@ -20,7 +20,7 @@
 
 #include "CipherFileIO.h"
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cerrno>
 #include <cinttypes>
 #include <cstring>
