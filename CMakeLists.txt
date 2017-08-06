@@ -18,6 +18,7 @@ option(IWYU "Build with IWYU analysis." OFF)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
+option (BUILD_UNIT_TESTS "build EncFS unit tests" ON)
 option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
@@ -173,13 +174,6 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
 link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
 set(EASYLOGGING_LIBRARIES easyloggingpp)
 
-# TODO: add behind TEST flag.
-message("-- Including vendored googletest")
-set(GOOGLETEST_DIR vendor/github.com/google/googletest)
-add_subdirectory(${GOOGLETEST_DIR})
-link_directories(${CMAKE_BINARY_DIR}/${GOOGLETEST_DIR}/googletest)
-set(GOOGLETEST_LIBRARIES gtest)
-
 set(SOURCE_FILES
   encfs/autosprintf.cpp
   encfs/base64.cpp
@@ -236,7 +230,6 @@ if (IWYU)
   endif()
 endif()
 
-
 # Set RPATH to library install path.
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
 
@@ -284,5 +277,23 @@ if (POD2MAN)
     DESTINATION ${MAN_DESTINATION})
 endif (POD2MAN)
 
-add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
+if (BUILD_UNIT_TESTS)
+  message("-- Including vendored googletest")
+  set(GOOGLETEST_DIR vendor/github.com/google/googletest)
+  add_subdirectory(${GOOGLETEST_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${GOOGLETEST_DIR}/googletest)
 
+  message("-- Including vendored benchmark library")
+  set(GOOGLEBENCH_DIR vendor/github.com/google/benchmark)
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "benchmark tests")
+  add_subdirectory(${GOOGLEBENCH_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${GOOGLEBENCH_DIR})
+  set(GOOGLEBENCH_LIBRARIES benchmark)
+
+  file(GLOB_RECURSE TEST_SOURCES "encfs/*_test.cpp")
+
+  add_executable (unittests ${TEST_SOURCES})
+  target_link_libraries(unittests gtest gtest_main encfs)
+endif ()
+
+add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
