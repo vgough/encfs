@@ -5,20 +5,16 @@
 #endif
 
 #include "tinyxml2.h"
-#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 
-#if defined( _MSC_VER ) || defined (WIN32)
+#if defined( _MSC_VER )
 	#include <crtdbg.h>
 	#define WIN32_LEAN_AND_MEAN
 	#include <windows.h>
 	_CrtMemState startMemState;
 	_CrtMemState endMemState;
-#else
-	#include <sys/stat.h>
-	#include <sys/types.h>
 #endif
 
 using namespace tinyxml2;
@@ -366,7 +362,6 @@ int main( int argc, const char ** argv )
 		for( int i=0; test[i]; ++i ) {
 			XMLDocument doc;
 			doc.Parse( test[i] );
-			XMLTest( "Element test", false, doc.Error() );
 			doc.Print();
 			printf( "----------------------------------------------\n" );
 		}
@@ -381,7 +376,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc;
 		doc.Parse( test );
-		XMLTest( "Hello world declaration", false, doc.Error() );
 		doc.Print();
 	}
 
@@ -389,7 +383,6 @@ int main( int argc, const char ** argv )
 		static const char* test = "<element>Text before.</element>";
 		XMLDocument doc;
 		doc.Parse( test );
-		XMLTest( "Element text before", false, doc.Error() );
 		XMLElement* root = doc.FirstChildElement();
 		XMLElement* newElement = doc.NewElement( "Subelement" );
 		root->InsertEndChild( newElement );
@@ -399,7 +392,6 @@ int main( int argc, const char ** argv )
 		XMLDocument* doc = new XMLDocument();
 		static const char* test = "<element><sub/></element>";
 		doc->Parse( test );
-		XMLTest( "Element with sub element", false, doc->Error() );
 		delete doc;
 	}
 	{
@@ -441,14 +433,12 @@ int main( int argc, const char ** argv )
 		element->LastChildElement()->DeleteAttribute( "attrib" );
 
 		XMLTest( "Programmatic DOM", true, doc->FirstChildElement()->FirstChildElement()->BoolAttribute( "attrib" ) );
-		const int defaultIntValue = 10;
-		const int replacementIntValue = 20;
-		int value1 = defaultIntValue;
-		int value2 = doc->FirstChildElement()->LastChildElement()->IntAttribute( "attrib", replacementIntValue );
+		int value1 = 10;
+		int value2 = doc->FirstChildElement()->LastChildElement()->IntAttribute( "attrib", 10 );
 		XMLError result = doc->FirstChildElement()->LastChildElement()->QueryIntAttribute( "attrib", &value1 );
 		XMLTest( "Programmatic DOM", XML_NO_ATTRIBUTE, result );
-		XMLTest( "Programmatic DOM", defaultIntValue, value1 );
-		XMLTest( "Programmatic DOM", replacementIntValue, value2 );
+		XMLTest( "Programmatic DOM", 10, value1 );
+		XMLTest( "Programmatic DOM", 10, value2 );
 
 		doc->Print();
 
@@ -463,9 +453,7 @@ int main( int argc, const char ** argv )
 			XMLTest( "Compact mode", "<element><sub attrib=\"true\"/><sub/></element>", streamer.CStr(), false );
 		}
 		doc->SaveFile( "./resources/out/pretty.xml" );
-		XMLTest( "Save pretty.xml", false, doc->Error() );
 		doc->SaveFile( "./resources/out/compact.xml", true );
-		XMLTest( "Save compact.xml", false, doc->Error() );
 		delete doc;
 	}
 	{
@@ -475,10 +463,8 @@ int main( int argc, const char ** argv )
 		//int newStart = gNew;
 		XMLDocument doc;
 		doc.LoadFile( "resources/dream.xml" );
-		XMLTest( "Load dream.xml", false, doc.Error() );
 
 		doc.SaveFile( "resources/out/dreamout.xml" );
-		XMLTest( "Save dreamout.xml", false, doc.Error() );
 		doc.PrintError();
 
 		XMLTest( "Dream", "xml version=\"1.0\"",
@@ -493,7 +479,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc2;
 		doc2.LoadFile( "resources/out/dreamout.xml" );
-		XMLTest( "Load dreamout.xml", false, doc2.Error() );
 		XMLTest( "Dream-out", "xml version=\"1.0\"",
 						  doc2.FirstChild()->ToDeclaration()->Value() );
 		XMLTest( "Dream-out", true, doc2.FirstChild()->NextSibling()->ToUnknown() ? true : false );
@@ -522,7 +507,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc;
 		doc.Parse( str );
-		XMLTest( "Top level attributes", false, doc.Error() );
 
 		XMLElement* ele = doc.FirstChildElement();
 
@@ -558,7 +542,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc;
 		doc.Parse( str );
-		XMLTest( "Empty top element", false, doc.Error() );
 
 		XMLElement* ele = doc.FirstChildElement();
 
@@ -570,23 +553,11 @@ int main( int argc, const char ** argv )
 		ele->SetAttribute( "double", -1.0 );
 
 		const char* cStr = ele->Attribute( "str" );
-		{
-			XMLError queryResult = ele->QueryIntAttribute( "int", &iVal );
-			XMLTest( "Query int attribute", XML_SUCCESS, queryResult);
-		}
-		{
-			XMLError queryResult = ele->QueryDoubleAttribute( "double", &dVal );
-			XMLTest( "Query double attribute", XML_SUCCESS, queryResult);
-		}
+		ele->QueryIntAttribute( "int", &iVal );
+		ele->QueryDoubleAttribute( "double", &dVal );
 
-		{
-			int queryResult = ele->QueryAttribute( "int", &iVal2 );
-			XMLTest( "Query int attribute generic", (int)XML_SUCCESS, queryResult);
-		}
-		{
-			int queryResult = ele->QueryAttribute( "double", &dVal2 );
-			XMLTest( "Query double attribute generic", (int)XML_SUCCESS, queryResult);
-		}
+		ele->QueryAttribute( "int", &iVal2 );
+		ele->QueryAttribute( "double", &dVal2 );
 
 		XMLTest( "Attribute match test", "strValue", ele->Attribute( "str", "strValue" ) );
 		XMLTest( "Attribute round trip. c-string.", "strValue", cStr );
@@ -601,7 +572,6 @@ int main( int argc, const char ** argv )
 	{
 		XMLDocument doc;
 		doc.LoadFile( "resources/utf8test.xml" );
-		XMLTest( "Load utf8test.xml", false, doc.Error() );
 
 		// Get the attribute "value" from the "Russian" element and check it.
 		XMLElement* element = doc.FirstChildElement( "document" )->FirstChildElement( "Russian" );
@@ -623,7 +593,6 @@ int main( int argc, const char ** argv )
 
 		// Now try for a round trip.
 		doc.SaveFile( "resources/out/utf8testout.xml" );
-		XMLTest( "UTF-8: Save testout.xml", false, doc.Error() );
 
 		// Check the round trip.
 		int okay = 0;
@@ -663,14 +632,12 @@ int main( int argc, const char ** argv )
 		const char* str = "<foo>This is  text</foo>";
 		XMLDocument doc;
 		doc.Parse( str );
-		XMLTest( "Double whitespace", false, doc.Error() );
 		const XMLElement* element = doc.RootElement();
 
 		XMLTest( "GetText() normal use.", "This is  text", element->GetText() );
 
 		str = "<foo><b>This is text</b></foo>";
 		doc.Parse( str );
-		XMLTest( "Bold text simulation", false, doc.Error() );
 		element = doc.RootElement();
 
 		XMLTest( "GetText() contained element.", element->GetText() == 0, true );
@@ -682,7 +649,6 @@ int main( int argc, const char ** argv )
 		const char* str = "<foo></foo>";
 		XMLDocument doc;
 		doc.Parse( str );
-		XMLTest( "Empty closed element", false, doc.Error() );
 		XMLElement* element = doc.RootElement();
 
 		element->SetText("darkness.");
@@ -693,7 +659,6 @@ int main( int argc, const char ** argv )
 
 		str = "<foo/>";
 		doc.Parse( str );
-		XMLTest( "Empty self-closed element", false, doc.Error() );
 		element = doc.RootElement();
 
 		element->SetText("The driver");
@@ -705,7 +670,6 @@ int main( int argc, const char ** argv )
 
 		str = "<foo><bar>Text in nested element</bar></foo>";
 		doc.Parse( str );
-		XMLTest( "Text in nested element", false, doc.Error() );
 		element = doc.RootElement();
 		
 		element->SetText("wolves");
@@ -713,7 +677,6 @@ int main( int argc, const char ** argv )
 
 		str = "<foo/>";
 		doc.Parse( str );
-		XMLTest( "Empty self-closed element round 2", false, doc.Error() );
 		element = doc.RootElement();
 		
 		element->SetText( "str" );
@@ -744,66 +707,38 @@ int main( int argc, const char ** argv )
 
 		{
 			element->SetAttribute("attrib", int(-100));
-			{
-				int v = 0;
-				XMLError queryResult = element->QueryIntAttribute("attrib", &v);
-				XMLTest("Attribute: int", XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: int", -100, v, true);
-			}
-			{
-				int v = 0;
-				int queryResult = element->QueryAttribute("attrib", &v);
-				XMLTest("Attribute: int", (int)XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: int", -100, v, true);
-			}
+			int v = 0;
+			element->QueryIntAttribute("attrib", &v);
+			XMLTest("Attribute: int", -100, v, true);
+			element->QueryAttribute("attrib", &v);
+			XMLTest("Attribute: int", -100, v, true);
 			XMLTest("Attribute: int", -100, element->IntAttribute("attrib"), true);
 		}
 		{
 			element->SetAttribute("attrib", unsigned(100));
-			{
-				unsigned v = 0;
-				XMLError queryResult = element->QueryUnsignedAttribute("attrib", &v);
-				XMLTest("Attribute: unsigned", XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: unsigned", unsigned(100), v, true);
-			}
-			{
-				unsigned v = 0;
-				int queryResult = element->QueryAttribute("attrib", &v);
-				XMLTest("Attribute: unsigned", (int)XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: unsigned", unsigned(100), v, true);
-			}
+			unsigned v = 0;
+			element->QueryUnsignedAttribute("attrib", &v);
+			XMLTest("Attribute: unsigned", unsigned(100), v, true);
+			element->QueryAttribute("attrib", &v);
+			XMLTest("Attribute: unsigned", unsigned(100), v, true);
 			XMLTest("Attribute: unsigned", unsigned(100), element->UnsignedAttribute("attrib"), true);
 		}
 		{
 			element->SetAttribute("attrib", BIG);
-			{
-				int64_t v = 0;
-				XMLError queryResult = element->QueryInt64Attribute("attrib", &v);
-				XMLTest("Attribute: int64_t", XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: int64_t", BIG, v, true);
-			}
-			{
-				int64_t v = 0;
-				int queryResult = element->QueryAttribute("attrib", &v);
-				XMLTest("Attribute: int64_t", (int)XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: int64_t", BIG, v, true);
-			}
+			int64_t v = 0;
+			element->QueryInt64Attribute("attrib", &v);
+			XMLTest("Attribute: int64_t", BIG, v, true);
+			element->QueryAttribute("attrib", &v);
+			XMLTest("Attribute: int64_t", BIG, v, true);
 			XMLTest("Attribute: int64_t", BIG, element->Int64Attribute("attrib"), true);
 		}
 		{
 			element->SetAttribute("attrib", true);
-			{
-				bool v = false;
-				XMLError queryResult = element->QueryBoolAttribute("attrib", &v);
-				XMLTest("Attribute: bool", XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: bool", true, v, true);
-			}
-			{
-				bool v = false;
-				int queryResult = element->QueryAttribute("attrib", &v);
-				XMLTest("Attribute: bool", (int)XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: bool", true, v, true);
-			}
+			bool v = false;
+			element->QueryBoolAttribute("attrib", &v);
+			XMLTest("Attribute: bool", true, v, true);
+			element->QueryAttribute("attrib", &v);
+			XMLTest("Attribute: bool", true, v, true);
 			XMLTest("Attribute: bool", true, element->BoolAttribute("attrib"), true);
 		}
 		{
@@ -820,41 +755,26 @@ int main( int argc, const char ** argv )
 		}
 		{
 			element->SetAttribute("attrib", 100.0);
-			{
-				double v = 0;
-				XMLError queryResult = element->QueryDoubleAttribute("attrib", &v);
-				XMLTest("Attribute: double", XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: double", 100.0, v, true);
-			}
-			{
-				double v = 0;
-				int queryResult = element->QueryAttribute("attrib", &v);
-				XMLTest("Attribute: bool", (int)XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: double", 100.0, v, true);
-			}
+			double v = 0;
+			element->QueryDoubleAttribute("attrib", &v);
+			XMLTest("Attribute: double", 100.0, v, true);
+			element->QueryAttribute("attrib", &v);
+			XMLTest("Attribute: double", 100.0, v, true);
 			XMLTest("Attribute: double", 100.0, element->DoubleAttribute("attrib"), true);
 		}
 		{
 			element->SetAttribute("attrib", 100.0f);
-			{
-				float v = 0;
-				XMLError queryResult = element->QueryFloatAttribute("attrib", &v);
-				XMLTest("Attribute: float", XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: float", 100.0f, v, true);
-			}
-			{
-				float v = 0;
-				int queryResult = element->QueryAttribute("attrib", &v);
-				XMLTest("Attribute: float", (int)XML_SUCCESS, queryResult, true);
-				XMLTest("Attribute: float", 100.0f, v, true);
-			}
+			float v = 0;
+			element->QueryFloatAttribute("attrib", &v);
+			XMLTest("Attribute: float", 100.0f, v, true);
+			element->QueryAttribute("attrib", &v);
+			XMLTest("Attribute: float", 100.0f, v, true);
 			XMLTest("Attribute: float", 100.0f, element->FloatAttribute("attrib"), true);
 		}
 		{
 			element->SetText(BIG);
 			int64_t v = 0;
-			XMLError queryResult = element->QueryInt64Text(&v);
-			XMLTest("Element: int64_t", XML_SUCCESS, queryResult, true);
+			element->QueryInt64Text(&v);
 			XMLTest("Element: int64_t", BIG, v, true);
 		}
 	}
@@ -908,7 +828,6 @@ int main( int argc, const char ** argv )
 							"</xmlElement>";
 		XMLDocument doc;
 		doc.Parse( str );
-		XMLTest( "CDATA symbolic puns round 1", false, doc.Error() );
 		doc.Print();
 
 		XMLTest( "CDATA parse.", "I am > the rules!\n...since I make symbolic puns",
@@ -926,7 +845,6 @@ int main( int argc, const char ** argv )
 							"</xmlElement>";
 		XMLDocument doc;
 		doc.Parse( str );
-		XMLTest( "CDATA symbolic puns round 2", false, doc.Error() );
 		doc.Print();
 
 		XMLTest( "CDATA parse. [ tixml1:1480107 ]",
@@ -964,7 +882,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc;
 		doc.Parse( passages );
-		XMLTest( "Entity transformation parse round 1", false, doc.Error() );
 		XMLElement* psg = doc.RootElement()->FirstChildElement();
 		const char* context = psg->Attribute( "context" );
 		const char* expected = "Line 5 has \"quotation marks\" and 'apostrophe marks'. It also has <, >, and &, as well as a fake copyright \xC2\xA9.";
@@ -1003,7 +920,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc( false );
 		doc.Parse( passages );
-		XMLTest( "Entity transformation parse round 2", false, doc.Error() );
 
 		XMLTest( "No entity parsing.",
 				 "Line 5 has &quot;quotation marks&quot; and &apos;apostrophe marks&apos;.",
@@ -1028,7 +944,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc;
 		doc.Parse( test );
-		XMLTest( "fin thickness", false, doc.Error() );
 
 		XMLText* text = doc.FirstChildElement()->FirstChildElement()->FirstChild()->ToText();
 		XMLTest( "Entity with one digit.",
@@ -1048,12 +963,9 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc;
 		doc.Parse( doctype );
-		XMLTest( "PLAY SYSTEM parse", false, doc.Error() );
 		doc.SaveFile( "resources/out/test7.xml" );
-		XMLTest( "PLAY SYSTEM save", false, doc.Error() );
 		doc.DeleteChild( doc.RootElement() );
 		doc.LoadFile( "resources/out/test7.xml" );
-		XMLTest( "PLAY SYSTEM load", false, doc.Error() );
 		doc.Print();
 
 		const XMLUnknown* decl = doc.FirstChild()->NextSibling()->ToUnknown();
@@ -1067,7 +979,6 @@ int main( int argc, const char ** argv )
 			"<!-- Somewhat<evil> -->";
 		XMLDocument doc;
 		doc.Parse( doctype );
-		XMLTest( "Comment somewhat evil", false, doc.Error() );
 
 		XMLComment* comment = doc.FirstChild()->ToComment();
 
@@ -1113,7 +1024,6 @@ int main( int argc, const char ** argv )
 		// Low entities
 		XMLDocument doc;
 		doc.Parse( "<test>&#x0e;</test>" );
-		XMLTest( "Hex values", false, doc.Error() );
 		const char result[] = { 0x0e, 0 };
 		XMLTest( "Low entities.", result, doc.FirstChildElement()->GetText() );
 		doc.Print();
@@ -1143,7 +1053,6 @@ int main( int argc, const char ** argv )
 		XMLDocument xml;
 		xml.Parse("<!-- declarations for <head> & <body> -->"
 				  "<!-- far &amp; away -->" );
-		XMLTest( "Declarations for head and body", false, xml.Error() );
 
 		XMLNode* e0 = xml.FirstChild();
 		XMLNode* e1 = e0->NextSibling();
@@ -1161,7 +1070,6 @@ int main( int argc, const char ** argv )
 						"<!-- With this comment, child2 will not be parsed! -->"
 						"<child2 att=''/>"
 					"</Parent>" );
-		XMLTest( "Comments iteration", false, xml.Error() );
 		xml.Print();
 
 		int count = 0;
@@ -1184,7 +1092,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc;
 		doc.Parse( (const char*)buf);
-		XMLTest( "Broken CDATA", true, doc.Error() );
 	}
 
 
@@ -1200,7 +1107,6 @@ int main( int argc, const char ** argv )
 		// This one must not result in an infinite loop
 		XMLDocument xml;
 		xml.Parse( "<infinite>loop" );
-		XMLTest( "No closing element", true, xml.Error() );
 		XMLTest( "Infinite loop test.", true, true );
 	}
 #endif
@@ -1208,7 +1114,6 @@ int main( int argc, const char ** argv )
 		const char* pub = "<?xml version='1.0'?> <element><sub/></element> <!--comment--> <!DOCTYPE>";
 		XMLDocument doc;
 		doc.Parse( pub );
-		XMLTest( "Trailing DOCTYPE", false, doc.Error() );
 
 		XMLDocument clone;
 		for( const XMLNode* node=doc.FirstChild(); node; node=node->NextSibling() ) {
@@ -1242,7 +1147,6 @@ int main( int argc, const char ** argv )
 				"</root>";
 			XMLDocument doc;
 			doc.Parse(xml);
-			XMLTest( "Parse before deep cloning root element", false, doc.Error() );
 
 			doc.Print(&printer1);
 			XMLNode* root = doc.RootElement()->DeepClone(&doc2);
@@ -1269,7 +1173,6 @@ int main( int argc, const char ** argv )
 				"</root>";
 			XMLDocument doc;
 			doc.Parse(xml);
-			XMLTest( "Parse before deep cloning sub element", false, doc.Error() );
 
 			const XMLElement* subElement = doc.FirstChildElement("root")->FirstChildElement("child2");
 			subElement->Accept(&printer1);
@@ -1299,7 +1202,6 @@ int main( int argc, const char ** argv )
 				"</root>";
 			XMLDocument doc;
 			doc.Parse(xml);
-			XMLTest( "Parse before deep cloning document", false, doc.Error() );
 			doc.Print(&printer1);
 
 			doc.DeepCopy(&doc2);
@@ -1326,7 +1228,6 @@ int main( int argc, const char ** argv )
 		static const char* xml = "<element attrib1=\"1\" attrib2=\"2\" attrib3=\"3\" />";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse for attribute ordering", false, doc.Error() );
 		XMLElement* ele = doc.FirstChildElement();
 
 		const XMLAttribute* a = ele->FirstAttribute();
@@ -1355,13 +1256,10 @@ int main( int argc, const char ** argv )
 		static const char* xml2 = "<element attribute1 = \"Test Attribute\"/>";
 		XMLDocument doc0;
 		doc0.Parse( xml0 );
-		XMLTest( "Parse attribute with space 1", false, doc0.Error() );
 		XMLDocument doc1;
 		doc1.Parse( xml1 );
-		XMLTest( "Parse attribute with space 2", false, doc1.Error() );
 		XMLDocument doc2;
 		doc2.Parse( xml2 );
-		XMLTest( "Parse attribute with space 3", false, doc2.Error() );
 
 		XMLElement* ele = 0;
 		ele = doc0.FirstChildElement();
@@ -1377,7 +1275,6 @@ int main( int argc, const char ** argv )
 		static const char* xml = "<doc><element attribute='attribute'/><element attribute='attribute'/></doc>";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse two elements with attribute", false, doc.Error() );
 		XMLElement* ele0 = doc.FirstChildElement()->FirstChildElement();
 		XMLElement* ele1 = ele0->NextSiblingElement();
 		bool equal = ele0->ShallowEqual( ele1 );
@@ -1390,7 +1287,6 @@ int main( int argc, const char ** argv )
 		static const char* xml = "<element attrib='bar'><sub>Text</sub></element>";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse element with attribute and nested element round 1", false, doc.Error() );
 
 		XMLElement* ele = XMLHandle( doc ).FirstChildElement( "element" ).FirstChild().ToElement();
 		XMLTest( "Handle, success, mutable", "sub", ele->Value() );
@@ -1404,7 +1300,6 @@ int main( int argc, const char ** argv )
 		static const char* xml = "<element attrib='bar'><sub>Text</sub></element>";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse element with attribute and nested element round 2", false, doc.Error() );
 		XMLConstHandle docH( doc );
 
 		const XMLElement* ele = docH.FirstChildElement( "element" ).FirstChild().ToElement();
@@ -1438,7 +1333,6 @@ int main( int argc, const char ** argv )
 		const char* xml = "<point> <x>1.2</x> <y>1</y> <z>38</z> <valid>true</valid> </point>";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse points", false, doc.Error() );
 
 		const XMLElement* pointElement = doc.RootElement();
 
@@ -1496,7 +1390,6 @@ int main( int argc, const char ** argv )
         doc.Clear();
         XMLTest( "Empty is empty after Clear()", true, doc.NoChildren() );
         doc.LoadFile( "resources/dream.xml" );
-        XMLTest( "Load dream.xml", false, doc.Error() );
         XMLTest( "Document has something to Clear()", false, doc.NoChildren() );
         doc.Clear();
         XMLTest( "Document Clear()'s", true, doc.NoChildren() );
@@ -1511,7 +1404,6 @@ int main( int argc, const char ** argv )
 						  "</element>";
 		XMLDocument doc( true, COLLAPSE_WHITESPACE );
 		doc.Parse( xml );
-		XMLTest( "Parse with whitespace collapsing and &apos", false, doc.Error() );
 
 		const XMLElement* element = doc.FirstChildElement();
 		for( const XMLElement* parent = element->FirstChildElement();
@@ -1539,7 +1431,6 @@ int main( int argc, const char ** argv )
 		const char* xml = "<element>    </element>";
 		XMLDocument doc( true, COLLAPSE_WHITESPACE );
 		doc.Parse( xml );
-		XMLTest( "Parse with all whitespaces", false, doc.Error() );
 		XMLTest( "Whitespace  all space", true, 0 == doc.FirstChildElement()->FirstChild() );
 	}
 
@@ -1548,7 +1439,6 @@ int main( int argc, const char ** argv )
 		const char* xml = "<element/>";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse with self-closed element", false, doc.Error() );
 		XMLElement* ele = doc.NewElement( "unused" );		// This will get cleaned up with the 'doc' going out of scope.
 		XMLTest( "Tracking unused elements", true, ele != 0, false );
 	}
@@ -1558,7 +1448,6 @@ int main( int argc, const char ** argv )
 		const char* xml = "<parent><child>abc</child></parent>";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse for printing of sub-element", false, doc.Error() );
 		XMLElement* ele = doc.FirstChildElement( "parent")->FirstChildElement( "child");
 
 		XMLPrinter printer;
@@ -1586,12 +1475,10 @@ int main( int argc, const char ** argv )
 
             XMLTest( "BOM preservation (compare)", xml_bom_preservation, printer.CStr(), false, true );
 			doc.SaveFile( "resources/bomtest.xml" );
-			XMLTest( "Save bomtest.xml", false, doc.Error() );
         }
 		{
 			XMLDocument doc;
 			doc.LoadFile( "resources/bomtest.xml" );
-			XMLTest( "Load bomtest.xml", false, doc.Error() );
 			XMLTest( "BOM preservation (load)", true, doc.HasBOM(), false );
 
             XMLPrinter printer;
@@ -1639,7 +1526,6 @@ int main( int argc, const char ** argv )
 
 		XMLDocument doc;
 		doc.Parse(xml);
-		XMLTest( "Insertion with removal parse round 1", false, doc.Error() );
 		XMLElement* subtree = doc.RootElement()->FirstChildElement("one")->FirstChildElement("subtree");
 		XMLElement* two = doc.RootElement()->FirstChildElement("two");
 		two->InsertFirstChild(subtree);
@@ -1648,7 +1534,6 @@ int main( int argc, const char ** argv )
 		XMLTest("Move node from within <one> to <two>", xmlInsideTwo, printer1.CStr());
 
 		doc.Parse(xml);
-		XMLTest( "Insertion with removal parse round 2", false, doc.Error() );
 		subtree = doc.RootElement()->FirstChildElement("one")->FirstChildElement("subtree");
 		two = doc.RootElement()->FirstChildElement("two");
 		doc.RootElement()->InsertAfterChild(two, subtree);
@@ -1657,7 +1542,6 @@ int main( int argc, const char ** argv )
 		XMLTest("Move node from within <one> after <two>", xmlAfterTwo, printer2.CStr(), false);
 
 		doc.Parse(xml);
-		XMLTest( "Insertion with removal parse round 3", false, doc.Error() );
 		XMLNode* one = doc.RootElement()->FirstChildElement("one");
 		subtree = one->FirstChildElement("subtree");
 		doc.RootElement()->InsertAfterChild(one, subtree);
@@ -1666,7 +1550,6 @@ int main( int argc, const char ** argv )
 		XMLTest("Move node from within <one> after <one>", xmlAfterOne, printer3.CStr(), false);
 
 		doc.Parse(xml);
-		XMLTest( "Insertion with removal parse round 4", false, doc.Error() );
 		subtree = doc.RootElement()->FirstChildElement("one")->FirstChildElement("subtree");
 		two = doc.RootElement()->FirstChildElement("two");
 		doc.RootElement()->InsertEndChild(subtree);
@@ -1681,7 +1564,6 @@ int main( int argc, const char ** argv )
 			"</svg>";
 		XMLDocument doc;
 		doc.Parse(xml);
-		XMLTest( "Parse svg with text", false, doc.Error() );
 		doc.Print();
 	}
 
@@ -1690,7 +1572,6 @@ int main( int argc, const char ** argv )
 		const char* xml = "<?xml version=\"1.0\"?><root><sample><field0><1</field0><field1>2</field1></sample></root>";
 		XMLDocument doc;
 		doc.Parse(xml);
-		XMLTest( "Parse root-sample-field0", true, doc.Error() );
 		doc.PrintError();
 	}
 
@@ -1702,7 +1583,6 @@ int main( int argc, const char ** argv )
 		const char* xml = "<element/>";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse self-closed empty element", false, doc.Error() );
 		doc.FirstChildElement()->SetAttribute( "attrA-f64", 123456789.123456789 );
 		doc.FirstChildElement()->SetAttribute( "attrB-f64", 1.001e9 );
 		doc.FirstChildElement()->SetAttribute( "attrC-f64", 1.0e9 );
@@ -1735,16 +1615,13 @@ int main( int argc, const char ** argv )
         // If it doesn't assert, it passes. Caused by objects
         // getting created during parsing which are then
         // inaccessible in the memory pools.
-        const char* xmlText = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><test>";
         {
             XMLDocument doc;
-            doc.Parse(xmlText);
-            XMLTest( "Parse hex no closing tag round 1", true, doc.Error() );
+            doc.Parse("<?xml version=\"1.0\" encoding=\"UTF-8\"?><test>");
         }
         {
             XMLDocument doc;
-            doc.Parse(xmlText);
-            XMLTest( "Parse hex no closing tag round 2", true, doc.Error() );
+            doc.Parse("<?xml version=\"1.0\" encoding=\"UTF-8\"?><test>");
             doc.Clear();
         }
     }
@@ -1754,24 +1631,6 @@ int main( int argc, const char ** argv )
         tinyxml2::XMLDocument doc;
         tinyxml2::XMLElement *pRoot = doc.NewElement("Root");
         doc.DeleteNode(pRoot);
-    }
-
-    {
-        XMLDocument doc;
-        XMLElement* root = doc.NewElement( "Root" );
-        XMLTest( "Node document before insertion", true, &doc == root->GetDocument() );
-        doc.InsertEndChild( root );
-        XMLTest( "Node document after insertion", true, &doc == root->GetDocument() );
-    }
-
-    {
-        // If this doesn't assert in DEBUG, all is well.
-        XMLDocument doc;
-        XMLElement* unlinkedRoot = doc.NewElement( "Root" );
-        XMLElement* linkedRoot = doc.NewElement( "Root" );
-        doc.InsertFirstChild( linkedRoot );
-        unlinkedRoot->GetDocument()->DeleteNode( linkedRoot );
-        unlinkedRoot->GetDocument()->DeleteNode( unlinkedRoot );
     }
 
 	{
@@ -1784,7 +1643,6 @@ int main( int argc, const char ** argv )
 		const char* xml = "&#0</a>";
 		XMLDocument doc;
 		doc.Parse( xml );
-		XMLTest( "Parse hex with closing tag", false, doc.Error() );
 
 		XMLPrinter printer;
 		doc.Print( &printer );
@@ -1858,7 +1716,6 @@ int main( int argc, const char ** argv )
 	    XMLDocument* doc = new XMLDocument();
 	    XMLTest( "XMLDocument::Value() returns null?", NULL, doc->Value() );
 	    doc->Parse( validXml );
-	    XMLTest( "Parse to test XMLDocument::Value()", false, doc->Error());
 	    XMLTest( "XMLDocument::Value() returns null?", NULL, doc->Value() );
 	    delete doc;
     }
@@ -2089,15 +1946,12 @@ int main( int argc, const char ** argv )
 #endif
 
 		FILE* perfFP = fopen("resources/dream.xml", "r");
-		XMLTest("Open dream.xml", true, perfFP != 0);
 		fseek(perfFP, 0, SEEK_END);
 		long size = ftell(perfFP);
 		fseek(perfFP, 0, SEEK_SET);
 
 		char* mem = new char[size + 1];
-		memset(mem, 0xfe, size);
-		size_t bytesRead = fread(mem, 1, size, perfFP);
-		XMLTest("Read dream.xml", true, uint32_t(size) >= uint32_t(bytesRead));
+		fread(mem, size, 1, perfFP);
 		fclose(perfFP);
 		mem[size] = 0;
 
@@ -2106,14 +1960,11 @@ int main( int argc, const char ** argv )
 #else
 		clock_t cstart = clock();
 #endif
-		bool parseDreamXmlFailed = false;
 		static const int COUNT = 10;
 		for (int i = 0; i < COUNT; ++i) {
 			XMLDocument doc;
 			doc.Parse(mem);
-			parseDreamXmlFailed = parseDreamXmlFailed || doc.Error();
 		}
-		XMLTest( "Parse dream.xml", false, parseDreamXmlFailed );
 #if defined( _MSC_VER )
 		QueryPerformanceCounter((LARGE_INTEGER*)&end);
 #else
@@ -2130,15 +1981,13 @@ int main( int argc, const char ** argv )
 #endif
 
 #if defined( _MSC_VER )
-		const double duration = 1000.0 * (double)(end - start) / ((double)freq * (double)COUNT);
+		printf("\nParsing %s of dream.xml: %.3f milli-seconds\n", note, 1000.0 * (double)(end - start) / ((double)freq * (double)COUNT));
 #else
-		const double duration = (double)(cend - cstart) / (double)COUNT;
+		printf("\nParsing %s of dream.xml: %.3f milli-seconds\n", note, (double)(cend - cstart) / (double)COUNT);
 #endif
-		printf("\nParsing dream.xml (%s): %.3f milli-seconds\n", note, duration);
 	}
 
-#if defined( _MSC_VER ) &&  defined( DEBUG )
-	{
+	#if defined( _MSC_VER ) &&  defined( DEBUG )
 		_CrtMemCheckpoint( &endMemState );
 
 		_CrtMemState diffMemState;
@@ -2149,8 +1998,7 @@ int main( int argc, const char ** argv )
 			int leaksBeforeExit = _CrtDumpMemoryLeaks();
 			XMLTest( "No leaks before exit?", FALSE, leaksBeforeExit );
 		}
-	}
-#endif
+	#endif
 
 	printf ("\nPass %d, Fail %d\n", gPass, gFail);
 
