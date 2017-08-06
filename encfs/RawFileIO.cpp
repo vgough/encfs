@@ -21,7 +21,7 @@
 #ifdef linux
 #define _XOPEN_SOURCE 500  // pick up pread , pwrite
 #endif
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cerrno>
 #include <cinttypes>
 #include <cstring>

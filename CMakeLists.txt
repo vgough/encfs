@@ -36,10 +36,10 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
 else ()
   if (CMAKE_COMPILER_IS_GNUCXX)
     message ("** Assuming that GNU CXX uses -std=c++11 flag for C++11 compatibility.")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    list(APPEND CMAKE_CXX_FLAGS "-std=c++11")
   elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message ("** Assuming that Clang uses -std=c++11 flag for C++11 compatibility.")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    list(APPEND CMAKE_CXX_FLAGS "-std=c++11")
   else()
     message ("** No CMAKE C++11 check. If the build breaks, you're on your own.")
   endif()
@@ -141,22 +141,29 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or abo
 endif()
 
 if (USE_INTERNAL_TINYXML)
-  message("-- Using local TinyXML2 copy")
+  message("-- Using vendored TinyXML2")
   set(TINYXML_DIR vendor/github.com/leethomason/tinyxml2)
   set(BUILD_STATIC_LIBS ON CACHE BOOL "build static libs")
   set(BUILD_SHARED_LIBS OFF CACHE BOOL "build shared libs")
   set(BUILD_TESTS OFF CACHE BOOL "build tests")
   add_subdirectory(${TINYXML_DIR})
-  include_directories(${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR}/)
-  link_directories(${CMAKE_BINARY_DIR}/${TINYXML_DIR}/)
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${TINYXML_DIR})
   set(TINYXML_LIBRARIES tinyxml2)
 else ()
   find_package (TinyXML REQUIRED)
   include_directories (${TINYXML_INCLUDE_DIR})
 endif ()
 
+message("-- Using vendored easylogging++")
+set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
+set(build_static_lib ON CACHE BOOL "build static libs")
+add_subdirectory(${EASYLOGGING_DIR})
+include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
+link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
+set(EASYLOGGING_LIBRARIES easyloggingpp)
+
 set(SOURCE_FILES
-  internal/easylogging++.cc
   encfs/autosprintf.cpp
   encfs/base64.cpp
   encfs/BlockFileIO.cpp
@@ -194,6 +201,7 @@ target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
+  ${EASYLOGGING_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${Intl_LIBRARIES}
 )

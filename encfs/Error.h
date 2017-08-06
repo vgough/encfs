@@ -3,7 +3,7 @@
 
 // Provides compatibility with RLog's rAssert, which throws an Error exception.
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <stdexcept>
 
 namespace encfs {

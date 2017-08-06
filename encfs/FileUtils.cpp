@@ -25,7 +25,7 @@
 #define _BSD_SOURCE      // pick up setenv on RH7.3
 #define _DEFAULT_SOURCE  // Replaces _BSD_SOURCE
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cctype>
 #include <cerrno>
 #include <cstdio>

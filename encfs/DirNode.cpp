@@ -35,7 +35,7 @@
 #include <sys/fsuid.h>
 #endif
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cstring>
 #include <utility>
 
