@@ -238,6 +238,11 @@ file (GLOB_RECURSE all_headers ${CMAKE_CURRENT_LIST_DIR}/*.h)
 add_custom_target (all_placeholder SOURCES ${all_headers})
 
 if (POD2MAN)
+  set (MAN_DESTINATION "share/man/man1")
+  if (${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
+    set (MAN_DESTINATION "man/man1")
+  endif()
+
   add_custom_target (encfs-man ALL
     COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
             ${CMAKE_CURRENT_LIST_DIR}/encfs/encfs.pod encfs.1)
@@ -247,7 +252,7 @@ if (POD2MAN)
             ${CMAKE_CURRENT_LIST_DIR}/encfs/encfsctl.pod encfsctl.1)
 
   install (FILES ${CMAKE_BINARY_DIR}/encfs.1 ${CMAKE_BINARY_DIR}/encfsctl.1
-    DESTINATION share/man/man1)
+    DESTINATION ${MAN_DESTINATION})
 endif (POD2MAN)
 
 add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
