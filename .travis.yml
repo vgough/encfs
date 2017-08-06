@@ -1,9 +1,12 @@
+dist: trusty
+
 language: cpp
 
 sudo: true
 
 compiler:
   - clang
+  - gcc
 
 branches:
   only:
@@ -19,12 +22,10 @@ env:
 
 before_script:
   - sudo modprobe fuse
-  - mkdir build
-  - cd build
-  - cmake ..
+  - cmake --version
 
 script:
-  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then make && ./checkops && cd .. && ./test.sh ; fi
+  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then ./build.sh && ./test.sh ; fi
 
 addons:
   coverity_scan:
@@ -42,6 +43,7 @@ addons:
     packages:
       - attr
       - clang
-      - cmake
       - fuse
       - libfuse-dev
+      - gettext
+      - cmake3

@@ -20,7 +20,7 @@
 
 #include "ConfigVar.h"
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cstring>
 
 #include "Error.h"
@@ -43,10 +43,10 @@ ConfigVar::ConfigVar(const ConfigVar &src) { pd = src.pd; }
 ConfigVar::~ConfigVar() { pd.reset(); }
 
 ConfigVar &ConfigVar::operator=(const ConfigVar &src) {
-  if (src.pd == pd)
+  if (src.pd == pd) {
     return *this;
-  else
-    pd = src.pd;
+  }
+  pd = src.pd;
 
   return *this;
 }
@@ -56,7 +56,9 @@ void ConfigVar::resetOffset() { pd->offset = 0; }
 int ConfigVar::read(unsigned char *buffer_, int bytes) const {
   int toCopy = MIN(bytes, pd->buffer.size() - pd->offset);
 
-  if (toCopy > 0) memcpy(buffer_, pd->buffer.data() + pd->offset, toCopy);
+  if (toCopy > 0) {
+    memcpy(buffer_, pd->buffer.data() + pd->offset, toCopy);
+  }
 
   pd->offset += toCopy;
 
@@ -106,13 +108,15 @@ void ConfigVar::writeInt(int val) {
   // find the starting point - we only need to output starting at the most
   // significant non-zero digit..
   int start = 0;
-  while (digit[start] == 0x80) ++start;
+  while (digit[start] == 0x80) {
+    ++start;
+  }
 
   write(digit + start, 5 - start);
 }
 
 int ConfigVar::readInt() const {
-  const unsigned char *buf = (const unsigned char *)buffer();
+  const auto *buf = (const unsigned char *)buffer();
   int bytes = this->size();
   int offset = at();
   int value = 0;
@@ -122,7 +126,7 @@ int ConfigVar::readInt() const {
 
   do {
     unsigned char tmp = buf[offset++];
-    highBitSet = tmp & 0x80;
+    highBitSet = ((tmp & 0x80) != 0);
 
     value = (value << 7) | (int)(tmp & 0x7f);
   } while (highBitSet && offset < bytes);
@@ -139,10 +143,10 @@ int ConfigVar::readInt(int defaultValue) const {
   int bytes = this->size();
   int offset = at();
 
-  if (offset >= bytes)
+  if (offset >= bytes) {
     return defaultValue;
-  else
-    return readInt();
+  }
+  return readInt();
 }
 
 bool ConfigVar::readBool(bool defaultValue) const {
@@ -184,7 +188,7 @@ const ConfigVar &operator>>(const ConfigVar &src, std::string &result) {
 
   unsigned char tmpBuf[32];
   if (length > (int)sizeof(tmpBuf)) {
-    unsigned char *ptr = new unsigned char[length];
+    auto *ptr = new unsigned char[length];
     readLen = src.read(ptr, length);
     result.assign((char *)ptr, length);
     delete[] ptr;

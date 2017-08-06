@@ -21,13 +21,14 @@
 #ifdef linux
 #define _XOPEN_SOURCE 500  // pick up pread , pwrite
 #endif
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cerrno>
+#include <cinttypes>
 #include <cstring>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 #include "Error.h"
 #include "FileIO.h"
@@ -53,8 +54,8 @@ inline void swap(int &x, int &y) {
 RawFileIO::RawFileIO()
     : knownSize(false), fileSize(0), fd(-1), oldfd(-1), canWrite(false) {}
 
-RawFileIO::RawFileIO(const std::string &fileName)
-    : name(fileName),
+RawFileIO::RawFileIO(std::string fileName)
+    : name(std::move(fileName)),
       knownSize(false),
       fileSize(0),
       fd(-1),
@@ -68,9 +69,13 @@ RawFileIO::~RawFileIO() {
   swap(_fd, fd);
   swap(_oldfd, oldfd);
 
-  if (_oldfd != -1) close(_oldfd);
+  if (_oldfd != -1) {
+    close(_oldfd);
+  }
 
-  if (_fd != -1) close(_fd);
+  if (_fd != -1) {
+    close(_fd);
+  }
 }
 
 Interface RawFileIO::interface() const { return RawFileIO_iface; }
@@ -112,7 +117,7 @@ static int open_readonly_workaround(const char *path, int flags) {
        it..
 */
 int RawFileIO::open(int flags) {
-  bool requestWrite = ((flags & O_RDWR) || (flags & O_WRONLY));
+  bool requestWrite = (((flags & O_RDWR) != 0) || ((flags & O_WRONLY) != 0));
   VLOG(1) << "open call, requestWrite = " << requestWrite;
 
   int result = 0;
@@ -125,7 +130,9 @@ int RawFileIO::open(int flags) {
     int finalFlags = requestWrite ? O_RDWR : O_RDONLY;
 
 #if defined(O_LARGEFILE)
-    if (flags & O_LARGEFILE) finalFlags |= O_LARGEFILE;
+    if ((flags & O_LARGEFILE) != 0) {
+      finalFlags |= O_LARGEFILE;
+    }
 #else
 #warning O_LARGEFILE not supported
 #endif
@@ -184,13 +191,11 @@ off_t RawFileIO::getSize() const {
       const_cast<RawFileIO *>(this)->fileSize = stbuf.st_size;
       const_cast<RawFileIO *>(this)->knownSize = true;
       return fileSize;
-    } else {
-      RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(errno);
-      return -1;
     }
-  } else {
-    return fileSize;
+    RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(errno);
+    return -1;
   }
+  return fileSize;
 }
 
 ssize_t RawFileIO::read(const IORequest &req) const {
@@ -208,14 +213,14 @@ ssize_t RawFileIO::read(const IORequest &req) const {
 
 bool RawFileIO::write(const IORequest &req) {
   rAssert(fd >= 0);
-  rAssert(true == canWrite);
+  rAssert(canWrite);
 
   int retrys = 10;
   void *buf = req.data;
   ssize_t bytes = req.dataLen;
   off_t offset = req.offset;
 
-  while (bytes && retrys > 0) {
+  while ((bytes != 0) && retrys > 0) {
     ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
 
     if (writeSize < 0) {
@@ -236,14 +241,15 @@ bool RawFileIO::write(const IORequest &req) {
                 << req.dataLen << ", max retries reached";
     knownSize = false;
     return false;
-  } else {
-    if (knownSize) {
-      off_t last = req.offset + req.dataLen;
-      if (last > fileSize) fileSize = last;
-    }
-
-    return true;
   }
+  if (knownSize) {
+    off_t last = req.offset + req.dataLen;
+    if (last > fileSize) {
+      fileSize = last;
+    }
+  }
+
+  return true;
 }
 
 int RawFileIO::truncate(off_t size) {
@@ -254,8 +260,9 @@ int RawFileIO::truncate(off_t size) {
 #if !defined(__FreeBSD__) && !defined(__APPLE__)
     ::fdatasync(fd);
 #endif
-  } else
+  } else {
     res = ::truncate(name.c_str(), size);
+  }
 
   if (res < 0) {
     int eno = errno;

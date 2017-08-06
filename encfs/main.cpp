@@ -18,18 +18,18 @@
 
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <exception>
 #include <getopt.h>
 #include <iostream>
 #include <memory>
 #include <pthread.h>
 #include <sstream>
-#include <stdlib.h>
 #include <string>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "Context.h"
@@ -43,11 +43,6 @@
 #include "i18n.h"
 #include "openssl.h"
 
-// Fuse version >= 26 requires another argument to fuse_unmount, which we
-// don't have.  So use the backward compatible call instead..
-extern "C" void fuse_unmount_compat22(const char *mountpoint);
-#define fuse_unmount fuse_unmount_compat22
-
 /* Arbitrary identifiers for long options that do
  * not have a short version */
 #define LONG_OPT_ANNOTATE 513
@@ -57,8 +52,6 @@ extern "C" void fuse_unmount_compat22(const char *mountpoint);
 using namespace std;
 using namespace encfs;
 using gnu::autosprintf;
-
-INITIALIZE_EASYLOGGINGPP
 
 namespace encfs {
 
@@ -80,6 +73,7 @@ struct EncFS_Args {
   int idleTimeout;  // 0 == idle time in minutes to trigger unmount
   const char *fuseArgv[MaxFuseArgs];
   int fuseArgc;
+  std::string syslogTag;  // syslog tag to use when logging using syslog
 
   std::shared_ptr<EncFS_Opts> opts;
 
@@ -91,17 +85,36 @@ struct EncFS_Args {
     ostringstream ss;
     ss << (isDaemon ? "(daemon) " : "(fg) ");
     ss << (isThreaded ? "(threaded) " : "(UP) ");
-    if (idleTimeout > 0) ss << "(timeout " << idleTimeout << ") ";
-    if (opts->checkKey) ss << "(keyCheck) ";
-    if (opts->forceDecode) ss << "(forceDecode) ";
-    if (opts->ownerCreate) ss << "(ownerCreate) ";
-    if (opts->useStdin) ss << "(useStdin) ";
-    if (opts->annotate) ss << "(annotate) ";
-    if (opts->reverseEncryption) ss << "(reverseEncryption) ";
-    if (opts->mountOnDemand) ss << "(mountOnDemand) ";
-    if (opts->delayMount) ss << "(delayMount) ";
-    for (int i = 0; i < fuseArgc; ++i) ss << fuseArgv[i] << ' ';
-
+    if (idleTimeout > 0) {
+      ss << "(timeout " << idleTimeout << ") ";
+    }
+    if (opts->checkKey) {
+      ss << "(keyCheck) ";
+    }
+    if (opts->forceDecode) {
+      ss << "(forceDecode) ";
+    }
+    if (opts->ownerCreate) {
+      ss << "(ownerCreate) ";
+    }
+    if (opts->useStdin) {
+      ss << "(useStdin) ";
+    }
+    if (opts->annotate) {
+      ss << "(annotate) ";
+    }
+    if (opts->reverseEncryption) {
+      ss << "(reverseEncryption) ";
+    }
+    if (opts->mountOnDemand) {
+      ss << "(mountOnDemand) ";
+    }
+    if (opts->delayMount) {
+      ss << "(delayMount) ";
+    }
+    for (int i = 0; i < fuseArgc; ++i) {
+      ss << fuseArgv[i] << ' ';
+    }
     return ss.str();
   }
 
@@ -167,18 +180,21 @@ static void FuseUsage() {
 
   int argc = 2;
   const char *argv[] = {"...", "-h"};
-  fuse_main(argc, const_cast<char **>(argv), (fuse_operations *)NULL, NULL);
+  fuse_main(argc, const_cast<char **>(argv), (fuse_operations *)nullptr,
+            nullptr);
 }
 
 #define PUSHARG(ARG)                        \
   do {                                      \
     rAssert(out->fuseArgc < MaxFuseArgs);   \
     out->fuseArgv[out->fuseArgc++] = (ARG); \
-  } while (0)
+  } while (false)
 
 static string slashTerminate(const string &src) {
   string result = src;
-  if (result[result.length() - 1] != '/') result.append("/");
+  if (result[result.length() - 1] != '/') {
+    result.append("/");
+  }
   return result;
 }
 
@@ -190,6 +206,7 @@ static bool processArgs(int argc, char *argv[],
   out->isVerbose = false;
   out->idleTimeout = 0;
   out->fuseArgc = 0;
+  out->syslogTag = "encfs";
   out->opts->idleTracking = false;
   out->opts->checkKey = true;
   out->opts->forceDecode = false;
@@ -207,36 +224,37 @@ static bool processArgs(int argc, char *argv[],
 
   // leave a space for mount point, as FUSE expects the mount point before
   // any flags
-  out->fuseArgv[1] = NULL;
+  out->fuseArgv[1] = nullptr;
   ++out->fuseArgc;
 
   // TODO: can flags be internationalized?
   static struct option long_options[] = {
-      {"fuse-debug", 0, 0, 'd'},   // Fuse debug mode
-      {"forcedecode", 0, 0, 'D'},  // force decode
+      {"fuse-debug", 0, nullptr, 'd'},   // Fuse debug mode
+      {"forcedecode", 0, nullptr, 'D'},  // force decode
       // {"foreground", 0, 0, 'f'}, // foreground mode (no daemon)
-      {"fuse-help", 0, 0, 'H'},         // fuse_mount usage
-      {"idle", 1, 0, 'i'},              // idle timeout
-      {"anykey", 0, 0, 'k'},            // skip key checks
-      {"no-default-flags", 0, 0, 'N'},  // don't use default fuse flags
-      {"ondemand", 0, 0, 'm'},          // mount on-demand
-      {"delaymount", 0, 0, 'M'},        // delay initial mount until use
-      {"public", 0, 0, 'P'},            // public mode
-      {"extpass", 1, 0, 'p'},           // external password program
+      {"fuse-help", 0, nullptr, 'H'},         // fuse_mount usage
+      {"idle", 1, nullptr, 'i'},              // idle timeout
+      {"anykey", 0, nullptr, 'k'},            // skip key checks
+      {"no-default-flags", 0, nullptr, 'N'},  // don't use default fuse flags
+      {"ondemand", 0, nullptr, 'm'},          // mount on-demand
+      {"delaymount", 0, nullptr, 'M'},        // delay initial mount until use
+      {"public", 0, nullptr, 'P'},            // public mode
+      {"extpass", 1, nullptr, 'p'},           // external password program
       // {"single-thread", 0, 0, 's'},  // single-threaded mode
-      {"stdinpass", 0, 0, 'S'},  // read password from stdin
-      {"annotate", 0, 0,
-       LONG_OPT_ANNOTATE},                  // Print annotation lines to stderr
-      {"nocache", 0, 0, LONG_OPT_NOCACHE},  // disable caching
-      {"verbose", 0, 0, 'v'},               // verbose mode
-      {"version", 0, 0, 'V'},               // version
-      {"reverse", 0, 0, 'r'},               // reverse encryption
-      {"standard", 0, 0, '1'},              // standard configuration
-      {"paranoia", 0, 0, '2'},              // standard configuration
-      {"require-macs", 0, 0, LONG_OPT_REQUIRE_MAC},  // require MACs
-      {0, 0, 0, 0}};
+      {"stdinpass", 0, nullptr, 'S'},  // read password from stdin
+      {"syslogtag", 1, nullptr, 't'},  // syslog tag
+      {"annotate", 0, nullptr,
+       LONG_OPT_ANNOTATE},  // Print annotation lines to stderr
+      {"nocache", 0, nullptr, LONG_OPT_NOCACHE},  // disable caching
+      {"verbose", 0, nullptr, 'v'},               // verbose mode
+      {"version", 0, nullptr, 'V'},               // version
+      {"reverse", 0, nullptr, 'r'},               // reverse encryption
+      {"standard", 0, nullptr, '1'},              // standard configuration
+      {"paranoia", 0, nullptr, '2'},              // standard configuration
+      {"require-macs", 0, nullptr, LONG_OPT_REQUIRE_MAC},  // require MACs
+      {nullptr, 0, nullptr, 0}};
 
-  while (1) {
+  while (true) {
     int option_index = 0;
 
     // 's' : single-threaded mode
@@ -247,10 +265,13 @@ static bool processArgs(int argc, char *argv[],
     // 'm' : mount-on-demand
     // 'S' : password from stdin
     // 'o' : arguments meant for fuse
+    // 't' : syslog tag
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfvdmi:o:t:", long_options, &option_index);
 
-    if (res == -1) break;
+    if (res == -1) {
+      break;
+    }
 
     switch (res) {
       case '1':
@@ -264,6 +285,9 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 'S':
         out->opts->useStdin = true;
+        break;
+      case 't':
+        out->syslogTag = optarg;
         break;
       case LONG_OPT_ANNOTATE:
         out->opts->annotate = true;
@@ -283,7 +307,7 @@ static bool processArgs(int argc, char *argv[],
         PUSHARG("-d");
         break;
       case 'i':
-        out->idleTimeout = strtol(optarg, (char **)NULL, 10);
+        out->idleTimeout = strtol(optarg, (char **)nullptr, 10);
         out->opts->idleTracking = true;
         break;
       case 'k':
@@ -342,9 +366,9 @@ static bool processArgs(int argc, char *argv[],
         out->opts->passwordProgram.assign(optarg);
         break;
       case 'P':
-        if (geteuid() != 0)
+        if (geteuid() != 0) {
           RLOG(WARNING) << "option '--public' ignored for non-root user";
-        else {
+        } else {
           out->opts->ownerCreate = true;
           // add 'allow_other' option
           // add 'default_permissions' option (default)
@@ -355,6 +379,12 @@ static bool processArgs(int argc, char *argv[],
       case 'V':
         // xgroup(usage)
         cerr << autosprintf(_("encfs version %s"), VERSION) << endl;
+#if defined(HAVE_XATTR)
+        // "--verbose" has to be passed before "--version" for this to work.
+        if (out->isVerbose) {
+          cerr << "Compiled with : HAVE_XATTR" << endl;
+        }
+#endif
         exit(EXIT_SUCCESS);
         break;
       case 'H':
@@ -373,7 +403,9 @@ static bool processArgs(int argc, char *argv[],
     }
   }
 
-  if (!out->isThreaded) PUSHARG("-s");
+  if (!out->isThreaded) {
+    PUSHARG("-s");
+  }
 
   // we should have at least 2 arguments left over - the source directory and
   // the mount point.
@@ -486,15 +518,10 @@ static bool processArgs(int argc, char *argv[],
 static void *idleMonitor(void *);
 
 void *encfs_init(fuse_conn_info *conn) {
-  EncFS_Context *ctx = (EncFS_Context *)fuse_get_context()->private_data;
+  auto *ctx = (EncFS_Context *)fuse_get_context()->private_data;
 
   // set fuse connection options
-  conn->async_read = true;
-
-  if (ctx->args->isDaemon) {
-    // Switch to using syslog.
-    encfs::rlogAction = el::base::DispatchAction::SysLog;
-  }
+  conn->async_read = 1u;
 
   // if an idle timeout is specified, then setup a thread to monitor the
   // filesystem.
@@ -502,7 +529,8 @@ void *encfs_init(fuse_conn_info *conn) {
     VLOG(1) << "starting idle monitoring thread";
     ctx->running = true;
 
-    int res = pthread_create(&ctx->monitorThread, 0, idleMonitor, (void *)ctx);
+    int res =
+        pthread_create(&ctx->monitorThread, nullptr, idleMonitor, (void *)ctx);
     if (res != 0) {
       RLOG(ERROR) << "error starting idle monitor thread, "
                      "res = "
@@ -531,19 +559,17 @@ int main(int argc, char *argv[]) {
   // anything that comes from the user should be considered tainted until
   // we've processed it and only allowed through what we support.
   std::shared_ptr<EncFS_Args> encfsArgs(new EncFS_Args);
-  for (int i = 0; i < MaxFuseArgs; ++i)
-    encfsArgs->fuseArgv[i] = NULL;  // libfuse expects null args..
+  for (int i = 0; i < MaxFuseArgs; ++i) {
+    encfsArgs->fuseArgv[i] = nullptr;  // libfuse expects null args..
+  }
 
   if (argc == 1 || !processArgs(argc, argv, encfsArgs)) {
     usage(argv[0]);
     return EXIT_FAILURE;
   }
 
-  if (encfsArgs->isVerbose) {
-    el::Loggers::setVerboseLevel(1);
-  }
-
-  encfs::initLogging(encfsArgs->isVerbose);
+  encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
+  ELPP_INITIALIZE_SYSLOG(encfsArgs->syslogTag.c_str(), 0, 0);
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();
@@ -599,7 +625,7 @@ int main(int argc, char *argv[]) {
 
   // context is not a smart pointer because it will live for the life of
   // the filesystem.
-  auto ctx = std::shared_ptr<EncFS_Context>(new EncFS_Context);
+  auto ctx = std::make_shared<EncFS_Context>();
   ctx->publicFilesystem = encfsArgs->opts->ownerCreate;
   RootPtr rootInfo = initFS(ctx.get(), encfsArgs->opts);
 
@@ -616,7 +642,7 @@ int main(int argc, char *argv[]) {
     ctx->args = encfsArgs;
     ctx->opts = encfsArgs->opts;
 
-    if (encfsArgs->isThreaded == false && encfsArgs->idleTimeout > 0) {
+    if (!encfsArgs->isThreaded && encfsArgs->idleTimeout > 0) {
       // xgroup(usage)
       cerr << _("Note: requested single-threaded mode, but an idle\n"
                 "timeout was specified.  The filesystem will operate\n"
@@ -638,7 +664,9 @@ int main(int argc, char *argv[]) {
     try {
       time_t startTime, endTime;
 
-      if (encfsArgs->opts->annotate) cerr << "$STATUS$ fuse_main_start" << endl;
+      if (encfsArgs->opts->annotate) {
+        cerr << "$STATUS$ fuse_main_start" << endl;
+      }
 
       // FIXME: workaround for fuse_main returning an error on normal
       // exit.  Only print information if fuse_main returned
@@ -652,9 +680,13 @@ int main(int argc, char *argv[]) {
 
       time(&endTime);
 
-      if (encfsArgs->opts->annotate) cerr << "$STATUS$ fuse_main_end" << endl;
+      if (encfsArgs->opts->annotate) {
+        cerr << "$STATUS$ fuse_main_end" << endl;
+      }
 
-      if (res == 0) returnCode = EXIT_SUCCESS;
+      if (res == 0) {
+        returnCode = EXIT_SUCCESS;
+      }
 
       if (res != 0 && encfsArgs->isDaemon && (oldStderr >= 0) &&
           (endTime - startTime <= 1)) {
@@ -683,7 +715,7 @@ int main(int argc, char *argv[]) {
       pthread_cond_signal(&ctx->wakeupCond);
       pthread_mutex_unlock(&ctx->wakeupMutex);
       VLOG(1) << "joining with idle monitoring thread";
-      pthread_join(ctx->monitorThread, 0);
+      pthread_join(ctx->monitorThread, nullptr);
       VLOG(1) << "join done";
     }
   }
@@ -709,11 +741,17 @@ const int ActivityCheckInterval = 10;
 static bool unmountFS(EncFS_Context *ctx);
 
 static void *idleMonitor(void *_arg) {
-  EncFS_Context *ctx = (EncFS_Context *)_arg;
+  auto *ctx = (EncFS_Context *)_arg;
   std::shared_ptr<EncFS_Args> arg = ctx->args;
 
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;
   int idleCycles = -1;
+
+  bool unmountres = false;
+
+  // We will notify when FS will be unmounted, so notify that it has just been
+  // mounted
+  RLOG(INFO) << "Filesystem mounted: " << arg->opts->mountPoint;
 
   pthread_mutex_lock(&ctx->wakeupMutex);
 
@@ -721,26 +759,27 @@ static void *idleMonitor(void *_arg) {
     int usage, openCount;
     ctx->getAndResetUsageCounter(&usage, &openCount);
 
-    if (usage == 0 && ctx->isMounted())
+    if (usage == 0 && ctx->isMounted()) {
       ++idleCycles;
-    else {
-      if (idleCycles >= timeoutCycles)
+    } else {
+      if (idleCycles >= timeoutCycles) {
         RLOG(INFO) << "Filesystem no longer inactive: "
                    << arg->opts->mountPoint;
+      }
       idleCycles = 0;
     }
 
     if (idleCycles >= timeoutCycles) {
       if (openCount == 0) {
-        if (unmountFS(ctx)) {
+        unmountres = unmountFS(ctx);
+        if (unmountres) {
           // wait for main thread to wake us up
           pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
           break;
         }
       } else {
-        RLOG(WARNING) << "Filesystem " << arg->opts->mountPoint
-                      << " inactivity detected, but still " << openCount
-                      << " opened files";
+        RLOG(WARNING) << "Filesystem inactive, but " << openCount
+                      << " files opened: " << arg->opts->mountPoint;
       }
     }
 
@@ -748,7 +787,7 @@ static void *idleMonitor(void *_arg) {
             << timeoutCycles;
 
     struct timeval currentTime;
-    gettimeofday(&currentTime, 0);
+    gettimeofday(&currentTime, nullptr);
     struct timespec wakeupTime;
     wakeupTime.tv_sec = currentTime.tv_sec + ActivityCheckInterval;
     wakeupTime.tv_nsec = currentTime.tv_usec * 1000;
@@ -757,9 +796,15 @@ static void *idleMonitor(void *_arg) {
 
   pthread_mutex_unlock(&ctx->wakeupMutex);
 
+  // If we are here FS has been unmounted, so if we did not unmount ourselves
+  // (manual, kill...), notify
+  if (!unmountres) {
+    RLOG(INFO) << "Filesystem unmounted: " << arg->opts->mountPoint;
+  }
+
   VLOG(1) << "Idle monitoring thread exiting";
 
-  return 0;
+  return nullptr;
 }
 
 static bool unmountFS(EncFS_Context *ctx) {
@@ -770,11 +815,14 @@ static bool unmountFS(EncFS_Context *ctx) {
 
     ctx->setRoot(std::shared_ptr<DirNode>());
     return false;
-  } else {
-    // Time to unmount!
-    RLOG(WARNING) << "Unmounting filesystem due to inactivity: "
-                  << arg->opts->mountPoint;
-    fuse_unmount(arg->opts->mountPoint.c_str());
-    return true;
   }
+// Time to unmount!
+#if FUSE_USE_VERSION < 30
+  fuse_unmount(arg->opts->mountPoint.c_str(), nullptr);
+#else
+  fuse_unmount(fuse_get_context()->fuse);
+#endif
+  // fuse_unmount succeeds and returns void
+  RLOG(INFO) << "Filesystem inactive, unmounted: " << arg->opts->mountPoint;
+  return true;
 }

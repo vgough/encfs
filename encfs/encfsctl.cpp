@@ -53,8 +53,6 @@ using namespace std;
 using gnu::autosprintf;
 using namespace encfs;
 
-INITIALIZE_EASYLOGGINGPP
-
 static int showInfo(int argc, char **argv);
 static int showVersion(int argc, char **argv);
 static int chpasswd(int argc, char **argv);

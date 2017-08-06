@@ -20,7 +20,7 @@
 
 #include "NameIO.h"
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cstring>
 // for static build.  Need to reference the modules which are registered at
 // run-time, to ensure that the linker doesn't optimize them away.
@@ -55,14 +55,14 @@ struct NameIOAlg {
   Interface iface;
 };
 
-typedef multimap<string, NameIOAlg> NameIOMap_t;
-static NameIOMap_t *gNameIOMap = 0;
+using NameIOMap_t = multimap<string, NameIOAlg>;
+static NameIOMap_t *gNameIOMap = nullptr;
 
 list<NameIO::Algorithm> NameIO::GetAlgorithmList(bool includeHidden) {
   AddSymbolReferences();
 
   list<Algorithm> result;
-  if (gNameIOMap) {
+  if (gNameIOMap != nullptr) {
     NameIOMap_t::const_iterator it;
     NameIOMap_t::const_iterator end = gNameIOMap->end();
     for (it = gNameIOMap->begin(); it != end; ++it) {
@@ -83,7 +83,9 @@ list<NameIO::Algorithm> NameIO::GetAlgorithmList(bool includeHidden) {
 bool NameIO::Register(const char *name, const char *description,
                       const Interface &iface, Constructor constructor,
                       bool hidden) {
-  if (!gNameIOMap) gNameIOMap = new NameIOMap_t;
+  if (gNameIOMap == nullptr) {
+    gNameIOMap = new NameIOMap_t;
+  }
 
   NameIOAlg alg;
   alg.hidden = hidden;
@@ -98,7 +100,7 @@ std::shared_ptr<NameIO> NameIO::New(const string &name,
                                     const std::shared_ptr<Cipher> &cipher,
                                     const CipherKey &key) {
   std::shared_ptr<NameIO> result;
-  if (gNameIOMap) {
+  if (gNameIOMap != nullptr) {
     NameIOMap_t::const_iterator it = gNameIOMap->find(name);
     if (it != gNameIOMap->end()) {
       Constructor fn = it->second.constructor;
@@ -111,7 +113,7 @@ std::shared_ptr<NameIO> NameIO::New(const Interface &iface,
                                     const std::shared_ptr<Cipher> &cipher,
                                     const CipherKey &key) {
   std::shared_ptr<NameIO> result;
-  if (gNameIOMap) {
+  if (gNameIOMap != nullptr) {
     NameIOMap_t::const_iterator it;
     NameIOMap_t::const_iterator end = gNameIOMap->end();
     for (it = gNameIOMap->begin(); it != end; ++it) {
@@ -127,7 +129,7 @@ std::shared_ptr<NameIO> NameIO::New(const Interface &iface,
 
 NameIO::NameIO() : chainedNameIV(false), reverseEncryption(false) {}
 
-NameIO::~NameIO() {}
+NameIO::~NameIO() = default;
 
 void NameIO::setChainedNameIV(bool enable) { chainedNameIV = enable; }
 
@@ -143,15 +145,16 @@ std::string NameIO::recodePath(
     uint64_t *iv) const {
   string output;
 
-  while (*path) {
+  while (*path != 0) {
     if (*path == '/') {
-      if (!output.empty())  // don't start the string with '/'
+      if (!output.empty()) {  // don't start the string with '/'
         output += '/';
+      }
       ++path;
     } else {
       bool isDotFile = (*path == '.');
       const char *next = strchr(path, '/');
-      int len = next ? next - path : strlen(path);
+      int len = next != nullptr ? next - path : strlen(path);
 
       // at this point we know that len > 0
       if (isDotFile && (path[len - 1] == '.') && (len <= 2)) {
@@ -162,7 +165,9 @@ std::string NameIO::recodePath(
 
       // figure out buffer sizes
       int approxLen = (this->*_length)(len);
-      if (approxLen <= 0) throw Error("Filename too small to decode");
+      if (approxLen <= 0) {
+        throw Error("Filename too small to decode");
+      }
       int bufSize = 0;
 
       BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
@@ -195,14 +200,18 @@ std::string NameIO::decodePath(const char *cipherPath) const {
 
 std::string NameIO::_encodePath(const char *plaintextPath, uint64_t *iv) const {
   // if chaining is not enabled, then the iv pointer is not used..
-  if (!chainedNameIV) iv = 0;
+  if (!chainedNameIV) {
+    iv = nullptr;
+  }
   return recodePath(plaintextPath, &NameIO::maxEncodedNameLen,
                     &NameIO::encodeName, iv);
 }
 
 std::string NameIO::_decodePath(const char *cipherPath, uint64_t *iv) const {
   // if chaining is not enabled, then the iv pointer is not used..
-  if (!chainedNameIV) iv = 0;
+  if (!chainedNameIV) {
+    iv = nullptr;
+  }
   return recodePath(cipherPath, &NameIO::maxDecodedNameLen, &NameIO::decodeName,
                     iv);
 }
@@ -217,12 +226,12 @@ std::string NameIO::decodePath(const char *path, uint64_t *iv) const {
 
 int NameIO::encodeName(const char *input, int length, char *output,
                        int bufferLength) const {
-  return encodeName(input, length, (uint64_t *)0, output, bufferLength);
+  return encodeName(input, length, (uint64_t *)nullptr, output, bufferLength);
 }
 
 int NameIO::decodeName(const char *input, int length, char *output,
                        int bufferLength) const {
-  return decodeName(input, length, (uint64_t *)0, output, bufferLength);
+  return decodeName(input, length, (uint64_t *)nullptr, output, bufferLength);
 }
 
 std::string NameIO::_encodeName(const char *plaintextName, int length) const {
@@ -232,7 +241,7 @@ std::string NameIO::_encodeName(const char *plaintextName, int length) const {
   BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
 
   // code the name
-  int codedLen = encodeName(plaintextName, length, 0, codeBuf, bufSize);
+  int codedLen = encodeName(plaintextName, length, nullptr, codeBuf, bufSize);
   rAssert(codedLen <= approxLen);
   rAssert(codeBuf[codedLen] == '\0');
 
@@ -251,7 +260,7 @@ std::string NameIO::_decodeName(const char *encodedName, int length) const {
   BUFFER_INIT_S(codeBuf, 32, (unsigned int)approxLen + 1, bufSize)
 
   // code the name
-  int codedLen = decodeName(encodedName, length, 0, codeBuf, bufSize);
+  int codedLen = decodeName(encodedName, length, nullptr, codeBuf, bufSize);
   rAssert(codedLen <= approxLen);
   rAssert(codeBuf[codedLen] == '\0');
 

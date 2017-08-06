@@ -31,7 +31,7 @@
 #ifndef EVP_CIPHER
 struct evp_cipher_st;
 
-typedef struct evp_cipher_st EVP_CIPHER;
+using EVP_CIPHER = struct evp_cipher_st;
 #endif
 
 namespace encfs {

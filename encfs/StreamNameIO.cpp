@@ -20,8 +20,9 @@
 
 #include "StreamNameIO.h"
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cstring>
+#include <utility>
 
 #include "Cipher.h"
 #include "CipherKey.h"
@@ -72,11 +73,12 @@ Interface StreamNameIO::CurrentInterface() {
 }
 
 StreamNameIO::StreamNameIO(const Interface &iface,
-                           const std::shared_ptr<Cipher> &cipher,
-                           const CipherKey &key)
-    : _interface(iface.current()), _cipher(cipher), _key(key) {}
+                           std::shared_ptr<Cipher> cipher, CipherKey key)
+    : _interface(iface.current()),
+      _cipher(std::move(cipher)),
+      _key(std::move(key)) {}
 
-StreamNameIO::~StreamNameIO() {}
+StreamNameIO::~StreamNameIO() = default;
 
 Interface StreamNameIO::interface() const { return CurrentInterface(); }
 
@@ -94,7 +96,9 @@ int StreamNameIO::encodeName(const char *plaintextName, int length,
                              uint64_t *iv, char *encodedName,
                              int bufferLength) const {
   uint64_t tmpIV = 0;
-  if (iv && _interface >= 2) tmpIV = *iv;
+  if ((iv != nullptr) && _interface >= 2) {
+    tmpIV = *iv;
+  }
 
   unsigned int mac =
       _cipher->MAC_16((const unsigned char *)plaintextName, length, _key, iv);
@@ -135,7 +139,9 @@ int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
   int decodedStreamLen = decLen256 - 2;
   rAssert(decodedStreamLen <= bufferLength);
 
-  if (decodedStreamLen <= 0) throw Error("Filename too small to decode");
+  if (decodedStreamLen <= 0) {
+    throw Error("Filename too small to decode");
+  }
 
   BUFFER_INIT(tmpBuf, 32, (unsigned int)length);
 
@@ -153,7 +159,9 @@ int StreamNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
           ((unsigned int)((unsigned char)tmpBuf[1]));
 
     // version 2 adds support for IV chaining..
-    if (iv && _interface >= 2) tmpIV = *iv;
+    if ((iv != nullptr) && _interface >= 2) {
+      tmpIV = *iv;
+    }
 
     memcpy(plaintextName, tmpBuf + 2, decodedStreamLen);
   } else {

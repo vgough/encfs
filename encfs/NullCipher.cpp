@@ -49,24 +49,24 @@ static bool NullCipher_registered = Cipher::Register(
 
 class NullKey : public AbstractCipherKey {
  public:
-  NullKey() {}
-  virtual ~NullKey() {}
+  NullKey() = default;
+  ~NullKey() override = default;
 };
 
 class NullDestructor {
  public:
-  NullDestructor() {}
-  NullDestructor(const NullDestructor &) {}
-  ~NullDestructor() {}
+  NullDestructor() = default;
+  NullDestructor(const NullDestructor &) = default;
+  ~NullDestructor() = default;
 
-  NullDestructor &operator=(const NullDestructor &) { return *this; }
+  NullDestructor &operator=(const NullDestructor &) = default;
   void operator()(NullKey *&) {}
 };
 std::shared_ptr<AbstractCipherKey> gNullKey(new NullKey(), NullDestructor());
 
 NullCipher::NullCipher(const Interface &iface_) { this->iface = iface_; }
 
-NullCipher::~NullCipher() {}
+NullCipher::~NullCipher() = default;
 
 Interface NullCipher::interface() const { return iface; }
 

@@ -37,7 +37,7 @@ class Cipher;
 
 class NameIO {
  public:
-  typedef std::shared_ptr<NameIO> (*Constructor)(
+  using Constructor = std::shared_ptr<NameIO> (*)(
       const Interface &iface, const std::shared_ptr<Cipher> &cipher,
       const CipherKey &key);
 
@@ -47,7 +47,7 @@ class NameIO {
     Interface iface;
   };
 
-  typedef std::list<Algorithm> AlgorithmList;
+  using AlgorithmList = std::list<Algorithm>;
   static AlgorithmList GetAlgorithmList(bool includeHidden = false);
 
   static std::shared_ptr<NameIO> New(const Interface &iface,
@@ -139,7 +139,7 @@ class NameIO {
       delete[] Name;          \
       Name = Name##_Raw;      \
     }                         \
-  } while (0);
+  } while (false);
 
 }  // namespace encfs
 

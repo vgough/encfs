@@ -20,10 +20,11 @@
 
 #include "MACFileIO.h"
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
+#include <cinttypes>
 #include <cstring>
-#include <inttypes.h>
 #include <sys/stat.h>
+#include <utility>
 
 #include "BlockFileIO.h"
 #include "Cipher.h"
@@ -59,10 +60,9 @@ int dataBlockSize(const FSConfigPtr &cfg) {
         - cfg->config->blockMACRandBytes;
 }
 
-MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
-                     const FSConfigPtr &cfg)
+MACFileIO::MACFileIO(std::shared_ptr<FileIO> _base, const FSConfigPtr &cfg)
     : BlockFileIO(dataBlockSize(cfg), cfg),
-      base(_base),
+      base(std::move(_base)),
       cipher(cfg->cipher),
       key(cfg->key),
       macBytes(cfg->config->blockMACBytes),
@@ -76,7 +76,7 @@ MACFileIO::MACFileIO(const std::shared_ptr<FileIO> &_base,
           << ", randBytes = " << cfg->config->blockMACRandBytes;
 }
 
-MACFileIO::~MACFileIO() {}
+MACFileIO::~MACFileIO() = default;
 
 Interface MACFileIO::interface() const { return MACFileIO_iface; }
 
@@ -141,7 +141,10 @@ off_t MACFileIO::getSize() const {
   int bs = blockSize() + headerSize;
 
   off_t size = base->getSize();
-  if (size > 0) size = (reverse) ? locWithHeader(size, blockSize(), headerSize) : locWithoutHeader(size, bs, headerSize);
+
+  if (size > 0) {
+    size = (reverse) ? locWithHeader(size, blockSize(), headerSize) : locWithoutHeader(size, bs, headerSize);
+  }
 
   return size;
 }
@@ -165,13 +168,15 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
     // don't store zeros if configured for zero-block pass-through
     bool skipBlock = true;
     if (_allowHoles) {
-      for (int i = 0; i < readSize; ++i)
+      for (int i = 0; i < readSize; ++i) {
         if (tmp.data[i] != 0) {
           skipBlock = false;
           break;
         }
-    } else if (macBytes > 0)
+      }
+    } else if (macBytes > 0) {
       skipBlock = false;
+    }
 
     if (readSize > headerSize) {
       if (!skipBlock) {
@@ -189,69 +194,69 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
           fail |= (test ^ stored);
         }
 
-        if (fail > 0) {
-          // uh oh..
-          long blockNum = req.offset / bs;
-          RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
-          if (!warnOnly) {
-            MemoryPool::release(mb);
-            throw Error(_("MAC comparison failure, refusing to read"));
+          if (fail > 0) {
+            // uh oh..
+            long blockNum = req.offset / bs;
+            RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
+            if (!warnOnly) {
+              MemoryPool::release(mb);
+              throw Error(_("MAC comparison failure, refusing to read"));
+            }
           }
+        }
+
+        // now copy the data to the output buffer
+        readSize -= headerSize;
+        memcpy(req.data, tmp.data + headerSize, readSize);
+      } else {
+        VLOG(1) << "readSize " << readSize << " at offset " << req.offset;
+        if (readSize > 0) readSize = 0;
+      }
+
+      MemoryPool::release(mb);
+
+      return readSize;
+
+  } else {	  //reverse = true
+
+      if (randBytes > 0) {
+        RLOG(ERROR) << "MAC rand bytes not yet implemented in reverse mode";
+        return -EPERM;
+      }
+
+      MemBlock mb = MemoryPool::allocate(blockSize());
+
+      IORequest tmp;
+      tmp.offset = locWithoutHeader(req.offset, blockSize(), macBytes);
+      tmp.data = mb.data + macBytes;
+      tmp.dataLen = req.dataLen - macBytes;
+
+      // get the data from the base FileIO layer
+      ssize_t readSize = base->read(tmp);
+      if (readSize <= 0) {
+        MemoryPool::release(mb);
+        return readSize;
+      }
+
+      if (macBytes > 0) {
+        uint64_t mac = cipher->MAC_64(tmp.data, readSize, key);
+
+        //point to the beginning to write the header
+        tmp.data = mb.data;
+
+        for (int i = 0; i < macBytes; ++i) {
+          tmp.data[i] = mac & 0xff;
+          mac >>= 8;
         }
       }
 
       // now copy the data to the output buffer
-      readSize -= headerSize;
-      memcpy(req.data, tmp.data + headerSize, readSize);
-    } else {
-      VLOG(1) << "readSize " << readSize << " at offset " << req.offset;
-      if (readSize > 0) readSize = 0;
-    }
-
-    MemoryPool::release(mb);
-
-    return readSize;
-
-  } else {	  //reverse = true
-
-    if (randBytes > 0) {
-      RLOG(ERROR) << "MAC rand bytes not yet implemented in reverse mode";
-      return -EPERM;
-    }
-
-    MemBlock mb = MemoryPool::allocate(blockSize());
-
-    IORequest tmp;
-    tmp.offset = locWithoutHeader(req.offset, blockSize(), macBytes);
-    tmp.data = mb.data + macBytes;
-    tmp.dataLen = req.dataLen - macBytes;
-
-    // get the data from the base FileIO layer
-    ssize_t readSize = base->read(tmp);
-    if (readSize <= 0) {
+      memcpy(req.data, tmp.data, readSize + macBytes);
       MemoryPool::release(mb);
-      return readSize;
+
+      return readSize + macBytes;
+
     }
-
-    if (macBytes > 0) {
-      uint64_t mac = cipher->MAC_64(tmp.data, readSize, key);
-
-      //point to the beginning to write the header
-      tmp.data = mb.data;
-
-      for (int i = 0; i < macBytes; ++i) {
-        tmp.data[i] = mac & 0xff;
-        mac >>= 8;
-      }
-    }
-
-    // now copy the data to the output buffer
-    memcpy(req.data, tmp.data, readSize + macBytes);
-    MemoryPool::release(mb);
-
-    return readSize + macBytes;
-
-  }
 }
 
 bool MACFileIO::writeOneBlock(const IORequest &req) {
@@ -275,8 +280,9 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   memset(newReq.data, 0, headerSize);
   memcpy(newReq.data + headerSize, req.data, req.dataLen);
   if (randBytes > 0) {
-    if (!cipher->randomize(newReq.data + macBytes, randBytes, false))
+    if (!cipher->randomize(newReq.data + macBytes, randBytes, false)) {
       return false;
+    }
   }
 
   if (macBytes > 0) {
@@ -307,9 +313,11 @@ int MACFileIO::truncate(off_t size) {
   int headerSize = macBytes + randBytes;
   int bs = blockSize() + headerSize;
 
-  int res = BlockFileIO::truncateBase(size, 0);
+  int res = BlockFileIO::truncateBase(size, nullptr);
 
-  if (res == 0) base->truncate(locWithHeader(size, bs, headerSize));
+  if (res == 0) {
+    base->truncate(locWithHeader(size, bs, headerSize));
+  }
 
   return res;
 }

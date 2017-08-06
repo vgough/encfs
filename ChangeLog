@@ -1,6 +1,15 @@
+v1.9.2 / 2017-07-25
+===================
+	* fix a use-after-free bug that was introduced in v1.9-rc1 (#214)
+	* cast booleans to int before writing the XML config (#343)
+	* support reading the config file from pipes (#253)
+	* add "-t" option to set syslog tag
+	* allow read/write in standard reverse mode (#301)
+	* reject empty passwords
+	* support building with openssl 1.1
 
 v1.9.1 / 2016-09-18
-==================
+===================
 	* add filehandle null check
 	* bump version to 1.9.1
 	* prevent crash in elpp when verbose logging is enabled

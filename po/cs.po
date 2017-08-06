@@ -450,8 +450,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr ""
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Adresář \"%s\" neexistuje, má být vytvořen? (\"y\"-ano, \"n\"-ne) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "Adresář \"%s\" neexistuje, má být vytvořen? (\"y\"-ano, \"N\"-ne) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

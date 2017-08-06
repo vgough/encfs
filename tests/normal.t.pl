@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 104;
+use Test::More tests => 122;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -11,6 +11,35 @@ use IO::Handle;
 require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
+
+if($^O eq "linux" and $tempDir eq "/tmp") {
+   # On Linux, /tmp is often a tmpfs mount that does not support
+   # extended attributes. Use /var/tmp instead.
+   $tempDir = "/var/tmp";
+}
+
+# Find attr binary
+# Linux
+my $setattr = "attr -s encfs -V hello";
+my $getattr = "attr -g encfs";
+if(system("which xattr > /dev/null 2>&1") == 0)
+{
+    # Mac OS X
+    $setattr = "xattr -sw encfs hello";
+    $getattr = "xattr -sp encfs";
+}
+if(system("which lsextattr > /dev/null 2>&1") == 0)
+{
+    # FreeBSD
+    $setattr = "setextattr -h user encfs hello";
+    $getattr = "getextattr -h user encfs";
+}
+# Do we support xattr ?
+my $have_xattr = 1;
+if(system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
+{
+    $have_xattr = 0;
+}
 
 # test filesystem in standard config mode
 &runTests('standard');
@@ -22,6 +51,7 @@ my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 sub runTests
 {
     my $mode = shift;
+    print STDERR "\nrunTests: mode=$mode\n";
 
     &newWorkingDir;
 
@@ -47,7 +77,9 @@ sub runTests
     &internalModification;
     &grow;
     &umask0777;
+    &create_unmount_remount;
 
+    &configFromPipe;
     &cleanup;
 }
 
@@ -189,13 +221,13 @@ sub truncate
 sub fileCreation
 {
     # create a file
-    qx(df -ah > "$crypt/df.txt" 2> /dev/null);
-    ok( -f "$crypt/df.txt", "file created" );
+    qx(date > "$crypt/df.txt");
+    ok( -f "$crypt/df.txt", "file created" ) || BAIL_OUT("file create failed");
 
     # ensure there is an encrypted version.
     my $c = encName("df.txt");
     cmp_ok( length($c), '>', 8, "encrypted name ok" );
-    ok( -f "$raw/$c", "encrypted file created" );
+    ok( -f "$raw/$c", "encrypted file $raw/$c created" );
 
     # check contents
     my $count = qx(grep -c crypt-$$ "$crypt/df.txt");
@@ -267,7 +299,7 @@ sub encName
     return $enc;
 }
 
-# Test symlinks & hardlinks
+# Test symlinks & hardlinks, and extended attributes
 sub links
 {
     my $hardlinkTests = shift;
@@ -292,6 +324,15 @@ sub links
         ok( link("$crypt/data", "$crypt/data.2"), "hard link");
         checkContents("$crypt/data.2", $contents, "hardlink read");
     };
+
+    # extended attributes
+    my $return_code = ($have_xattr) ? system("$setattr $crypt/data") : 0;
+    is($return_code, 0, "extended attributes can be set (return code was $return_code)");
+    $return_code = ($have_xattr) ? system("$getattr $crypt/data") : 0;
+    is($return_code, 0, "extended attributes can be get (return code was $return_code)");
+    # this is suppused to fail, so get rid of the error message
+    $return_code = ($have_xattr) ? system("$getattr $crypt/data-rel 2> /dev/null") : 1;
+    isnt($return_code, 0, "extended attributes operations do not follow symlinks (return code was $return_code)");
 }
 
 # Test mount
@@ -305,11 +346,19 @@ sub mount
     mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
 
     delete $ENV{"ENCFS6_CONFIG"};
+    remount($args);
+    ok( $? == 0, "encfs command returns 0") || BAIL_OUT("");
+    ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
+}
+
+# Helper function
+# Mount without any prior checks
+sub remount
+{
+    my $args = shift;
     my $cmdline = "./build/encfs --extpass=\"echo test\" $args $raw $crypt 2>&1";
     #                                  This makes sure we get to see stderr ^
-    my $status = system($cmdline);
-    ok( $status == 0, "encfs command returns 0") || BAIL_OUT("");
-    ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
+    system($cmdline);
 }
 
 # Helper function
@@ -333,4 +382,51 @@ sub umask0777
     ok(open(my $fh, "+>$crypt/umask0777"), "open with umask 0777");
     close($fh);
     umask($old);
+}
+
+# Test that we can read the configuration from a named pipe
+# Regression test for https://github.com/vgough/encfs/issues/253
+sub configFromPipe
+{
+    portable_unmount($crypt);
+    rename("$raw/.encfs6.xml", "$raw/.encfs6.xml.orig");
+    system("mkfifo $raw/.encfs6.xml");
+    my $child = fork();
+    unless ($child) {
+        &remount("--standard");
+        exit;
+    }
+    system("cat $raw/.encfs6.xml.orig > $raw/.encfs6.xml");
+    waitpid($child, 0);
+    ok( 0 == $?, "encfs mount with named pipe based config failed");
+}
+
+sub create_unmount_remount
+{
+    my $crypt = "$workingDir/create_remount.crypt";
+    my $mnt = "$workingDir/create_remount.mnt";
+    mkdir($crypt) || BAIL_OUT($!);
+    mkdir($mnt)  || BAIL_OUT($!);
+
+    system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");
+    ok( $? == 0, "encfs command returns 0") || return;
+    ok( -f "$crypt/.encfs6.xml",  "created control file") || return;
+
+    # Write some text
+    my $contents = "hello world\n";
+    ok( open(OUT, "> $mnt/test_file_1"), "write content");
+    print OUT $contents;
+    close OUT;
+
+    # Unmount
+    portable_unmount($mnt);
+
+    # Mount again
+    system("./build/encfs --extpass=\"echo test\" $crypt $mnt 2>&1");
+    ok( $? == 0, "encfs command returns 0") || return;
+
+    # Check if content is still there
+    checkContents("$mnt/test_file_1", $contents);
+
+    portable_unmount($mnt);
 }

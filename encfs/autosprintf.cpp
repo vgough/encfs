@@ -27,10 +27,10 @@
 /* Specification.  */
 #include "autosprintf.h"
 
-#include <stdarg.h>  // for va_list
-#include <stdio.h>   // for NULL, vasprintf
-#include <stdlib.h>  // for free
-#include <string.h>  // for strdup
+#include <cstdarg>  // for va_list
+#include <cstdio>   // for NULL, vasprintf
+#include <cstdlib>  // for free
+#include <cstring>  // for strdup
 
 namespace gnu {
 
@@ -38,13 +38,15 @@ namespace gnu {
 autosprintf::autosprintf(const char *format, ...) {
   va_list args;
   va_start(args, format);
-  if (vasprintf(&str, format, args) < 0) str = NULL;
+  if (vasprintf(&str, format, args) < 0) {
+    str = nullptr;
+  }
   va_end(args);
 }
 
 /* Copy constructor.  Necessary because the destructor is nontrivial.  */
 autosprintf::autosprintf(const autosprintf &src) {
-  str = (src.str != NULL ? strdup(src.str) : NULL);
+  str = (src.str != nullptr ? strdup(src.str) : nullptr);
 }
 
 /* Destructor: frees the temporarily allocated string.  */
@@ -52,15 +54,15 @@ autosprintf::~autosprintf() { free(str); }
 
 /* Conversion to string.  */
 autosprintf::operator char *() const {
-  if (str != NULL) {
+  if (str != nullptr) {
     size_t length = strlen(str) + 1;
-    char *copy = new char[length];
+    auto *copy = new char[length];
     memcpy(copy, str, length);
     return copy;
-  } else
-    return NULL;
+  }
+  return nullptr;
 }
 autosprintf::operator std::string() const {
-  return std::string(str ? str : "(error in autosprintf)");
+  return std::string(str != nullptr ? str : "(error in autosprintf)");
 }
-}
+}  // namespace gnu

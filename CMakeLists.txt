@@ -1,15 +1,19 @@
-# 3.1 preferred, but we can often get by with 2.8.
+# 3.0.2 preferred, but we can often get by with 2.8.
 cmake_minimum_required(VERSION 2.8)
+if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION} LESS 3.0.2)
+  message(WARNING "You should use cmake 3.0.2 or newer for configuration to run correctly.")
+endif()
+
 project(EncFS C CXX)
 
 set (ENCFS_MAJOR 1)
 set (ENCFS_MINOR 9)
-set (ENCFS_PATCH 1)
+set (ENCFS_PATCH 2)
 set (ENCFS_VERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}.${ENCFS_PATCH}")
 set (ENCFS_SOVERSION "${ENCFS_MAJOR}.${ENCFS_MINOR}")
 set (ENCFS_NAME "Encrypted Filesystem")
 
-option(IWYU "Build with IWYU analyais." OFF)
+option(IWYU "Build with IWYU analysis." OFF)
 
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -18,6 +22,7 @@ option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
 option (INSTALL_LIBENCFS "install libencfs" OFF)
+option (LINT "enable lint output" OFF)
 
 if (NOT DEFINED LIB_INSTALL_DIR)
   set (LIB_INSTALL_DIR lib)
@@ -31,10 +36,10 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
 else ()
   if (CMAKE_COMPILER_IS_GNUCXX)
     message ("** Assuming that GNU CXX uses -std=c++11 flag for C++11 compatibility.")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    list(APPEND CMAKE_CXX_FLAGS "-std=c++11")
   elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message ("** Assuming that Clang uses -std=c++11 flag for C++11 compatibility.")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    list(APPEND CMAKE_CXX_FLAGS "-std=c++11")
   else()
     message ("** No CMAKE C++11 check. If the build breaks, you're on your own.")
   endif()
@@ -64,17 +69,6 @@ add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 find_package (OpenSSL REQUIRED)
 include_directories (${OPENSSL_INCLUDE_DIR})
 
-if (USE_INTERNAL_TINYXML)
-  message("-- Using local TinyXML2 copy")
-  add_subdirectory(internal/tinyxml2-3.0.0)
-  include_directories(${CMAKE_CURRENT_LIST_DIR}/internal/tinyxml2-3.0.0)
-  link_directories(${CMAKE_BINARY_DIR}/internal/tinyxml2-3.0.0)
-  set(TINYXML_LIBRARIES tinyxml2)
-else ()
-  find_package (TinyXML REQUIRED)
-  include_directories (${TINYXML_INCLUDE_DIR})
-endif ()
-
 find_program (POD2MAN pod2man)
 
 # Check for include files and stdlib properties.
@@ -83,15 +77,11 @@ check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
 check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
 
 # Check if xattr functions take extra arguments, as they do on OSX.
-# Output error is misleading, so do this test quietly.
 include (CheckCXXSourceCompiles)
-set(CMAKE_REQUIRED_QUIET_SAVE ${CMAKE_REQUIRED_QUIET})
-set (CMAKE_REQUIRED_QUIET True)
 check_cxx_source_compiles ("#include <sys/types.h>
   #include <sys/xattr.h>
   int main() { getxattr(0,0,0,0,0,0); return 1; }
   " XATTR_ADD_OPT)
-set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
 
 # Check if we have some standard functions.
 include (CheckFuncs)
@@ -139,6 +129,40 @@ if (ENABLE_NLS)
   add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_PREFIX}/share/locale")
 endif (ENABLE_NLS)
 
+if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or above.
+  find_program(CLANG_TIDY_EXE NAMES "clang-tidy" DOC "Path to clang-tidy executable")
+  if(NOT CLANG_TIDY_EXE)
+    message(STATUS "clang-tidy not found.")
+  else()
+    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
+    set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-checks=*,-modernize-loop-convert,-cppcoreguidelines-pro-*,-readability-inconsistent-declaration-parameter-name,-google-readability-casting,-cert-err58-cpp,-google-runtime-int,-readability-named-parameter,-google-build-using-namespace,-misc-unused-parameters,-google-runtime-references")
+    #set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,google-readability-redundant-smartptr-get")
+  endif()
+endif()
+
+if (USE_INTERNAL_TINYXML)
+  message("-- Using vendored TinyXML2")
+  set(TINYXML_DIR vendor/github.com/leethomason/tinyxml2)
+  set(BUILD_STATIC_LIBS ON CACHE BOOL "build static libs")
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "build shared libs")
+  set(BUILD_TESTS OFF CACHE BOOL "build tests")
+  add_subdirectory(${TINYXML_DIR})
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${TINYXML_DIR})
+  set(TINYXML_LIBRARIES tinyxml2_static)
+else ()
+  find_package (TinyXML REQUIRED)
+  include_directories (${TINYXML_INCLUDE_DIR})
+endif ()
+
+message("-- Using vendored easylogging++")
+set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
+set(build_static_lib ON CACHE BOOL "build static libs")
+add_subdirectory(${EASYLOGGING_DIR})
+include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
+link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
+set(EASYLOGGING_LIBRARIES easyloggingpp)
+
 set(SOURCE_FILES
   encfs/autosprintf.cpp
   encfs/base64.cpp
@@ -177,6 +201,7 @@ target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
+  ${EASYLOGGING_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${Intl_LIBRARIES}
 )
@@ -203,6 +228,11 @@ target_link_libraries (encfs-bin encfs)
 set_target_properties (encfs-bin PROPERTIES OUTPUT_NAME "encfs")
 install (TARGETS encfs-bin DESTINATION bin)
 
+if(LINT AND CLANG_TIDY_EXE)
+  set_target_properties(encfs PROPERTIES CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+  set_target_properties(encfs-bin PROPERTIES CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+endif()
+
 add_executable (encfsctl encfs/encfsctl.cpp)
 target_link_libraries (encfsctl encfs)
 install (TARGETS encfsctl DESTINATION bin)
@@ -213,7 +243,7 @@ target_link_libraries (makekey encfs)
 add_executable (checkops encfs/test.cpp)
 target_link_libraries (checkops encfs)
 
-install (FILES encfs/encfssh DESTINATION bin)
+install (PROGRAMS encfs/encfssh DESTINATION bin)
 
 # Reference all headers, to make certain IDEs happy.
 file (GLOB_RECURSE all_headers ${CMAKE_CURRENT_LIST_DIR}/*.h)
@@ -232,17 +262,5 @@ if (POD2MAN)
     DESTINATION share/man/man1)
 endif (POD2MAN)
 
-# Tests
-enable_testing()
-add_test (NAME checkops
-          COMMAND checkops)
+add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
 
-find_program (PERL_PROGRAM perl)
-if (PERL_PROGRAM)
-  file(GLOB pl_test_files "tests/*.t.pl")
-  #add_test (NAME scriptedtests
-  #          COMMAND ${PERL_PROGRAM} -I ${CMAKE_CURRENT_LIST_DIR}
-  #             -MTest::Harness
-  #             -e "$$Test::Harness::verbose=1; runtests @ARGV;"
-  #             ${pl_test_files})
-endif (PERL_PROGRAM)

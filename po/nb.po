@@ -447,8 +447,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "Innstillingene som er lastet er ikke kompatible med --reverse\n"
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Katalogen \"%s\" eksisterer ikke. Skal den opprettes? (y,n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "Katalogen \"%s\" eksisterer ikke. Skal den opprettes? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

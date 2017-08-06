@@ -1,15 +1,15 @@
-#!/bin/bash
+#!/bin/bash -eu
 
-set -eu
+# Make sure we are in the directory this script is in.
+cd "$(dirname "$0")"
 
-if [ ! -d build ]
+if [[ ! -d build ]]
 then
 	mkdir build
 	cd build
 	cmake ..
-else
-	cd build
+	cd ..
 fi
 
-make
+make -j2 -C build
 

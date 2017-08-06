@@ -44,8 +44,8 @@ class Cipher {
  public:
   // if no key length was indicated when cipher was registered, then keyLen
   // <= 0 will be used.
-  typedef std::shared_ptr<Cipher> (*CipherConstructor)(const Interface &iface,
-                                                       int keyLenBits);
+  using CipherConstructor = std::shared_ptr<Cipher> (*)(const Interface &iface,
+                                                        int keyLenBits);
 
   struct CipherAlgorithm {
     std::string name;
@@ -55,7 +55,7 @@ class Cipher {
     Range blockSize;
   };
 
-  typedef std::list<CipherAlgorithm> AlgorithmList;
+  using AlgorithmList = std::list<CipherAlgorithm>;
   static AlgorithmList GetAlgorithmList(bool includeHidden = false);
 
   static std::shared_ptr<Cipher> New(const Interface &iface, int keyLen = -1);

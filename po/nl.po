@@ -486,8 +486,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "De geladen configuratie is niet compatibel met --reverse\n"
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "De map \"%s\" bestaat niet. Moet deze aangemaakt worden? (y,n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "De map \"%s\" bestaat niet. Moet deze aangemaakt worden? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

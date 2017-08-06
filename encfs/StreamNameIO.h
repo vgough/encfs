@@ -36,8 +36,8 @@ class StreamNameIO : public NameIO {
  public:
   static Interface CurrentInterface();
 
-  StreamNameIO(const Interface &iface, const std::shared_ptr<Cipher> &cipher,
-               const CipherKey &key);
+  StreamNameIO(const Interface &iface, std::shared_ptr<Cipher> cipher,
+               CipherKey key);
   virtual ~StreamNameIO();
 
   virtual Interface interface() const;
