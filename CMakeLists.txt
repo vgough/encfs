@@ -173,6 +173,13 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
 link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
 set(EASYLOGGING_LIBRARIES easyloggingpp)
 
+# TODO: add behind TEST flag.
+message("-- Including vendored googletest")
+set(GOOGLETEST_DIR vendor/github.com/google/googletest)
+add_subdirectory(${GOOGLETEST_DIR})
+link_directories(${CMAKE_BINARY_DIR}/${GOOGLETEST_DIR}/googletest)
+set(GOOGLETEST_LIBRARIES gtest)
+
 set(SOURCE_FILES
   encfs/autosprintf.cpp
   encfs/base64.cpp
