@@ -25,7 +25,7 @@ before_script:
   - cmake --version
 
 script:
-  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then ./build.sh && ./test.sh ; fi
+  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then ./build.sh && ./tests.sh ; fi
 
 addons:
   coverity_scan:
