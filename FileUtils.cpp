@@ -1043,7 +1043,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
     alg = findCipherAlgorithm("AES", keySize);
 
 // If case-insensitive system, opt for Block32 filename encoding
-#if DEFAULT_CASE_INSENSITIVE
+#if defined(__APPLE__) || defined(WIN32)
     nameIOIface = BlockNameIO::CurrentInterface(true);
 #else
     nameIOIface = BlockNameIO::CurrentInterface();
@@ -1113,40 +1113,13 @@ RootPtr createV6Config(EncFS_Context *ctx,
           externalIV = false;
     }
     selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac, reverseEncryption);
+    allowHoles = selectZeroBlockPassThrough();
 
-    /* Reverse mounts are read-only by default (set in main.cpp).
-     * If uniqueIV is off, writing can be allowed, because there
-     * is no header that could be overwritten */
-    if (uniqueIV == false && blockMACBytes == 0)
+   /* Reverse mounts are read-only by default (set in main.cpp).
+     * If uniqueIV and MACheaders are off, writing can be allowed, because there
+     * is no header neither MAC that could be overwritten */
+    if (reverseEncryption == true && uniqueIV == false && blockMACBytes == 0)
       opts->readOnly = false;
-    chainedIV = selectChainedIV();
-    if (chainedIV && uniqueIV)
-      externalIV = selectExternalChainedIV();
-
-    if (reverseEncryption) {
-      cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
-      uniqueIV = selectUniqueIV(false);
-      /* Reverse mounts are read-only by default (set in main.cpp).
-       * If uniqueIV is off, writing can be allowed, because there
-       * is no header that could be overwritten */
-      if (!uniqueIV) {
-        opts->readOnly = false;
-      }
-    } else {
-      chainedIV = selectChainedIV();
-      uniqueIV = selectUniqueIV(true);
-      if (chainedIV && uniqueIV) {
-        externalIV = selectExternalChainedIV();
-      } else {
-        // xgroup(setup)
-        cout << _("External chained IV disabled, as both 'IV chaining'\n"
-                  "and 'unique IV' features are required for this option.")
-             << "\n";
-        externalIV = false;
-      }
-      selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac, reverseEncryption);
-      allowHoles = selectZeroBlockPassThrough();
-    }
 
   }
 
