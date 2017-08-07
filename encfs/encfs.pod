@@ -16,12 +16,13 @@ encfs - mounts or creates an encrypted virtual filesystem
 
 =head1 SYNOPSIS
 
-B<encfs> [B<--version>] [B<-s>] [B<-f>] [B<-v>|B<--verbose>] 
-[B<-i MINUTES>|B<--idle=MINUTES>] [B<--extpass=program>] 
-[B<-S>|B<--stdinpass>] [B<--anykey>] [B<--forcedecode>] 
-[B<-d>|B<--fuse-debug>] [B<--public>] [B<--no-default-flags>]
-[B<--ondemand>] [B<--delaymount>] [B<--reverse>] [B<--standard>] 
-[B<-o FUSE_OPTION>]
+B<encfs> [B<--version>] [B<-v>|B<--verbose>] [B<-t>|B<--syslogtag>] 
+[B<-s>] [B<-f>] [B<--annotate>] [B<--standard>] [B<--paranoia>] 
+[B<--reverse>] [B<--extpass=program>] [B<-S>|B<--stdinpass>] 
+[B<--anykey>] [B<--forcedecode>] [B<-require-macs>] 
+[B<-i MINUTES>|B<--idle=MINUTES>] [B<-m>|B<--ondemand>] [B<--delaymount>] 
+[B<--public>] [B<--nocache>] [B<--no-default-flags>]
+[B<-o FUSE_OPTION>] [B<-d>|B<--fuse-debug>] [B<-H>|B<--fuse-help>] 
 I<rootdir> I<mountPoint> 
 [B<--> [I<Fuse Mount Options>]]
 
@@ -42,22 +43,10 @@ may be an increasing number of choices.
 
 =over 4
 
-=item B<-i>, B<--idle=MINUTES>
+=item B<--version>
 
-Enable automatic unmount of the filesystem after a period of inactivity.  The
-period is specified in minutes, so the shortest timeout period that can be
-requested is one minute.  B<EncFS> will not automatically unmount if there are
-files open within the filesystem, even if they are open in read-only mode.
-However simply having files open does not count as activity.
-
-=item B<-f>
-
-The B<-f> (I<foreground>) option causes B<EncFS> to run in the foreground.
-Normally B<EncFS> spawns off as a daemon and runs in the background, returning
-control to the spawning shell.  With the B<-f> option, it will run in the
-foreground and any warning/debug log messages will be displayed on standard
-error.  In the default (background) mode, all log messages are logged via
-syslog.
+Shows B<EncFS> version.  Using B<--verbose> before B<--version> may display
+additional information.
 
 =item B<-v>, B<--verbose>
 
@@ -78,62 +67,31 @@ mode.  By default, B<EncFS> runs in multi-threaded mode.  This option is used
 during B<EncFS> development in order to simplify debugging and allow it to run
 under memory checking tools.
 
-=item B<-d>, B<--fuse-debug>
+=item B<-f>
 
-Enables debugging within the B<FUSE> library.  This should only be used if you
-suspect a problem within B<FUSE> itself (not B<EncFS>), as it generates a lot
-of low-level data and is not likely to be very helpful in general problem
-tracking.  Try I<verbose> mode (B<-v>) first, which gives a higher level view
-of what is happening within B<EncFS>.
+The B<-f> (I<foreground>) option causes B<EncFS> to run in the foreground.
+Normally B<EncFS> spawns off as a daemon and runs in the background, returning
+control to the spawning shell.  With the B<-f> option, it will run in the
+foreground and any warning/debug log messages will be displayed on standard
+error.  In the default (background) mode, all log messages are logged via
+syslog.
 
-=item B<--forcedecode>
+=item B<--annotate>
 
-This option only has an effect on filesystems which use MAC block headers.  By
-default, if a block is decoded and the stored MAC doesn't match what is
-calculated, then an IO error is returned to the application and the block is
-not returned.  However, by specifying B<--forcedecode>, only an error will be
-logged and the data will still be returned to the application.  This may be
-useful for attempting to read corrupted files.
+Print annotation lines to stderr during configuration.
 
-=item B<--public>
+=item B<--standard>
 
-Attempt to make encfs behave as a typical multi-user filesystem.  By default,
-all FUSE based filesystems are visible only to the user who mounted them.  No
-other users (including root) can view the filesystem contents.  The B<--public>
-option does two things.  It adds the FUSE flags "allow_other" and
-"default_permission" when mounting the filesystem, which tells FUSE to allow
-other users to access the filesystem, and to use the ownership permissions
-provided by the filesystem.  Secondly, the B<--public> flag changes how encfs's
-node creation functions work - as they will try and set ownership of new nodes
-based on the caller identification.
+If creating a new filesystem, this automatically selects standard configuration
+options, to help with automatic filesystem creation.  This is the set of
+options that should be used unless you know what you're doing and have read the
+documentation.
 
-B<Warning>: In order for this to work, encfs must be run as root -- otherwise
-it will not have the ability to change ownership of files.  I recommend that
-you instead investigate if the fuse allow_other option can be used to do what
-you want before considering the use of B<--public>.
+When not creating a filesystem, this flag does nothing.
 
-=item B<--ondemand>
+=item B<--paranoia>
 
-Mount the filesystem on-demand.  This currently only makes sense in combination
-with B<--idle> and B<--extpass> options.  When the filesystem becomes idle,
-instead of exiting, B<EncFS> stops allowing access to the filesystem by
-internally dropping its reference to it.  If someone attempts to access the
-filesystem again, the extpass program is used to prompt the user for the
-password.  If this succeeds, then the filesystem becomes available again.
-
-=item B<--delaymount>
-
-Do not mount the filesystem when encfs starts; instead, delay mounting until
-first use. This option only makes sense with B<--ondemand>.
-
-=item B<--require-macs>
-
-If creating a new filesystem, this forces block authentication code headers to
-be enabled.  When mounting an existing filesystem, this causes encfs to exit
-if block authentication code headers are not enabled.
-
-This can be used to improve security in case the ciphertext is vulnerable to
-tampering, by preventing an attacker from disabling MACs in the config file.
+Same as B<--standard>, but for B<paranoia> mode.
 
 =item B<--reverse>
 
@@ -158,58 +116,6 @@ Now /tmp/plain-view contains the same data as /home/me
 
 Note that B<--reverse> mode only works with limited configuration options, so
 many settings may be disabled when used.
-
-=item B<--nocache>
-
-Disable the kernel's cache of file attributes.
-Setting this option makes EncFS pass "attr_timeout=0" and "entry_timeout=0" to
-FUSE. This makes sure that modifications to the backing files that occour
-outside EncFS show up immediately in the EncFS mount. The main use case
-for "--nocache" is reverse mode.
-
-=item B<--standard>
-
-If creating a new filesystem, this automatically selects standard configuration
-options, to help with automatic filesystem creation.  This is the set of
-options that should be used unless you know what you're doing and have read the
-documentation.
-
-When not creating a filesystem, this flag does nothing.
-
-=item B<-o FUSE_ARG>
-
-Pass through B<FUSE> args to the underlying library.  This makes it easy to
-pass FUSE options when mounting B<EncFS> via mount (and /etc/fstab).  Eg:
-
-    mount encfs#/home/me-crypt /home/me -t fuse -o kernel_cache
-
-Note that encfs arguments cannot be set this way.  If you need to set encfs
-arguments, create a wrapper, such as  encfs-reverse;
-
-    #!/bin/sh
-    encfs --reverse "$@"
-
-Then mount using the script path
-
-    mount encfs-reverse#/home/me /home/me-crypt -t fuse
-
-=item B<-->
-
-The B<--> option tells B<EncFS> to send any remaining arguments directly to
-B<FUSE>.  In turn, B<FUSE> passes the arguments to B<fusermount>.  See
-the B<fusermount> help page for information on available commands.
-
-=item B<--no-default-flags>
-
-B<Encfs> adds the FUSE flags "use_ino" and "default_permissions" by default, as
-of version 1.2.2, because that improves compatibility with some programs.  If
-for some reason you need to disable one or both of these flags, use the option
-B<--no-default-flags>.
-
-The following command lines produce the same result:
-
-    encfs raw crypt
-    encfs --no-default-flags raw crypt -- -o use_ino,default_permissions
 
 =item B<--extpass=program>
 
@@ -251,6 +157,118 @@ was, as the other passwords rely on an invalid decoding of the volume key,
 which will not remain the same if the primary password is changed.
 
 B<Warning>: Use this option at your own risk.
+
+=item B<--forcedecode>
+
+This option only has an effect on filesystems which use MAC block headers.  By
+default, if a block is decoded and the stored MAC doesn't match what is
+calculated, then an IO error is returned to the application and the block is
+not returned.  However, by specifying B<--forcedecode>, only an error will be
+logged and the data will still be returned to the application.  This may be
+useful for attempting to read corrupted files.
+
+=item B<--require-macs>
+
+If creating a new filesystem, this forces block authentication code headers to
+be enabled.  When mounting an existing filesystem, this causes encfs to exit
+if block authentication code headers are not enabled.
+
+This can be used to improve security in case the ciphertext is vulnerable to
+tampering, by preventing an attacker from disabling MACs in the config file.
+
+=item B<-i>, B<--idle=MINUTES>
+
+Enable automatic unmount of the filesystem after a period of inactivity.  The
+period is specified in minutes, so the shortest timeout period that can be
+requested is one minute.  B<EncFS> will not automatically unmount if there are
+files open within the filesystem, even if they are open in read-only mode.
+However simply having files open does not count as activity.
+
+=item B<-m>, B<--ondemand>
+
+Mount the filesystem on-demand.  This currently only makes sense in combination
+with B<--idle> and B<--extpass> options.  When the filesystem becomes idle,
+instead of exiting, B<EncFS> stops allowing access to the filesystem by
+internally dropping its reference to it.  If someone attempts to access the
+filesystem again, the extpass program is used to prompt the user for the
+password.  If this succeeds, then the filesystem becomes available again.
+
+=item B<--delaymount>
+
+Do not mount the filesystem when encfs starts; instead, delay mounting until
+first use. This option only makes sense with B<--ondemand>.
+
+=item B<--public>
+
+Attempt to make encfs behave as a typical multi-user filesystem.  By default,
+all FUSE based filesystems are visible only to the user who mounted them.  No
+other users (including root) can view the filesystem contents.  The B<--public>
+option does two things.  It adds the FUSE flags "allow_other" and
+"default_permission" when mounting the filesystem, which tells FUSE to allow
+other users to access the filesystem, and to use the ownership permissions
+provided by the filesystem.  Secondly, the B<--public> flag changes how encfs's
+node creation functions work - as they will try and set ownership of new nodes
+based on the caller identification.
+
+B<Warning>: In order for this to work, encfs must be run as root -- otherwise
+it will not have the ability to change ownership of files.  I recommend that
+you instead investigate if the fuse allow_other option can be used to do what
+you want before considering the use of B<--public>.
+
+=item B<--nocache>
+
+Disable the kernel's cache of file attributes.
+Setting this option makes EncFS pass "attr_timeout=0" and "entry_timeout=0" to
+FUSE. This makes sure that modifications to the backing files that occour
+outside EncFS show up immediately in the EncFS mount. The main use case
+for "--nocache" is reverse mode.
+
+=item B<--no-default-flags>
+
+B<Encfs> adds the FUSE flags "use_ino" and "default_permissions" by default, as
+of version 1.2.2, because that improves compatibility with some programs.  If
+for some reason you need to disable one or both of these flags, use the option
+B<--no-default-flags>.
+
+The following command lines produce the same result:
+
+    encfs raw crypt
+    encfs --no-default-flags raw crypt -- -o use_ino,default_permissions
+
+=item B<-o FUSE_ARG>
+
+Pass through B<FUSE> args to the underlying library.  This makes it easy to
+pass FUSE options when mounting B<EncFS> via mount (and /etc/fstab).  Eg:
+
+    mount encfs#/home/me-crypt /home/me -t fuse -o kernel_cache
+
+Note that encfs arguments cannot be set this way.  If you need to set encfs
+arguments, create a wrapper, such as  encfs-reverse;
+
+    #!/bin/sh
+    encfs --reverse "$@"
+
+Then mount using the script path
+
+    mount encfs-reverse#/home/me /home/me-crypt -t fuse
+
+=item B<-d>, B<--fuse-debug>
+
+Enables debugging within the B<FUSE> library.  This should only be used if you
+suspect a problem within B<FUSE> itself (not B<EncFS>), as it generates a lot
+of low-level data and is not likely to be very helpful in general problem
+tracking.  Try I<verbose> mode (B<-v>) first, which gives a higher level view
+of what is happening within B<EncFS>.
+
+=item B<-H>, B<--fuse-help>
+
+Shows B<FUSE> help.
+
+=item B<-->
+
+The B<--> option tells B<EncFS> to send any remaining arguments directly to
+B<FUSE>.  In turn, B<FUSE> passes the arguments to B<fusermount>.  See
+the B<fusermount> help page for information on available commands.
 
 =back
 
