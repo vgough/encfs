@@ -6,5 +6,3 @@ add_test(unit unittests)
 file(GLOB_RECURSE BENCH_SOURCES "*_bench.cpp")
 add_executable (benchmarks ${BENCH_SOURCES})
 target_link_libraries(benchmarks benchmark encfs)
-
-add_custom_target(integration COMMAND ${CMAKE_CURRENT_LIST_DIR}/integration.sh)
