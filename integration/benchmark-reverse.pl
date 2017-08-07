@@ -5,7 +5,7 @@
 use File::Temp;
 use warnings;
 
-require("tests/common.pl");
+require("integration/common.pl");
 
 sub mount_encfs_reverse {
     my $p = shift;

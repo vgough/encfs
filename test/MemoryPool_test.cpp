@@ -1,6 +1,6 @@
 #include "gtest/gtest.h"
 
-#include "MemoryPool.h"
+#include "encfs/MemoryPool.h"
 
 using namespace encfs;
 

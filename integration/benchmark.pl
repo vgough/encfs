@@ -5,7 +5,7 @@
 use File::Temp;
 use warnings;
 
-require("tests/common.pl");
+require("integration/common.pl");
 
 # Create a new empty working directory
 sub newWorkingDir {
@@ -58,7 +58,7 @@ sub mount_ecryptfs {
     mkdir($c);
     mkdir($p);
 
-    system("expect -c \"spawn mount -t ecryptfs $c $p\" ./tests/mount-ecryptfs.expect > /dev/null") == 0
+    system("expect -c \"spawn mount -t ecryptfs $c $p\" ./integration/mount-ecryptfs.expect > /dev/null") == 0
       or die("ecryptfs mount failed - are you root?");
 
     print "# ecryptfs mounted on $p\n";

@@ -8,7 +8,7 @@ use File::Copy;
 use File::Temp;
 use IO::Handle;
 
-require("tests/common.pl");
+require("integration/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 

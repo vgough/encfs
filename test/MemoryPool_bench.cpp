@@ -1,6 +1,6 @@
 #include "benchmark/benchmark.h"
 
-#include "MemoryPool.h"
+#include "encfs/MemoryPool.h"
 
 using namespace encfs;
 

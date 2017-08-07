@@ -1,12 +1,12 @@
 #include "gtest/gtest.h"
 
-#include "BlockNameIO.h"
-#include "Cipher.h"
-#include "CipherKey.h"
-#include "DirNode.h"
-#include "FSConfig.h"
-#include "FileUtils.h"
-#include "StreamNameIO.h"
+#include "encfs/BlockNameIO.h"
+#include "encfs/Cipher.h"
+#include "encfs/CipherKey.h"
+#include "encfs/DirNode.h"
+#include "encfs/FSConfig.h"
+#include "encfs/FileUtils.h"
+#include "encfs/StreamNameIO.h"
 
 using namespace encfs;
 using namespace testing;

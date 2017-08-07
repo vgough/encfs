@@ -280,25 +280,18 @@ endif (POD2MAN)
 if (BUILD_UNIT_TESTS)
   enable_testing()
 
-  message("-- Including vendored googletest")
   set(GOOGLETEST_DIR vendor/github.com/google/googletest)
   add_subdirectory(${GOOGLETEST_DIR})
   link_directories(${CMAKE_BINARY_DIR}/${GOOGLETEST_DIR}/googletest)
 
-  message("-- Including vendored benchmark library")
   set(GOOGLEBENCH_DIR vendor/github.com/google/benchmark)
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "benchmark tests")
   add_subdirectory(${GOOGLEBENCH_DIR})
   link_directories(${CMAKE_BINARY_DIR}/${GOOGLEBENCH_DIR})
 
-  file(GLOB_RECURSE TEST_SOURCES "encfs/*_test.cpp")
-  add_executable (unittests ${TEST_SOURCES})
-  target_link_libraries(unittests gtest gtest_main encfs)
-  add_test(unit unittests)
+  # Unit tests.
+  add_subdirectory(test)
 
-  file(GLOB_RECURSE BENCH_SOURCES "encfs/*_bench.cpp")
-  add_executable (benchmarks ${BENCH_SOURCES})
-  target_link_libraries(benchmarks benchmark encfs)
+  # Integration test target - runs against built encfs.
+  add_custom_target(integration COMMAND ${CMAKE_CURRENT_LIST_DIR}/integration.sh)
 endif ()
-
-add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
