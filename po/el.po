@@ -443,8 +443,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr ""
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Ο φάκελος \"%s\" δεν υπάρχει. Να τον δημιουργήσω? (y/n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "Ο φάκελος \"%s\" δεν υπάρχει. Να τον δημιουργήσω? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

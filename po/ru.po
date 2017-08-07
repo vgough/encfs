@@ -503,8 +503,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "Загруженная конфигурация не сопоставима с --reverse\n"
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Директория \"%s\" не существует. Создать ее? (y,n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "Директория \"%s\" не существует. Создать ее? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

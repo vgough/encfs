@@ -18,9 +18,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <errno.h>
+#include <cerrno>
+#include <cinttypes>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -53,10 +53,14 @@ namespace encfs {
 */
 
 FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
-                   const char *plaintextName_, const char *cipherName_) {
-  pthread_mutex_init(&mutex, 0);
+                   const char *plaintextName_, const char *cipherName_,
+                   uint64_t fuseFh) {
+
+  pthread_mutex_init(&mutex, nullptr);
 
   Lock _lock(mutex);
+
+  this->canary = CANARY_OK;
 
   this->_pname = plaintextName_;
   this->_cname = cipherName_;
@@ -64,18 +68,23 @@ FileNode::FileNode(DirNode *parent_, const FSConfigPtr &cfg,
 
   this->fsConfig = cfg;
 
+  this->fuseFh = fuseFh;
+
   // chain RawFileIO & CipherFileIO
   std::shared_ptr<FileIO> rawIO(new RawFileIO(_cname));
   io = std::shared_ptr<FileIO>(new CipherFileIO(rawIO, fsConfig));
 
-  if (cfg->config->blockMACBytes || cfg->config->blockMACRandBytes)
+  if ((cfg->config->blockMACBytes != 0) ||
+      (cfg->config->blockMACRandBytes != 0)) {
     io = std::shared_ptr<FileIO>(new MACFileIO(io, fsConfig));
+  }
 }
 
 FileNode::~FileNode() {
   // FileNode mutex should be locked before the destructor is called
   // pthread_mutex_lock( &mutex );
 
+  canary = CANARY_DESTROYED;
   _pname.assign(_pname.length(), '\0');
   _cname.assign(_cname.length(), '\0');
   io.reset();
@@ -91,23 +100,29 @@ string FileNode::plaintextParent() const { return parentDirectory(_pname); }
 
 static bool setIV(const std::shared_ptr<FileIO> &io, uint64_t iv) {
   struct stat stbuf;
-  if ((io->getAttr(&stbuf) < 0) || S_ISREG(stbuf.st_mode))
+  if ((io->getAttr(&stbuf) < 0) || S_ISREG(stbuf.st_mode)) {
     return io->setIV(iv);
-  else
-    return true;
+  }
+  return true;
 }
 
 bool FileNode::setName(const char *plaintextName_, const char *cipherName_,
                        uint64_t iv, bool setIVFirst) {
   // Lock _lock( mutex );
-  if (cipherName_) VLOG(1) << "calling setIV on " << cipherName_;
+  if (cipherName_ != nullptr) {
+    VLOG(1) << "calling setIV on " << cipherName_;
+  }
 
   if (setIVFirst) {
-    if (fsConfig->config->externalIVChaining && !setIV(io, iv)) return false;
+    if (fsConfig->config->externalIVChaining && !setIV(io, iv)) {
+      return false;
+    }
 
     // now change the name..
-    if (plaintextName_) this->_pname = plaintextName_;
-    if (cipherName_) {
+    if (plaintextName_ != nullptr) {
+      this->_pname = plaintextName_;
+    }
+    if (cipherName_ != nullptr) {
       this->_cname = cipherName_;
       io->setFileName(cipherName_);
     }
@@ -115,8 +130,10 @@ bool FileNode::setName(const char *plaintextName_, const char *cipherName_,
     std::string oldPName = _pname;
     std::string oldCName = _cname;
 
-    if (plaintextName_) this->_pname = plaintextName_;
-    if (cipherName_) {
+    if (plaintextName_ != nullptr) {
+      this->_pname = plaintextName_;
+    }
+    if (cipherName_ != nullptr) {
       this->_cname = cipherName_;
       io->setFileName(cipherName_);
     }
@@ -161,11 +178,14 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
    */
   if (S_ISREG(mode)) {
     res = ::open(_cname.c_str(), O_CREAT | O_EXCL | O_WRONLY, mode);
-    if (res >= 0) res = ::close(res);
-  } else if (S_ISFIFO(mode))
+    if (res >= 0) {
+      res = ::close(res);
+    }
+  } else if (S_ISFIFO(mode)) {
     res = ::mkfifo(_cname.c_str(), mode);
-  else
+  } else {
     res = ::mknod(_cname.c_str(), mode, rdev);
+  }
 
   if (res == -1) {
     int eno = errno;
@@ -173,8 +193,12 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
     res = -eno;
   }
 
-  if (olduid >= 0) setfsuid(olduid);
-  if (oldgid >= 0) setfsgid(oldgid);
+  if (olduid >= 0) {
+    setfsuid(olduid);
+  }
+  if (oldgid >= 0) {
+    setfsgid(oldgid);
+  }
 
   return res;
 }
@@ -236,21 +260,24 @@ int FileNode::sync(bool datasync) {
   int fh = io->open(O_RDONLY);
   if (fh >= 0) {
     int res = -EIO;
-#ifdef FDATASYNC
-    if (datasync)
+#ifdef HAVE_FDATASYNC
+    if (datasync) {
       res = fdatasync(fh);
-    else
+    } else {
       res = fsync(fh);
+    }
 #else
     (void)datasync;
     res = fsync(fh);
 #endif
 
-    if (res == -1) res = -errno;
+    if (res == -1) {
+      res = -errno;
+    }
 
     return res;
-  } else
-    return fh;
+  }
+  return fh;
 }
 
 }  // namespace encfs

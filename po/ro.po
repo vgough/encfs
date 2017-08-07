@@ -473,8 +473,8 @@ msgid "The configuration loaded is not compatible with --reverse\n"
 msgstr "Configuraţia încărcată nu este compatibilă cu --reverse\n"
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
-msgstr "Directorul \"%s\" nu există. Ar trebui creat ? (y/n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
+msgstr "Directorul \"%s\" nu există. Ar trebui creat ? (y,N) "
 
 msgid ""
 "The external initialization-vector chaining option has been\n"

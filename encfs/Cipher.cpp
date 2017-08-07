@@ -18,10 +18,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <cstddef>
 #include <iostream>
 #include <list>
 #include <map>
-#include <stddef.h>
 #include <string>
 #include <utility>
 
@@ -56,8 +56,8 @@ struct CipherAlg {
   Range blockSize;
 };
 
-typedef multimap<string, CipherAlg> CipherMap_t;
-static CipherMap_t *gCipherMap = NULL;
+using CipherMap_t = multimap<string, CipherAlg>;
+static CipherMap_t *gCipherMap = nullptr;
 
 std::list<Cipher::CipherAlgorithm> Cipher::GetAlgorithmList(
     bool includeHidden) {
@@ -65,7 +65,9 @@ std::list<Cipher::CipherAlgorithm> Cipher::GetAlgorithmList(
 
   list<CipherAlgorithm> result;
 
-  if (!gCipherMap) return result;
+  if (gCipherMap == nullptr) {
+    return result;
+  }
 
   CipherMap_t::const_iterator it;
   CipherMap_t::const_iterator mapEnd = gCipherMap->end();
@@ -98,7 +100,9 @@ bool Cipher::Register(const char *name, const char *description,
                       const Interface &iface, const Range &keyLength,
                       const Range &blockSize, CipherConstructor fn,
                       bool hidden) {
-  if (!gCipherMap) gCipherMap = new CipherMap_t;
+  if (gCipherMap == nullptr) {
+    gCipherMap = new CipherMap_t;
+  }
 
   CipherAlg ca;
   ca.hidden = hidden;
@@ -114,7 +118,7 @@ bool Cipher::Register(const char *name, const char *description,
 std::shared_ptr<Cipher> Cipher::New(const string &name, int keyLen) {
   std::shared_ptr<Cipher> result;
 
-  if (gCipherMap) {
+  if (gCipherMap != nullptr) {
     CipherMap_t::const_iterator it = gCipherMap->find(name);
     if (it != gCipherMap->end()) {
       CipherConstructor fn = it->second.constructor;
@@ -127,7 +131,7 @@ std::shared_ptr<Cipher> Cipher::New(const string &name, int keyLen) {
 }
 std::shared_ptr<Cipher> Cipher::New(const Interface &iface, int keyLen) {
   std::shared_ptr<Cipher> result;
-  if (gCipherMap) {
+  if (gCipherMap != nullptr) {
     CipherMap_t::const_iterator it;
     CipherMap_t::const_iterator mapEnd = gCipherMap->end();
 
@@ -148,9 +152,9 @@ std::shared_ptr<Cipher> Cipher::New(const Interface &iface, int keyLen) {
   return result;
 }
 
-Cipher::Cipher() {}
+Cipher::Cipher() = default;
 
-Cipher::~Cipher() {}
+Cipher::~Cipher() = default;
 
 unsigned int Cipher::MAC_32(const unsigned char *src, int len,
                             const CipherKey &key, uint64_t *chainedIV) const {
@@ -184,13 +188,13 @@ bool Cipher::nameDecode(unsigned char *data, int len, uint64_t iv64,
 string Cipher::encodeAsString(const CipherKey &key,
                               const CipherKey &encodingKey) {
   int encodedKeySize = this->encodedKeySize();
-  unsigned char *keyBuf = new unsigned char[encodedKeySize];
+  auto *keyBuf = new unsigned char[encodedKeySize];
 
   // write the key, encoding it with itself.
   this->writeKey(key, keyBuf, encodingKey);
 
   int b64Len = B256ToB64Bytes(encodedKeySize);
-  unsigned char *b64Key = new unsigned char[b64Len + 1];
+  auto *b64Key = new unsigned char[b64Len + 1];
 
   changeBase2(keyBuf, encodedKeySize, 8, b64Key, b64Len, 6);
   B64ToAscii(b64Key, b64Len);

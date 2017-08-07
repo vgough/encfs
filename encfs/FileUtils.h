@@ -60,7 +60,7 @@ struct EncFS_Root {
   ~EncFS_Root();
 };
 
-typedef std::shared_ptr<EncFS_Root> RootPtr;
+using RootPtr = std::shared_ptr<EncFS_Root>;
 
 enum ConfigMode { Config_Prompt, Config_Standard, Config_Paranoia };
 

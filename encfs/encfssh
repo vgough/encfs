@@ -6,16 +6,17 @@
 # Contributed by David Rosenstrauch.
 
 canonicalize() {
-	cd "$1"
+	cd "$1" || return
 	pwd
 }
 
 
-if [ -z "$1" -o "$1" = "-h" ]; then
-	echo Usage: encfssh encrypted_directory [unencrypted-directory [-p]]
+case $1 in "" | -h | --help)
+	echo "Usage: encfssh encrypted_directory [unencrypted-directory [-p]]"
 	echo "  -p   mount the unencrypted directory as public"
 	exit 1
-fi
+	;;
+esac
 
 enc_dir=$1
 unenc_dir_given=false
@@ -28,42 +29,65 @@ if [ ! -z "$2" ]; then
 	    mount_public=true
 	fi
     done
-    [ -d "$unenc_dir" ] || mkdir $unenc_dir
+    [ -d "$unenc_dir" ] || mkdir -- "$unenc_dir"
 else
     unenc_dir=$(mktemp -d .XXXXXXXX)
 fi
 
 if [ ! -d "$enc_dir" ]; then
-    mkdir $enc_dir
+    mkdir -- "$enc_dir"
 fi
 
 enc_dir=$(canonicalize "$enc_dir")
 unenc_dir=$(canonicalize "$unenc_dir")
 
-options=""
-if $unenc_dir_given; then
-    if $mount_public; then
+options=
+if [ "$unenc_dir_given" = "true" ]; then
+    if [ "$mount_public" = "true" ]; then
 	options="-- -o allow_other"
     fi
 fi
 
 # Attach the directory and change into it
-if encfs $enc_dir $unenc_dir $options; then :; else
+
+## options can only have one of two values (empty, or "-- -o allow_other"), so
+## this unquoted expansion is safe; disabling relevant shellcheck warning.
+## See code review feedback requesting this attached to
+## https://github.com/vgough/encfs/pull/258/files/09b9fc5efb7c2694976baffe7dd21172fd182027
+## ...and that warning's explanation at https://github.com/koalaman/shellcheck/wiki/SC2086
+# shellcheck disable=SC2086
+if encfs "$enc_dir" "$unenc_dir" $options; then :; else
     echo "encfs failed"
-    rmdir $unenc_dir
+    rmdir -- "$unenc_dir"
     exit 1
 fi
-if ! $unenc_dir_given; then
-    chmod 700 $unenc_dir
+if ! [ "$unenc_dir_given" = "true" ]; then
+    chmod 700 "$unenc_dir"
 fi
-echo "Directory is $unenc_dir"
-orig_dir=$(pwd)
-cd $unenc_dir
+echo "Directory is $unenc_dir" >&2
+cd "$unenc_dir" || exit
 
 # Fall back to umount if fusermount is not available (e.g., on OS X)
-FUSE_UMOUNT="$(which 2>/dev/null fusermount)"
-FUSE_UMOUNT="${FUSE_UMOUNT:+fusermount -u}"
-FUSE_UMOUNT="${FUSE_UMOUNT:-umount}"
+fuse_umount() {
+	if command -v fusermount >/dev/null 2>&1; then
+		fusermount -u "$@"
+	else
+		umount "$@" # MacOS case
+	fi
+}
 
-# Set the shell up
-exec /bin/sh -c "$SHELL ; cd $orig_dir ; $FUSE_UMOUNT $unenc_dir ; if ! $unenc_dir_given; then rmdir $unenc_dir; fi"
+# Honor the SHELL environment variable to select a shell to run
+"$SHELL"; retval=$?
+
+# ensure that this shell isn't itself holding the mounted directory open
+# ...but avoid terminating on failure, *or* causing a shellcheck warning for
+#    failing to check exit status from cd.
+cd / ||:
+
+# if unmount fails, skip rmdir, always use exit status of failure
+fuse_umount "$unenc_dir" || exit
+
+if ! [ "$unenc_dir_given" = true ]; then
+	rmdir -- "$unenc_dir"
+fi
+exit "$retval"

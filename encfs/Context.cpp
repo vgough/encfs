@@ -18,7 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <utility>
 
 #include "Context.h"
@@ -29,11 +29,12 @@
 namespace encfs {
 
 EncFS_Context::EncFS_Context() {
-  pthread_cond_init(&wakeupCond, 0);
-  pthread_mutex_init(&wakeupMutex, 0);
-  pthread_mutex_init(&contextMutex, 0);
+  pthread_cond_init(&wakeupCond, nullptr);
+  pthread_mutex_init(&wakeupMutex, nullptr);
+  pthread_mutex_init(&contextMutex, nullptr);
 
   usageCount = 0;
+  currentFuseFh = 1;
 }
 
 EncFS_Context::~EncFS_Context() {
@@ -69,31 +70,28 @@ void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
   Lock lock(contextMutex);
 
   root = r;
-  if (r) rootCipherDir = r->rootDirectory();
+  if (r) {
+    rootCipherDir = r->rootDirectory();
+  }
 }
 
-bool EncFS_Context::isMounted() { return root.get() != nullptr; }
+bool EncFS_Context::isMounted() { return root != nullptr; }
 
-int EncFS_Context::getAndResetUsageCounter() {
+void EncFS_Context::getAndResetUsageCounter(int *usage, int *openCount) {
   Lock lock(contextMutex);
 
-  int count = usageCount;
+  *usage = usageCount;
   usageCount = 0;
 
-  return count;
+  *openCount = openFiles.size();
 }
 
-int EncFS_Context::openFileCount() const {
-  Lock lock(contextMutex);
-
-  return openFiles.size();
-}
 std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(path));
+  auto it = openFiles.find(std::string(path));
   if (it != openFiles.end()) {
-    // all the items in the set point to the same node.. so just use the
+    // every entry in the list is fine... so just use the
     // first
     return it->second.front();
   }
@@ -103,7 +101,7 @@ std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
 void EncFS_Context::renameNode(const char *from, const char *to) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(from));
+  auto it = openFiles.find(std::string(from));
   if (it != openFiles.end()) {
     auto val = it->second;
     openFiles.erase(it);
@@ -111,26 +109,61 @@ void EncFS_Context::renameNode(const char *from, const char *to) {
   }
 }
 
-FileNode *EncFS_Context::putNode(const char *path,
-                                 std::shared_ptr<FileNode> &&node) {
+// putNode stores "node" under key "path" in the "openFiles" map. It
+// increments the reference count if the key already exists.
+void EncFS_Context::putNode(const char *path, std::shared_ptr<FileNode> node) {
   Lock lock(contextMutex);
   auto &list = openFiles[std::string(path)];
-  list.push_front(std::move(node));
-  return list.front().get();
+  // The length of "list" serves as the reference count.
+  list.push_front(node);
+  fuseFhMap[node->fuseFh] = node;
 }
 
-void EncFS_Context::eraseNode(const char *path, FileNode *pl) {
+// eraseNode is called by encfs_release in response to the RELEASE
+// FUSE-command we get from the kernel.
+void EncFS_Context::eraseNode(const char *path,
+                              std::shared_ptr<FileNode> fnode) {
   Lock lock(contextMutex);
 
-  FileMap::iterator it = openFiles.find(std::string(path));
+  auto it = openFiles.find(std::string(path));
   rAssert(it != openFiles.end());
+  auto &list = it->second;
 
-  it->second.pop_front();
+  // Find "fnode" in the list of FileNodes registered under this path.
+  auto findIter = std::find(list.begin(), list.end(), fnode);
+  rAssert(findIter != list.end());
+  list.erase(findIter);
 
-  // if no more references to this file, remove the record all together
-  if (it->second.empty()) {
+  // If no reference to "fnode" remains, drop the entry from fuseFhMap
+  // and overwrite the canary.
+  findIter = std::find(list.begin(), list.end(), fnode);
+  if (findIter == list.end()) {
+    fuseFhMap.erase(fnode->fuseFh);
+    fnode->canary = CANARY_RELEASED;
+  }
+
+  // If no FileNode is registered at this path anymore, drop the entry
+  // from openFiles.
+  if (list.empty()) {
     openFiles.erase(it);
   }
+}
+
+// nextFuseFh returns the next unused uint64 to serve as the FUSE file
+// handle for the kernel.
+uint64_t EncFS_Context::nextFuseFh(void) {
+  // This is thread-safe because currentFuseFh is declared as std::atomic
+  return currentFuseFh++;
+}
+
+// lookupFuseFh finds "n" in "fuseFhMap" and returns the FileNode.
+std::shared_ptr<FileNode> EncFS_Context::lookupFuseFh(uint64_t n) {
+  Lock lock(contextMutex);
+  auto it = fuseFhMap.find(n);
+  if (it == fuseFhMap.end()) {
+    return nullptr;
+  }
+  return it->second;
 }
 
 }  // namespace encfs

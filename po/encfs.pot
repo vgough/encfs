@@ -153,7 +153,7 @@ msgid "Incorrect number of arguments for command \"%s\""
 msgstr ""
 
 #, c-format
-msgid "The directory \"%s\" does not exist. Should it be created? (y,n) "
+msgid "The directory \"%s\" does not exist. Should it be created? (y,N) "
 msgstr ""
 
 msgid "Unable to create directory: "

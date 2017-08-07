@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 26;
+use Test::More tests => 25;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -12,6 +12,32 @@ use Errno qw(EROFS);
 require("tests/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
+
+if($^O eq "linux" and $tempDir eq "/tmp") {
+   # On Linux, /tmp is often a tmpfs mount that does not support
+   # extended attributes. Use /var/tmp instead.
+   $tempDir = "/var/tmp";
+}
+
+# Find attr binary
+# Linux
+my @binattr = ("attr", "-l");
+if(system("which xattr > /dev/null 2>&1") == 0)
+{
+    # Mac OS X
+    @binattr = ("xattr", "-s");
+}
+if(system("which lsextattr > /dev/null 2>&1") == 0)
+{
+    # FreeBSD
+    @binattr = ("lsextattr", "-h", "user");
+}
+# Do we support xattr ?
+my $have_xattr = 1;
+if(system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
+{
+    $have_xattr = 0;
+}
 
 # Helper function
 # Create a new empty working directory
@@ -84,6 +110,8 @@ sub symlink_test
     $dec = readlink("$decrypted/symlink");
     ok( $dec eq $target, "symlink to '$target'") or
         print("# (original) $target' != '$dec' (decrypted)\n");
+    my $return_code = ($have_xattr) ? system(@binattr, "$decrypted/symlink") : 0;
+    is($return_code, 0, "symlink to '$target' extended attributes can be read (return code was $return_code)");
     unlink("$plain/symlink");
 }
 
@@ -129,6 +157,11 @@ sub grow {
         last unless $ok;
     }
     ok($ok, "ciphertext and decrypted size of file grown to $i bytes");
+    close($pfh);
+    close($vfh);
+    close($cfh);
+    close($dfh);
+    unlink("$plain/grow"); 
 }
 
 sub largeRead {
@@ -179,7 +212,7 @@ symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
 symlink_test("!§\$%&/()\\<>#+="); # special characters
 symlink_test("$plain/foo");
-writesDenied();
+# writesDenied(); # disabled as writes are allowed when (uniqueIV == false), we would need a specific reverse conf with (uniqueIV == true).
 
 # Umount and delete files
 cleanup();

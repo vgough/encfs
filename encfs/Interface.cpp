@@ -20,6 +20,8 @@
 
 #include "Interface.h"
 
+#include <utility>
+
 #include "ConfigVar.h"
 #include "Error.h"
 
@@ -28,25 +30,19 @@ namespace encfs {
 Interface::Interface(const char *name_, int Current, int Revision, int Age)
     : _name(name_), _current(Current), _revision(Revision), _age(Age) {}
 
-Interface::Interface(const std::string &name_, int Current, int Revision,
-                     int Age)
-    : _name(name_), _current(Current), _revision(Revision), _age(Age) {}
+Interface::Interface(std::string name_, int Current, int Revision, int Age)
+    : _name(std::move(name_)),
+      _current(Current),
+      _revision(Revision),
+      _age(Age) {}
 
 Interface::Interface(const Interface &src)
-    : _name(src._name),
-      _current(src._current),
-      _revision(src._revision),
-      _age(src._age) {}
+
+    = default;
 
 Interface::Interface() : _current(0), _revision(0), _age(0) {}
 
-Interface &Interface::operator=(const Interface &src) {
-  _name = src._name;
-  _current = src._current;
-  _revision = src._revision;
-  _age = src._age;
-  return *this;
-}
+Interface &Interface::operator=(const Interface &src) = default;
 
 const std::string &Interface::name() const { return _name; }
 
@@ -87,12 +83,13 @@ static int sign( int a, int b )
 #else
 // simple, easy to check, unlikely to break due to unforseen events..
 static int sign(int a, int b) {
-  if (a < b)
+  if (a < b) {
     return 0;
-  else if (a == b)
+  }
+  if (a == b) {
     return 1;
-  else
-    return 2;
+  }
+  return 2;
 }
 #endif
 
@@ -111,7 +108,9 @@ bool Interface::implements(const Interface &B) const {
           << ":" << age() << ") implements " << B.name() << "(" << B.current()
           << ":" << B.revision() << ")";
 
-  if (name() != B.name()) return false;
+  if (name() != B.name()) {
+    return false;
+  }
 
   int currentDiff = current() - B.current();
   return (currentDiff >= 0 && currentDiff <= age());
@@ -120,29 +119,29 @@ bool Interface::implements(const Interface &B) const {
 bool operator<(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) < EqualVersion);
-  } else
-    return A.name() < B.name();
+  }
+  return A.name() < B.name();
 }
 
 bool operator>(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) > EqualVersion);
-  } else
-    return A.name() < B.name();
+  }
+  return A.name() < B.name();
 }
 
 bool operator<=(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) <= EqualVersion);
-  } else
-    return A.name() < B.name();
+  }
+  return A.name() < B.name();
 }
 
 bool operator>=(const Interface &A, const Interface &B) {
   if (A.name() == B.name()) {
     return (diffSum(A, B) >= EqualVersion);
-  } else
-    return A.name() < B.name();
+  }
+  return A.name() < B.name();
 }
 
 ConfigVar &operator<<(ConfigVar &dst, const Interface &iface) {

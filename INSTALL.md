@@ -46,7 +46,7 @@ EncFS depends on a number of libraries:
     * tinyxml2 : for reading and writing XML configuration files
     * gettext : internationalization support
     * libintl : internationalization support
-    * cmake : version 3.2 or newer
+    * cmake : version 3.0.2 (Debian jessie version) or newer
     * GNU make or ninja-build : to run the build for cmake
 
 Compiling on Debian and Ubuntu

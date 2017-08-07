@@ -32,7 +32,7 @@ namespace encfs {
 class RawFileIO : public FileIO {
  public:
   RawFileIO();
-  RawFileIO(const std::string &fileName);
+  RawFileIO(std::string fileName);
   virtual ~RawFileIO();
 
   virtual Interface interface() const;

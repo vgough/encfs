@@ -37,7 +37,7 @@ class Interface {
           are implemented.
   */
   Interface(const char *name, int Current, int Revision, int Age);
-  Interface(const std::string &name, int Current, int Revision, int Age);
+  Interface(std::string name, int Current, int Revision, int Age);
   Interface(const Interface &src);
   Interface();
 

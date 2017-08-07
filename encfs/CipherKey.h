@@ -31,7 +31,7 @@ class AbstractCipherKey {
   virtual ~AbstractCipherKey();
 };
 
-typedef std::shared_ptr<AbstractCipherKey> CipherKey;
+using CipherKey = std::shared_ptr<AbstractCipherKey>;
 
 }  // namespace encfs
 

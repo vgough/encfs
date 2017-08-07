@@ -35,8 +35,9 @@
 #include <sys/fsuid.h>
 #endif
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cstring>
+#include <utility>
 
 #include "Context.h"
 #include "Error.h"
@@ -51,20 +52,13 @@ class DirDeleter {
   void operator()(DIR *d) { ::closedir(d); }
 };
 
-DirTraverse::DirTraverse(const std::shared_ptr<DIR> &_dirPtr, uint64_t _iv,
-                         const std::shared_ptr<NameIO> &_naming)
-    : dir(_dirPtr), iv(_iv), naming(_naming) {}
+DirTraverse::DirTraverse(std::shared_ptr<DIR> _dirPtr, uint64_t _iv,
+                         std::shared_ptr<NameIO> _naming)
+    : dir(std::move(_dirPtr)), iv(_iv), naming(std::move(_naming)) {}
 
-DirTraverse::DirTraverse(const DirTraverse &src)
-    : dir(src.dir), iv(src.iv), naming(src.naming) {}
+DirTraverse::DirTraverse(const DirTraverse &src) = default;
 
-DirTraverse &DirTraverse::operator=(const DirTraverse &src) {
-  dir = src.dir;
-  iv = src.iv;
-  naming = src.naming;
-
-  return *this;
-}
+DirTraverse &DirTraverse::operator=(const DirTraverse &src) = default;
 
 DirTraverse::~DirTraverse() {
   dir.reset();
@@ -76,25 +70,28 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
                       int *fileType, ino_t *inode) {
   de = ::readdir(dir.get());
 
-  if (de) {
-    if (fileType) {
-#if defined(_DIRENT_HAVE_D_TYPE) || defined(__FreeBSD__) || defined(__APPLE__)
+  if (de != nullptr) {
+    if (fileType != nullptr) {
+#if defined(HAVE_DIRENT_D_TYPE)
       *fileType = de->d_type;
 #else
 #warning "struct dirent.d_type not supported"
       *fileType = 0;
 #endif
     }
-    if (inode) *inode = de->d_ino;
+    if (inode != nullptr) {
+      *inode = de->d_ino;
+    }
     return true;
-  } else {
-    if (fileType) *fileType = 0;
-    return false;
   }
+  if (fileType != nullptr) {
+    *fileType = 0;
+  }
+  return false;
 }
 
 std::string DirTraverse::nextPlaintextName(int *fileType, ino_t *inode) {
-  struct dirent *de = 0;
+  struct dirent *de = nullptr;
   while (_nextName(de, dir, fileType, inode)) {
     try {
       uint64_t localIv = iv;
@@ -109,9 +106,9 @@ std::string DirTraverse::nextPlaintextName(int *fileType, ino_t *inode) {
 }
 
 std::string DirTraverse::nextInvalid() {
-  struct dirent *de = 0;
+  struct dirent *de = nullptr;
   // find the first name which produces a decoding error...
-  while (_nextName(de, dir, (int *)0, (ino_t *)0)) {
+  while (_nextName(de, dir, (int *)nullptr, (ino_t *)nullptr)) {
     try {
       uint64_t localIv = iv;
       naming->decodePath(de->d_name, &localIv);
@@ -143,17 +140,16 @@ class RenameOp {
   list<RenameEl>::const_iterator last;
 
  public:
-  RenameOp(DirNode *_dn, const std::shared_ptr<list<RenameEl> > &_renameList)
-      : dn(_dn), renameList(_renameList) {
+  RenameOp(DirNode *_dn, std::shared_ptr<list<RenameEl> > _renameList)
+      : dn(_dn), renameList(std::move(_renameList)) {
     last = renameList->begin();
   }
 
-  RenameOp(const RenameOp &src)
-      : dn(src.dn), renameList(src.renameList), last(src.last) {}
+  RenameOp(const RenameOp &src) = default;
 
   ~RenameOp();
 
-  operator bool() const { return renameList.get() != nullptr; }
+  operator bool() const { return renameList != nullptr; }
 
   bool apply();
   void undo();
@@ -220,7 +216,7 @@ void RenameOp::undo() {
   // list has to be processed backwards, otherwise we may rename
   // directories and directory contents in the wrong order!
   int undoCount = 0;
-  list<RenameEl>::const_iterator it = last;
+  auto it = last;
 
   while (it != renameList->begin()) {
     --it;
@@ -242,7 +238,7 @@ void RenameOp::undo() {
 
 DirNode::DirNode(EncFS_Context *_ctx, const string &sourceDir,
                  const FSConfigPtr &_config) {
-  pthread_mutex_init(&mutex, 0);
+  pthread_mutex_init(&mutex, nullptr);
 
   Lock _lock(mutex);
 
@@ -253,7 +249,7 @@ DirNode::DirNode(EncFS_Context *_ctx, const string &sourceDir,
   naming = fsConfig->nameCoding;
 }
 
-DirNode::~DirNode() {}
+DirNode::~DirNode() = default;
 
 bool DirNode::hasDirectoryNameDependency() const {
   return naming ? naming->getChainedNameIV() : false;
@@ -355,23 +351,24 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
   string cyName = rootDir + naming->encodePath(plaintextPath);
 
   DIR *dir = ::opendir(cyName.c_str());
-  if (dir == NULL) {
+  if (dir == nullptr) {
     int eno = errno;
     VLOG(1) << "opendir error " << strerror(eno);
     return DirTraverse(shared_ptr<DIR>(), 0, std::shared_ptr<NameIO>());
-  } else {
-    std::shared_ptr<DIR> dp(dir, DirDeleter());
-
-    uint64_t iv = 0;
-    // if we're using chained IV mode, then compute the IV at this
-    // directory level..
-    try {
-      if (naming->getChainedNameIV()) naming->encodePath(plaintextPath, &iv);
-    } catch (encfs::Error &err) {
-      RLOG(ERROR) << "encode err: " << err.what();
-    }
-    return DirTraverse(dp, iv, naming);
   }
+  std::shared_ptr<DIR> dp(dir, DirDeleter());
+
+  uint64_t iv = 0;
+  // if we're using chained IV mode, then compute the IV at this
+  // directory level..
+  try {
+    if (naming->getChainedNameIV()) {
+      naming->encodePath(plaintextPath, &iv);
+    }
+  } catch (encfs::Error &err) {
+    RLOG(ERROR) << "encode err: " << err.what();
+  }
+  return DirTraverse(dp, iv, naming);
 }
 
 bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
@@ -386,16 +383,20 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
   string sourcePath = rootDir + fromCPart;
 
   // ok..... we wish it was so simple.. should almost never happen
-  if (fromIV == toIV) return true;
+  if (fromIV == toIV) {
+    return true;
+  }
 
   // generate the real destination path, where we expect to find the files..
   VLOG(1) << "opendir " << sourcePath;
   std::shared_ptr<DIR> dir =
       std::shared_ptr<DIR>(opendir(sourcePath.c_str()), DirDeleter());
-  if (!dir) return false;
+  if (!dir) {
+    return false;
+  }
 
-  struct dirent *de = NULL;
-  while ((de = ::readdir(dir.get())) != NULL) {
+  struct dirent *de = nullptr;
+  while ((de = ::readdir(dir.get())) != nullptr) {
     // decode the name using the oldIV
     uint64_t localIV = fromIV;
     string plainName;
@@ -431,7 +432,7 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
       ren.newPName = string(toP) + '/' + plainName;
 
       bool isDir;
-#if defined(_DIRENT_HAVE_D_TYPE)
+#if defined(HAVE_DIRENT_D_TYPE)
       if (de->d_type != DT_UNKNOWN) {
         isDir = (de->d_type == DT_DIR);
       } else
@@ -477,16 +478,17 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
     will have changed..
 
     Returns a list of renamed items on success, a null list on failure.
-*/ std::shared_ptr<RenameOp> DirNode::newRenameOp(const char *fromP,
-                                                  const char *toP) {
+*/
+std::shared_ptr<RenameOp> DirNode::newRenameOp(const char *fromP,
+                                               const char *toP) {
   // Do the rename in two stages to avoid chasing our tail
   // Undo everything if we encounter an error!
   std::shared_ptr<list<RenameEl> > renameList(new list<RenameEl>);
   if (!genRenameList(*renameList.get(), fromP, toP)) {
     RLOG(WARNING) << "Error during generation of recursive rename list";
     return std::shared_ptr<RenameOp>();
-  } else
-    return std::shared_ptr<RenameOp>(new RenameOp(this, renameList));
+  }
+  return std::make_shared<RenameOp>(this, renameList);
 }
 
 int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
@@ -499,21 +501,30 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
   // if uid or gid are set, then that should be the directory owner
   int olduid = -1;
   int oldgid = -1;
-  if (uid != 0) olduid = setfsuid(uid);
-  if (gid != 0) oldgid = setfsgid(gid);
+  if (uid != 0) {
+    olduid = setfsuid(uid);
+  }
+  if (gid != 0) {
+    oldgid = setfsgid(gid);
+  }
 
   int res = ::mkdir(cyName.c_str(), mode);
 
-  if (olduid >= 0) setfsuid(olduid);
-  if (oldgid >= 0) setfsgid(oldgid);
+  if (olduid >= 0) {
+    setfsuid(olduid);
+  }
+  if (oldgid >= 0) {
+    setfsgid(oldgid);
+  }
 
   if (res == -1) {
     int eno = errno;
     RLOG(WARNING) << "mkdir error on " << cyName << " mode " << mode << ": "
                   << strerror(eno);
     res = -eno;
-  } else
+  } else {
     res = 0;
+  }
 
   return res;
 }
@@ -536,7 +547,9 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
     renameOp = newRenameOp(fromPlaintext, toPlaintext);
 
     if (!renameOp || !renameOp->apply()) {
-      if (renameOp) renameOp->undo();
+      if (renameOp) {
+        renameOp->undo();
+      }
 
       RLOG(WARNING) << "rename aborted";
       return -EACCES;
@@ -557,7 +570,9 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
       res = -errno;
       renameNode(toPlaintext, fromPlaintext, false);
 
-      if (renameOp) renameOp->undo();
+      if (renameOp) {
+        renameOp->undo();
+      }
     } else if (preserve_mtime) {
       struct utimbuf ut;
       ut.actime = st.st_atime;
@@ -593,10 +608,11 @@ int DirNode::link(const char *from, const char *to) {
     VLOG(1) << "hard links not supported with external IV chaining!";
   } else {
     res = ::link(fromCName.c_str(), toCName.c_str());
-    if (res == -1)
+    if (res == -1) {
       res = -errno;
-    else
+    } else {
       res = 0;
+    }
   }
 
   return res;
@@ -605,10 +621,12 @@ int DirNode::link(const char *from, const char *to) {
 /*
     The node is keyed by filename, so a rename means the internal node names
     must be changed.
-*/ std::shared_ptr<FileNode> DirNode::renameNode(const char *from,
-                                                 const char *to) {
+*/
+std::shared_ptr<FileNode> DirNode::renameNode(const char *from,
+                                              const char *to) {
   return renameNode(from, to, true);
 }
+
 std::shared_ptr<FileNode> DirNode::renameNode(const char *from, const char *to,
                                               bool forwardMode) {
   std::shared_ptr<FileNode> node = findOrCreate(from);
@@ -621,7 +639,9 @@ std::shared_ptr<FileNode> DirNode::renameNode(const char *from, const char *to,
             << cname;
 
     if (node->setName(to, cname.c_str(), newIV, forwardMode)) {
-      if (ctx) ctx->renameNode(from, to);
+      if (ctx != nullptr) {
+        ctx->renameNode(from, to);
+      }
     } else {
       // rename error! - put it back
       RLOG(ERROR) << "renameNode failed";
@@ -631,18 +651,30 @@ std::shared_ptr<FileNode> DirNode::renameNode(const char *from, const char *to,
 
   return node;
 }
+
+// findOrCreate checks if we already have a FileNode for "plainName" and
+// creates a new one if we don't. Returns the FileNode.
 std::shared_ptr<FileNode> DirNode::findOrCreate(const char *plainName) {
   std::shared_ptr<FileNode> node;
-  if (ctx) node = ctx->lookupNode(plainName);
-  if (!node) {
-    uint64_t iv = 0;
-    string cipherName = naming->encodePath(plainName, &iv);
-    node.reset(new FileNode(this, fsConfig, plainName,
-                            (rootDir + cipherName).c_str()));
 
-    if (fsConfig->config->externalIVChaining) node->setName(0, 0, iv);
+  // See if we already have a FileNode for this path.
+  if (ctx != nullptr) {
+    node = ctx->lookupNode(plainName);
 
-    VLOG(1) << "created FileNode for " << node->cipherName();
+    // If we don't, create a new one.
+    if (!node) {
+      uint64_t iv = 0;
+      string cipherName = naming->encodePath(plainName, &iv);
+      uint64_t fuseFh = ctx->nextFuseFh();
+      node.reset(new FileNode(this, fsConfig, plainName,
+                              (rootDir + cipherName).c_str(), fuseFh));
+
+      if (fsConfig->config->externalIVChaining) {
+        node->setName(nullptr, nullptr, iv);
+      }
+
+      VLOG(1) << "created FileNode for " << node->cipherName();
+    }
   }
 
   return node;
@@ -656,21 +688,23 @@ shared_ptr<FileNode> DirNode::lookupNode(const char *plainName,
 
 /*
     Similar to lookupNode, except that we also call open() and only return a
-    node on sucess..  This is done in one step to avoid any race conditions
+    node on sucess.  This is done in one step to avoid any race conditions
     with the stored state of the file.
-*/ std::shared_ptr<FileNode> DirNode::openNode(const char *plainName,
-                                               const char *requestor, int flags,
-                                               int *result) {
+    "result" is set to -1 on failure, a value >= 0 on success.
+*/
+std::shared_ptr<FileNode> DirNode::openNode(const char *plainName,
+                                            const char *requestor, int flags,
+                                            int *result) {
   (void)requestor;
-  rAssert(result != NULL);
+  rAssert(result != nullptr);
   Lock _lock(mutex);
 
   std::shared_ptr<FileNode> node = findOrCreate(plainName);
 
-  if (node && (*result = node->open(flags)) >= 0)
+  if (node && (*result = node->open(flags)) >= 0) {
     return node;
-  else
-    return std::shared_ptr<FileNode>();
+  }
+  return std::shared_ptr<FileNode>();
 }
 
 int DirNode::unlink(const char *plaintextName) {
@@ -680,7 +714,7 @@ int DirNode::unlink(const char *plaintextName) {
   Lock _lock(mutex);
 
   int res = 0;
-  if (ctx && ctx->lookupNode(plaintextName)) {
+  if ((ctx != nullptr) && ctx->lookupNode(plaintextName)) {
     // If FUSE is running with "hard_remove" option where it doesn't
     // hide open files for us, then we can't allow an unlink of an open
     // file..

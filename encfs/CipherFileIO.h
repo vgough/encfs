@@ -45,7 +45,7 @@ struct IORequest;
 */
 class CipherFileIO : public BlockFileIO {
  public:
-  CipherFileIO(const std::shared_ptr<FileIO> &base, const FSConfigPtr &cfg);
+  CipherFileIO(std::shared_ptr<FileIO> base, const FSConfigPtr &cfg);
   virtual ~CipherFileIO();
 
   virtual Interface interface() const;
