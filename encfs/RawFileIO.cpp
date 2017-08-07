@@ -257,9 +257,6 @@ int RawFileIO::truncate(off_t size) {
 
   if (fd >= 0 && canWrite) {
     res = ::ftruncate(fd, size);
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
-    ::fdatasync(fd);
-#endif
   } else {
     res = ::truncate(name.c_str(), size);
   }
@@ -274,6 +271,14 @@ int RawFileIO::truncate(off_t size) {
     res = 0;
     fileSize = size;
     knownSize = true;
+  }
+
+  if (fd >= 0 && canWrite) {
+#if defined(HAVE_FDATASYNC)
+    ::fdatasync(fd);
+#else
+    ::fsync(fd);  
+#endif
   }
 
   return res;

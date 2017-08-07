@@ -1035,7 +1035,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
     alg = findCipherAlgorithm("AES", keySize);
 
 // If case-insensitive system, opt for Block32 filename encoding
-#if defined(__APPLE__) || defined(WIN32)
+#if DEFAULT_CASE_INSENSITIVE
     nameIOIface = BlockNameIO::CurrentInterface(true);
 #else
     nameIOIface = BlockNameIO::CurrentInterface();
