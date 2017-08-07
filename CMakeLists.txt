@@ -93,12 +93,6 @@ check_cxx_source_compiles ("#include <sys/types.h>
   " XATTR_ADD_OPT)
 set (CMAKE_REQUIRED_QUIET ${CMAKE_REQUIRED_QUIET_SAVE})
 
-# Check if we have fdatasync.
-include (CheckCXXSourceCompiles)
-check_cxx_source_compiles ("#include <unistd.h>
-  int main() { fdatasync(0); return 1; }
-  " FDATASYNC)
-
 # Check if we have some standard functions.
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
