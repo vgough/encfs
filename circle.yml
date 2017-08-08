@@ -10,5 +10,5 @@ dependencies:
 test:
   override:
     - bash ./ci/config.sh
-    - cd build && make && ./checkops && make install
+    - cd build && make && make test && make install
     - /tmp/encfs/bin/encfsctl --version
