@@ -17,11 +17,16 @@ Steps to build EncFS:
     cmake ..
     make
 
-Optional, but strongly recommended, is running the test suite
-to verify that the generated binaries work as expected
-(runtime: 20 seconds)
+Optional, but strongly recommended, is running the unit and integration
+tests to verify that the generated binaries work as expected.  Unit
+tests will run almost instantly:
 
     make test
+
+Integration tests will take ~20 seconds to run and will mount an
+encrypted filesystem and run tests on it:
+
+    make integration
 
 The compilation process creates two executables, encfs and encfsctl in
 the encfs directory.  You can install to in a system directory via
