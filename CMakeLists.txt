@@ -97,7 +97,12 @@ check_cxx_source_compiles ("#include <sys/types.h>
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
 check_function_exists_glibc (utimensat HAVE_UTIMENSAT)
-check_function_exists_glibc (fdatasync HAVE_FDATASYNC)
+if (APPLE)
+  message ("-- There is no usable FDATASYNC on Apple")
+  set(HAVE_FDATASYNC FALSE)
+else()
+  check_function_exists_glibc (fdatasync HAVE_FDATASYNC)
+endif (APPLE)
 
 set (CMAKE_THREAD_PREFER_PTHREAD)
 find_package (Threads REQUIRED)
