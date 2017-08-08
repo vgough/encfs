@@ -284,7 +284,7 @@ int RawFileIO::truncate(off_t size) {
 #if defined(HAVE_FDATASYNC)
     ::fdatasync(fd);
 #else
-    ::fsync(fd);  
+    ::fsync(fd);
 #endif
   }
 

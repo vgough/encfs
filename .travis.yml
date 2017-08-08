@@ -4,39 +4,31 @@ language: cpp
 
 sudo: true
 
+os:
+  - linux
+  - osx
+
 compiler:
   - clang
   - gcc
 
+matrix:
+  exclude:
+    - os: osx
+      compiler: gcc
+
 branches:
   only:
     - master
-    - coverity_scan
     - travis
 
-env:
-  global:
-   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
-   #   via the "travis encrypt" command using the project repo's public key
-   - secure: "KuAAwjiIqkk4vqSX/M3ZZIvQs6edm+tV8IADiklTUYZIFyxu8FgZ6RbDdMD2sef5bNZA1OZhlcbeRtiKff5CfMtvzc607Lg3NUkpi+ShMynWgqS/e0uCMf9ogEJlUiZMxf4juBi7v6DyMl/WV6pAdJmdfHtzcj8GF2mgTfQjkO8="
-
 before_script:
-  - sudo modprobe fuse
-  - cmake --version
+  - ./ci/setup.sh
 
 script:
-  - if [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then ./build.sh && ./test.sh ; fi
+  - ./ci/check.sh
 
 addons:
-  coverity_scan:
-    project:
-      name: "vgough/encfs"
-      description: "Build submitted via Travis CI"
-    notification_email: vgough@pobox.com
-    build_command_prepend: "make clean"
-    build_command:   "make -j 4"
-    branch_pattern: coverity_scan
-
   apt:
     sources:
       - ubuntu-toolchain-r-test

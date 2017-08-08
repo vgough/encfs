@@ -18,6 +18,7 @@ option(IWYU "Build with IWYU analysis." OFF)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
+option (BUILD_UNIT_TESTS "build EncFS unit tests" ON)
 option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
@@ -96,7 +97,12 @@ check_cxx_source_compiles ("#include <sys/types.h>
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
 check_function_exists_glibc (utimensat HAVE_UTIMENSAT)
-check_function_exists_glibc (fdatasync HAVE_FDATASYNC)
+if (APPLE)
+  message ("-- There is no usable FDATASYNC on Apple")
+  set(HAVE_FDATASYNC FALSE)
+else()
+  check_function_exists_glibc (fdatasync HAVE_FDATASYNC)
+endif (APPLE)
 
 set (CMAKE_THREAD_PREFER_PTHREAD)
 find_package (Threads REQUIRED)
@@ -229,7 +235,6 @@ if (IWYU)
   endif()
 endif()
 
-
 # Set RPATH to library install path.
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
 
@@ -277,5 +282,21 @@ if (POD2MAN)
     DESTINATION ${MAN_DESTINATION})
 endif (POD2MAN)
 
-add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
+if (BUILD_UNIT_TESTS)
+  enable_testing()
 
+  set(GOOGLETEST_DIR vendor/github.com/google/googletest)
+  add_subdirectory(${GOOGLETEST_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${GOOGLETEST_DIR}/googletest)
+
+  set(GOOGLEBENCH_DIR vendor/github.com/google/benchmark)
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "benchmark tests")
+  add_subdirectory(${GOOGLEBENCH_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${GOOGLEBENCH_DIR})
+
+  # Unit tests.
+  add_subdirectory(test)
+
+  # Integration test target - runs against built encfs.
+  add_custom_target(integration COMMAND ${CMAKE_CURRENT_LIST_DIR}/integration.sh)
+endif ()

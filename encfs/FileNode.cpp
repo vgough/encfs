@@ -260,7 +260,7 @@ int FileNode::sync(bool datasync) {
   int fh = io->open(O_RDONLY);
   if (fh >= 0) {
     int res = -EIO;
-#ifdef HAVE_FDATASYNC
+#if defined(HAVE_FDATASYNC)
     if (datasync) {
       res = fdatasync(fh);
     } else {

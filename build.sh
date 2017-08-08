@@ -7,7 +7,7 @@ if [[ ! -d build ]]
 then
 	mkdir build
 	cd build
-	cmake ..
+	cmake .. $*
 	cd ..
 fi
 

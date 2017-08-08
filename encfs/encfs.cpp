@@ -75,13 +75,7 @@ static EncFS_Context *context() {
  * Optionally takes a pointer to the EncFS_Context, will get it from FUSE
  * if the argument is NULL.
  */
-static bool isReadOnly(EncFS_Context *ctx) {
-  if (ctx == nullptr) {
-    ctx = (EncFS_Context *)fuse_get_context()->private_data;
-  }
-
-  return ctx->opts->readOnly;
-}
+static bool isReadOnly(EncFS_Context *ctx) { return ctx->opts->readOnly; }
 
 // helper function -- apply a functor to a cipher path, given the plain path
 static int withCipherPath(const char *opName, const char *path,
@@ -366,7 +360,6 @@ int encfs_mkdir(const char *path, mode_t mode) {
 
 int encfs_unlink(const char *path) {
   EncFS_Context *ctx = context();
-
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
@@ -392,7 +385,8 @@ int _do_rmdir(EncFS_Context *, const string &cipherPath) {
 }
 
 int encfs_rmdir(const char *path) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withCipherPath("rmdir", path, bind(_do_rmdir, _1, _2));
@@ -529,7 +523,8 @@ int _do_chmod(EncFS_Context *, const string &cipherPath, mode_t mode) {
 }
 
 int encfs_chmod(const char *path, mode_t mode) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withCipherPath("chmod", path, bind(_do_chmod, _1, _2, mode));
@@ -541,7 +536,8 @@ int _do_chown(EncFS_Context *, const string &cyName, uid_t u, gid_t g) {
 }
 
 int encfs_chown(const char *path, uid_t uid, gid_t gid) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withCipherPath("chown", path, bind(_do_chown, _1, _2, uid, gid));
@@ -550,14 +546,16 @@ int encfs_chown(const char *path, uid_t uid, gid_t gid) {
 int _do_truncate(FileNode *fnode, off_t size) { return fnode->truncate(size); }
 
 int encfs_truncate(const char *path, off_t size) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withFileNode("truncate", path, nullptr, bind(_do_truncate, _1, size));
 }
 
 int encfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withFileNode("ftruncate", path, fi, bind(_do_truncate, _1, size));
@@ -569,7 +567,8 @@ int _do_utime(EncFS_Context *, const string &cyName, struct utimbuf *buf) {
 }
 
 int encfs_utime(const char *path, struct utimbuf *buf) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withCipherPath("utime", path, bind(_do_utime, _1, _2, buf));
@@ -592,7 +591,8 @@ int _do_utimens(EncFS_Context *, const string &cyName,
 }
 
 int encfs_utimens(const char *path, const struct timespec ts[2]) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withCipherPath("utimens", path, bind(_do_utimens, _1, _2, ts));
@@ -701,7 +701,8 @@ int _do_fsync(FileNode *fnode, int dataSync) {
 }
 
 int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withFileNode("fsync", path, file, bind(_do_fsync, _1, dataSync));
@@ -717,7 +718,8 @@ int _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
                 struct fuse_file_info *file) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withFileNode("write", path, file,
@@ -759,7 +761,10 @@ int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags, uint32_t position) {
-  if (isReadOnly(NULL)) return -EROFS;
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
+    return -EROFS;
+  }
   (void)flags;
   return withCipherPath("setxattr", path, bind(_do_setxattr, _1, _2, name,
                                                value, size, position));
@@ -771,7 +776,8 @@ int _do_setxattr(EncFS_Context *, const string &cyName, const char *name,
 }
 int encfs_setxattr(const char *path, const char *name, const char *value,
                    size_t size, int flags) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withCipherPath("setxattr", path,
@@ -831,7 +837,8 @@ int _do_removexattr(EncFS_Context *, const string &cyName, const char *name) {
 }
 
 int encfs_removexattr(const char *path, const char *name) {
-  if (isReadOnly(nullptr)) {
+  EncFS_Context *ctx = context();
+  if (isReadOnly(ctx)) {
     return -EROFS;
   }
 
