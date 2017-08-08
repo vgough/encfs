@@ -38,7 +38,7 @@
 #include "NameIO.h"
 #include "Range.h"
 #include "StreamNameIO.h"
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 
 #define NO_DES
 #include <openssl/ssl.h>

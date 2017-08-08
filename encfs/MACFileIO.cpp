@@ -20,7 +20,7 @@
 
 #include "MACFileIO.h"
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cinttypes>
 #include <cstring>
 #include <sys/stat.h>

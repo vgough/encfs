@@ -35,7 +35,7 @@
 #include <sys/fsuid.h>
 #endif
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <cstring>
 #include <utility>
 
@@ -72,7 +72,7 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
 
   if (de != nullptr) {
     if (fileType != nullptr) {
-#if defined(_DIRENT_HAVE_D_TYPE) || defined(__FreeBSD__) || defined(__APPLE__)
+#if defined(HAVE_DIRENT_D_TYPE)
       *fileType = de->d_type;
 #else
 #warning "struct dirent.d_type not supported"
@@ -430,7 +430,7 @@ bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
       ren.newPName = string(toP) + '/' + plainName;
 
       bool isDir;
-#if defined(_DIRENT_HAVE_D_TYPE)
+#if defined(HAVE_DIRENT_D_TYPE)
       if (de->d_type != DT_UNKNOWN) {
         isDir = (de->d_type == DT_DIR);
       } else

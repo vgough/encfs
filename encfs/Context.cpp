@@ -18,7 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "internal/easylogging++.h"
+#include "easylogging++.h"
 #include <utility>
 
 #include "Context.h"

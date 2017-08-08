@@ -18,6 +18,7 @@ option(IWYU "Build with IWYU analysis." OFF)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
+option (BUILD_UNIT_TESTS "build EncFS unit tests" ON)
 option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
@@ -36,10 +37,10 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
 else ()
   if (CMAKE_COMPILER_IS_GNUCXX)
     message ("** Assuming that GNU CXX uses -std=c++11 flag for C++11 compatibility.")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    list(APPEND CMAKE_CXX_FLAGS "-std=c++11")
   elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     message ("** Assuming that Clang uses -std=c++11 flag for C++11 compatibility.")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    list(APPEND CMAKE_CXX_FLAGS "-std=c++11")
   else()
     message ("** No CMAKE C++11 check. If the build breaks, you're on your own.")
   endif()
@@ -60,6 +61,12 @@ if (APPLE)
    endif()
 endif()
 
+if (WIN32 OR APPLE)
+  set(DEFAULT_CASE_INSENSITIVE TRUE)
+else()
+  set(DEFAULT_CASE_INSENSITIVE FALSE)
+endif()
+
 # Check for FUSE.
 find_package (FUSE REQUIRED)
 include_directories (${FUSE_INCLUDE_DIR})
@@ -69,23 +76,15 @@ add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 find_package (OpenSSL REQUIRED)
 include_directories (${OPENSSL_INCLUDE_DIR})
 
-if (USE_INTERNAL_TINYXML)
-  message("-- Using local TinyXML2 copy")
-  add_subdirectory(internal/tinyxml2-3.0.0)
-  include_directories(${CMAKE_CURRENT_LIST_DIR}/internal/tinyxml2-3.0.0)
-  link_directories(${CMAKE_BINARY_DIR}/internal/tinyxml2-3.0.0)
-  set(TINYXML_LIBRARIES tinyxml2)
-else ()
-  find_package (TinyXML REQUIRED)
-  include_directories (${TINYXML_INCLUDE_DIR})
-endif ()
-
 find_program (POD2MAN pod2man)
 
 # Check for include files and stdlib properties.
 include (CheckIncludeFileCXX)
 check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
 check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
+
+include(CheckStructHasMember)
+check_struct_has_member(dirent d_type dirent.h HAVE_DIRENT_D_TYPE LANGUAGE CXX)
 
 # Check if xattr functions take extra arguments, as they do on OSX.
 include (CheckCXXSourceCompiles)
@@ -98,6 +97,7 @@ check_cxx_source_compiles ("#include <sys/types.h>
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
 check_function_exists_glibc (utimensat HAVE_UTIMENSAT)
+check_function_exists_glibc (fdatasync HAVE_FDATASYNC)
 
 set (CMAKE_THREAD_PREFER_PTHREAD)
 find_package (Threads REQUIRED)
@@ -151,8 +151,30 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or abo
   endif()
 endif()
 
+if (USE_INTERNAL_TINYXML)
+  message("-- Using vendored TinyXML2")
+  set(TINYXML_DIR vendor/github.com/leethomason/tinyxml2)
+  set(BUILD_STATIC_LIBS ON CACHE BOOL "build static libs")
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "build shared libs")
+  set(BUILD_TESTS OFF CACHE BOOL "build tests")
+  add_subdirectory(${TINYXML_DIR})
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${TINYXML_DIR})
+  set(TINYXML_LIBRARIES tinyxml2_static)
+else ()
+  find_package (TinyXML REQUIRED)
+  include_directories (${TINYXML_INCLUDE_DIR})
+endif ()
+
+message("-- Using vendored easylogging++")
+set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
+set(build_static_lib ON CACHE BOOL "build static libs")
+add_subdirectory(${EASYLOGGING_DIR})
+include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
+link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
+set(EASYLOGGING_LIBRARIES easyloggingpp)
+
 set(SOURCE_FILES
-  internal/easylogging++.cc
   encfs/autosprintf.cpp
   encfs/base64.cpp
   encfs/BlockFileIO.cpp
@@ -190,6 +212,7 @@ target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
+  ${EASYLOGGING_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${Intl_LIBRARIES}
 )
@@ -206,7 +229,6 @@ if (IWYU)
     endif()
   endif()
 endif()
-
 
 # Set RPATH to library install path.
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
@@ -238,6 +260,11 @@ file (GLOB_RECURSE all_headers ${CMAKE_CURRENT_LIST_DIR}/*.h)
 add_custom_target (all_placeholder SOURCES ${all_headers})
 
 if (POD2MAN)
+  set (MAN_DESTINATION "share/man/man1")
+  if (${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD")
+    set (MAN_DESTINATION "man/man1")
+  endif()
+
   add_custom_target (encfs-man ALL
     COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
             ${CMAKE_CURRENT_LIST_DIR}/encfs/encfs.pod encfs.1)
@@ -247,8 +274,24 @@ if (POD2MAN)
             ${CMAKE_CURRENT_LIST_DIR}/encfs/encfsctl.pod encfsctl.1)
 
   install (FILES ${CMAKE_BINARY_DIR}/encfs.1 ${CMAKE_BINARY_DIR}/encfsctl.1
-    DESTINATION share/man/man1)
+    DESTINATION ${MAN_DESTINATION})
 endif (POD2MAN)
 
-add_custom_target(tests COMMAND ${CMAKE_CURRENT_LIST_DIR}/test.sh)
+if (BUILD_UNIT_TESTS)
+  enable_testing()
 
+  set(GOOGLETEST_DIR vendor/github.com/google/googletest)
+  add_subdirectory(${GOOGLETEST_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${GOOGLETEST_DIR}/googletest)
+
+  set(GOOGLEBENCH_DIR vendor/github.com/google/benchmark)
+  set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "benchmark tests")
+  add_subdirectory(${GOOGLEBENCH_DIR})
+  link_directories(${CMAKE_BINARY_DIR}/${GOOGLEBENCH_DIR})
+
+  # Unit tests.
+  add_subdirectory(test)
+
+  # Integration test target - runs against built encfs.
+  add_custom_target(integration COMMAND ${CMAKE_CURRENT_LIST_DIR}/integration.sh)
+endif ()
