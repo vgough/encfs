@@ -4,9 +4,18 @@ language: cpp
 
 sudo: true
 
+os:
+  - linux
+  - osx
+
 compiler:
   - clang
   - gcc
+
+matrix:
+  exclude:
+    - os: osx
+      compiler: gcc
 
 branches:
   only:
