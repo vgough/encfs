@@ -212,7 +212,7 @@ ssize_t RawFileIO::read(const IORequest &req) const {
   return readSize;
 }
 
-int RawFileIO::write(const IORequest &req) {
+ssize_t RawFileIO::write(const IORequest &req) {
   rAssert(fd >= 0);
   rAssert(canWrite);
 
@@ -253,7 +253,7 @@ int RawFileIO::write(const IORequest &req) {
       }
     }
 
-    return 0; //No matter how many bytes we wrote, we of course already know this.
+    return req.dataLen;
   }
 
   return true;

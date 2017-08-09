@@ -224,7 +224,7 @@ off_t FileNode::getSize() const {
   return res;
 }
 
-ssize_t FileNode::read(off_t offset, unsigned char *data, ssize_t size) const {
+ssize_t FileNode::read(off_t offset, unsigned char *data, size_t size) const {
   IORequest req;
   req.offset = offset;
   req.dataLen = size;
@@ -235,7 +235,7 @@ ssize_t FileNode::read(off_t offset, unsigned char *data, ssize_t size) const {
   return io->read(req);
 }
 
-int FileNode::write(off_t offset, unsigned char *data, ssize_t size) {
+ssize_t FileNode::write(off_t offset, unsigned char *data, size_t size) {
   VLOG(1) << "FileNode::write offset " << offset << ", data size " << size;
 
   IORequest req;
@@ -245,7 +245,12 @@ int FileNode::write(off_t offset, unsigned char *data, ssize_t size) {
 
   Lock _lock(mutex);
 
-  return io->write(req);
+  ssize_t res = io->write(req);
+  //Of course due to encryption we genrally write more than requested
+  if (res < 0) {
+  	return res;
+  }
+  return size;
 }
 
 int FileNode::truncate(off_t size) {

@@ -65,7 +65,7 @@ class CipherFileIO : public BlockFileIO {
 
  private:
   virtual ssize_t readOneBlock(const IORequest &req) const;
-  virtual int writeOneBlock(const IORequest &req);
+  virtual ssize_t writeOneBlock(const IORequest &req);
   virtual int generateReverseHeader(unsigned char *data);
 
   int initHeader();

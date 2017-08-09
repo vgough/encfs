@@ -31,6 +31,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <utime.h>
+#include <limits>
 #ifdef linux
 #include <sys/fsuid.h>
 #endif
@@ -686,12 +687,17 @@ int encfs_release(const char *path, struct fuse_file_info *finfo) {
   }
 }
 
-int _do_read(FileNode *fnode, unsigned char *ptr, size_t size, off_t off) {
+ssize_t _do_read(FileNode *fnode, unsigned char *ptr, size_t size, off_t off) {
   return fnode->read(off, ptr, size);
 }
 
 int encfs_read(const char *path, char *buf, size_t size, off_t offset,
                struct fuse_file_info *file) {
+  //Unfortunately we have to convert from ssize_t (pread) to int (fuse), so let's check this will be OK
+  if (size > std::numeric_limits<int>::max()) {
+    RLOG(ERROR) << "tried to read too much data: " << size;
+    return -EIO;
+  }
   return withFileNode("read", path, file,
                       bind(_do_read, _1, (unsigned char *)buf, size, offset));
 }
@@ -708,16 +714,17 @@ int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
   return withFileNode("fsync", path, file, bind(_do_fsync, _1, dataSync));
 }
 
-int _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
-  int res = fnode->write(offset, ptr, size);
-  if (res < 0) {
-    return res;
-  }
-  return size;
+ssize_t _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
+  return fnode->write(offset, ptr, size);
 }
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
                 struct fuse_file_info *file) {
+  //Unfortunately we have to convert from ssize_t (pwrite) to int (fuse), so let's check this will be OK
+  if (size > std::numeric_limits<int>::max()) {
+    RLOG(ERROR) << "tried to write too much data: " << size;
+    return -EIO;
+  }
   EncFS_Context *ctx = context();
   if (isReadOnly(ctx)) {
     return -EROFS;

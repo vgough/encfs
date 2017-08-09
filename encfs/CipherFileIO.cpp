@@ -233,9 +233,9 @@ int CipherFileIO::initHeader() {
       req.data = buf;
       req.dataLen = 8;
 
-      int res = base->write(req);
-      if (res < 0) {
-        return res;
+      ssize_t writeSize = base->write(req);
+      if (writeSize < 0) {
+        return writeSize;
       }
     } else {
       VLOG(1) << "base not writable, IV not written..";
@@ -333,14 +333,13 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
   int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
-  ssize_t readSize = 0;
   IORequest tmpReq = req;
 
   // adjust offset if we have a file header
   if (haveHeader && !fsConfig->reverseEncryption) {
     tmpReq.offset += HEADER_SIZE;
   }
-  readSize = base->read(tmpReq);
+  ssize_t readSize = base->read(tmpReq);
 
   bool ok;
   if (readSize > 0) {
@@ -353,9 +352,9 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
 
     if (readSize != bs) {
       VLOG(1) << "streamRead(data, " << readSize << ", IV)";
-      ok = streamRead(tmpReq.data, (int)readSize, blockNum ^ fileIV);
+      ok = streamRead(tmpReq.data, (int)readSize, blockNum ^ fileIV); //cast works because we work on a block and blocksize fit an int
     } else {
-      ok = blockRead(tmpReq.data, (int)readSize, blockNum ^ fileIV);
+      ok = blockRead(tmpReq.data, (int)readSize, blockNum ^ fileIV); //cast works because we work on a block and blocksize fit an int
     }
 
     if (!ok) {
@@ -370,7 +369,7 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
   return readSize;
 }
 
-int CipherFileIO::writeOneBlock(const IORequest &req) {
+ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
 
   if (haveHeader && fsConfig->reverseEncryption) {
     VLOG(1)
@@ -390,12 +389,12 @@ int CipherFileIO::writeOneBlock(const IORequest &req) {
 
   bool ok;
   if (req.dataLen != bs) {
-    ok = streamWrite(req.data, (int)req.dataLen, blockNum ^ fileIV);
+    ok = streamWrite(req.data, (int)req.dataLen, blockNum ^ fileIV); //cast works because we work on a block and blocksize fit an int
   } else {
-    ok = blockWrite(req.data, (int)req.dataLen, blockNum ^ fileIV);
+    ok = blockWrite(req.data, (int)req.dataLen, blockNum ^ fileIV); //cast works because we work on a block and blocksize fit an int
   }
 
-  int res = 0;
+  ssize_t res = 0;
   if (ok) {
     if (haveHeader) {
       IORequest tmpReq = req;
@@ -481,7 +480,7 @@ int CipherFileIO::truncate(off_t size) {
     // the wrong size..
     res = BlockFileIO::truncateBase(size, nullptr);
 
-    if (!(res < 0)) {
+    if (res == 0) {
       res = base->truncate(size + HEADER_SIZE);
     }
   }
@@ -531,7 +530,7 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
     VLOG(1) << "Adding " << headerBytes << " header bytes";
 
     // copy the header bytes into the data
-    int headerOffset = HEADER_SIZE - headerBytes;
+    int headerOffset = HEADER_SIZE - headerBytes; //can be int as HEADER_SIZE is int
     memcpy(req.data, &headerBuf[headerOffset], headerBytes);
 
     // the read does not want data beyond the header
@@ -554,7 +553,7 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
   if (readBytes < 0) {
     return readBytes;  // Return error code
   }
-  ssize_t sum = headerBytes + readBytes;
+  ssize_t sum = headerBytes + readBytes; //could be size_t, but as we return ssize_t...
   VLOG(1) << "returning sum=" << sum;
   return sum;
 }
