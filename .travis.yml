@@ -1,21 +1,15 @@
-dist: trusty
-
 language: cpp
 
 sudo: true
 
-os:
-  - linux
-  - osx
-
-compiler:
-  - clang
-  - gcc
-
 matrix:
-  exclude:
-    - os: osx
+  include:
+    - os: linux
       compiler: gcc
+      dist: trusty
+    - os: osx
+      compiler: clang
+      osx_image: xcode8.3
 
 branches:
   only:
