@@ -10,7 +10,11 @@ Compiling EncFS
 
 EncFS uses the CMake toolchain to create makefiles.
 
-Steps to build EncFS:
+Quickest way to build and test EncFS :
+
+    ./build.sh
+
+Or following are the detailed steps to build EncFS:
 
     mkdir build
     cd build
@@ -29,11 +33,11 @@ encrypted filesystem and run tests on it:
     make integration
 
 The compilation process creates two executables, encfs and encfsctl in
-the encfs directory.  You can install to in a system directory via
+the encfs directory.  You can install to in a system directory via:
 
     make install
 
-. If the default path (`/usr/local`) is not where you want things
+If the default path (`/usr/local`) is not where you want things
 installed, then set the CMAKE_INSTALL_PREFIX option when running cmake.  Eg:
 
     cmake .. -DCMAKE_INSTALL_PREFIX=/opt/local
