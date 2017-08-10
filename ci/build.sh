@@ -16,6 +16,7 @@ cd build
 cmake .. ${CFG}
 make -j2
 make test
+make integration
 
 cd ..
 
