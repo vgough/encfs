@@ -111,7 +111,7 @@ sub corruption
     ok( open(IN, "< $crypt/corrupt"), "open corrupted file");
     my $content;
     $result = read(IN, $content, 20);
-    ok(! defined $result, "corrupted file with MAC returns read error: $!");
+    ok($!{EBADMSG} && (! defined $result), "corrupted file with MAC returns read error: $!");
 }
 
 # Test internal modification
