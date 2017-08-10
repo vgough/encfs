@@ -2,7 +2,11 @@ dist: trusty
 
 language: cpp
 
-sudo: true
+sudo: required
+
+env:
+  global:
+    - SUDO_MOUNT=sudo 
 
 os:
   - linux

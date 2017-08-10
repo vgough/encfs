@@ -202,11 +202,13 @@ ssize_t RawFileIO::read(const IORequest &req) const {
   rAssert(fd >= 0);
 
   ssize_t readSize = pread(fd, req.data, req.dataLen, req.offset);
+  int eno = errno;
+  errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
 
   if (readSize < 0) {
-    readSize = -errno;
     RLOG(WARNING) << "read failed at offset " << req.offset << " for "
-                  << req.dataLen << " bytes: " << strerror(-readSize);
+                  << req.dataLen << " bytes: " << strerror(eno);
+    return -eno;
   }
 
   return readSize;
@@ -226,6 +228,7 @@ ssize_t RawFileIO::write(const IORequest &req) {
     errno = 0;
     ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
     eno = errno;
+    errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
 
     if (writeSize < 0) {
       knownSize = false;
