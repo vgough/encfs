@@ -143,6 +143,7 @@ int RawFileIO::open(int flags) {
     if ((newFd == -1) && (eno == EACCES)) {
       VLOG(1) << "using readonly workaround for open";
       newFd = open_readonly_workaround(name.c_str(), finalFlags);
+      eno = errno;
     }
 
     if (newFd >= 0) {
@@ -157,8 +158,8 @@ int RawFileIO::open(int flags) {
       oldfd = fd;
       result = fd = newFd;
     } else {
-      result = -errno;
-      RLOG(DEBUG) << "::open error: " << strerror(-result);
+      result = -eno;
+      RLOG(DEBUG) << "::open error: " << strerror(eno);
     }
   }
 
@@ -248,18 +249,15 @@ ssize_t RawFileIO::write(const IORequest &req) {
                 << req.dataLen << ", max retries reached";
     knownSize = false;
     return (eno) ? -eno : -EIO;
-  } else {
-    if (knownSize) {
-      off_t last = req.offset + req.dataLen;
-      if (last > fileSize) {
-        fileSize = last;
-      }
+  }
+  if (knownSize) {
+    off_t last = req.offset + req.dataLen;
+    if (last > fileSize) {
+      fileSize = last;
     }
-
-    return req.dataLen;
   }
 
-  return true;
+  return req.dataLen;
 }
 
 int RawFileIO::truncate(off_t size) {
