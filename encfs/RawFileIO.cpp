@@ -203,10 +203,10 @@ ssize_t RawFileIO::read(const IORequest &req) const {
   rAssert(fd >= 0);
 
   ssize_t readSize = pread(fd, req.data, req.dataLen, req.offset);
-  int eno = errno;
-  errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
 
   if (readSize < 0) {
+    int eno = errno;
+    errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
     RLOG(WARNING) << "read failed at offset " << req.offset << " for "
                   << req.dataLen << " bytes: " << strerror(eno);
     return -eno;
@@ -219,37 +219,43 @@ ssize_t RawFileIO::write(const IORequest &req) {
   rAssert(fd >= 0);
   rAssert(canWrite);
 
-  int retrys = 10;
+  // int retrys = 10;
   void *buf = req.data;
   ssize_t bytes = req.dataLen;
   off_t offset = req.offset;
 
-  int eno = 0;
-  while ((bytes != 0) && retrys > 0) {
-    errno = 0;
+  /*
+   * Let's write while pwrite() writes, to avoid writing only a part of the request,
+   * whereas it could have been fully written. This to avoid inconsistencies / corruption.
+   */
+  // while ((bytes != 0) && retrys > 0) {
+  while (bytes != 0) {
     ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
-    eno = errno;
-    errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
 
-    if (writeSize < 0) {
+    if (writeSize <= 0) {
+      int eno = errno;
+      errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
       knownSize = false;
       RLOG(WARNING) << "write failed at offset " << offset << " for " << bytes
                     << " bytes: " << strerror(eno);
-      return -eno;
+      // pwrite is not expected to return 0, so eno should always be set, but we never know...
+      if (eno) {
+      	return -eno;
+      }
+      return -EIO;
     }
 
     bytes -= writeSize;
     offset += writeSize;
     buf = (void *)((char *)buf + writeSize);
-    --retrys;
   }
 
-  if (bytes != 0) {
-    RLOG(ERROR) << "Write error: wrote " << req.dataLen - bytes << " bytes of "
-                << req.dataLen << ", max retries reached";
-    knownSize = false;
-    return (eno) ? -eno : -EIO;
-  }
+  // if (bytes != 0) {
+  //   RLOG(ERROR) << "Write error: wrote " << req.dataLen - bytes << " bytes of "
+  //               << req.dataLen << ", max retries reached";
+  //   knownSize = false;
+  //   return (eno) ? -eno : -EIO;
+  // }
   if (knownSize) {
     off_t last = req.offset + req.dataLen;
     if (last > fileSize) {
