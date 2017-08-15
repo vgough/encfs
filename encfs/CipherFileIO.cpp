@@ -456,32 +456,38 @@ bool CipherFileIO::streamRead(unsigned char *buf, int size,
 
 int CipherFileIO::truncate(off_t size) {
   int res = 0;
+  int reopen = 0;
+  // well, we will truncate, so we need a write access to the file
+  if (!base->isWritable()) {
+    int newFlags = lastFlags | O_RDWR;
+    int res = base->open(newFlags);
+    if (res < 0) {
+      VLOG(1) << "truncate failed to re-open for write";
+      base->open(lastFlags);
+      return res;
+    }
+    reopen = 1;
+  }
   if (!haveHeader) {
     res = BlockFileIO::truncateBase(size, base.get());
   } else {
     if (0 == fileIV) {
       // empty file.. create the header..
-      if (!base->isWritable()) {
-        // open for write..
-        int newFlags = lastFlags | O_RDWR;
-        int res = base->open(newFlags);
-        if (res < 0) {
-          VLOG(1) << "truncate failed to re-open for write";
-          return res;
-        }
-      }
-      int res = initHeader();
-      if (res < 0) {
-        return res;
-      }
+      res = initHeader();
     }
-
     // can't let BlockFileIO call base->truncate(), since it would be using
     // the wrong size..
-    res = BlockFileIO::truncateBase(size, nullptr);
-
+    if (res == 0) {
+      res = BlockFileIO::truncateBase(size, nullptr);
+    }
     if (res == 0) {
       res = base->truncate(size + HEADER_SIZE);
+    }
+  }
+  if (reopen == 1) {
+    reopen = base->open(lastFlags);
+    if (res < 0) {
+    	res = reopen;
     }
   }
   return res;
