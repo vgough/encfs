@@ -5,7 +5,7 @@ sudo: true
 matrix:
   include:
     - os: linux
-      compiler: gcc
+      compiler: clang #CircleCI tests with gcc
       dist: trusty
     - os: osx
       compiler: clang
@@ -28,8 +28,8 @@ addons:
       - ubuntu-toolchain-r-test
     packages:
       - attr
-      - clang
       - fuse
       - libfuse-dev
       - gettext
-      - cmake3
+      - clang
+      - clang-tidy-3.9

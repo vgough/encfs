@@ -146,7 +146,7 @@ if (ENABLE_NLS)
 endif (ENABLE_NLS)
 
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or above.
-  find_program(CLANG_TIDY_EXE NAMES "clang-tidy" DOC "Path to clang-tidy executable")
+  find_program(CLANG_TIDY_EXE NAMES "clang-tidy" "clang-tidy-3.9" DOC "Path to clang-tidy executable")
   if(NOT CLANG_TIDY_EXE)
     message(STATUS "clang-tidy not found.")
   else()
