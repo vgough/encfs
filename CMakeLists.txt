@@ -101,6 +101,13 @@ CHECK_CXX_SOURCE_COMPILES("int main() {return 0;}" COMPILER_NEEDS_LATOMIC)
 if(COMPILER_NEEDS_LATOMIC)
         set(ATOMIC_LIBRARY atomic)
 endif()
+# compensate the effect of extra linking of libatomic on platforms where intrinsics are used
+set(CMAKE_REQUIRED_FLAGS "-Wl,--as-needed")
+CHECK_CXX_SOURCE_COMPILES("int main() {return 0;}" LINKER_SUPPORTS_WLASNEEDED)
+if(LINKER_SUPPORTS_WLASNEEDED)
+        list(APPEND EXTRA_LINKER_FLAGS "-Wl,--as-needed")
+endif()
+
 set(CMAKE_REQUIRED_FLAGS)
 
 # Check if we have some standard functions.
@@ -224,6 +231,7 @@ set_target_properties(encfs PROPERTIES
   VERSION ${ENCFS_VERSION}
   SOVERSION ${ENCFS_SOVERSION})
 target_link_libraries(encfs
+  ${EXTRA_LINKER_FLAGS}
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
