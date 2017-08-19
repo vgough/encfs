@@ -93,6 +93,16 @@ check_cxx_source_compiles ("#include <sys/types.h>
   int main() { getxattr(0,0,0,0,0,0); return 1; }
   " XATTR_ADD_OPT)
 
+# If awailable on current architecture (typically embedded 32-bit), link with it explicitly;
+# GCC autodetection is faulty, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=81358 and
+# find_libray is no great help here since it is sometimes(!) not in standard paths.
+set(CMAKE_REQUIRED_FLAGS "-latomic")
+CHECK_CXX_SOURCE_COMPILES("int main() {return 0;}" COMPILER_NEEDS_LATOMIC)
+if(COMPILER_NEEDS_LATOMIC)
+        set(ATOMIC_LIBRARY atomic)
+endif()
+set(CMAKE_REQUIRED_FLAGS)
+
 # Check if we have some standard functions.
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
@@ -220,6 +230,7 @@ target_link_libraries(encfs
   ${EASYLOGGING_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${Intl_LIBRARIES}
+  ${ATOMIC_LIBRARY}
 )
 if (INSTALL_LIBENCFS)
   install (TARGETS encfs DESTINATION ${LIB_INSTALL_DIR})
