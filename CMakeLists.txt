@@ -93,6 +93,23 @@ check_cxx_source_compiles ("#include <sys/types.h>
   int main() { getxattr(0,0,0,0,0,0); return 1; }
   " XATTR_ADD_OPT)
 
+# If awailable on current architecture (typically embedded 32-bit), link with it explicitly;
+# GCC autodetection is faulty, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=81358 and
+# find_libray is no great help here since it is sometimes(!) not in standard paths.
+set(CMAKE_REQUIRED_FLAGS "-latomic")
+CHECK_CXX_SOURCE_COMPILES("int main() {return 0;}" COMPILER_NEEDS_LATOMIC)
+if(COMPILER_NEEDS_LATOMIC)
+        set(ATOMIC_LIBRARY atomic)
+endif()
+# compensate the effect of extra linking of libatomic on platforms where intrinsics are used
+set(CMAKE_REQUIRED_FLAGS "-Wl,--as-needed")
+CHECK_CXX_SOURCE_COMPILES("int main() {return 0;}" LINKER_SUPPORTS_WLASNEEDED)
+if(LINKER_SUPPORTS_WLASNEEDED)
+        list(APPEND EXTRA_LINKER_FLAGS "-Wl,--as-needed")
+endif()
+
+set(CMAKE_REQUIRED_FLAGS)
+
 # Check if we have some standard functions.
 include (CheckFuncs)
 check_function_exists_glibc (lchmod HAVE_LCHMOD)
@@ -214,12 +231,14 @@ set_target_properties(encfs PROPERTIES
   VERSION ${ENCFS_VERSION}
   SOVERSION ${ENCFS_SOVERSION})
 target_link_libraries(encfs
+  ${EXTRA_LINKER_FLAGS}
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
   ${EASYLOGGING_LIBRARIES}
   ${CMAKE_THREAD_LIBS_INIT}
   ${Intl_LIBRARIES}
+  ${ATOMIC_LIBRARY}
 )
 if (INSTALL_LIBENCFS)
   install (TARGETS encfs DESTINATION ${LIB_INSTALL_DIR})
