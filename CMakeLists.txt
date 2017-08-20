@@ -171,6 +171,8 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or abo
     set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-checks=*,-modernize-loop-convert,-cppcoreguidelines-pro-*,-readability-inconsistent-declaration-parameter-name,-google-readability-casting,-cert-err58-cpp,-google-runtime-int,-readability-named-parameter,-google-build-using-namespace,-misc-unused-parameters,-google-runtime-references")
     #set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,google-readability-redundant-smartptr-get")
   endif()
+else()
+  message(STATUS "clang-tidy check skipped, need newer cmake")
 endif()
 
 if (USE_INTERNAL_TINYXML)

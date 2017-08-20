@@ -1,13 +1,14 @@
 #!/bin/bash -eu
 
 : ${TRAVIS:=false}
+: ${CIRCLECI:=false}
 : ${TRAVIS_SUDO:=true}
 
 cmake --version
 
 CFG=$*
 if uname -s | grep -q Linux; then
-  if [ "$TRAVIS" == "true" && CC="clang-4.0" ]; then
+  if [[ "$TRAVIS" == "true" ]]; then
     CFG="-DLINT=ON $CFG"
   fi
 fi
@@ -25,7 +26,7 @@ cd build
 cmake .. ${CFG}
 make -j2
 make test
-if [ "$TRAVIS_SUDO" == "true" ]; then
+if [[ "$TRAVIS_SUDO" == "true" && "$CIRCLECI" == "false" ]]; then
   make integration
 fi
 
