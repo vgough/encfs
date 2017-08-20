@@ -3,7 +3,12 @@
 cmake --version
 
 CFG=""
-if [ "$TRAVIS_OS_NAME" = "osx" ]; then
+if uname -s | grep -q Linux; then
+  if [ "$TRAVIS" == "true" ]; then
+    CFG="-DLINT=ON"
+  fi
+fi
+if uname -s | grep -q Darwin; then
   CFG="-DENABLE_NLS=OFF -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl"
 fi
 
