@@ -1,16 +1,13 @@
 #!/bin/bash -eu
 
-: ${TRAVIS:=false}
-: ${CIRCLECI:=false}
-: ${TRAVIS_SUDO:=true}
+: ${CHECK:=false}
+: ${INTEGRATION:=true}
 
 cmake --version
 
 CFG=$*
-if uname -s | grep -q Linux; then
-  if [[ "$TRAVIS" == "true" ]]; then
-    CFG="-DLINT=ON $CFG"
-  fi
+if [[ "$CHECK" == "true" ]]; then
+  CFG="-DLINT=ON $CFG"
 fi
 
 if uname -s | grep -q Darwin; then
@@ -26,7 +23,7 @@ cd build
 cmake .. ${CFG}
 make -j2
 make test
-if [[ "$TRAVIS_SUDO" == "true" && "$CIRCLECI" == "false" ]]; then
+if [[ "$INTEGRATION" == "true" ]]; then
   make integration
 fi
 

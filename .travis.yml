@@ -34,13 +34,14 @@ matrix:
             - clang-4.0
             - clang-tidy-4.0
       env:
-        - CC=clang-4.0 CXX=clang++-4.0
+        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=true
 
     - os: osx
       compiler: clang
       osx_image: xcode8.3
       sudo: true
-
+      env:
+        - INTEGRATION=true
 
 before_script:
   - ./ci/setup.sh
