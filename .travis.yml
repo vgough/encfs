@@ -5,6 +5,7 @@ matrix:
     - os: linux
       compiler: gcc
       dist: trusty
+      sudo: false
       addons:
         apt:
           sources:
@@ -15,6 +16,8 @@ matrix:
             - libfuse-dev
             - gettext
             - cmake3
+      env:
+        - INTEGRATION=false
 
     - os: linux
       compiler: clang
