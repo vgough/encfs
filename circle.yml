@@ -4,11 +4,9 @@ machine:
 
 dependencies:
   pre:
-    - sudo apt-get install cmake libfuse-dev libgettextpo-dev
-    - bash ./ci/install-gcc.sh
+    - sudo apt-get install attr fuse libfuse-dev gettext
+    - ./ci/setup.sh
 
 test:
   override:
-    - bash ./ci/config.sh
-    - cd build && make && make test && make install
-    - /tmp/encfs/bin/encfsctl --version
+    - ./build.sh

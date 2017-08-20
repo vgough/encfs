@@ -1,20 +1,33 @@
 #!/bin/bash -eu
 
-# Make sure we are in the directory this script is in.
-cd "$(dirname "$0")"
+: ${TRAVIS:=false}
+: ${TRAVIS_SUDO:=true}
+
+cmake --version
+
+CFG=$*
+if uname -s | grep -q Linux; then
+  if [ "$TRAVIS" == "true" && CC="clang-4.0" ]; then
+    CFG="-DLINT=ON $CFG"
+  fi
+fi
+
+if uname -s | grep -q Darwin; then
+  CFG="-DENABLE_NLS=OFF -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl $CFG"
+fi
 
 if [[ ! -d build ]]
 then
-	mkdir build
-	cd build
-	cmake .. $*
-	cd ..
+  mkdir build
 fi
 
-make -j2 -C build
-make test -C build
-make integration -C build
+cd build
+cmake .. ${CFG}
+make -j2
+make test
+if [ "$TRAVIS_SUDO" == "true" ]; then
+  make integration
+fi
 
-echo
-echo 'Everything looks good, you can install via "make install -C build".'
+cd ..
 

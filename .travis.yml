@@ -1,26 +1,34 @@
 language: cpp
 
-sudo: true
+branches:
+  only:
+    - master
+    - travis
 
 matrix:
   include:
     - os: linux
       compiler: gcc
       dist: trusty
+
+    - os: linux
+      compiler: clang
+      dist: trusty
+      sudo: true
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-trusty-4.0
+          packages:
+            - clang-4.0
+            - clang-tidy-4.0
+      env:
+        - CC=clang-4.0 CXX=clang++-4.0
+
     - os: osx
       compiler: clang
       osx_image: xcode8.3
-
-branches:
-  only:
-    - master
-    - travis
-
-before_script:
-  - ./ci/setup.sh
-
-script:
-  - ./ci/build.sh
+      sudo: true
 
 addons:
   apt:
@@ -28,8 +36,13 @@ addons:
       - ubuntu-toolchain-r-test
     packages:
       - attr
-      - clang
       - fuse
       - libfuse-dev
       - gettext
       - cmake3
+
+before_script:
+  - ./ci/setup.sh
+
+script:
+  - ./build.sh
