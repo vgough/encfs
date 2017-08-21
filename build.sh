@@ -29,3 +29,5 @@ fi
 
 cd ..
 
+echo
+echo 'Everything looks good, you can install via "make install -C build".'
