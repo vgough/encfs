@@ -1,35 +1,53 @@
 language: cpp
 
-sudo: true
-
 matrix:
   include:
     - os: linux
       compiler: gcc
       dist: trusty
+      sudo: false
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - attr
+            - fuse
+            - libfuse-dev
+            - gettext
+            - cmake3
+      env:
+        - INTEGRATION=false
+
+    - os: linux
+      compiler: clang
+      dist: trusty
+      sudo: true
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-4.0
+          packages:
+            - attr
+            - fuse
+            - libfuse-dev
+            - gettext
+            - cmake3
+            - clang-4.0
+            - clang-tidy-4.0
+      env:
+        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=true
+
     - os: osx
       compiler: clang
       osx_image: xcode8.3
-
-branches:
-  only:
-    - master
-    - travis
+      sudo: true
+      env:
+        - INTEGRATION=true
 
 before_script:
   - ./ci/setup.sh
 
 script:
-  - ./ci/build.sh
-
-addons:
-  apt:
-    sources:
-      - ubuntu-toolchain-r-test
-    packages:
-      - attr
-      - clang
-      - fuse
-      - libfuse-dev
-      - gettext
-      - cmake3
+  - ./build.sh

@@ -163,7 +163,7 @@ if (ENABLE_NLS)
 endif (ENABLE_NLS)
 
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or above.
-  find_program(CLANG_TIDY_EXE NAMES "clang-tidy" DOC "Path to clang-tidy executable")
+  find_program(CLANG_TIDY_EXE NAMES "clang-tidy" "clang-tidy-4.0" DOC "Path to clang-tidy executable")
   if(NOT CLANG_TIDY_EXE)
     message(STATUS "clang-tidy not found.")
   else()
@@ -171,6 +171,8 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or abo
     set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-checks=*,-modernize-loop-convert,-cppcoreguidelines-pro-*,-readability-inconsistent-declaration-parameter-name,-google-readability-casting,-cert-err58-cpp,-google-runtime-int,-readability-named-parameter,-google-build-using-namespace,-misc-unused-parameters,-google-runtime-references")
     #set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,google-readability-redundant-smartptr-get")
   endif()
+else()
+  message(STATUS "clang-tidy check skipped, need newer cmake")
 endif()
 
 if (USE_INTERNAL_TINYXML)
