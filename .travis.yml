@@ -1,45 +1,53 @@
-dist: trusty
-
 language: cpp
 
-sudo: required
-
-env:
-  global:
-    - SUDO_MOUNT=sudo 
-
-os:
-  - linux
-  - osx
-
-compiler:
-  - clang
-  - gcc
-
 matrix:
-  exclude:
-    - os: osx
+  include:
+    - os: linux
       compiler: gcc
+      dist: trusty
+      sudo: false
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - attr
+            - fuse
+            - libfuse-dev
+            - gettext
+            - cmake3
+      env:
+        - INTEGRATION=false
 
-branches:
-  only:
-    - master
-    - travis
+    - os: linux
+      compiler: clang
+      dist: trusty
+      sudo: true
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-trusty-4.0
+          packages:
+            - attr
+            - fuse
+            - libfuse-dev
+            - gettext
+            - cmake3
+            - clang-4.0
+            - clang-tidy-4.0
+      env:
+        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=true SUDO_MOUNT=sudo
+
+    - os: osx
+      compiler: clang
+      osx_image: xcode8.3
+      sudo: true
+      env:
+        - INTEGRATION=true SUDO_MOUNT=sudo
 
 before_script:
   - ./ci/setup.sh
 
 script:
-  - ./ci/check.sh
-
-addons:
-  apt:
-    sources:
-      - ubuntu-toolchain-r-test
-    packages:
-      - attr
-      - clang
-      - fuse
-      - libfuse-dev
-      - gettext
-      - cmake3
+  - ./build.sh
