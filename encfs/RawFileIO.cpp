@@ -97,13 +97,11 @@ static int open_readonly_workaround(const char *path, int flags) {
   memset(&stbuf, 0, sizeof(struct stat));
   if (lstat(path, &stbuf) != -1) {
     // make sure user has read/write permission..
-    chmod(path, stbuf.st_mode | 0600);
-    fd = ::open(path, flags);
-    chmod(path, stbuf.st_mode);
-  } else {
-    RLOG(INFO) << "can't stat file " << path;
+    if (chmod(path, stbuf.st_mode | 0600) != -1) {
+      fd = ::open(path, flags);
+      chmod(path, stbuf.st_mode);
+    }
   }
-
   return fd;
 }
 
@@ -138,12 +136,14 @@ int RawFileIO::open(int flags) {
 #endif
 
     int newFd = ::open(name.c_str(), finalFlags);
+    int eno = errno;
 
     VLOG(1) << "open file with flags " << finalFlags << ", result = " << newFd;
 
-    if ((newFd == -1) && (errno == EACCES)) {
+    if ((newFd == -1) && (eno == EACCES)) {
       VLOG(1) << "using readonly workaround for open";
       newFd = open_readonly_workaround(name.c_str(), finalFlags);
+      eno = errno;
     }
 
     if (newFd >= 0) {
@@ -158,8 +158,8 @@ int RawFileIO::open(int flags) {
       oldfd = fd;
       result = fd = newFd;
     } else {
-      result = -errno;
-      RLOG(DEBUG) << "::open error: " << strerror(errno);
+      result = -eno;
+      RLOG(DEBUG) << "::open error: " << strerror(eno);
     }
   }
 
@@ -192,8 +192,9 @@ off_t RawFileIO::getSize() const {
       const_cast<RawFileIO *>(this)->knownSize = true;
       return fileSize;
     }
-    RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(errno);
-    return -1;
+    int eno = errno;
+    RLOG(ERROR) << "getSize on " << name << " failed: " << strerror(eno);
+    return -eno;
   }
   return fileSize;
 }
@@ -204,44 +205,57 @@ ssize_t RawFileIO::read(const IORequest &req) const {
   ssize_t readSize = pread(fd, req.data, req.dataLen, req.offset);
 
   if (readSize < 0) {
+    int eno = errno;
+    errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
     RLOG(WARNING) << "read failed at offset " << req.offset << " for "
-                  << req.dataLen << " bytes: " << strerror(errno);
+                  << req.dataLen << " bytes: " << strerror(eno);
+    return -eno;
   }
 
   return readSize;
 }
 
-bool RawFileIO::write(const IORequest &req) {
+ssize_t RawFileIO::write(const IORequest &req) {
   rAssert(fd >= 0);
   rAssert(canWrite);
 
-  int retrys = 10;
+  // int retrys = 10;
   void *buf = req.data;
   ssize_t bytes = req.dataLen;
   off_t offset = req.offset;
 
-  while ((bytes != 0) && retrys > 0) {
+  /*
+   * Let's write while pwrite() writes, to avoid writing only a part of the request,
+   * whereas it could have been fully written. This to avoid inconsistencies / corruption.
+   */
+  // while ((bytes != 0) && retrys > 0) {
+  while (bytes != 0) {
     ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
 
-    if (writeSize < 0) {
+    if (writeSize <= 0) {
+      int eno = errno;
+      errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
       knownSize = false;
       RLOG(WARNING) << "write failed at offset " << offset << " for " << bytes
-                    << " bytes: " << strerror(errno);
-      return false;
+                    << " bytes: " << strerror(eno);
+      // pwrite is not expected to return 0, so eno should always be set, but we never know...
+      if (eno) {
+      	return -eno;
+      }
+      return -EIO;
     }
 
     bytes -= writeSize;
     offset += writeSize;
     buf = (void *)((char *)buf + writeSize);
-    --retrys;
   }
 
-  if (bytes != 0) {
-    RLOG(ERROR) << "Write error: wrote " << req.dataLen - bytes << " bytes of "
-                << req.dataLen << ", max retries reached";
-    knownSize = false;
-    return false;
-  }
+  // if (bytes != 0) {
+  //   RLOG(ERROR) << "Write error: wrote " << req.dataLen - bytes << " bytes of "
+  //               << req.dataLen << ", max retries reached";
+  //   knownSize = false;
+  //   return (eno) ? -eno : -EIO;
+  // }
   if (knownSize) {
     off_t last = req.offset + req.dataLen;
     if (last > fileSize) {
@@ -249,7 +263,7 @@ bool RawFileIO::write(const IORequest &req) {
     }
   }
 
-  return true;
+  return req.dataLen;
 }
 
 int RawFileIO::truncate(off_t size) {

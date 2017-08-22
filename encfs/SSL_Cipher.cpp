@@ -810,6 +810,7 @@ bool SSL_Cipher::streamEncode(unsigned char *buf, int size, uint64_t iv64,
   if (dstLen != size) {
     RLOG(ERROR) << "encoding " << size << " bytes, got back " << dstLen << " ("
                 << tmpLen << " in final_ex)";
+    return false;
   }
 
   return true;
@@ -846,6 +847,7 @@ bool SSL_Cipher::streamDecode(unsigned char *buf, int size, uint64_t iv64,
   if (dstLen != size) {
     RLOG(ERROR) << "decoding " << size << " bytes, got back " << dstLen << " ("
                 << tmpLen << " in final_ex)";
+    return false;
   }
 
   return true;
@@ -861,7 +863,8 @@ bool SSL_Cipher::blockEncode(unsigned char *buf, int size, uint64_t iv64,
   // data must be integer number of blocks
   const int blockMod = size % EVP_CIPHER_CTX_block_size(key->block_enc);
   if (blockMod != 0) {
-    throw Error("Invalid data size, not multiple of block size");
+    RLOG(ERROR) << "Invalid data size, not multiple of block size";
+    return false;
   }
 
   Lock lock(key->mutex);
@@ -879,6 +882,7 @@ bool SSL_Cipher::blockEncode(unsigned char *buf, int size, uint64_t iv64,
   if (dstLen != size) {
     RLOG(ERROR) << "encoding " << size << " bytes, got back " << dstLen << " ("
                 << tmpLen << " in final_ex)";
+    return false;
   }
 
   return true;
@@ -894,7 +898,8 @@ bool SSL_Cipher::blockDecode(unsigned char *buf, int size, uint64_t iv64,
   // data must be integer number of blocks
   const int blockMod = size % EVP_CIPHER_CTX_block_size(key->block_dec);
   if (blockMod != 0) {
-    throw Error("Invalid data size, not multiple of block size");
+    RLOG(ERROR) << "Invalid data size, not multiple of block size";
+    return false;
   }
 
   Lock lock(key->mutex);
@@ -912,6 +917,7 @@ bool SSL_Cipher::blockDecode(unsigned char *buf, int size, uint64_t iv64,
   if (dstLen != size) {
     RLOG(ERROR) << "decoding " << size << " bytes, got back " << dstLen << " ("
                 << tmpLen << " in final_ex)";
+    return false;
   }
 
   return true;

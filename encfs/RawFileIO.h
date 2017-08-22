@@ -46,7 +46,7 @@ class RawFileIO : public FileIO {
   virtual off_t getSize() const;
 
   virtual ssize_t read(const IORequest &req) const;
-  virtual bool write(const IORequest &req);
+  virtual ssize_t write(const IORequest &req);
 
   virtual int truncate(off_t size);
 

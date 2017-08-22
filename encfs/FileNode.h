@@ -79,8 +79,8 @@ class FileNode {
   int getAttr(struct stat *stbuf) const;
   off_t getSize() const;
 
-  ssize_t read(off_t offset, unsigned char *data, ssize_t size) const;
-  bool write(off_t offset, unsigned char *data, ssize_t size);
+  ssize_t read(off_t offset, unsigned char *data, size_t size) const;
+  ssize_t write(off_t offset, unsigned char *data, size_t size);
 
   // truncate the file to a particular size
   int truncate(off_t size);

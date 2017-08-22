@@ -37,14 +37,14 @@ matrix:
             - clang-4.0
             - clang-tidy-4.0
       env:
-        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=true
+        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=true SUDO_MOUNT=sudo
 
     - os: osx
       compiler: clang
       osx_image: xcode8.3
       sudo: true
       env:
-        - INTEGRATION=true
+        - INTEGRATION=true SUDO_MOUNT=sudo
 
 before_script:
   - ./ci/setup.sh
