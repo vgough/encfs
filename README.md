@@ -78,3 +78,11 @@ between changes.
 
 How about a nice email instead?
 
+## FAQ
+
+### What settings should I use for Dropbox?
+
+Use **standard mode**. There have been [reports](https://github.com/vgough/encfs/issues/388)
+of a pathological interaction of paranoia mode with Dropbox' rename
+detection. The problem seems to be with `External IV chaining`, which is
+not active in standard mode.
