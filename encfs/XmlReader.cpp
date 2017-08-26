@@ -103,7 +103,7 @@ bool XmlValue::readB64(const char *path, unsigned char *data,
 
   std::string s = value->text();
   s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
-  s.erase(s.find_last_not_of("=") + 1);
+  s.erase(s.find_last_not_of('=') + 1);
 
   int decodedSize = B64ToB256Bytes(s.size());
   if (decodedSize != length) {

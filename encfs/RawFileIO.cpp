@@ -206,7 +206,8 @@ ssize_t RawFileIO::read(const IORequest &req) const {
 
   if (readSize < 0) {
     int eno = errno;
-    errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
+    errno = 0;  // just to be sure error seen in integration tests really comes
+                // from the function rc.
     RLOG(WARNING) << "read failed at offset " << req.offset << " for "
                   << req.dataLen << " bytes: " << strerror(eno);
     return -eno;
@@ -225,23 +226,25 @@ ssize_t RawFileIO::write(const IORequest &req) {
   off_t offset = req.offset;
 
   /*
-   * Let's write while pwrite() writes, to avoid writing only a part of the request,
-   * whereas it could have been fully written. This to avoid inconsistencies / corruption.
+   * Let's write while pwrite() writes, to avoid writing only a part of the
+   * request,
+   * whereas it could have been fully written. This to avoid inconsistencies /
+   * corruption.
    */
   // while ((bytes != 0) && retrys > 0) {
   while (bytes != 0) {
     ssize_t writeSize = ::pwrite(fd, buf, bytes, offset);
 
-    if (writeSize <= 0) {
+    if (writeSize < 0) {
       int eno = errno;
-      errno = 0; //just to be sure error seen in integration tests really comes from the function rc.
       knownSize = false;
       RLOG(WARNING) << "write failed at offset " << offset << " for " << bytes
                     << " bytes: " << strerror(eno);
-      // pwrite is not expected to return 0, so eno should always be set, but we never know...
-      if (eno) {
-      	return -eno;
-      }
+      // pwrite is not expected to return 0, so eno should always be set, but we
+      // never know...
+      return -eno;
+    }
+    if (writeSize == 0) {
       return -EIO;
     }
 
@@ -251,7 +254,8 @@ ssize_t RawFileIO::write(const IORequest &req) {
   }
 
   // if (bytes != 0) {
-  //   RLOG(ERROR) << "Write error: wrote " << req.dataLen - bytes << " bytes of "
+  //   RLOG(ERROR) << "Write error: wrote " << req.dataLen - bytes << " bytes of
+  //   "
   //               << req.dataLen << ", max retries reached";
   //   knownSize = false;
   //   return (eno) ? -eno : -EIO;

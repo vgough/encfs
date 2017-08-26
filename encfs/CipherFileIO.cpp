@@ -106,10 +106,9 @@ bool CipherFileIO::setIV(uint64_t iv) {
         // duh -- there are no file headers for directories!
         externalIV = iv;
         return base->setIV(iv);
-      } else {
-        VLOG(1) << "setIV failed to re-open for write";
-        return false;
       }
+      VLOG(1) << "setIV failed to re-open for write";
+      return false;
     }
     if (fileIV == 0) {
       if (initHeader() < 0) {
@@ -189,11 +188,11 @@ int CipherFileIO::initHeader() {
     req.data = buf;
     req.dataLen = 8;
     ssize_t readSize = base->read(req);
-    if(readSize < 0) {
+    if (readSize < 0) {
       return readSize;
     }
 
-    if(!cipher->streamDecode(buf, sizeof(buf), externalIV, key)) {
+    if (!cipher->streamDecode(buf, sizeof(buf), externalIV, key)) {
       return -EBADMSG;
     }
 
@@ -224,7 +223,7 @@ int CipherFileIO::initHeader() {
     } while (fileIV == 0);  // don't accept 0 as an option..
 
     if (base->isWritable()) {
-      if(!cipher->streamEncode(buf, sizeof(buf), externalIV, key)) {
+      if (!cipher->streamEncode(buf, sizeof(buf), externalIV, key)) {
         return -EBADMSG;
       }
 
@@ -257,7 +256,7 @@ bool CipherFileIO::writeHeader() {
     fileIV >>= 8;
   }
 
-  if(!cipher->streamEncode(buf, sizeof(buf), externalIV, key)) {
+  if (!cipher->streamEncode(buf, sizeof(buf), externalIV, key)) {
     return false;
   }
 
@@ -266,11 +265,7 @@ bool CipherFileIO::writeHeader() {
   req.data = buf;
   req.dataLen = 8;
 
-  if (base->write(req) < 0) {
-    return false;
-  }
-
-  return true;
+  return (base->write(req) >= 0);
 }
 
 /**
@@ -319,8 +314,9 @@ int CipherFileIO::generateReverseHeader(unsigned char *headerBuf) {
   VLOG(1) << "fileIV=" << fileIV;
 
   // Encrypt externally-visible header
-  if(!cipher->streamEncode(headerBuf, HEADER_SIZE, externalIV, key))
+  if (!cipher->streamEncode(headerBuf, HEADER_SIZE, externalIV, key)) {
     return -EBADMSG;
+  }
   return 0;
 }
 
@@ -352,9 +348,13 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
 
     if (readSize != bs) {
       VLOG(1) << "streamRead(data, " << readSize << ", IV)";
-      ok = streamRead(tmpReq.data, (int)readSize, blockNum ^ fileIV); //cast works because we work on a block and blocksize fit an int
+      ok = streamRead(tmpReq.data, (int)readSize,
+                      blockNum ^ fileIV);  // cast works because we work on a
+                                           // block and blocksize fit an int
     } else {
-      ok = blockRead(tmpReq.data, (int)readSize, blockNum ^ fileIV); //cast works because we work on a block and blocksize fit an int
+      ok = blockRead(tmpReq.data, (int)readSize,
+                     blockNum ^ fileIV);  // cast works because we work on a
+                                          // block and blocksize fit an int
     }
 
     if (!ok) {
@@ -389,9 +389,13 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
 
   bool ok;
   if (req.dataLen != bs) {
-    ok = streamWrite(req.data, (int)req.dataLen, blockNum ^ fileIV); //cast works because we work on a block and blocksize fit an int
+    ok = streamWrite(req.data, (int)req.dataLen,
+                     blockNum ^ fileIV);  // cast works because we work on a
+                                          // block and blocksize fit an int
   } else {
-    ok = blockWrite(req.data, (int)req.dataLen, blockNum ^ fileIV); //cast works because we work on a block and blocksize fit an int
+    ok = blockWrite(req.data, (int)req.dataLen,
+                    blockNum ^ fileIV);  // cast works because we work on a
+                                         // block and blocksize fit an int
   }
 
   ssize_t res = 0;
@@ -400,8 +404,9 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
       IORequest tmpReq = req;
       tmpReq.offset += HEADER_SIZE;
       res = base->write(tmpReq);
-    } else
+    } else {
       res = base->write(req);
+    }
   } else {
     VLOG(1) << "encodeBlock failed for block " << blockNum << ", size "
             << req.dataLen;
@@ -487,7 +492,7 @@ int CipherFileIO::truncate(off_t size) {
   if (reopen == 1) {
     reopen = base->open(lastFlags);
     if (res < 0) {
-    	res = reopen;
+      res = reopen;
     }
   }
   return res;
@@ -536,7 +541,8 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
     VLOG(1) << "Adding " << headerBytes << " header bytes";
 
     // copy the header bytes into the data
-    int headerOffset = HEADER_SIZE - headerBytes; //can be int as HEADER_SIZE is int
+    int headerOffset =
+        HEADER_SIZE - headerBytes;  // can be int as HEADER_SIZE is int
     memcpy(req.data, &headerBuf[headerOffset], headerBytes);
 
     // the read does not want data beyond the header
@@ -559,7 +565,8 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
   if (readBytes < 0) {
     return readBytes;  // Return error code
   }
-  ssize_t sum = headerBytes + readBytes; //could be size_t, but as we return ssize_t...
+  ssize_t sum =
+      headerBytes + readBytes;  // could be size_t, but as we return ssize_t...
   VLOG(1) << "returning sum=" << sum;
   return sum;
 }

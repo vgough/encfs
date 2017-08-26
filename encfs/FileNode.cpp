@@ -246,9 +246,9 @@ ssize_t FileNode::write(off_t offset, unsigned char *data, size_t size) {
   Lock _lock(mutex);
 
   ssize_t res = io->write(req);
-  //Of course due to encryption we genrally write more than requested
+  // Of course due to encryption we genrally write more than requested
   if (res < 0) {
-  	return res;
+    return res;
   }
   return size;
 }

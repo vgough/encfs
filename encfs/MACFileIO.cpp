@@ -147,7 +147,7 @@ off_t MACFileIO::getSize() const {
 ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
   int headerSize = macBytes + randBytes;
 
-  int bs = blockSize() + headerSize; //ok, should clearly fit into an int
+  int bs = blockSize() + headerSize;  // ok, should clearly fit into an int
 
   MemBlock mb = MemoryPool::allocate(bs);
 
@@ -217,7 +217,7 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
 ssize_t MACFileIO::writeOneBlock(const IORequest &req) {
   int headerSize = macBytes + randBytes;
 
-  int bs = blockSize() + headerSize; //ok, should clearly fit into an int
+  int bs = blockSize() + headerSize;  // ok, should clearly fit into an int
 
   // we have the unencrypted data, so we need to attach a header to it.
   MemBlock mb = MemoryPool::allocate(bs);
@@ -256,7 +256,7 @@ ssize_t MACFileIO::writeOneBlock(const IORequest &req) {
 
 int MACFileIO::truncate(off_t size) {
   int headerSize = macBytes + randBytes;
-  int bs = blockSize() + headerSize; //ok, should clearly fit into an int
+  int bs = blockSize() + headerSize;  // ok, should clearly fit into an int
 
   int res = BlockFileIO::truncateBase(size, nullptr);
 

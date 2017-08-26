@@ -121,7 +121,8 @@ ssize_t BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
 ssize_t BlockFileIO::read(const IORequest &req) const {
   CHECK(_blockSize != 0);
 
-  int partialOffset = req.offset % _blockSize; //can be int as _blockSize is int
+  int partialOffset =
+      req.offset % _blockSize;  // can be int as _blockSize is int
   off_t blockNum = req.offset / _blockSize;
   ssize_t result = 0;
 
@@ -159,7 +160,9 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
       result = readSize;
       break;
     }
-    if (readSize <= partialOffset) break;  // didn't get enough bytes
+    if (readSize <= partialOffset) {
+      break;  // didn't get enough bytes
+    }
 
     size_t cpySize = min((size_t)(readSize - partialOffset), size);
     CHECK(cpySize <= readSize);
@@ -200,7 +203,8 @@ ssize_t BlockFileIO::write(const IORequest &req) {
 
   // where write request begins
   off_t blockNum = req.offset / _blockSize;
-  int partialOffset = req.offset % _blockSize; //can be int as _blockSize is int
+  int partialOffset =
+      req.offset % _blockSize;  // can be int as _blockSize is int
 
   // last block of file (for testing write overlaps with file boundary)
   off_t lastFileBlock = fileSize / _blockSize;
@@ -267,7 +271,7 @@ ssize_t BlockFileIO::write(const IORequest &req) {
 
       if (blockNum > lastNonEmptyBlock) {
         // just pad..
-        blockReq.dataLen = toCopy + partialOffset;
+        blockReq.dataLen = partialOffset + toCopy;
       } else {
         // have to merge with existing block data..
         blockReq.dataLen = _blockSize;
@@ -318,7 +322,7 @@ int BlockFileIO::blockSize() const { return _blockSize; }
 int BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
   off_t oldLastBlock = oldSize / _blockSize;
   off_t newLastBlock = newSize / _blockSize;
-  int newBlockSize = newSize % _blockSize; //can be int as _blockSize is int
+  int newBlockSize = newSize % _blockSize;  // can be int as _blockSize is int
   ssize_t res = 0;
 
   IORequest req;
@@ -379,7 +383,7 @@ int BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
     }
 
     // 3. only necessary if write is forced and block is non 0 length
-    if ((res >= 0) && forceWrite && newBlockSize) {
+    if ((res >= 0) && forceWrite && (newBlockSize != 0)) {
       req.offset = newLastBlock * _blockSize;
       req.dataLen = newBlockSize;
       memset(mb.data, 0, req.dataLen);
@@ -401,7 +405,7 @@ int BlockFileIO::padFile(off_t oldSize, off_t newSize, bool forceWrite) {
  * Returns 0 in case of success, or -errno in case of failure.
  */
 int BlockFileIO::truncateBase(off_t size, FileIO *base) {
-  int partialBlock = size % _blockSize; //can be int as _blockSize is int
+  int partialBlock = size % _blockSize;  // can be int as _blockSize is int
   int res = 0;
 
   off_t oldSize = getSize();

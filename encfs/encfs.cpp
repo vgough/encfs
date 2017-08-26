@@ -25,13 +25,13 @@
 #include <cstring>
 #include <ctime>
 #include <fcntl.h>
+#include <limits>
 #include <memory>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <sys/time.h>
 #include <unistd.h>
 #include <utime.h>
-#include <limits>
 #ifdef linux
 #include <sys/fsuid.h>
 #endif
@@ -65,7 +65,7 @@ using namespace std::placeholders;
 
 namespace encfs {
 
-#define GET_FN(ctx, finfo) ctx->getNode((void *)(uintptr_t)finfo->fh)
+#define GET_FN(ctx, finfo) (ctx)->getNode((void *)(uintptr_t)(finfo)->fh)
 
 static EncFS_Context *context() {
   return (EncFS_Context *)fuse_get_context()->private_data;
@@ -79,9 +79,10 @@ static EncFS_Context *context() {
 static bool isReadOnly(EncFS_Context *ctx) { return ctx->opts->readOnly; }
 
 // helper function -- apply a functor to a cipher path, given the plain path
-static int withCipherPath(const char *opName, const char *path,
-                          function<int(EncFS_Context *, const string &)> op,
-                          bool passReturnCode = false) {
+static int withCipherPath(
+    const char *opName, const char *path,
+    const function<int(EncFS_Context *, const string &)> &op,
+    bool passReturnCode = false) {
   EncFS_Context *ctx = context();
 
   int res = -EIO;
@@ -110,7 +111,7 @@ static int withCipherPath(const char *opName, const char *path,
   return res;
 }
 
-static void checkCanary(std::shared_ptr<FileNode> fnode) {
+static void checkCanary(const std::shared_ptr<FileNode> &fnode) {
   if (fnode->canary == CANARY_OK) {
     return;
   }
@@ -693,7 +694,8 @@ ssize_t _do_read(FileNode *fnode, unsigned char *ptr, size_t size, off_t off) {
 
 int encfs_read(const char *path, char *buf, size_t size, off_t offset,
                struct fuse_file_info *file) {
-  //Unfortunately we have to convert from ssize_t (pread) to int (fuse), so let's check this will be OK
+  // Unfortunately we have to convert from ssize_t (pread) to int (fuse), so
+  // let's check this will be OK
   if (size > std::numeric_limits<int>::max()) {
     RLOG(ERROR) << "tried to read too much data: " << size;
     return -EIO;
@@ -714,13 +716,15 @@ int encfs_fsync(const char *path, int dataSync, struct fuse_file_info *file) {
   return withFileNode("fsync", path, file, bind(_do_fsync, _1, dataSync));
 }
 
-ssize_t _do_write(FileNode *fnode, unsigned char *ptr, size_t size, off_t offset) {
+ssize_t _do_write(FileNode *fnode, unsigned char *ptr, size_t size,
+                  off_t offset) {
   return fnode->write(offset, ptr, size);
 }
 
 int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
                 struct fuse_file_info *file) {
-  //Unfortunately we have to convert from ssize_t (pwrite) to int (fuse), so let's check this will be OK
+  // Unfortunately we have to convert from ssize_t (pwrite) to int (fuse), so
+  // let's check this will be OK
   if (size > std::numeric_limits<int>::max()) {
     RLOG(ERROR) << "tried to write too much data: " << size;
     return -EIO;

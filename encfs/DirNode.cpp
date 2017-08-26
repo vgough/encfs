@@ -149,7 +149,7 @@ class RenameOp {
 
   ~RenameOp();
 
-  operator bool() const { return renameList != nullptr; }
+  explicit operator bool() const { return renameList != nullptr; }
 
   bool apply();
   void undo();

@@ -111,7 +111,8 @@ void EncFS_Context::renameNode(const char *from, const char *to) {
 
 // putNode stores "node" under key "path" in the "openFiles" map. It
 // increments the reference count if the key already exists.
-void EncFS_Context::putNode(const char *path, std::shared_ptr<FileNode> node) {
+void EncFS_Context::putNode(const char *path,
+                            const std::shared_ptr<FileNode> &node) {
   Lock lock(contextMutex);
   auto &list = openFiles[std::string(path)];
   // The length of "list" serves as the reference count.
@@ -122,7 +123,7 @@ void EncFS_Context::putNode(const char *path, std::shared_ptr<FileNode> node) {
 // eraseNode is called by encfs_release in response to the RELEASE
 // FUSE-command we get from the kernel.
 void EncFS_Context::eraseNode(const char *path,
-                              std::shared_ptr<FileNode> fnode) {
+                              const std::shared_ptr<FileNode> &fnode) {
   Lock lock(contextMutex);
 
   auto it = openFiles.find(std::string(path));
@@ -151,7 +152,7 @@ void EncFS_Context::eraseNode(const char *path,
 
 // nextFuseFh returns the next unused uint64 to serve as the FUSE file
 // handle for the kernel.
-uint64_t EncFS_Context::nextFuseFh(void) {
+uint64_t EncFS_Context::nextFuseFh() {
   // This is thread-safe because currentFuseFh is declared as std::atomic
   return currentFuseFh++;
 }
