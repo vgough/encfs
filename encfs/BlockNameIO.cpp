@@ -163,8 +163,12 @@ int BlockNameIO::encodeName(const char *plaintextName, int length, uint64_t *iv,
   encodedName[0] = (mac >> 8) & 0xff;
   encodedName[1] = (mac)&0xff;
 
-  _cipher->blockEncode((unsigned char *)encodedName + 2, length + padding,
-                       (uint64_t)mac ^ tmpIV, _key);
+  bool ok;
+  ok = _cipher->blockEncode((unsigned char *)encodedName + 2, length + padding,
+                            (uint64_t)mac ^ tmpIV, _key);
+  if (!ok) {
+    throw Error("block encode failed in filename encode");
+  }
 
   // convert to base 64 ascii
   int encodedStreamLen = length + 2 + padding;
@@ -219,8 +223,12 @@ int BlockNameIO::decodeName(const char *encodedName, int length, uint64_t *iv,
     tmpIV = *iv;
   }
 
-  _cipher->blockDecode((unsigned char *)tmpBuf + 2, decodedStreamLen,
-                       (uint64_t)mac ^ tmpIV, _key);
+  bool ok;
+  ok = _cipher->blockDecode((unsigned char *)tmpBuf + 2, decodedStreamLen,
+                            (uint64_t)mac ^ tmpIV, _key);
+  if (!ok) {
+    throw Error("block decode failed in filename decode");
+  }
 
   // find out true string length
   int padding = (unsigned char)tmpBuf[2 + decodedStreamLen - 1];

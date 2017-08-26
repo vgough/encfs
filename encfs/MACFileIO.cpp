@@ -147,7 +147,7 @@ off_t MACFileIO::getSize() const {
 ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
   int headerSize = macBytes + randBytes;
 
-  int bs = blockSize() + headerSize;
+  int bs = blockSize() + headerSize;  // ok, should clearly fit into an int
 
   MemBlock mb = MemoryPool::allocate(bs);
 
@@ -194,7 +194,7 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
         RLOG(WARNING) << "MAC comparison failure in block " << blockNum;
         if (!warnOnly) {
           MemoryPool::release(mb);
-          throw Error(_("MAC comparison failure, refusing to read"));
+          return -EBADMSG;
         }
       }
     }
@@ -214,10 +214,10 @@ ssize_t MACFileIO::readOneBlock(const IORequest &req) const {
   return readSize;
 }
 
-bool MACFileIO::writeOneBlock(const IORequest &req) {
+ssize_t MACFileIO::writeOneBlock(const IORequest &req) {
   int headerSize = macBytes + randBytes;
 
-  int bs = blockSize() + headerSize;
+  int bs = blockSize() + headerSize;  // ok, should clearly fit into an int
 
   // we have the unencrypted data, so we need to attach a header to it.
   MemBlock mb = MemoryPool::allocate(bs);
@@ -231,7 +231,7 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   memcpy(newReq.data + headerSize, req.data, req.dataLen);
   if (randBytes > 0) {
     if (!cipher->randomize(newReq.data + macBytes, randBytes, false)) {
-      return false;
+      return -EBADMSG;
     }
   }
 
@@ -247,21 +247,21 @@ bool MACFileIO::writeOneBlock(const IORequest &req) {
   }
 
   // now, we can let the next level have it..
-  bool ok = base->write(newReq);
+  ssize_t writeSize = base->write(newReq);
 
   MemoryPool::release(mb);
 
-  return ok;
+  return writeSize;
 }
 
 int MACFileIO::truncate(off_t size) {
   int headerSize = macBytes + randBytes;
-  int bs = blockSize() + headerSize;
+  int bs = blockSize() + headerSize;  // ok, should clearly fit into an int
 
   int res = BlockFileIO::truncateBase(size, nullptr);
 
   if (res == 0) {
-    base->truncate(locWithHeader(size, bs, headerSize));
+    res = base->truncate(locWithHeader(size, bs, headerSize));
   }
 
   return res;

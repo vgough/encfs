@@ -64,7 +64,7 @@ class MACFileIO : public BlockFileIO {
 
  private:
   virtual ssize_t readOneBlock(const IORequest &req) const;
-  virtual bool writeOneBlock(const IORequest &req);
+  virtual ssize_t writeOneBlock(const IORequest &req);
 
   std::shared_ptr<FileIO> base;
   std::shared_ptr<Cipher> cipher;

@@ -157,14 +157,16 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
   if (uid != 0) {
     olduid = setfsuid(uid);
     if (olduid == -1) {
-      RLOG(DEBUG) << "setfsuid error: " << strerror(errno);
+      int eno = errno;
+      RLOG(DEBUG) << "setfsuid error: " << strerror(eno);
       return -EPERM;
     }
   }
   if (gid != 0) {
     oldgid = setfsgid(gid);
     if (oldgid == -1) {
-      RLOG(DEBUG) << "setfsgid error: " << strerror(errno);
+      int eno = errno;
+      RLOG(DEBUG) << "setfsgid error: " << strerror(eno);
       return -EPERM;
     }
   }
@@ -185,17 +187,17 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
     res = ::mknod(_cname.c_str(), mode, rdev);
   }
 
+  if (res == -1) {
+    int eno = errno;
+    VLOG(1) << "mknod error: " << strerror(eno);
+    res = -eno;
+  }
+
   if (olduid >= 0) {
     setfsuid(olduid);
   }
   if (oldgid >= 0) {
     setfsgid(oldgid);
-  }
-
-  if (res == -1) {
-    int eno = errno;
-    VLOG(1) << "mknod error: " << strerror(eno);
-    res = -eno;
   }
 
   return res;
@@ -222,7 +224,7 @@ off_t FileNode::getSize() const {
   return res;
 }
 
-ssize_t FileNode::read(off_t offset, unsigned char *data, ssize_t size) const {
+ssize_t FileNode::read(off_t offset, unsigned char *data, size_t size) const {
   IORequest req;
   req.offset = offset;
   req.dataLen = size;
@@ -233,7 +235,7 @@ ssize_t FileNode::read(off_t offset, unsigned char *data, ssize_t size) const {
   return io->read(req);
 }
 
-bool FileNode::write(off_t offset, unsigned char *data, ssize_t size) {
+ssize_t FileNode::write(off_t offset, unsigned char *data, size_t size) {
   VLOG(1) << "FileNode::write offset " << offset << ", data size " << size;
 
   IORequest req;
@@ -243,7 +245,12 @@ bool FileNode::write(off_t offset, unsigned char *data, ssize_t size) {
 
   Lock _lock(mutex);
 
-  return io->write(req);
+  ssize_t res = io->write(req);
+  // Of course due to encryption we genrally write more than requested
+  if (res < 0) {
+    return res;
+  }
+  return size;
 }
 
 int FileNode::truncate(off_t size) {
@@ -266,8 +273,6 @@ int FileNode::sync(bool datasync) {
     }
 #else
     (void)datasync;
-    // no fdatasync support
-    // TODO: use autoconfig to check for it..
     res = fsync(fh);
 #endif
 

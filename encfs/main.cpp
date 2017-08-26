@@ -534,7 +534,7 @@ void *encfs_init(fuse_conn_info *conn) {
     if (res != 0) {
       RLOG(ERROR) << "error starting idle monitor thread, "
                      "res = "
-                  << res << ", errno = " << errno;
+                  << res << ", " << strerror(res);
     }
   }
 

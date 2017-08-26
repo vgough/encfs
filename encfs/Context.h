@@ -48,9 +48,9 @@ class EncFS_Context {
 
   void getAndResetUsageCounter(int *usage, int *openCount);
 
-  void putNode(const char *path, std::shared_ptr<FileNode> node);
+  void putNode(const char *path, const std::shared_ptr<FileNode> &node);
 
-  void eraseNode(const char *path, std::shared_ptr<FileNode> fnode);
+  void eraseNode(const char *path, const std::shared_ptr<FileNode> &fnode);
 
   void renameNode(const char *oldName, const char *newName);
 

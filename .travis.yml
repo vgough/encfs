@@ -5,7 +5,7 @@ matrix:
     - os: linux
       compiler: gcc
       dist: trusty
-      sudo: false
+      sudo: required
       addons:
         apt:
           sources:
@@ -17,12 +17,12 @@ matrix:
             - gettext
             - cmake3
       env:
-        - INTEGRATION=false
+        - SUDO_TESTS=true
 
     - os: linux
       compiler: clang
       dist: trusty
-      sudo: true
+      sudo: false
       addons:
         apt:
           sources:
@@ -37,14 +37,14 @@ matrix:
             - clang-4.0
             - clang-tidy-4.0
       env:
-        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=true
+        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=false CMAKE=/tmp/bin/cmake
 
     - os: osx
       compiler: clang
       osx_image: xcode8.3
-      sudo: true
+      sudo: required
       env:
-        - INTEGRATION=true
+        - SUDO_TESTS=true
 
 before_script:
   - ./ci/setup.sh

@@ -34,7 +34,7 @@ struct IORequest {
   off_t offset;
 
   // amount of bytes to read/write.
-  int dataLen;
+  size_t dataLen;
   unsigned char *data;
 
   IORequest();
@@ -68,7 +68,7 @@ class FileIO {
   virtual off_t getSize() const = 0;
 
   virtual ssize_t read(const IORequest &req) const = 0;
-  virtual bool write(const IORequest &req) = 0;
+  virtual ssize_t write(const IORequest &req) = 0;
 
   virtual int truncate(off_t size) = 0;
 

@@ -149,7 +149,7 @@ class RenameOp {
 
   ~RenameOp();
 
-  operator bool() const { return renameList != nullptr; }
+  explicit operator bool() const { return renameList != nullptr; }
 
   bool apply();
   void undo();
@@ -181,8 +181,9 @@ bool RenameOp::apply() {
 
       // rename on disk..
       if (::rename(last->oldCName.c_str(), last->newCName.c_str()) == -1) {
+        int eno = errno;
         RLOG(WARNING) << "Error renaming " << last->oldCName << ": "
-                      << strerror(errno);
+                      << strerror(eno);
         dn->renameNode(last->newPName.c_str(), last->oldPName.c_str(), false);
         return false;
       }
@@ -351,7 +352,8 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
 
   DIR *dir = ::opendir(cyName.c_str());
   if (dir == nullptr) {
-    VLOG(1) << "opendir error " << strerror(errno);
+    int eno = errno;
+    VLOG(1) << "opendir error " << strerror(eno);
     return DirTraverse(shared_ptr<DIR>(), 0, std::shared_ptr<NameIO>());
   }
   std::shared_ptr<DIR> dp(dir, DirDeleter());
@@ -584,8 +586,7 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
   }
 
   if (res != 0) {
-    VLOG(1) << "rename failed: " << strerror(errno);
-    res = -errno;
+    VLOG(1) << "rename failed: " << strerror(-res);
   }
 
   return res;
@@ -726,7 +727,7 @@ int DirNode::unlink(const char *plaintextName) {
     res = ::unlink(fullName.c_str());
     if (res == -1) {
       res = -errno;
-      VLOG(1) << "unlink error: " << strerror(errno);
+      VLOG(1) << "unlink error: " << strerror(-res);
     }
   }
 

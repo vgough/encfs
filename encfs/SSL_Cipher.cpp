@@ -106,7 +106,7 @@ int BytesToKey(int keyLen, int ivLen, const EVP_MD *md,
       memcpy(iv, mdBuf + offset, toCopy);
       iv += toCopy;
       niv -= toCopy;
-      offset += toCopy;
+      // offset += toCopy;
     }
     if ((nkey == 0) && (niv == 0)) {
       break;
@@ -170,12 +170,14 @@ static Range CAMELLIABlockRange(64, 4096, 16);
 
 static std::shared_ptr<Cipher> NewCAMELLIACipher(const Interface &iface,
                                                  int keyLen) {
-  if (keyLen <= 0) keyLen = 192;
+  if (keyLen <= 0) {
+    keyLen = 192;
+  }
 
   keyLen = CAMELLIAKeyRange.closest(keyLen);
 
-  const EVP_CIPHER *blockCipher = 0;
-  const EVP_CIPHER *streamCipher = 0;
+  const EVP_CIPHER *blockCipher = nullptr;
+  const EVP_CIPHER *streamCipher = nullptr;
 
   switch (keyLen) {
     case 128:
@@ -503,7 +505,7 @@ CipherKey SSL_Cipher::newRandomKey() {
     compute a 64-bit check value for the data using HMAC.
 */
 static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
-                             int dataLen, uint64_t *chainedIV) {
+                             int dataLen, uint64_t *const chainedIV) {
   rAssert(dataLen > 0);
   Lock lock(key->mutex);
 
@@ -810,6 +812,7 @@ bool SSL_Cipher::streamEncode(unsigned char *buf, int size, uint64_t iv64,
   if (dstLen != size) {
     RLOG(ERROR) << "encoding " << size << " bytes, got back " << dstLen << " ("
                 << tmpLen << " in final_ex)";
+    return false;
   }
 
   return true;
@@ -846,6 +849,7 @@ bool SSL_Cipher::streamDecode(unsigned char *buf, int size, uint64_t iv64,
   if (dstLen != size) {
     RLOG(ERROR) << "decoding " << size << " bytes, got back " << dstLen << " ("
                 << tmpLen << " in final_ex)";
+    return false;
   }
 
   return true;
@@ -861,7 +865,8 @@ bool SSL_Cipher::blockEncode(unsigned char *buf, int size, uint64_t iv64,
   // data must be integer number of blocks
   const int blockMod = size % EVP_CIPHER_CTX_block_size(key->block_enc);
   if (blockMod != 0) {
-    throw Error("Invalid data size, not multiple of block size");
+    RLOG(ERROR) << "Invalid data size, not multiple of block size";
+    return false;
   }
 
   Lock lock(key->mutex);
@@ -879,6 +884,7 @@ bool SSL_Cipher::blockEncode(unsigned char *buf, int size, uint64_t iv64,
   if (dstLen != size) {
     RLOG(ERROR) << "encoding " << size << " bytes, got back " << dstLen << " ("
                 << tmpLen << " in final_ex)";
+    return false;
   }
 
   return true;
@@ -894,7 +900,8 @@ bool SSL_Cipher::blockDecode(unsigned char *buf, int size, uint64_t iv64,
   // data must be integer number of blocks
   const int blockMod = size % EVP_CIPHER_CTX_block_size(key->block_dec);
   if (blockMod != 0) {
-    throw Error("Invalid data size, not multiple of block size");
+    RLOG(ERROR) << "Invalid data size, not multiple of block size";
+    return false;
   }
 
   Lock lock(key->mutex);
@@ -912,6 +919,7 @@ bool SSL_Cipher::blockDecode(unsigned char *buf, int size, uint64_t iv64,
   if (dstLen != size) {
     RLOG(ERROR) << "decoding " << size << " bytes, got back " << dstLen << " ("
                 << tmpLen << " in final_ex)";
+    return false;
   }
 
   return true;

@@ -41,7 +41,8 @@ static __inline int setfsuid(uid_t uid) {
   uid_t olduid = geteuid();
 
   if (seteuid(uid) != 0) {
-    VLOG(1) << "seteuid error: " << errno;
+    int eno = errno;
+    VLOG(1) << "seteuid error: " << strerror(eno);
   }
 
   return olduid;
@@ -51,7 +52,8 @@ static __inline int setfsgid(gid_t gid) {
   gid_t oldgid = getegid();
 
   if (setegid(gid) != 0) {
-    VLOG(1) << "setfsgid error: " << errno;
+    int eno = errno;
+    VLOG(1) << "setfsgid error: " << strerror(eno);
   }
 
   return oldgid;

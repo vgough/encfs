@@ -1,9 +1,10 @@
 #!/bin/bash -eu
 
+: ${CMAKE:=cmake}
 : ${CHECK:=false}
 : ${INTEGRATION:=true}
 
-cmake --version
+${CMAKE} --version
 
 CFG=$*
 if [[ "$CHECK" == "true" ]]; then
@@ -20,7 +21,7 @@ then
 fi
 
 cd build
-cmake .. ${CFG}
+${CMAKE} .. ${CFG}
 make -j2
 make test
 if [[ "$INTEGRATION" == "true" ]]; then

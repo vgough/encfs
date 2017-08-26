@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 122;
+use Test::More tests => 132;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -78,6 +78,8 @@ sub runTests
     &grow;
     &umask0777;
     &create_unmount_remount;
+    &checkReadError;
+    &checkWriteError;
 
     &configFromPipe;
     &cleanup;
@@ -109,7 +111,7 @@ sub corruption
     ok( open(IN, "< $crypt/corrupt"), "open corrupted file");
     my $content;
     $result = read(IN, $content, 20);
-    ok(! defined $result, "corrupted file with MAC returns read error: $!");
+    ok($!{EBADMSG} && (! defined $result), "corrupted file with MAC returns read error: $!");
 }
 
 # Test internal modification
@@ -429,4 +431,39 @@ sub create_unmount_remount
     checkContents("$mnt/test_file_1", $contents);
 
     portable_unmount($mnt);
+}
+
+# Test that read errors are correctly thrown up to us
+sub checkReadError
+{
+    # Not sure how to implement this, so feel free !
+    ok(1, "read error");
+}
+
+# Test that write errors are correctly thrown up to us
+sub checkWriteError
+{
+    # No OSX impl, and requires sudo which is inconvenient outside of CI.
+    if($^O eq "darwin" || !defined($ENV{'SUDO_TESTS'})) {
+        ok(1, "write error");
+        ok(1, "write error");
+        ok(1, "write error");
+        ok(1, "write error");
+    }
+    else {
+            my $crypt = "$workingDir/checkWriteError.crypt";
+            my $mnt = "$workingDir/checkWriteError.mnt";
+            mkdir($crypt) || BAIL_OUT($!);
+            mkdir($mnt)  || BAIL_OUT($!);
+            system("sudo mount -t tmpfs -o size=1m tmpfs $crypt");
+            ok( $? == 0, "mount command returns 0") || return;
+            system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");
+            ok( $? == 0, "encfs command returns 0") || return;
+            ok(open(OUT , "> $mnt/file"), "write content");
+            while(print OUT "0123456789") {}
+            ok ($!{ENOSPC}, "write returned $! instead of ENOSPC");
+            close OUT;
+            portable_unmount($mnt);
+            system("sudo umount $crypt");
+    }
 }
