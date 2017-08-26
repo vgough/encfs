@@ -532,10 +532,9 @@ void *encfs_init(fuse_conn_info *conn) {
     int res =
         pthread_create(&ctx->monitorThread, nullptr, idleMonitor, (void *)ctx);
     if (res != 0) {
-      int eno = errno;
       RLOG(ERROR) << "error starting idle monitor thread, "
                      "res = "
-                  << res << ", " << strerror(eno);
+                  << res << ", " << strerror(res);
     }
   }
 

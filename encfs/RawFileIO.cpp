@@ -90,6 +90,8 @@ Interface RawFileIO::interface() const { return RawFileIO_iface; }
     This works around the problem described in
    https://github.com/vgough/encfs/issues/181
     Without this, "umask 0777 ; echo foo > bar" fails.
+
+    Sets errno when -1 is returned.
 */
 static int open_readonly_workaround(const char *path, int flags) {
   int fd = -1;
@@ -118,52 +120,53 @@ int RawFileIO::open(int flags) {
   bool requestWrite = (((flags & O_RDWR) != 0) || ((flags & O_WRONLY) != 0));
   VLOG(1) << "open call, requestWrite = " << requestWrite;
 
-  int result = 0;
-
   // if we have a descriptor and it is writable, or we don't need writable..
   if ((fd >= 0) && (canWrite || !requestWrite)) {
     VLOG(1) << "using existing file descriptor";
-    result = fd;  // success
-  } else {
-    int finalFlags = requestWrite ? O_RDWR : O_RDONLY;
+    return fd;  // success
+  }
+
+  int finalFlags = requestWrite ? O_RDWR : O_RDONLY;
 
 #if defined(O_LARGEFILE)
-    if ((flags & O_LARGEFILE) != 0) {
-      finalFlags |= O_LARGEFILE;
-    }
+  if ((flags & O_LARGEFILE) != 0) {
+    finalFlags |= O_LARGEFILE;
+  }
 #else
 #warning O_LARGEFILE not supported
 #endif
 
-    int newFd = ::open(name.c_str(), finalFlags);
-    int eno = errno;
-
-    VLOG(1) << "open file with flags " << finalFlags << ", result = " << newFd;
-
-    if ((newFd == -1) && (eno == EACCES)) {
-      VLOG(1) << "using readonly workaround for open";
-      newFd = open_readonly_workaround(name.c_str(), finalFlags);
-      eno = errno;
-    }
-
-    if (newFd >= 0) {
-      if (oldfd >= 0) {
-        RLOG(ERROR) << "leaking FD?: oldfd = " << oldfd << ", fd = " << fd
-                    << ", newfd = " << newFd;
-      }
-
-      // the old fd might still be in use, so just keep it around for
-      // now.
-      canWrite = requestWrite;
-      oldfd = fd;
-      result = fd = newFd;
-    } else {
-      result = -eno;
-      RLOG(DEBUG) << "::open error: " << strerror(eno);
-    }
+  int eno;
+  int newFd = ::open(name.c_str(), finalFlags);
+  if (newFd < 0) {
+    eno = errno;
   }
 
-  return result;
+  VLOG(1) << "open file with flags " << finalFlags << ", result = " << newFd;
+
+  if ((newFd == -1) && (eno == EACCES)) {
+    VLOG(1) << "using readonly workaround for open";
+    newFd = open_readonly_workaround(name.c_str(), finalFlags);
+    eno = errno;
+  }
+
+  if (newFd < 0) {
+    RLOG(DEBUG) << "::open error: " << strerror(eno);
+    return -eno;
+  }
+
+  if (oldfd >= 0) {
+    RLOG(ERROR) << "leaking FD?: oldfd = " << oldfd << ", fd = " << fd
+                << ", newfd = " << newFd;
+  }
+
+  // the old fd might still be in use, so just keep it around for
+  // now.
+  canWrite = requestWrite;
+  oldfd = fd;
+  fd = newFd;
+
+  return fd;
 }
 
 int RawFileIO::getAttr(struct stat *stbuf) const {
@@ -206,8 +209,6 @@ ssize_t RawFileIO::read(const IORequest &req) const {
 
   if (readSize < 0) {
     int eno = errno;
-    errno = 0;  // just to be sure error seen in integration tests really comes
-                // from the function rc.
     RLOG(WARNING) << "read failed at offset " << req.offset << " for "
                   << req.dataLen << " bytes: " << strerror(eno);
     return -eno;
