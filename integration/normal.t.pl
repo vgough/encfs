@@ -443,8 +443,8 @@ sub checkReadError
 # Test that write errors are correctly thrown up to us
 sub checkWriteError
 {
-    # Not sure how to implement this on Mac OS, so feel free !
-    if($^O eq "darwin") {
+    # No OSX impl, and requires sudo which is inconvenient outside of CI.
+    if($^O eq "darwin" || !defined($ENV{'SUDO_TESTS'})) {
         ok(1, "write error");
         ok(1, "write error");
         ok(1, "write error");
@@ -455,7 +455,7 @@ sub checkWriteError
             my $mnt = "$workingDir/checkWriteError.mnt";
             mkdir($crypt) || BAIL_OUT($!);
             mkdir($mnt)  || BAIL_OUT($!);
-            system(($ENV{'SUDO_MOUNT'}||"")." mount -t tmpfs -o size=1m tmpfs $crypt");
+            system("sudo mount -t tmpfs -o size=1m tmpfs $crypt");
             ok( $? == 0, "mount command returns 0") || return;
             system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");
             ok( $? == 0, "encfs command returns 0") || return;
@@ -464,6 +464,6 @@ sub checkWriteError
             ok ($!{ENOSPC}, "write returned $! instead of ENOSPC");
             close OUT;
             portable_unmount($mnt);
-            system(($ENV{'SUDO_MOUNT'}||"")." umount $crypt");
+            system("sudo umount $crypt");
     }
 }
