@@ -1,6 +1,6 @@
 #!/bin/bash -eu
 
-: ${INTEGRATION:=false}
+: ${INTEGRATION:=true}
 : ${CHECK:=false}
 
 if [[ "$INTEGRATION" == "true" ]]; then
@@ -15,8 +15,8 @@ if [[ "$CHECK" == "true" ]]; then
   if uname -s | grep -q Linux; then
     wget https://cmake.org/files/v3.9/cmake-3.9.1-Linux-x86_64.tar.gz -O /tmp/cmake.tar.gz
     tar -C /tmp/ -xf /tmp/cmake.tar.gz
-    sudo rm -f $(which cmake)
-    sudo ln -s $(ls -1 /tmp/cmake*/bin/cmake) /bin/
+    mkdir /tmp/bin
+    ln -s $(ls -1 /tmp/cmake*/bin/cmake) /tmp/bin/
   fi
 fi
 
