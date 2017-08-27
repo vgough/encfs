@@ -28,7 +28,8 @@ tests will run almost instantly:
     make test
 
 Integration tests will take ~20 seconds to run and will mount an
-encrypted filesystem and run tests on it:
+encrypted filesystem and run tests on it:  
+*running integration tests from root (or with sudo) will run additional ones*
 
     make integration
 

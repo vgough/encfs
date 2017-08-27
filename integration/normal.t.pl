@@ -34,11 +34,23 @@ if(system("which lsextattr > /dev/null 2>&1") == 0)
     $setattr = "setextattr -h user encfs hello";
     $getattr = "getextattr -h user encfs";
 }
+
 # Do we support xattr ?
 my $have_xattr = 1;
 if(system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
 {
     $have_xattr = 0;
+}
+
+# Did we ask, or are we simply able to run "sudo" tests ?
+my $sudo_cmd;
+if ($> == 0)
+{
+    $sudo_cmd="";
+}
+elsif (defined($ENV{'SUDO_TESTS'}))
+{
+    $sudo_cmd="sudo";
 }
 
 # test filesystem in standard config mode
@@ -443,8 +455,8 @@ sub checkReadError
 # Test that write errors are correctly thrown up to us
 sub checkWriteError
 {
-    # No OSX impl, and requires sudo which is inconvenient outside of CI.
-    if($^O eq "darwin" || !defined($ENV{'SUDO_TESTS'})) {
+    # No OSX impl (for now, feel free to find how to), and requires "sudo".
+    if($^O eq "darwin" || !defined($sudo_cmd)) {
         ok(1, "write error");
         ok(1, "write error");
         ok(1, "write error");
@@ -455,7 +467,7 @@ sub checkWriteError
             my $mnt = "$workingDir/checkWriteError.mnt";
             mkdir($crypt) || BAIL_OUT($!);
             mkdir($mnt)  || BAIL_OUT($!);
-            system("sudo mount -t tmpfs -o size=1m tmpfs $crypt");
+            system("$sudo_cmd mount -t tmpfs -o size=1m tmpfs $crypt");
             ok( $? == 0, "mount command returns 0") || return;
             system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");
             ok( $? == 0, "encfs command returns 0") || return;
@@ -464,6 +476,6 @@ sub checkWriteError
             ok ($!{ENOSPC}, "write returned $! instead of ENOSPC");
             close OUT;
             portable_unmount($mnt);
-            system("sudo umount $crypt");
+            system("$sudo_cmd umount $crypt");
     }
 }
