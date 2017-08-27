@@ -44,7 +44,7 @@ if(system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
 
 # Did we ask, or are we simply able to run "sudo" tests ?
 my $sudo_cmd;
-if (! $<)
+if ($> == 0)
 {
     $sudo_cmd="";
 }
