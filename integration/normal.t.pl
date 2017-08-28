@@ -63,7 +63,8 @@ elsif (defined($ENV{'SUDO_TESTS'}))
 sub runTests
 {
     my $mode = shift;
-    print STDERR "\nrunTests: mode=$mode\n";
+    print STDERR "\nrunTests: mode=$mode sudo=";
+    print STDERR (defined($sudo_cmd) ? "on" : "off")."\n";
 
     &newWorkingDir;
 
