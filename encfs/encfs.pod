@@ -525,6 +525,11 @@ be allowed when the user has write access to the file.
 Because of these limits, this option is disabled by default for standard mode
 (and enabled by default for paranoia mode).
 
+This option may be incompatible with some cloud providers, as during a rename,
+file's content changes, but not its timestamp. Due to this, file's changes may
+no be correctly seen by cloud providers' sync programs. It is then not
+recommended for cloud usage.
+
 =item I<Block MAC headers>
 
 B<New to 1.1>.  If this is enabled, every block in every file is stored along
