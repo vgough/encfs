@@ -40,7 +40,7 @@ EncFS, please dive in!
 ## Unique Features
 
 EncFS has a few features still not found anywhere else (as of Dec 2014)
-that may be interesing to you:
+that may be interesting to you:
 
 ### Reverse mode
 
