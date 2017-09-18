@@ -1064,14 +1064,6 @@ RootPtr createV6Config(EncFS_Context *ctx,
     if (opts->requireMac) {
       blockMACBytes = 8;
     }
-    if (reverseEncryption) {
-      /* Reverse mounts are read-only by default (set in main.cpp).
-       * If uniqueIV is off, writing can be allowed, because there
-       * is no header that could be overwritten */
-      if (!uniqueIV) {
-        opts->readOnly = false;
-      }
-    }
   }
 
   if (answer[0] == 'x' || alg.name.empty()) {
@@ -1095,11 +1087,11 @@ RootPtr createV6Config(EncFS_Context *ctx,
     if (reverseEncryption) {
       cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
       uniqueIV = selectUniqueIV(false);
-      /* Reverse mounts are read-only by default (set in main.cpp).
-       * If uniqueIV is off, writing can be allowed, because there
-       * is no header that could be overwritten */
-      if (!uniqueIV) {
-        opts->readOnly = false;
+      /* If uniqueIV is off, writing can be allowed, because there
+       * is no header that could be overwritten.
+       * So if it is on, enforce readOnly. */
+      if (uniqueIV) {
+        opts->readOnly = true;
       }
     } else {
       chainedIV = selectChainedIV();
@@ -1581,11 +1573,11 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
             "The configuration loaded is not compatible with --reverse\n");
         return rootInfo;
       }
-      /* Reverse mounts are read-only by default (set in main.cpp).
-       * If uniqueIV is off, writing can be allowed, because there
-       * is no header that could be overwritten */
-      if (!config->uniqueIV) {
-        opts->readOnly = false;
+      /* If uniqueIV is off, writing can be allowed, because there
+       * is no header that could be overwritten.
+       * So if it is on, enforce readOnly. */
+      if (config->uniqueIV) {
+        opts->readOnly = true;
       }
     }
 
