@@ -21,7 +21,7 @@
 #ifndef _SSL_Compat_incl_
 #define _SSL_Compat_incl_
 
-// OpenSSL < 1.1.0
+// OpenSSL < 1.1.0 or LibreSSL
 #if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
 
 // Equivalent methods
