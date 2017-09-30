@@ -52,7 +52,7 @@ Dependencies
 EncFS depends on a number of libraries:
 
     * fuse : the userspace filesystem layer
-    * openssl : used for cryptographic primitives
+    * openssl or libressl : used for cryptographic primitives
     * tinyxml2 : for reading and writing XML configuration files
     * gettext : internationalization support
     * libintl : internationalization support
