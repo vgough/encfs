@@ -501,11 +501,21 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
   // if uid or gid are set, then that should be the directory owner
   int olduid = -1;
   int oldgid = -1;
-  if (uid != 0) {
-    olduid = setfsuid(uid);
-  }
   if (gid != 0) {
     oldgid = setfsgid(gid);
+    if (oldgid == -1) {
+      int eno = errno;
+      RLOG(DEBUG) << "setfsgid error: " << strerror(eno);
+      return -EPERM;
+    }
+  }
+  if (uid != 0) {
+    olduid = setfsuid(uid);
+    if (olduid == -1) {
+      int eno = errno;
+      RLOG(DEBUG) << "setfsuid error: " << strerror(eno);
+      return -EPERM;
+    }
   }
 
   int res = ::mkdir(cyName.c_str(), mode);
