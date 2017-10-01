@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#ifdef linux
+#ifdef __linux__
 #include <sys/fsuid.h>
 #endif
 

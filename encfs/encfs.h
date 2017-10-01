@@ -34,7 +34,7 @@ namespace encfs {
 #define HAVE_XATTR
 #endif
 
-#ifndef linux
+#ifndef __linux__
 #include <cerrno>
 
 static __inline int setfsuid(uid_t uid) {
