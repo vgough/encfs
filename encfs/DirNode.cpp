@@ -31,7 +31,7 @@
 #include "FileNode.h"
 #include "FileUtils.h"
 #include "NameIO.h"
-#ifdef linux
+#ifdef __linux__
 #include <sys/fsuid.h>
 #endif
 
