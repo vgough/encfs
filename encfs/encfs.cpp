@@ -32,7 +32,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <utime.h>
-#ifdef linux
+#ifdef __linux__
 #include <sys/fsuid.h>
 #endif
 
