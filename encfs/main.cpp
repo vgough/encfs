@@ -160,6 +160,8 @@ static void usage(const char *name) {
             "\t\t\t(encfs must be run as root)\n")
        << _("  --reverse\t\t"
             "reverse encryption\n")
+       << _("  --reversewrite\t\t"
+            "reverse encryption with writes enabled\n")
 
        // xgroup(usage)
        << _("  --extpass=program\tUse external program for password prompt\n"
@@ -249,6 +251,7 @@ static bool processArgs(int argc, char *argv[],
       {"verbose", 0, nullptr, 'v'},               // verbose mode
       {"version", 0, nullptr, 'V'},               // version
       {"reverse", 0, nullptr, 'r'},               // reverse encryption
+      {"reversewrite", 0, nullptr, 'R'},          // reverse encryption with write enabled
       {"standard", 0, nullptr, '1'},              // standard configuration
       {"paranoia", 0, nullptr, '2'},              // standard configuration
       {"require-macs", 0, nullptr, LONG_OPT_REQUIRE_MAC},  // require MACs
@@ -335,6 +338,12 @@ static bool processArgs(int argc, char *argv[],
          * However, disabling the caches causes a factor 3
          * slowdown. If you are concerned about inconsistencies,
          * please use --nocache. */
+        break;
+      case 'R':
+        out->opts->reverseEncryption = true;
+         /* At least this is what the user wants, we will see later
+            if it is possible */
+        out->opts->readOnly = false;
         break;
       case LONG_OPT_NOCACHE:
         /* Disable EncFS block cache
