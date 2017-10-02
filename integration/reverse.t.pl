@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 25;
+use Test::More tests => 31;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -212,7 +212,7 @@ symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
 symlink_test("!§\$%&/()\\<>#+="); # special characters
 symlink_test("$plain/foo");
-# writesDenied(); # disabled as writes are allowed when (uniqueIV == false), we would need a specific reverse conf with (uniqueIV == true).
+writesDenied();
 
 # Umount and delete files
 cleanup();

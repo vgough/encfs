@@ -18,7 +18,7 @@ encfs - mounts or creates an encrypted virtual filesystem
 
 B<encfs> [B<--version>] [B<-v>|B<--verbose>] [B<-t>|B<--syslogtag>] 
 [B<-s>] [B<-f>] [B<--annotate>] [B<--standard>] [B<--paranoia>] 
-[B<--reverse>] [B<--extpass=program>] [B<-S>|B<--stdinpass>] 
+[B<--reverse>] [B<--reversewrite>] [B<--extpass=program>] [B<-S>|B<--stdinpass>] 
 [B<--anykey>] [B<--forcedecode>] [B<-require-macs>] 
 [B<-i MINUTES>|B<--idle=MINUTES>] [B<-m>|B<--ondemand>] [B<--delaymount>] 
 [B<--public>] [B<--nocache>] [B<--no-default-flags>]
@@ -115,7 +115,13 @@ reproduce the unencrypted data:
 Now /tmp/plain-view contains the same data as /home/me
 
 Note that B<--reverse> mode only works with limited configuration options, so
-many settings may be disabled when used.
+many settings may be disabled when used.  Incompatible options as for now : 
+Filename Initialization Vector Chaining and External IV Chaining.
+
+=item B<--reversewrite>
+
+Same as B<--reverse> but will allow writes, if possible (configuration must have
+UniqueIV disabled).  Incompatible option : Per-File Initialization Vectors.
 
 =item B<--extpass=program>
 
@@ -500,6 +506,9 @@ initialization vector, so that each file is encrypted in a different way.
 
 This option is enabled by default.
 
+Reverse mode derivates IV from inode number, it may then change for example 
+when source files are copied from one FS to another.
+
 =item I<External IV Chaining>
 
 B<New in 1.1.3>.  This option is closely related to Per-File Initialization
@@ -620,6 +629,12 @@ B<EncFS> for complete details.
 =head1 AUTHORS
 
 B<EncFS> was written by B<< Valient Gough <vgough@pobox.com> >>.
+
+Site : B<https://vgough.github.io/encfs/>.
+
+Support, bug reports... : B<https://github.com/vgough/encfs>.
+
+Mailing list : none.
 
 =head1 SEE ALSO
 
