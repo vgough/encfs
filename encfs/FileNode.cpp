@@ -24,7 +24,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#ifdef linux
+#ifdef __linux__
 #include <sys/fsuid.h>
 #endif
 
@@ -154,19 +154,19 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
   int res;
   int olduid = -1;
   int oldgid = -1;
-  if (uid != 0) {
-    olduid = setfsuid(uid);
-    if (olduid == -1) {
-      int eno = errno;
-      RLOG(DEBUG) << "setfsuid error: " << strerror(eno);
-      return -EPERM;
-    }
-  }
   if (gid != 0) {
     oldgid = setfsgid(gid);
     if (oldgid == -1) {
       int eno = errno;
       RLOG(DEBUG) << "setfsgid error: " << strerror(eno);
+      return -EPERM;
+    }
+  }
+  if (uid != 0) {
+    olduid = setfsuid(uid);
+    if (olduid == -1) {
+      int eno = errno;
+      RLOG(DEBUG) << "setfsuid error: " << strerror(eno);
       return -EPERM;
     }
   }

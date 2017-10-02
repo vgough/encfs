@@ -313,7 +313,11 @@ if (POD2MAN)
     COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
             ${CMAKE_CURRENT_LIST_DIR}/encfs/encfsctl.pod encfsctl.1)
 
-  install (FILES ${CMAKE_BINARY_DIR}/encfs.1 ${CMAKE_BINARY_DIR}/encfsctl.1
+  add_custom_target (encfssh-man ALL
+    COMMAND ${POD2MAN} -u --section=1 --release=${ENCFS_VERSION} --center=${ENCFS_NAME}
+            ${CMAKE_CURRENT_LIST_DIR}/encfs/encfssh.pod encfssh.1)
+
+  install (FILES ${CMAKE_BINARY_DIR}/encfs.1 ${CMAKE_BINARY_DIR}/encfsctl.1 ${CMAKE_BINARY_DIR}/encfssh.1
     DESTINATION ${MAN_DESTINATION})
 endif (POD2MAN)
 
