@@ -630,6 +630,12 @@ B<EncFS> for complete details.
 
 B<EncFS> was written by B<< Valient Gough <vgough@pobox.com> >>.
 
+Site : B<https://vgough.github.io/encfs/>.
+
+Support, bug reports... : B<https://github.com/vgough/encfs>.
+
+Mailing list : none.
+
 =head1 SEE ALSO
 
 encfsctl(1)

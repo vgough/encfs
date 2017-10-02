@@ -19,7 +19,7 @@
  */
 
 // defines needed for RedHat 7.3...
-#ifdef linux
+#ifdef __linux__
 #define _XOPEN_SOURCE 500  // make sure pwrite() is pulled in
 #endif
 #define _BSD_SOURCE      // pick up setenv on RH7.3

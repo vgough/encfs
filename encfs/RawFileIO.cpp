@@ -18,7 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifdef linux
+#ifdef __linux__
 #define _XOPEN_SOURCE 500  // pick up pread , pwrite
 #endif
 #include "easylogging++.h"

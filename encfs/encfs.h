@@ -34,15 +34,14 @@ namespace encfs {
 #define HAVE_XATTR
 #endif
 
-#ifndef linux
+#ifndef __linux__
 #include <cerrno>
 
 static __inline int setfsuid(uid_t uid) {
   uid_t olduid = geteuid();
 
   if (seteuid(uid) != 0) {
-    int eno = errno;
-    VLOG(1) << "seteuid error: " << strerror(eno);
+    return -1;
   }
 
   return olduid;
@@ -52,8 +51,7 @@ static __inline int setfsgid(gid_t gid) {
   gid_t oldgid = getegid();
 
   if (setegid(gid) != 0) {
-    int eno = errno;
-    VLOG(1) << "setfsgid error: " << strerror(eno);
+    return -1;
   }
 
   return oldgid;

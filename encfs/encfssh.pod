@@ -1,0 +1,33 @@
+=pod
+
+=cut
+
+Copyright (c) 2003-2008, Valient Gough <vgough@pobox.com>
+All rights reserved.
+
+EncFS is free software; you can distribute it and/or modify it under the terms
+of the GNU General Public License (GPL), as published by the Free Software
+Foundation; either version 3 of the License, or (at your option) any later
+version.
+
+=head1 NAME
+
+encfssh - mount encrypted virtual filesystem and start shell
+
+Write in progress...
+
+=head1 DISCLAIMER
+
+This library is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE.  Please refer to the "COPYING" file distributed with
+B<EncFS> for complete details.
+
+=head1 AUTHORS
+
+B<EncFS> was written by B<< Valient Gough <vgough@pobox.com> >>.
+
+=head1 SEE ALSO
+
+encfs(1)
+
