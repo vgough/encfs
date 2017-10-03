@@ -136,7 +136,7 @@ int RawFileIO::open(int flags) {
 #warning O_LARGEFILE not supported
 #endif
 
-  int eno;
+  int eno = 0;
   int newFd = ::open(name.c_str(), finalFlags);
   if (newFd < 0) {
     eno = errno;
