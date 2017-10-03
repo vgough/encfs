@@ -521,10 +521,18 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
   int res = ::mkdir(cyName.c_str(), mode);
 
   if (olduid >= 0) {
-    setfsuid(olduid);
+    if(setfsuid(olduid) == -1) {
+      int eno = errno;
+      RLOG(DEBUG) << "setfsuid back error: " << strerror(eno);
+      // does not return error here as initial setfsuid worked
+    }
   }
   if (oldgid >= 0) {
-    setfsgid(oldgid);
+    if(setfsgid(oldgid) == -1) {
+      int eno = errno;
+      RLOG(DEBUG) << "setfsgid back error: " << strerror(eno);
+      // does not return error here as initial setfsgid worked
+    }
   }
 
   if (res == -1) {
