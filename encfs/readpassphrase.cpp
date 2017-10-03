@@ -146,7 +146,9 @@ restart:
   *p = '\0';
   save_errno = errno;
   if ((term.c_lflag & ECHO) == 0u) {
-    (void)write(output, "\n", 1);
+    if(write(output, "\n", 1) != -1) {
+    	//dummy test to get rid of warn_unused_result compilation warning
+    }
   }
 
   /* Restore old terminal settings and signals. */
