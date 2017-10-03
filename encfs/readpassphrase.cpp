@@ -125,22 +125,23 @@ restart:
     memset(&oterm, 0, sizeof(oterm));
   }
 
-  (void)write(output, prompt, strlen(prompt));
-  end = buf + bufsiz - 1;
-  for (p = buf; (nr = read(input, &ch, 1)) == 1 && ch != '\n' && ch != '\r';) {
-    if (p < end) {
-      if ((flags & RPP_SEVENBIT) != 0) {
-        ch &= 0x7f;
-      }
-      if (isalpha(ch) != 0) {
-        if ((flags & RPP_FORCELOWER) != 0) {
-          ch = tolower(ch);
+  if (write(output, prompt, strlen(prompt)) != -1) {
+    end = buf + bufsiz - 1;
+    for (p = buf; (nr = read(input, &ch, 1)) == 1 && ch != '\n' && ch != '\r';) {
+      if (p < end) {
+        if ((flags & RPP_SEVENBIT) != 0) {
+          ch &= 0x7f;
         }
-        if ((flags & RPP_FORCEUPPER) != 0) {
-          ch = toupper(ch);
+        if (isalpha(ch) != 0) {
+          if ((flags & RPP_FORCELOWER) != 0) {
+            ch = tolower(ch);
+          }
+          if ((flags & RPP_FORCEUPPER) != 0) {
+            ch = toupper(ch);
+          }
         }
+        *p++ = ch;
       }
-      *p++ = ch;
     }
   }
   *p = '\0';

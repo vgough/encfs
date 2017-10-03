@@ -456,15 +456,33 @@ int encfs_symlink(const char *to, const char *from) {
     int oldgid = -1;
     if (ctx->publicFilesystem) {
       fuse_context *context = fuse_get_context();
-      olduid = setfsuid(context->uid);
       oldgid = setfsgid(context->gid);
+      if (oldgid == -1) {
+        int eno = errno;
+        RLOG(DEBUG) << "setfsgid error: " << strerror(eno);
+        return -EPERM;
+      }
+      olduid = setfsuid(context->uid);
+      if (olduid == -1) {
+        int eno = errno;
+        RLOG(DEBUG) << "setfsuid error: " << strerror(eno);
+        return -EPERM;
+      }
     }
     res = ::symlink(toCName.c_str(), fromCName.c_str());
     if (olduid >= 0) {
-      setfsuid(olduid);
+      if(setfsuid(olduid) == -1) {
+        int eno = errno;
+        RLOG(DEBUG) << "setfsuid back error: " << strerror(eno);
+        // does not return error here as initial setfsuid worked
+      }
     }
     if (oldgid >= 0) {
-      setfsgid(oldgid);
+      if(setfsgid(oldgid) == -1) {
+        int eno = errno;
+        RLOG(DEBUG) << "setfsgid back error: " << strerror(eno);
+        // does not return error here as initial setfsgid worked
+      }
     }
 
     if (res == -1) {
