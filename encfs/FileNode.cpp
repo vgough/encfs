@@ -194,10 +194,18 @@ int FileNode::mknod(mode_t mode, dev_t rdev, uid_t uid, gid_t gid) {
   }
 
   if (olduid >= 0) {
-    setfsuid(olduid);
+    if(setfsuid(olduid) == -1) {
+      int eno = errno;
+      RLOG(DEBUG) << "setfsuid back error: " << strerror(eno);
+      // does not return error here as initial setfsuid worked
+    }
   }
   if (oldgid >= 0) {
-    setfsgid(oldgid);
+    if(setfsgid(oldgid) == -1) {
+      int eno = errno;
+      RLOG(DEBUG) << "setfsgid back error: " << strerror(eno);
+      // does not return error here as initial setfsgid worked
+    }
   }
 
   return res;
