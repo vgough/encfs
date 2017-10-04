@@ -44,7 +44,7 @@ msgid "  -- decodes name and prints plaintext version"
 msgstr "  -- décode le nom et affiche la version texte"
 
 msgid "  -- decodes the file and cats it to standard out"
-msgstr "  -- décode un fivhier et l'affiche"
+msgstr "  -- décode un fichier et l'affiche"
 
 msgid "  -- decrypts a volume and writes results to path"
 msgstr "  -- déchiffre un nom de fichier et affiche le résultat"
