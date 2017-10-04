@@ -84,7 +84,7 @@ check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
 check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
 
 include(CheckStructHasMember)
-check_struct_has_member(dirent d_type dirent.h HAVE_DIRENT_D_TYPE LANGUAGE CXX)
+check_struct_has_member("struct dirent" d_type dirent.h HAVE_DIRENT_D_TYPE LANGUAGE CXX)
 
 # Check if xattr functions take extra arguments, as they do on OSX.
 include (CheckCXXSourceCompiles)
