@@ -33,8 +33,8 @@
 #include <vector>
 
 #include "CipherKey.h"
-#include "FSConfig.h"
 #include "FileNode.h"
+#include "FSConfig.h"
 #include "NameIO.h"
 
 namespace encfs {
