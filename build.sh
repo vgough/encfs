@@ -23,6 +23,7 @@ fi
 cd build
 ${CMAKE} .. ${CFG}
 make -j2
+make unittests
 make test
 if [[ "$INTEGRATION" == "true" ]]; then
   make integration
