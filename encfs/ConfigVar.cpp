@@ -186,7 +186,7 @@ const ConfigVar &operator>>(const ConfigVar &src, std::string &result) {
 
   int readLen;
 
-  unsigned char tmpBuf[32];
+  unsigned char tmpBuf[32] = {};
   if (length > (int)sizeof(tmpBuf)) {
     auto *ptr = new unsigned char[length];
     readLen = src.read(ptr, length);
