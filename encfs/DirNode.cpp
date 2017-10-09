@@ -33,15 +33,14 @@
 #include <utility>
 #include <utime.h>
 
-#include "FSConfig.h"
+#include "Context.h"
+#include "easylogging++.h"
+#include "Error.h"
 #include "FileNode.h"
 #include "FileUtils.h"
-#include "NameIO.h"
-
-#include "easylogging++.h"
-#include "Context.h"
-#include "Error.h"
+#include "FSConfig.h"
 #include "Mutex.h"
+#include "NameIO.h"
 
 using namespace std;
 
