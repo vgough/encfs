@@ -715,8 +715,7 @@ int encfs_read(const char *path, char *buf, size_t size, off_t offset,
   // Unfortunately we have to convert from ssize_t (pread) to int (fuse), so
   // let's check this will be OK
   if (size > std::numeric_limits<int>::max()) {
-    RLOG(ERROR) << "tried to read too much data: " << size;
-    return -EIO;
+    size = std::numeric_limits<int>::max();
   }
   return withFileNode("read", path, file,
                       bind(_do_read, _1, (unsigned char *)buf, size, offset));
@@ -744,8 +743,7 @@ int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
   // Unfortunately we have to convert from ssize_t (pwrite) to int (fuse), so
   // let's check this will be OK
   if (size > std::numeric_limits<int>::max()) {
-    RLOG(ERROR) << "tried to write too much data: " << size;
-    return -EIO;
+    size = std::numeric_limits<int>::max();
   }
   EncFS_Context *ctx = context();
   if (isReadOnly(ctx)) {
