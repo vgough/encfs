@@ -34,7 +34,6 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
   # CMake 3.1 has built-in CXX standard checks.
   set(CMAKE_CXX_STANDARD 11)
   set(CMAKE_CXX_STANDARD_REQUIRED on)
-  list(APPEND CMAKE_CXX_FLAGS "-Wall -Wextra")
 else ()
   if (CMAKE_COMPILER_IS_GNUCXX)
     message ("** Assuming that GNU CXX uses -std=c++11 flag for C++11 compatibility.")
@@ -46,6 +45,9 @@ else ()
     message ("** No CMAKE C++11 check. If the build breaks, you're on your own.")
   endif()
 endif ()
+
+# Let's enable some compilation warnings
+list(APPEND CMAKE_CXX_FLAGS "-Wall -Wextra")
 
 add_definitions( -DPACKAGE="encfs" )
 
