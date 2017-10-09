@@ -48,6 +48,9 @@ endif ()
 
 # Let's enable some compilation warnings
 list(APPEND CMAKE_CXX_FLAGS "-Wall -Wextra")
+if (CMAKE_COMPILER_IS_GNUCXX)
+  list(APPEND CMAKE_CXX_FLAGS "-isystem vendor/")
+endif()
 
 add_definitions( -DPACKAGE="encfs" )
 
