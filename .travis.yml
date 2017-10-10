@@ -41,7 +41,7 @@ matrix:
 
     - os: osx
       compiler: clang
-      osx_image: xcode8.3
+      osx_image: xcode9
       sudo: required
       env:
         - SUDO_TESTS=true
