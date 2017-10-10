@@ -25,6 +25,7 @@ Optional, but strongly recommended, is running the unit and integration
 tests to verify that the generated binaries work as expected.  Unit
 tests will run almost instantly:
 
+    make unittests
     make test
 
 Integration tests will take ~20 seconds to run and will mount an
