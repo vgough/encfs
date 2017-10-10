@@ -46,6 +46,9 @@ else ()
   endif()
 endif ()
 
+# Let's enable some compilation warnings
+list(APPEND CMAKE_CXX_FLAGS "-Wall -Wextra")
+
 add_definitions( -DPACKAGE="encfs" )
 
 # http://www.cmake.org/Wiki/CMake_RPATH_handling#Mac_OS_X_and_the_RPATH
@@ -69,12 +72,12 @@ endif()
 
 # Check for FUSE.
 find_package (FUSE REQUIRED)
-include_directories (${FUSE_INCLUDE_DIR})
+include_directories (SYSTEM ${FUSE_INCLUDE_DIR})
 add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26)
 
 # Check for OpenSSL.
 find_package (OpenSSL REQUIRED)
-include_directories (${OPENSSL_INCLUDE_DIR})
+include_directories (SYSTEM ${OPENSSL_INCLUDE_DIR})
 
 find_program (POD2MAN pod2man)
 
@@ -153,7 +156,7 @@ include_directories (${CMAKE_CURRENT_LIST_DIR})
 if (ENABLE_NLS)
   find_package (Intl)
   if (Intl_FOUND)
-    include_directories (${Intl_INCLUDE_DIRS})
+    include_directories (SYSTEM ${Intl_INCLUDE_DIRS})
   endif()
 
   add_subdirectory(po)
@@ -195,20 +198,20 @@ if (USE_INTERNAL_TINYXML)
   set(BUILD_STATIC_LIBS ON CACHE BOOL "build static libs")
   set(BUILD_SHARED_LIBS OFF CACHE BOOL "build shared libs")
   set(BUILD_TESTS OFF CACHE BOOL "build tests")
-  add_subdirectory(${TINYXML_DIR})
-  include_directories(${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
+  add_subdirectory(${TINYXML_DIR} EXCLUDE_FROM_ALL)
+  include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
   link_directories(${CMAKE_BINARY_DIR}/${TINYXML_DIR})
   set(TINYXML_LIBRARIES tinyxml2_static)
 else ()
   find_package (TinyXML REQUIRED)
-  include_directories (${TINYXML_INCLUDE_DIR})
+  include_directories (SYSTEM ${TINYXML_INCLUDE_DIR})
 endif ()
 
 message("-- Using vendored easylogging++")
 set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
 set(build_static_lib ON CACHE BOOL "build static libs")
-add_subdirectory(${EASYLOGGING_DIR})
-include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
+add_subdirectory(${EASYLOGGING_DIR} EXCLUDE_FROM_ALL)
+include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
 link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
 set(EASYLOGGING_LIBRARIES easyloggingpp)
 
@@ -325,16 +328,16 @@ if (BUILD_UNIT_TESTS)
   enable_testing()
 
   set(GOOGLETEST_DIR vendor/github.com/google/googletest)
-  add_subdirectory(${GOOGLETEST_DIR})
+  add_subdirectory(${GOOGLETEST_DIR} EXCLUDE_FROM_ALL)
   link_directories(${CMAKE_BINARY_DIR}/${GOOGLETEST_DIR}/googletest)
 
   set(GOOGLEBENCH_DIR vendor/github.com/google/benchmark)
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "benchmark tests")
-  add_subdirectory(${GOOGLEBENCH_DIR})
+  add_subdirectory(${GOOGLEBENCH_DIR} EXCLUDE_FROM_ALL)
   link_directories(${CMAKE_BINARY_DIR}/${GOOGLEBENCH_DIR})
 
   # Unit tests.
-  add_subdirectory(test)
+  add_subdirectory(test EXCLUDE_FROM_ALL)
 
   # Integration test target - runs against built encfs.
   add_custom_target(integration COMMAND ${CMAKE_CURRENT_LIST_DIR}/integration.sh)

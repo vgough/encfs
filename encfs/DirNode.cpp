@@ -18,30 +18,29 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "DirNode.h"
+
 #include <cerrno>
 #include <cstdio>
+#include <cstring>
+#ifdef __linux__
+#include <sys/fsuid.h>
+#endif
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <utime.h>
-
-#include "DirNode.h"
-#include "FSConfig.h"
-#include "FileNode.h"
-#include "FileUtils.h"
-#include "NameIO.h"
-#ifdef __linux__
-#include <sys/fsuid.h>
-#endif
-
-#include "easylogging++.h"
-#include <cstring>
 #include <utility>
+#include <utime.h>
 
 #include "Context.h"
 #include "Error.h"
+#include "FSConfig.h"
+#include "FileNode.h"
+#include "FileUtils.h"
 #include "Mutex.h"
+#include "NameIO.h"
+#include "easylogging++.h"
 
 using namespace std;
 

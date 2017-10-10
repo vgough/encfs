@@ -18,22 +18,22 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "FileNode.h"
+
 #include <cerrno>
 #include <cinttypes>
+#include <cstring>
 #include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
 #ifdef __linux__
 #include <sys/fsuid.h>
 #endif
-
-#include <cstring>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "CipherFileIO.h"
 #include "Error.h"
 #include "FileIO.h"
-#include "FileNode.h"
 #include "FileUtils.h"
 #include "MACFileIO.h"
 #include "Mutex.h"
