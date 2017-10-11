@@ -126,29 +126,30 @@ restart:
   }
 
   if (write(output, prompt, strlen(prompt)) != -1) {
-    end = buf + bufsiz - 1;
-    for (p = buf; (nr = read(input, &ch, 1)) == 1 && ch != '\n' && ch != '\r';) {
-      if (p < end) {
-        if ((flags & RPP_SEVENBIT) != 0) {
-          ch &= 0x7f;
-        }
-        if (isalpha(ch) != 0) {
-          if ((flags & RPP_FORCELOWER) != 0) {
-            ch = tolower(ch);
-          }
-          if ((flags & RPP_FORCEUPPER) != 0) {
-            ch = toupper(ch);
-          }
-        }
-        *p++ = ch;
-      }
-    }
-    *p = '\0';
+    //dummy test to get rid of warn_unused_result compilation warning
   }
+  end = buf + bufsiz - 1;
+  for (p = buf; (nr = read(input, &ch, 1)) == 1 && ch != '\n' && ch != '\r';) {
+    if (p < end) {
+      if ((flags & RPP_SEVENBIT) != 0) {
+        ch &= 0x7f;
+      }
+      if (isalpha(ch) != 0) {
+        if ((flags & RPP_FORCELOWER) != 0) {
+          ch = tolower(ch);
+        }
+        if ((flags & RPP_FORCEUPPER) != 0) {
+          ch = toupper(ch);
+        }
+      }
+      *p++ = ch;
+    }
+  }
+  *p = '\0';
   save_errno = errno;
   if ((term.c_lflag & ECHO) == 0u) {
-    if(write(output, "\n", 1) != -1) {
-    	//dummy test to get rid of warn_unused_result compilation warning
+    if (write(output, "\n", 1) != -1) {
+      //dummy test to get rid of warn_unused_result compilation warning
     }
   }
 
