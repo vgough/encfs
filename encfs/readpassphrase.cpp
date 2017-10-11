@@ -37,6 +37,8 @@ static const char rcsid[] =
 
 #ifndef HAVE_READPASSPHRASE
 
+#include "readpassphrase.h"
+
 #include <cctype>
 #include <cerrno>
 #include <csignal>
@@ -47,8 +49,6 @@ static const char rcsid[] =
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
-
-#include "readpassphrase.h"
 
 #ifdef TCSASOFT
 #define _T_FLUSH (TCSAFLUSH | TCSASOFT)
@@ -143,8 +143,8 @@ restart:
         *p++ = ch;
       }
     }
+    *p = '\0';
   }
-  *p = '\0';
   save_errno = errno;
   if ((term.c_lflag & ECHO) == 0u) {
     if(write(output, "\n", 1) != -1) {
