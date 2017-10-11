@@ -143,8 +143,8 @@ restart:
         *p++ = ch;
       }
     }
+    *p = '\0';
   }
-  *p = '\0';
   save_errno = errno;
   if ((term.c_lflag & ECHO) == 0u) {
     if(write(output, "\n", 1) != -1) {
