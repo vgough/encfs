@@ -644,7 +644,7 @@ static Cipher::CipherAlgorithm selectCipherAlgorithm() {
     cout << "\n" << _("Enter the number corresponding to your choice: ");
     char answer[10];
     char *res = fgets(answer, sizeof(answer), stdin);
-    int cipherNum = (res == nullptr ? 0 : atoi(answer));
+    int cipherNum = (res == nullptr ? 0 : (int)strtol(answer, nullptr, 10));
     cout << "\n";
 
     if (cipherNum < 1 || cipherNum > (int)algorithms.size()) {
@@ -688,7 +688,7 @@ static Interface selectNameCoding() {
     cout << "\n" << _("Enter the number corresponding to your choice: ");
     char answer[10];
     char *res = fgets(answer, sizeof(answer), stdin);
-    int algNum = (res == nullptr ? 0 : atoi(answer));
+    int algNum = (res == nullptr ? 0 : (int)strtol(answer, nullptr, 10));
     cout << "\n";
 
     if (algNum < 1 || algNum > (int)algorithms.size()) {
@@ -755,7 +755,7 @@ static int selectKeySize(const Cipher::CipherAlgorithm &alg) {
 
   char answer[10];
   char *res = fgets(answer, sizeof(answer), stdin);
-  int keySize = (res == nullptr ? 0 : atoi(answer));
+  int keySize = (res == nullptr ? 0 : (int)strtol(answer, nullptr, 10));
   cout << "\n";
 
   keySize = alg.keyLength.closest(keySize);
@@ -795,8 +795,8 @@ static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
   char *res = fgets(answer, sizeof(answer), stdin);
   cout << "\n";
 
-  if (res != nullptr && atoi(answer) >= alg.blockSize.min()) {
-    blockSize = atoi(answer);
+  if (res != nullptr && (int)strtol(answer, nullptr, 10) >= alg.blockSize.min()) {
+    blockSize = (int)strtol(answer, nullptr, 10);
   }
 
   blockSize = alg.blockSize.closest(blockSize);
@@ -900,7 +900,7 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
   char *res = fgets(answer, sizeof(answer), stdin);
   cout << "\n";
 
-  randSize = (res == nullptr ? 0 : atoi(answer));
+  randSize = (res == nullptr ? 0 : (int)strtol(answer, nullptr, 10));
   if (randSize < 0) {
     randSize = 0;
   }
