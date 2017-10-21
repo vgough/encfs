@@ -48,8 +48,8 @@ class autosprintf {
   /* Destructor: frees the temporarily allocated string.  */
   ~autosprintf();
   /* Conversion to string.  */
-  operator char*() const;
-  operator std::string() const;
+  explicit operator char*() const;
+  explicit operator std::string() const;
   /* Output to an ostream.  */
   friend inline std::ostream& operator<<(std::ostream& stream,
                                          const autosprintf& tmp) {
