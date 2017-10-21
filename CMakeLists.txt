@@ -180,7 +180,6 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or abo
       ",-google-runtime-int"
       ",-google-runtime-references"
       ",-misc-misplaced-widening-cast"
-      ",-misc-unused-parameters"
       ",-modernize-loop-convert"
       ",-readability-inconsistent-declaration-parameter-name"
       ",-readability-named-parameter"
