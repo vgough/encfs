@@ -33,7 +33,7 @@
 
 #include <openssl/buffer.h>
 
-#define BLOCKDATA(BLOCK) (unsigned char *)BLOCK->data->data
+#define BLOCKDATA(BLOCK) (unsigned char *)(BLOCK)->data->data
 
 namespace encfs {
 
