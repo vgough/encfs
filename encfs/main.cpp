@@ -22,6 +22,7 @@
 #include <cstring>
 #include <ctime>
 #include <exception>
+#include <sys/file.h>
 #include <getopt.h>
 #include <iostream>
 #include <memory>
@@ -765,7 +766,7 @@ static void *idleMonitor(void *_arg) {
   pthread_mutex_lock(&ctx->wakeupMutex);
 
   while (ctx->running) {
-    int usage, openCount;
+    int usage, openCount, fdlock;
     ctx->getAndResetUsageCounter(&usage, &openCount);
 
     if (usage == 0 && ctx->isMounted()) {
@@ -779,16 +780,21 @@ static void *idleMonitor(void *_arg) {
     }
 
     if (idleCycles >= timeoutCycles) {
-      if (openCount == 0) {
+      if (openCount != 0) {
+        RLOG(WARNING) << "Filesystem inactive, but " << openCount
+                      << " files opened: " << arg->opts->mountPoint;
+      } else if ((fdlock = open(arg->opts->mountPoint.c_str(),O_RDONLY)) == -1 || flock(fdlock, LOCK_EX|LOCK_NB) == -1) {
+        RLOG(WARNING) << "Filesystem inactive, but "
+                      << "lock before unmount failed: " << arg->opts->mountPoint;
+      } else {
         unmountres = unmountFS(ctx);
+        flock(fdlock, LOCK_UN);
+        close(fdlock);
         if (unmountres) {
           // wait for main thread to wake us up
           pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
           break;
         }
-      } else {
-        RLOG(WARNING) << "Filesystem inactive, but " << openCount
-                      << " files opened: " << arg->opts->mountPoint;
       }
     }
 
