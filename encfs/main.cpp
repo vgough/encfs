@@ -619,7 +619,6 @@ int main(int argc, char *argv[]) {
   // encfs_oper.releasedir = encfs_releasedir;
   // encfs_oper.fsyncdir = encfs_fsyncdir;
   encfs_oper.init = encfs_init;
-  // encfs_oper.destroy = encfs_destroy;
   // encfs_oper.access = encfs_access;
   encfs_oper.create = encfs_create;
   encfs_oper.ftruncate = encfs_ftruncate;
