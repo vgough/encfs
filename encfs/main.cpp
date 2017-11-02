@@ -766,7 +766,7 @@ static void *idleMonitor(void *_arg) {
   pthread_mutex_lock(&ctx->wakeupMutex);
 
   while (ctx->running) {
-    int usage, openCount, fdlock;
+    int usage, openCount;
     ctx->getAndResetUsageCounter(&usage, &openCount);
 
     if (usage == 0 && ctx->isMounted()) {
@@ -783,17 +783,23 @@ static void *idleMonitor(void *_arg) {
       if (openCount != 0) {
         RLOG(WARNING) << "Filesystem inactive, but " << openCount
                       << " files opened: " << arg->opts->mountPoint;
-      } else if ((fdlock = open(arg->opts->mountPoint.c_str(),O_RDONLY)) == -1 || flock(fdlock, LOCK_EX|LOCK_NB) == -1) {
-        RLOG(WARNING) << "Filesystem inactive, but "
-                      << "lock before unmount failed: " << arg->opts->mountPoint;
       } else {
-        unmountres = unmountFS(ctx);
-        flock(fdlock, LOCK_UN);
-        close(fdlock);
-        if (unmountres) {
-          // wait for main thread to wake us up
-          pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
-          break;
+      	/* try to lock the mount point to give an oportunity to handle races
+      	   with an automated tool or script using --idle. */
+        int fdlock = open(arg->opts->mountPoint.c_str(),O_RDONLY);
+        if (flock(fdlock, LOCK_EX|LOCK_NB) == -1) {
+          RLOG(WARNING) << "Filesystem inactive, but "
+                        << "lock before unmount failed: " << arg->opts->mountPoint;
+          close(fdlock);
+        } else {
+          unmountres = unmountFS(ctx);
+          flock(fdlock, LOCK_UN);
+          close(fdlock);
+          if (unmountres) {
+            // wait for main thread to wake us up
+            pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
+            break;
+          }
         }
       }
     }
