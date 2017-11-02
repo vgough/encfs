@@ -23,6 +23,7 @@
 #include <algorithm>  // for remove_if
 #include <cstring>    // for NULL
 #include <fstream>    // for ifstream
+#include <limits>
 #include <memory>     // for shared_ptr
 #include <sstream>    // for ostringstream
 
@@ -60,7 +61,15 @@ bool XmlValue::read(const char *path, int *out) const {
     return false;
   }
 
-  *out = atoi(value->text().c_str());
+  char * e;
+  long lout = strtol(value->text().c_str(), &e, 10);
+  if (*e != '\0') {
+    return false;
+  }
+  if (lout < std::numeric_limits<int>::min() || lout > std::numeric_limits<int>::max()) {
+    return false;
+  }
+  *out = (int)lout;
   return true;
 }
 
@@ -70,8 +79,9 @@ bool XmlValue::read(const char *path, long *out) const {
     return false;
   }
 
-  *out = atol(value->text().c_str());
-  return true;
+  char * e;
+  *out = strtol(value->text().c_str(), &e, 10);
+  return (*e == '\0');
 }
 
 bool XmlValue::read(const char *path, double *out) const {
@@ -80,8 +90,9 @@ bool XmlValue::read(const char *path, double *out) const {
     return false;
   }
 
-  *out = atof(value->text().c_str());
-  return true;
+  char * e;
+  *out = strtod(value->text().c_str(), &e);
+  return (*e == '\0');
 }
 
 bool XmlValue::read(const char *path, bool *out) const {
@@ -90,8 +101,9 @@ bool XmlValue::read(const char *path, bool *out) const {
     return false;
   }
 
-  *out = (atoi(value->text().c_str()) != 0);
-  return true;
+  char * e;
+  *out = (strtol(value->text().c_str(), &e, 10) != 0);
+  return (*e == '\0');
 }
 
 bool XmlValue::readB64(const char *path, unsigned char *data,
@@ -154,7 +166,7 @@ class XmlNode : virtual public XmlValue {
   const tinyxml2::XMLElement *element;
 
  public:
-  XmlNode(const tinyxml2::XMLElement *element_)
+  explicit XmlNode(const tinyxml2::XMLElement *element_)
       : XmlValue(safeValueForNode(element_)), element(element_) {}
 
   ~XmlNode() override = default;

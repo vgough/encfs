@@ -135,7 +135,7 @@ static void checkCanary(const std::shared_ptr<FileNode> &fnode) {
 // helper function -- apply a functor to a node
 static int withFileNode(const char *opName, const char *path,
                         struct fuse_file_info *fi,
-                        function<int(FileNode *)> op) {
+                        const function<int(FileNode *)> &op) {
   EncFS_Context *ctx = context();
 
   int res = -EIO;
@@ -229,6 +229,10 @@ int encfs_fgetattr(const char *path, struct stat *stbuf,
 int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                   off_t offset, struct fuse_file_info *finfo) {
   EncFS_Context *ctx = context();
+
+  //unused parameters
+  (void)offset;
+  (void)finfo;
 
   int res = ESUCCESS;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
