@@ -166,7 +166,7 @@ if (ENABLE_NLS)
 endif (ENABLE_NLS)
 
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or above.
-  find_program(CLANG_TIDY_EXE NAMES "clang-tidy" "clang-tidy-4.0" DOC "Path to clang-tidy executable")
+  find_program(CLANG_TIDY_EXE NAMES "clang-tidy-4.0" "clang-tidy40" "clang-tidy" DOC "Path to clang-tidy executable")
   if(NOT CLANG_TIDY_EXE)
     message(STATUS "clang-tidy not found.")
   else()
@@ -179,7 +179,6 @@ if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or abo
       ",-google-readability-todo"
       ",-google-runtime-int"
       ",-google-runtime-references"
-      ",-misc-misplaced-widening-cast"
       ",-misc-unused-parameters"
       ",-modernize-loop-convert"
       ",-readability-inconsistent-declaration-parameter-name"
