@@ -784,8 +784,8 @@ static void *idleMonitor(void *_arg) {
         RLOG(WARNING) << "Filesystem inactive, but " << openCount
                       << " files opened: " << arg->opts->mountPoint;
       } else {
-      	/* try to lock the mount point to give an oportunity to handle races
-      	   with an automated tool or script using --idle. */
+        /* try to lock the mount point to give an oportunity to handle races
+           with an automated tool or script using --idle. */
         int fdlock = open(arg->opts->mountPoint.c_str(),O_RDONLY);
         if (flock(fdlock, LOCK_EX|LOCK_NB) == -1) {
           RLOG(WARNING) << "Filesystem inactive, but "
