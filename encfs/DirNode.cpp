@@ -55,8 +55,6 @@ DirTraverse::DirTraverse(std::shared_ptr<DIR> _dirPtr, uint64_t _iv,
                          std::shared_ptr<NameIO> _naming)
     : dir(std::move(_dirPtr)), iv(_iv), naming(std::move(_naming)) {}
 
-DirTraverse::DirTraverse(const DirTraverse &src) = default;
-
 DirTraverse &DirTraverse::operator=(const DirTraverse &src) = default;
 
 DirTraverse::~DirTraverse() {
