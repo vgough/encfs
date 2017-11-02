@@ -556,8 +556,6 @@ void *encfs_init(fuse_conn_info *conn) {
   return (void *)ctx;
 }
 
-void encfs_destroy(void *_ctx) {}
-
 int main(int argc, char *argv[]) {
 #if defined(ENABLE_NLS) && defined(LOCALEDIR)
   setlocale(LC_ALL, "");
@@ -621,7 +619,6 @@ int main(int argc, char *argv[]) {
   // encfs_oper.releasedir = encfs_releasedir;
   // encfs_oper.fsyncdir = encfs_fsyncdir;
   encfs_oper.init = encfs_init;
-  encfs_oper.destroy = encfs_destroy;
   // encfs_oper.access = encfs_access;
   encfs_oper.create = encfs_create;
   encfs_oper.ftruncate = encfs_ftruncate;

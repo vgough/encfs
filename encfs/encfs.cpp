@@ -230,6 +230,10 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                   off_t offset, struct fuse_file_info *finfo) {
   EncFS_Context *ctx = context();
 
+  //unused parameters
+  (void)offset;
+  (void)finfo;
+
   int res = ESUCCESS;
   std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
   if (!FSRoot) {
