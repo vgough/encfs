@@ -301,11 +301,11 @@ SSLKey::SSLKey(int keySize_, int ivLength_) {
   this->ivLength = ivLength_;
   pthread_mutex_init(&mutex, nullptr);
   buffer = (unsigned char *)OPENSSL_malloc(keySize + ivLength);
-  memset(buffer, 0, keySize + ivLength);
+  memset(buffer, 0, (size_t)keySize + (size_t)ivLength);
 
   // most likely fails unless we're running as root, or a user-page-lock
   // kernel patch is applied..
-  mlock(buffer, keySize + ivLength);
+  mlock(buffer, (size_t)keySize + (size_t)ivLength);
 
   block_enc = EVP_CIPHER_CTX_new();
   EVP_CIPHER_CTX_init(block_enc);
@@ -320,10 +320,10 @@ SSLKey::SSLKey(int keySize_, int ivLength_) {
 }
 
 SSLKey::~SSLKey() {
-  memset(buffer, 0, keySize + ivLength);
+  memset(buffer, 0, (size_t)keySize + (size_t)ivLength);
 
   OPENSSL_free(buffer);
-  munlock(buffer, keySize + ivLength);
+  munlock(buffer, (size_t)keySize + (size_t)ivLength);
 
   keySize = 0;
   ivLength = 0;
@@ -593,7 +593,7 @@ CipherKey SSL_Cipher::readKey(const unsigned char *data,
     checksum = (checksum << 8) | (unsigned int)data[i];
   }
 
-  memcpy(tmpBuf, data + KEY_CHECKSUM_BYTES, _keySize + _ivLength);
+  memcpy(tmpBuf, data + KEY_CHECKSUM_BYTES, (size_t)_keySize + (size_t)_ivLength);
   streamDecode(tmpBuf, _keySize + _ivLength, checksum, masterKey);
 
   // check for success
@@ -608,7 +608,7 @@ CipherKey SSL_Cipher::readKey(const unsigned char *data,
 
   std::shared_ptr<SSLKey> key(new SSLKey(_keySize, _ivLength));
 
-  memcpy(key->buffer, tmpBuf, _keySize + _ivLength);
+  memcpy(key->buffer, tmpBuf, (size_t)_keySize + (size_t)_ivLength);
   memset(tmpBuf, 0, sizeof(tmpBuf));
 
   initKey(key, _blockCipher, _streamCipher, _keySize);
@@ -652,7 +652,7 @@ bool SSL_Cipher::compareKey(const CipherKey &A, const CipherKey &B) const {
   rAssert(key1->keySize == _keySize);
   rAssert(key2->keySize == _keySize);
 
-  return memcmp(key1->buffer, key2->buffer, _keySize + _ivLength) == 0;
+  return memcmp(key1->buffer, key2->buffer, (size_t)_keySize + (size_t)_ivLength) == 0;
 }
 
 int SSL_Cipher::encodedKeySize() const {
