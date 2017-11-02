@@ -35,12 +35,12 @@ inline Type min(Type A, Type B) {
   return (B < A) ? B : A;
 }
 
-static void clearCache(IORequest &req, int blockSize) {
+static void clearCache(IORequest &req, unsigned int blockSize) {
   memset(req.data, 0, blockSize);
   req.dataLen = 0;
 }
 
-BlockFileIO::BlockFileIO(int blockSize, const FSConfigPtr &cfg)
+BlockFileIO::BlockFileIO(unsigned int blockSize, const FSConfigPtr &cfg)
     : _blockSize(blockSize), _allowHoles(cfg->config->allowHoles) {
   CHECK(_blockSize > 1);
   _cache.data = new unsigned char[_blockSize];
@@ -89,7 +89,7 @@ ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
   if (result > 0) {
     _cache.offset = req.offset;
     _cache.dataLen = result;  // the amount we really have
-    if (result > req.dataLen) {
+    if ((size_t)result > req.dataLen) {
       result = req.dataLen;  // only as much as requested
     }
     memcpy(req.data, _cache.data, result);
@@ -146,7 +146,7 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
 
     // if we're reading a full block, then read directly into the
     // result buffer instead of using a temporary
-    if (partialOffset == 0 && size >= (size_t)_blockSize) {
+    if (partialOffset == 0 && size >= _blockSize) {
       blockReq.data = out;
     } else {
       if (mb.data == nullptr) {
@@ -164,8 +164,8 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
       break;  // didn't get enough bytes
     }
 
-    size_t cpySize = min((size_t)(readSize - partialOffset), size);
-    CHECK(cpySize <= readSize);
+    size_t cpySize = min((size_t)readSize - (size_t)partialOffset, size);
+    CHECK(cpySize <= (size_t)readSize);
 
     // if we read to a temporary buffer, then move the data
     if (blockReq.data != out) {
@@ -256,7 +256,7 @@ ssize_t BlockFileIO::write(const IORequest &req) {
     // if writing an entire block, or writing a partial block that requires
     // no merging with existing data..
     if ((toCopy == _blockSize) ||
-        (partialOffset == 0 && blockReq.offset + toCopy >= fileSize)) {
+        (partialOffset == 0 && blockReq.offset + (off_t)toCopy >= fileSize)) {
       // write directly from buffer
       blockReq.data = inPtr;
       blockReq.dataLen = toCopy;
@@ -314,7 +314,7 @@ ssize_t BlockFileIO::write(const IORequest &req) {
   return req.dataLen;
 }
 
-int BlockFileIO::blockSize() const { return _blockSize; }
+unsigned int BlockFileIO::blockSize() const { return _blockSize; }
 
 /**
  * Returns 0 in case of success, or -errno in case of failure.

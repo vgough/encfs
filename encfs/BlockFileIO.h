@@ -38,14 +38,14 @@ namespace encfs {
 */
 class BlockFileIO : public FileIO {
  public:
-  BlockFileIO(int blockSize, const FSConfigPtr &cfg);
+  BlockFileIO(unsigned int blockSize, const FSConfigPtr &cfg);
   virtual ~BlockFileIO();
 
   // implemented in terms of blocks.
   virtual ssize_t read(const IORequest &req) const;
   virtual ssize_t write(const IORequest &req);
 
-  virtual int blockSize() const;
+  virtual unsigned int blockSize() const;
 
  protected:
   int truncateBase(off_t size, FileIO *base);
@@ -59,7 +59,7 @@ class BlockFileIO : public FileIO {
   ssize_t cacheReadOneBlock(const IORequest &req) const;
   ssize_t cacheWriteOneBlock(const IORequest &req);
 
-  int _blockSize;
+  unsigned int _blockSize;
   bool _allowHoles;
   bool _noCache;
 
