@@ -166,7 +166,7 @@ class XmlNode : virtual public XmlValue {
   const tinyxml2::XMLElement *element;
 
  public:
-  XmlNode(const tinyxml2::XMLElement *element_)
+  explicit XmlNode(const tinyxml2::XMLElement *element_)
       : XmlValue(safeValueForNode(element_)), element(element_) {}
 
   ~XmlNode() override = default;

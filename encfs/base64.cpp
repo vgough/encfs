@@ -252,7 +252,7 @@ bool B64StandardDecode(unsigned char *out, const unsigned char *in, int inLen) {
 // If you want to use an alternate alphabet, change the characters here
 const static char encodeLookup[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-std::string B64StandardEncode(std::vector<unsigned char> inputBuffer) {
+std::string B64StandardEncode(const std::vector<unsigned char> &inputBuffer) {
   std::string encodedString;
   encodedString.reserve(B256ToB64Bytes(inputBuffer.size()));
   long temp;
