@@ -73,7 +73,7 @@ void AsciiToB32(unsigned char *out, const unsigned char *in, int length);
 bool B64StandardDecode(unsigned char *out, const unsigned char *in,
                        int inputLen);
 
-std::string B64StandardEncode(std::vector<unsigned char> input);
+std::string B64StandardEncode(const std::vector<unsigned char> &input);
 
 }  // namespace encfs
 

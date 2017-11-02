@@ -116,8 +116,9 @@ restart:
       term.c_lflag &= ~(ECHO | ECHONL);
     }
 #ifdef VSTATUS
-    if (term.c_cc[VSTATUS] != _POSIX_VDISABLE)
+    if (term.c_cc[VSTATUS] != _POSIX_VDISABLE) {
       term.c_cc[VSTATUS] = _POSIX_VDISABLE;
+    }
 #endif
     (void)tcsetattr(input, _T_FLUSH, &term);
   } else {

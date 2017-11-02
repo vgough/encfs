@@ -251,7 +251,7 @@ ssize_t BlockFileIO::write(const IORequest &req) {
   unsigned char *inPtr = req.data;
   while (size != 0u) {
     blockReq.offset = blockNum * _blockSize;
-    int toCopy = min((size_t)(_blockSize - partialOffset), size);
+    size_t toCopy = min((size_t)_blockSize - (size_t)partialOffset, size);
 
     // if writing an entire block, or writing a partial block that requires
     // no merging with existing data..
