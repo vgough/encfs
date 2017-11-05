@@ -50,7 +50,6 @@ class DirTraverse {
  public:
   DirTraverse(std::shared_ptr<DIR> dirPtr, uint64_t iv,
               std::shared_ptr<NameIO> naming);
-  DirTraverse(const DirTraverse &src);
   ~DirTraverse();
 
   DirTraverse &operator=(const DirTraverse &src);
