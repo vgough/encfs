@@ -38,7 +38,6 @@ class Interface {
   */
   Interface(const char *name, int Current, int Revision, int Age);
   Interface(std::string name, int Current, int Revision, int Age);
-  Interface(const Interface &src);
   Interface();
 
   // check if we implement the interface described by B.
