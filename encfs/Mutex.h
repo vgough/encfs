@@ -27,8 +27,13 @@ namespace encfs {
 
 class Lock {
  public:
+  Lock(pthread_mutex_t &mutex, bool block);
   Lock(pthread_mutex_t &mutex);
   ~Lock();
+
+  bool isLocked() {
+  	return (lockrc == 0);
+  }
 
   // leave the lock as it is.  When the Lock wrapper is destroyed, it
   // will do nothing with the pthread mutex.
@@ -39,10 +44,20 @@ class Lock {
   Lock &operator=(const Lock &src);  // not allowed
 
   pthread_mutex_t *_mutex;
+
+  int lockrc;
 };
 
+inline Lock::Lock(pthread_mutex_t &mutex, bool block) : _mutex(&mutex) {
+  if (block) {
+    lockrc = pthread_mutex_lock(_mutex);
+  } else {
+    lockrc = pthread_mutex_trylock(_mutex);
+  }
+}
+
 inline Lock::Lock(pthread_mutex_t &mutex) : _mutex(&mutex) {
-  pthread_mutex_lock(_mutex);
+  lockrc = pthread_mutex_lock(_mutex);
 }
 
 inline Lock::~Lock() {

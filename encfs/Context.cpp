@@ -32,12 +32,15 @@ EncFS_Context::EncFS_Context() {
   pthread_cond_init(&wakeupCond, nullptr);
   pthread_mutex_init(&wakeupMutex, nullptr);
   pthread_mutex_init(&contextMutex, nullptr);
+  pthread_mutex_init(&unmountMutex, nullptr);
 
   usageCount = 0;
+  idleCount = -1;
   currentFuseFh = 1;
 }
 
 EncFS_Context::~EncFS_Context() {
+  pthread_mutex_destroy(&unmountMutex);
   pthread_mutex_destroy(&contextMutex);
   pthread_mutex_destroy(&wakeupMutex);
   pthread_cond_destroy(&wakeupCond);
@@ -46,9 +49,14 @@ EncFS_Context::~EncFS_Context() {
   openFiles.clear();
 }
 std::shared_ptr<DirNode> EncFS_Context::getRoot(int *errCode) {
-  std::shared_ptr<DirNode> ret;
+  std::shared_ptr<DirNode> ret = nullptr;
   do {
     {
+      Lock locku(unmountMutex, false);
+      if(!locku.isLocked()) {
+      	*errCode = EBUSY;
+      	break;
+      }
       Lock lock(contextMutex);
       ret = root;
       ++usageCount;
@@ -75,15 +83,38 @@ void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
   }
 }
 
-bool EncFS_Context::isMounted() { return root != nullptr; }
-
-void EncFS_Context::getAndResetUsageCounter(int *usage, int *openCount) {
+bool EncFS_Context::usageAndUnmount(int timeoutCycles) {
   Lock lock(contextMutex);
 
-  *usage = usageCount;
-  usageCount = 0;
+  if (root != nullptr) {
 
-  *openCount = openFiles.size();
+    if (usageCount == 0) {
+      ++idleCount;
+    }
+    else {
+      idleCount = 0;
+    }
+    VLOG(1) << "idle cycle count: " << idleCount << ", timeout at "
+            << timeoutCycles;
+
+    usageCount = 0;
+
+    if (idleCount >= timeoutCycles) {
+      if (!openFiles.empty()) {
+        if (idleCount % timeoutCycles == 0) {
+          RLOG(WARNING) << "Filesystem inactive, but " << openFiles.size()
+                        << " files opened: " << this->opts->mountPoint;
+        }
+      } else {
+        Lock locku(unmountMutex, false);
+        if(locku.isLocked()) {
+          return unmountFS(this);
+        }
+      }
+    }
+
+  }
+  return false;
 }
 
 std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
