@@ -88,11 +88,11 @@ class EncFS_Context {
       std::unordered_map<std::string, std::list<std::shared_ptr<FileNode>>>;
 
   mutable pthread_mutex_t contextMutex;
-  mutable pthread_mutex_t unmountMutex;
   FileMap openFiles;
 
   int usageCount;
   int idleCount;
+  bool isUnmounting;
   std::shared_ptr<DirNode> root;
 
   std::atomic<std::uint64_t> currentFuseFh;
