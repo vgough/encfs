@@ -35,7 +35,7 @@
 namespace gnu {
 
 /* Constructor: takes a format string and the printf arguments.  */
-autosprintf::autosprintf(const char *format, ...) {
+autosprintf::autosprintf(const char *format, ...) { // NOLINT (cert-dcl50-cpp) as it's not critical
   va_list args;
   va_start(args, format);
   if (vasprintf(&str, format, args) < 0) {
@@ -50,7 +50,9 @@ autosprintf::autosprintf(const autosprintf &src) {
 }
 
 /* Destructor: frees the temporarily allocated string.  */
-autosprintf::~autosprintf() { free(str); }
+autosprintf::~autosprintf() {
+  free(str); // NOLINT (cppcoreguidelines-no-malloc) as it's a consequence of vasprintf / variadic function above
+}
 
 /* Conversion to string.  */
 autosprintf::operator char *() const {

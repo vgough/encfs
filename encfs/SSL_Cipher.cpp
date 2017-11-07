@@ -505,7 +505,7 @@ CipherKey SSL_Cipher::newRandomKey() {
     compute a 64-bit check value for the data using HMAC.
 */
 static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
-                             int dataLen, uint64_t *const chainedIV) {
+                             int dataLen, const uint64_t *const chainedIV) {
   rAssert(dataLen > 0);
   Lock lock(key->mutex);
 
