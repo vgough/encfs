@@ -18,9 +18,12 @@ option(IWYU "Build with IWYU analysis." OFF)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
+set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
+  "${CMAKE_CURRENT_LIST_DIR}/vendor/github.com/muflihun/easyloggingpp/cmake")
+
 option (BUILD_UNIT_TESTS "build EncFS unit tests" ON)
-option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
+option (USE_INTERNAL_EASYLOGGING "use built-in Easylogging++" ON)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
 option (INSTALL_LIBENCFS "install libencfs" OFF)
 option (LINT "enable lint output" OFF)
@@ -205,13 +208,19 @@ else ()
   include_directories (SYSTEM ${TINYXML_INCLUDE_DIR})
 endif ()
 
-message("-- Using vendored easylogging++")
-set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
-set(build_static_lib ON CACHE BOOL "build static libs")
-add_subdirectory(${EASYLOGGING_DIR} EXCLUDE_FROM_ALL)
-include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
-link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
-set(EASYLOGGING_LIBRARIES easyloggingpp)
+if (USE_INTERNAL_EASYLOGGING)
+  message("-- Using vendored Easylogging++")
+  set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
+  set(build_static_lib ON CACHE BOOL "build static libs")
+  add_subdirectory(${EASYLOGGING_DIR} EXCLUDE_FROM_ALL)
+  include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
+  link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
+  set(EASYLOGGINGPP_LIBRARY easyloggingpp)
+else ()
+  set(EASYLOGGINGPP_USE_SHARED_LIBS ON CACHE BOOL "look for shared lib")
+  find_package (EASYLOGGINGPP REQUIRED)
+  include_directories (SYSTEM ${EASYLOGGINGPP_INCLUDE_DIR})
+endif ()
 
 set(SOURCE_FILES
   encfs/autosprintf.cpp
@@ -252,7 +261,7 @@ target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
-  ${EASYLOGGING_LIBRARIES}
+  ${EASYLOGGINGPP_LIBRARY}
   ${CMAKE_THREAD_LIBS_INIT}
   ${Intl_LIBRARIES}
   ${ATOMIC_LIBRARY}
