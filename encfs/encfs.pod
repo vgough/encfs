@@ -188,7 +188,10 @@ Enable automatic unmount of the filesystem after a period of inactivity.  The
 period is specified in minutes, so the shortest timeout period that can be
 requested is one minute.  B<EncFS> will not automatically unmount if there are
 files open within the filesystem, even if they are open in read-only mode.
-However simply having files open does not count as activity.
+However simply having files open does not count as activity.  EncFS will try
+to lock mount point just before unmounting, and will unmount only if lock
+succeeds, giving users the ability to handle races when EncFS is used in
+automated tools or scripts.
 
 =item B<-m>, B<--ondemand>
 

@@ -28,6 +28,7 @@
 #include <pthread.h>
 #include <sstream>
 #include <string>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -776,16 +777,27 @@ static void *idleMonitor(void *_arg) {
     }
 
     if (idleCycles >= timeoutCycles) {
-      if (openCount == 0) {
-        unmountres = unmountFS(ctx);
-        if (unmountres) {
-          // wait for main thread to wake us up
-          pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
-          break;
-        }
-      } else {
+      if (openCount != 0) {
         RLOG(WARNING) << "Filesystem inactive, but " << openCount
                       << " files opened: " << arg->opts->mountPoint;
+      } else {
+        /* try to lock the mount point to give an oportunity to handle races
+           with an automated tool or script using --idle. */
+        int fdlock = open(arg->opts->mountPoint.c_str(),O_RDONLY);
+        if (flock(fdlock, LOCK_EX|LOCK_NB) == -1) {
+          RLOG(WARNING) << "Filesystem inactive, but "
+                        << "lock before unmount failed: " << arg->opts->mountPoint;
+          close(fdlock);
+        } else {
+          unmountres = unmountFS(ctx);
+          flock(fdlock, LOCK_UN);
+          close(fdlock);
+          if (unmountres) {
+            // wait for main thread to wake us up
+            pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
+            break;
+          }
+        }
       }
     }
 
