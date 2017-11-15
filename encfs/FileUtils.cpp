@@ -1681,4 +1681,23 @@ int remountFS(EncFS_Context *ctx) {
   return -EACCES;
 }
 
+bool unmountFS(EncFS_Context *ctx) {
+  if (ctx->opts->mountOnDemand) {
+    VLOG(1) << "Detaching filesystem due to inactivity: "
+            << ctx->opts->mountPoint;
+
+    ctx->setRoot(std::shared_ptr<DirNode>());
+    return false;
+  }
+// Time to unmount!
+#if FUSE_USE_VERSION < 30
+  fuse_unmount(ctx->opts->mountPoint.c_str(), nullptr);
+#else
+  fuse_unmount(fuse_get_context()->fuse);
+#endif
+  // fuse_unmount succeeds and returns void
+  RLOG(INFO) << "Filesystem inactive, unmounted: " << ctx->opts->mountPoint;
+  return true;
+}
+
 }  // namespace encfs
