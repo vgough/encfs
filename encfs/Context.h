@@ -46,7 +46,7 @@ class EncFS_Context {
 
   std::shared_ptr<FileNode> lookupNode(const char *path);
 
-  void getAndResetUsageCounter(int *usage, int *openCount);
+  bool usageAndUnmount(int timeoutCycles);
 
   void putNode(const char *path, const std::shared_ptr<FileNode> &node);
 
@@ -56,7 +56,6 @@ class EncFS_Context {
 
   void setRoot(const std::shared_ptr<DirNode> &root);
   std::shared_ptr<DirNode> getRoot(int *err);
-  bool isMounted();
 
   std::shared_ptr<EncFS_Args> args;
   std::shared_ptr<EncFS_Opts> opts;
@@ -92,6 +91,8 @@ class EncFS_Context {
   FileMap openFiles;
 
   int usageCount;
+  int idleCount;
+  bool isUnmounting;
   std::shared_ptr<DirNode> root;
 
   std::atomic<std::uint64_t> currentFuseFh;
@@ -99,6 +100,7 @@ class EncFS_Context {
 };
 
 int remountFS(EncFS_Context *ctx);
+bool unmountFS(EncFS_Context *ctx);
 
 }  // namespace encfs
 
