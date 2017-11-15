@@ -81,6 +81,9 @@ void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
   }
 }
 
+// This function is called periodically by the idle monitoring thread.
+// It checks for inactivity and unmount the FS after enough inactive cycles have passed.
+// Returns true if FS has really been unmounted, false otherwise.
 bool EncFS_Context::usageAndUnmount(int timeoutCycles) {
   Lock lock(contextMutex);
 
@@ -97,20 +100,22 @@ bool EncFS_Context::usageAndUnmount(int timeoutCycles) {
 
     usageCount = 0;
 
-    if (idleCount >= timeoutCycles) {
-      if (!openFiles.empty()) {
-        if (idleCount % timeoutCycles == 0) {
-          RLOG(WARNING) << "Filesystem inactive, but " << openFiles.size()
-                        << " files opened: " << this->opts->mountPoint;
-        }
-      } else {
-      	if (!this->opts->mountOnDemand) {
-          isUnmounting = true;
-        }
-        lock.~Lock();
-        return unmountFS(this);
-      }
+    if (idleCount < timeoutCycles) {
+      return false;
     }
+
+    if (!openFiles.empty()) {
+      if (idleCount % timeoutCycles == 0) {
+        RLOG(WARNING) << "Filesystem inactive, but " << openFiles.size()
+                      << " files opened: " << this->opts->mountPoint;
+      }
+      return false;
+    }
+    if (!this->opts->mountOnDemand) {
+      isUnmounting = true;
+    }
+    lock.~Lock();
+    return unmountFS(this);
 
   }
   return false;
