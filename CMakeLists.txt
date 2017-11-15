@@ -18,9 +18,13 @@ option(IWYU "Build with IWYU analysis." OFF)
 set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
+set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
+  "${CMAKE_CURRENT_LIST_DIR}/vendor/github.com/muflihun/easyloggingpp/cmake")
+
 option (BUILD_UNIT_TESTS "build EncFS unit tests" ON)
-option (BUILD_SHARED_LIBS "build shared libraries" OFF)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
+option (USE_INTERNAL_EASYLOGGING "use built-in Easylogging++" ON)
+option (BUILD_SHARED_LIBS "build internal libraries as shared" OFF)
 option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
 option (INSTALL_LIBENCFS "install libencfs" OFF)
 option (LINT "enable lint output" OFF)
@@ -48,6 +52,11 @@ endif ()
 
 # Let's enable some compilation warnings
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+
+# Let's enable some shared lib flags
+if (BUILD_SHARED_LIBS)
+  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+endif ()
 
 add_definitions( -DPACKAGE="encfs" )
 
@@ -194,8 +203,13 @@ endif()
 if (USE_INTERNAL_TINYXML)
   message("-- Using vendored TinyXML2")
   set(TINYXML_DIR vendor/github.com/leethomason/tinyxml2)
-  set(BUILD_STATIC_LIBS ON CACHE BOOL "build static libs")
-  set(BUILD_SHARED_LIBS OFF CACHE BOOL "build shared libs")
+  if (BUILD_SHARED_LIBS)
+    set(BUILD_STATIC_LIBS OFF CACHE BOOL "build static libs")
+    set(BUILD_SHARED_LIBS ON CACHE BOOL "build shared libs")
+  else ()
+    set(BUILD_STATIC_LIBS ON CACHE BOOL "build static libs")
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "build shared libs")
+  endif ()
   set(BUILD_TESTS OFF CACHE BOOL "build tests")
   add_subdirectory(${TINYXML_DIR} EXCLUDE_FROM_ALL)
   include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
@@ -206,13 +220,23 @@ else ()
   include_directories (SYSTEM ${TINYXML_INCLUDE_DIR})
 endif ()
 
-message("-- Using vendored easylogging++")
-set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
-set(build_static_lib ON CACHE BOOL "build static libs")
-add_subdirectory(${EASYLOGGING_DIR} EXCLUDE_FROM_ALL)
-include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
-link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
-set(EASYLOGGING_LIBRARIES easyloggingpp)
+if (USE_INTERNAL_EASYLOGGING)
+  message("-- Using vendored Easylogging++")
+  set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
+  if (BUILD_SHARED_LIBS)
+    set(build_static_lib OFF CACHE BOOL "build static libs")
+  else ()
+    set(build_static_lib ON CACHE BOOL "build static libs")
+  endif ()
+  add_subdirectory(${EASYLOGGING_DIR} EXCLUDE_FROM_ALL)
+  include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
+  link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
+  set(EASYLOGGINGPP_LIBRARY easyloggingpp)
+else ()
+  set(EASYLOGGINGPP_USE_SHARED_LIBS ON CACHE BOOL "look for shared lib")
+  find_package (EASYLOGGINGPP REQUIRED)
+  include_directories (SYSTEM ${EASYLOGGINGPP_INCLUDE_DIR})
+endif ()
 
 set(SOURCE_FILES
   encfs/autosprintf.cpp
@@ -253,7 +277,7 @@ target_link_libraries(encfs
   ${FUSE_LIBRARIES}
   ${OPENSSL_LIBRARIES}
   ${TINYXML_LIBRARIES}
-  ${EASYLOGGING_LIBRARIES}
+  ${EASYLOGGINGPP_LIBRARY}
   ${CMAKE_THREAD_LIBS_INIT}
   ${Intl_LIBRARIES}
   ${ATOMIC_LIBRARY}
