@@ -50,7 +50,7 @@ class FileIO {
   virtual Interface interface() const = 0;
 
   // default implementation returns 1, meaning this is not block oriented.
-  virtual int blockSize() const;
+  virtual unsigned int blockSize() const;
 
   virtual void setFileName(const char *fileName) = 0;
   virtual const char *getFileName() const = 0;

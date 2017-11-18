@@ -377,7 +377,7 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
     return -EPERM;
   }
 
-  int bs = blockSize();
+  unsigned int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
   if (haveHeader && fileIV == 0) {
@@ -535,7 +535,7 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
    * to the data. */
   if (req.offset < 0) {
     headerBytes = -req.offset;
-    if (req.dataLen < headerBytes) {
+    if (req.dataLen < (size_t)headerBytes) {
       headerBytes = req.dataLen;  // only up to the number of bytes requested
     }
     VLOG(1) << "Adding " << headerBytes << " header bytes";
@@ -546,7 +546,7 @@ ssize_t CipherFileIO::read(const IORequest &origReq) const {
     memcpy(req.data, &headerBuf[headerOffset], headerBytes);
 
     // the read does not want data beyond the header
-    if (headerBytes == req.dataLen) {
+    if ((size_t)headerBytes == req.dataLen) {
       return headerBytes;
     }
 
