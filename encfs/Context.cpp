@@ -34,6 +34,8 @@ EncFS_Context::EncFS_Context() {
   pthread_mutex_init(&contextMutex, nullptr);
 
   usageCount = 0;
+  idleCount = -1;
+  isUnmounting = false;
   currentFuseFh = 1;
 }
 
@@ -46,10 +48,14 @@ EncFS_Context::~EncFS_Context() {
   openFiles.clear();
 }
 std::shared_ptr<DirNode> EncFS_Context::getRoot(int *errCode) {
-  std::shared_ptr<DirNode> ret;
+  std::shared_ptr<DirNode> ret = nullptr;
   do {
     {
       Lock lock(contextMutex);
+      if (isUnmounting) {
+        *errCode = -EBUSY;
+        break;      	
+      }
       ret = root;
       ++usageCount;
     }
@@ -75,15 +81,44 @@ void EncFS_Context::setRoot(const std::shared_ptr<DirNode> &r) {
   }
 }
 
-bool EncFS_Context::isMounted() { return root != nullptr; }
-
-void EncFS_Context::getAndResetUsageCounter(int *usage, int *openCount) {
+// This function is called periodically by the idle monitoring thread.
+// It checks for inactivity and unmount the FS after enough inactive cycles have passed.
+// Returns true if FS has really been unmounted, false otherwise.
+bool EncFS_Context::usageAndUnmount(int timeoutCycles) {
   Lock lock(contextMutex);
 
-  *usage = usageCount;
-  usageCount = 0;
+  if (root != nullptr) {
 
-  *openCount = openFiles.size();
+    if (usageCount == 0) {
+      ++idleCount;
+    }
+    else {
+      idleCount = 0;
+    }
+    VLOG(1) << "idle cycle count: " << idleCount << ", timeout at "
+            << timeoutCycles;
+
+    usageCount = 0;
+
+    if (idleCount < timeoutCycles) {
+      return false;
+    }
+
+    if (!openFiles.empty()) {
+      if (idleCount % timeoutCycles == 0) {
+        RLOG(WARNING) << "Filesystem inactive, but " << openFiles.size()
+                      << " files opened: " << this->opts->mountPoint;
+      }
+      return false;
+    }
+    if (!this->opts->mountOnDemand) {
+      isUnmounting = true;
+    }
+    lock.~Lock();
+    return unmountFS(this);
+
+  }
+  return false;
 }
 
 std::shared_ptr<FileNode> EncFS_Context::lookupNode(const char *path) {
