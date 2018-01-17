@@ -73,7 +73,9 @@ class NullDestructor {
   // copy assignment
   NullDestructor &operator=(const NullDestructor &) = default;
 
-  NullDestructor(NullDestructor&& other) = delete; // move constructor
+  // move constructor
+  NullDestructor(NullDestructor &&) = default;
+
   NullDestructor& operator=(NullDestructor&& other) = delete ;// move assignment
 
   void operator()(NullKey *&) {}
