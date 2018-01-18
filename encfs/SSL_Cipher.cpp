@@ -298,9 +298,9 @@ class SSLKey : public AbstractCipherKey {
   ~SSLKey() override;
 
   SSLKey(const SSLKey &src) = delete; // copy constructor
-  SSLKey& operator=(const SSLKey& other) = delete; // copy assignment
   SSLKey(SSLKey&& other) = delete; // move constructor
-  SSLKey& operator=(SSLKey&& other) = delete ;// move assignment
+  SSLKey& operator=(const SSLKey& other) = delete; // copy assignment
+  SSLKey& operator=(SSLKey&& other) = delete; // move assignment
 };
 
 SSLKey::SSLKey(int keySize_, int ivLength_) {

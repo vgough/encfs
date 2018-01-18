@@ -145,12 +145,10 @@ class RenameOp {
   // destructor
   ~RenameOp();
 
-  // copy contructor
-  RenameOp(const RenameOp &src) = default;
-
-  RenameOp& operator=(const RenameOp& other) = delete; // copy assignment
+  RenameOp(const RenameOp &src) = delete; // copy contructor
   RenameOp(RenameOp&& other) = delete; // move constructor
-  RenameOp& operator=(RenameOp&& other) = delete ;// move assignment
+  RenameOp& operator=(const RenameOp& other) = delete; // copy assignment
+  RenameOp& operator=(RenameOp&& other) = delete; // move assignment
 
   explicit operator bool() const { return renameList != nullptr; }
 

@@ -173,9 +173,9 @@ class XmlNode : virtual public XmlValue {
   ~XmlNode() override = default;
 
   XmlNode(const XmlNode &src) = delete; // copy constructor
-  XmlNode& operator=(const XmlNode& other) = delete; // copy assignment
   XmlNode(XmlNode&& other) = delete; // move constructor
-  XmlNode& operator=(XmlNode&& other) = delete ;// move assignment
+  XmlNode& operator=(const XmlNode& other) = delete; // copy assignment
+  XmlNode& operator=(XmlNode&& other) = delete; // move assignment
 
   XmlValuePtr find(const char *name) const override {
     if (name[0] == '@') {

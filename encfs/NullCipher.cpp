@@ -55,9 +55,9 @@ class NullKey : public AbstractCipherKey {
   ~NullKey() override = default;
 
   NullKey(const NullKey &src) = delete; // copy constructor
-  NullKey& operator=(const NullKey& other) = delete; // copy assignment
   NullKey(NullKey&& other) = delete; // move constructor
-  NullKey& operator=(NullKey&& other) = delete ;// move assignment
+  NullKey& operator=(const NullKey& other) = delete; // copy assignment
+  NullKey& operator=(NullKey&& other) = delete; // move assignment
 };
 
 class NullDestructor {
@@ -70,13 +70,11 @@ class NullDestructor {
   // copy contructor
   NullDestructor(const NullDestructor &) = default;
 
-  // copy assignment
-  NullDestructor &operator=(const NullDestructor &) = default;
-
   // move constructor
   NullDestructor(NullDestructor &&) = default;
 
-  NullDestructor& operator=(NullDestructor&& other) = delete ;// move assignment
+  NullDestructor &operator=(const NullDestructor &) = delete; // copy assignment
+  NullDestructor& operator=(NullDestructor&& other) = delete; // move assignment
 
   void operator()(NullKey *&) {}
 };
