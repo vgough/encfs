@@ -465,7 +465,7 @@ bool saveConfig(ConfigType type, const string &rootDir,
 template <typename T>
 tinyxml2::XMLElement *addEl(tinyxml2::XMLDocument &doc,
                             tinyxml2::XMLNode *parent, const char *name,
-                            T value) {
+                            const T &value) {
   auto el = doc.NewElement(name);
   el->SetText(value);
   parent->InsertEndChild(el);
@@ -475,7 +475,7 @@ tinyxml2::XMLElement *addEl(tinyxml2::XMLDocument &doc,
 template <>
 tinyxml2::XMLElement *addEl<>(tinyxml2::XMLDocument &doc,
                               tinyxml2::XMLNode *parent, const char *name,
-                              Interface iface) {
+                              const Interface &iface) {
   auto el = doc.NewElement(name);
 
   auto n = doc.NewElement("name");
@@ -497,7 +497,7 @@ tinyxml2::XMLElement *addEl<>(tinyxml2::XMLDocument &doc,
 template <>
 tinyxml2::XMLElement *addEl<>(tinyxml2::XMLDocument &doc,
                               tinyxml2::XMLNode *parent, const char *name,
-                              std::vector<unsigned char> data) {
+                              const std::vector<unsigned char> &data) {
   string v = string("\n") + B64StandardEncode(data) + "\n";
   return addEl(doc, parent, name, v.c_str());
 }
@@ -1679,6 +1679,25 @@ int remountFS(EncFS_Context *ctx) {
   }
   RLOG(WARNING) << "Remount failed";
   return -EACCES;
+}
+
+bool unmountFS(EncFS_Context *ctx) {
+  if (ctx->opts->mountOnDemand) {
+    VLOG(1) << "Detaching filesystem due to inactivity: "
+            << ctx->opts->mountPoint;
+
+    ctx->setRoot(std::shared_ptr<DirNode>());
+    return false;
+  }
+// Time to unmount!
+#if FUSE_USE_VERSION < 30
+  fuse_unmount(ctx->opts->mountPoint.c_str(), nullptr);
+#else
+  fuse_unmount(fuse_get_context()->fuse);
+#endif
+  // fuse_unmount succeeds and returns void
+  RLOG(INFO) << "Filesystem inactive, unmounted: " << ctx->opts->mountPoint;
+  return true;
 }
 
 }  // namespace encfs

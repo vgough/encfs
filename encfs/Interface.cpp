@@ -36,10 +36,6 @@ Interface::Interface(std::string name_, int Current, int Revision, int Age)
       _revision(Revision),
       _age(Age) {}
 
-Interface::Interface(const Interface &src)
-
-    = default;
-
 Interface::Interface() : _current(0), _revision(0), _age(0) {}
 
 Interface &Interface::operator=(const Interface &src) = default;

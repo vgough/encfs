@@ -744,14 +744,12 @@ int main(int argc, char *argv[]) {
     having the filesystem unmounted from underneath open files!
 */
 const int ActivityCheckInterval = 10;
-static bool unmountFS(EncFS_Context *ctx);
 
 static void *idleMonitor(void *_arg) {
   auto *ctx = (EncFS_Context *)_arg;
   std::shared_ptr<EncFS_Args> arg = ctx->args;
 
   const int timeoutCycles = 60 * arg->idleTimeout / ActivityCheckInterval;
-  int idleCycles = -1;
 
   bool unmountres = false;
 
@@ -762,35 +760,11 @@ static void *idleMonitor(void *_arg) {
   pthread_mutex_lock(&ctx->wakeupMutex);
 
   while (ctx->running) {
-    int usage, openCount;
-    ctx->getAndResetUsageCounter(&usage, &openCount);
-
-    if (usage == 0 && ctx->isMounted()) {
-      ++idleCycles;
-    } else {
-      if (idleCycles >= timeoutCycles) {
-        RLOG(INFO) << "Filesystem no longer inactive: "
-                   << arg->opts->mountPoint;
-      }
-      idleCycles = 0;
+    unmountres = ctx->usageAndUnmount(timeoutCycles);
+    if (unmountres) {
+      pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
+      break;
     }
-
-    if (idleCycles >= timeoutCycles) {
-      if (openCount == 0) {
-        unmountres = unmountFS(ctx);
-        if (unmountres) {
-          // wait for main thread to wake us up
-          pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
-          break;
-        }
-      } else {
-        RLOG(WARNING) << "Filesystem inactive, but " << openCount
-                      << " files opened: " << arg->opts->mountPoint;
-      }
-    }
-
-    VLOG(1) << "idle cycle count: " << idleCycles << ", timeout after "
-            << timeoutCycles;
 
     struct timeval currentTime;
     gettimeofday(&currentTime, nullptr);
@@ -802,8 +776,8 @@ static void *idleMonitor(void *_arg) {
 
   pthread_mutex_unlock(&ctx->wakeupMutex);
 
-  // If we are here FS has been unmounted, so if we did not unmount ourselves
-  // (manual, kill...), notify
+  // If we are here FS has been unmounted, so if the idleMonitor did not unmount itself,
+  // let's notify (certainly due to a kill signal, a manual unmount...)
   if (!unmountres) {
     RLOG(INFO) << "Filesystem unmounted: " << arg->opts->mountPoint;
   }
@@ -811,24 +785,4 @@ static void *idleMonitor(void *_arg) {
   VLOG(1) << "Idle monitoring thread exiting";
 
   return nullptr;
-}
-
-static bool unmountFS(EncFS_Context *ctx) {
-  std::shared_ptr<EncFS_Args> arg = ctx->args;
-  if (arg->opts->mountOnDemand) {
-    VLOG(1) << "Detaching filesystem due to inactivity: "
-            << arg->opts->mountPoint;
-
-    ctx->setRoot(std::shared_ptr<DirNode>());
-    return false;
-  }
-// Time to unmount!
-#if FUSE_USE_VERSION < 30
-  fuse_unmount(arg->opts->mountPoint.c_str(), nullptr);
-#else
-  fuse_unmount(fuse_get_context()->fuse);
-#endif
-  // fuse_unmount succeeds and returns void
-  RLOG(INFO) << "Filesystem inactive, unmounted: " << arg->opts->mountPoint;
-  return true;
 }
