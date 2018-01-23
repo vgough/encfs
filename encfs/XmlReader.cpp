@@ -169,7 +169,13 @@ class XmlNode : virtual public XmlValue {
   explicit XmlNode(const tinyxml2::XMLElement *element_)
       : XmlValue(safeValueForNode(element_)), element(element_) {}
 
+  // destructor
   ~XmlNode() override = default;
+
+  XmlNode(const XmlNode &src) = delete; // copy constructor
+  XmlNode(XmlNode&& other) = delete; // move constructor
+  XmlNode& operator=(const XmlNode& other) = delete; // copy assignment
+  XmlNode& operator=(XmlNode&& other) = delete; // move assignment
 
   XmlValuePtr find(const char *name) const override {
     if (name[0] == '@') {

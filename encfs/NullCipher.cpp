@@ -50,16 +50,32 @@ static bool NullCipher_registered = Cipher::Register(
 class NullKey : public AbstractCipherKey {
  public:
   NullKey() = default;
+
+  // destructor
   ~NullKey() override = default;
+
+  NullKey(const NullKey &src) = delete; // copy constructor
+  NullKey(NullKey&& other) = delete; // move constructor
+  NullKey& operator=(const NullKey& other) = delete; // copy assignment
+  NullKey& operator=(NullKey&& other) = delete; // move assignment
 };
 
 class NullDestructor {
  public:
   NullDestructor() = default;
-  NullDestructor(const NullDestructor &) = default;
+
+  // destructor
   ~NullDestructor() = default;
 
-  NullDestructor &operator=(const NullDestructor &) = default;
+  // copy contructor
+  NullDestructor(const NullDestructor &) = default;
+
+  // move constructor
+  NullDestructor(NullDestructor &&) = default;
+
+  NullDestructor &operator=(const NullDestructor &) = delete; // copy assignment
+  NullDestructor& operator=(NullDestructor&& other) = delete; // move assignment
+
   void operator()(NullKey *&) {}
 };
 std::shared_ptr<AbstractCipherKey> gNullKey(new NullKey(), NullDestructor());

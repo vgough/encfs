@@ -293,7 +293,14 @@ class SSLKey : public AbstractCipherKey {
   HMAC_CTX *mac_ctx;
 
   SSLKey(int keySize, int ivLength);
+
+  // destructor
   ~SSLKey() override;
+
+  SSLKey(const SSLKey &src) = delete; // copy constructor
+  SSLKey(SSLKey&& other) = delete; // move constructor
+  SSLKey& operator=(const SSLKey& other) = delete; // copy assignment
+  SSLKey& operator=(SSLKey&& other) = delete; // move assignment
 };
 
 SSLKey::SSLKey(int keySize_, int ivLength_) {

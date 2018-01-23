@@ -142,9 +142,13 @@ class RenameOp {
     last = renameList->begin();
   }
 
-  RenameOp(const RenameOp &src) = default;
-
+  // destructor
   ~RenameOp();
+
+  RenameOp(const RenameOp &src) = delete; // copy contructor
+  RenameOp(RenameOp&& other) = delete; // move constructor
+  RenameOp& operator=(const RenameOp& other) = delete; // copy assignment
+  RenameOp& operator=(RenameOp&& other) = delete; // move assignment
 
   explicit operator bool() const { return renameList != nullptr; }
 
