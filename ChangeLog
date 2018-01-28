@@ -1,3 +1,25 @@
+v1.9.4 / 2018-01-28
+===================
+	* Fix packaging error leading to wrong version output
+	* Fix shared lib compilation (cmake -DBUILD_SHARED_LIBS=ON ..)
+
+v1.9.3 / 2018-01-28
+===================
+	* Fix compilation with "-std=c++11"
+	* Fix a gid permission issue with allow_other
+	* Fix operations on symlinks
+	* Fix a race in idle unmount
+	* Add `--reversewrite` cli option
+	* Add PID to syslog logging
+	* Deep code sanity check
+	* Modernize coding style
+	* Make codebase warnings & clang-tidy clean
+	* Bump FUSE_USE_VERSION to 29
+	* Ensure compatibility with LibreSSL
+	* Switch to vendored lib tinyxml2 & easylogging
+	* Reorganize man page and add missing options
+	* Add gtest and micro benchmarks
+
 v1.9.2 / 2017-07-25
 ===================
 	* fix a use-after-free bug that was introduced in v1.9-rc1 (#214)
