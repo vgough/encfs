@@ -228,7 +228,7 @@ int FileNode::getAttr(struct stat *stbuf) const {
 off_t FileNode::getSize() const {
   Lock _lock(mutex);
 
-  int res = io->getSize();
+  off_t res = io->getSize();
   return res;
 }
 
