@@ -162,6 +162,8 @@ static void usage(const char *name) {
             "reverse encryption\n")
        << _("  --reversewrite\t\t"
             "reverse encryption with writes enabled\n")
+       << _("  -c, --config=path\t\t"
+            "specifies config file (overrides ENV variable)\n")
 
        // xgroup(usage)
        << _("  --extpass=program\tUse external program for password prompt\n"
@@ -255,6 +257,7 @@ static bool processArgs(int argc, char *argv[],
       {"standard", 0, nullptr, '1'},              // standard configuration
       {"paranoia", 0, nullptr, '2'},              // standard configuration
       {"require-macs", 0, nullptr, LONG_OPT_REQUIRE_MAC},  // require MACs
+      { "config", 1, nullptr, 'c'},               // command-line-supplied config location 
       {nullptr, 0, nullptr, 0}};
 
   while (true) {
@@ -269,8 +272,9 @@ static bool processArgs(int argc, char *argv[],
     // 'S' : password from stdin
     // 'o' : arguments meant for fuse
     // 't' : syslog tag
+    // 'c' : configuration file
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:t:", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfvdmi:o:t:c:", long_options, &option_index);
 
     if (res == -1) {
       break;
@@ -297,6 +301,11 @@ static bool processArgs(int argc, char *argv[],
         break;
       case LONG_OPT_REQUIRE_MAC:
         out->opts->requireMac = true;
+        break;
+      case 'c':
+        /* Take config file path from command 
+         * line instead of ENV variable */
+        out->opts->config.assign(optarg);
         break;
       case 'f':
         out->isDaemon = false;

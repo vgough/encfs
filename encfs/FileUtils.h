@@ -98,6 +98,7 @@ struct EncFS_Opts {
   bool requireMac;  // Throw an error if MAC is disabled
 
   ConfigMode configMode;
+  std::string config;  // path to configuration file (or empty)
 
   EncFS_Opts() {
     createIfNotFound = true;
@@ -120,14 +121,14 @@ struct EncFS_Opts {
 /*
     Read existing config file.  Looks for any supported configuration version.
 */
-ConfigType readConfig(const std::string &rootDir, EncFSConfig *config);
+ConfigType readConfig(const std::string &rootDir, EncFSConfig *config, const std::string &cmdConfig);
 
 /*
     Save the configuration.  Saves back as the same configuration type as was
     read from.
 */
 bool saveConfig(ConfigType type, const std::string &rootdir,
-                const EncFSConfig *config);
+                const EncFSConfig *config, const std::string &cmdConfig);
 
 class EncFS_Context;
 

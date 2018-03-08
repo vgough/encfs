@@ -164,7 +164,7 @@ static int showInfo(int argc, char **argv) {
   if (!checkDir(rootDir)) return EXIT_FAILURE;
 
   std::shared_ptr<EncFSConfig> config(new EncFSConfig);
-  ConfigType type = readConfig(rootDir, config.get());
+  ConfigType type = readConfig(rootDir, config.get(), "");
 
   // show information stored in config..
   switch (type) {
@@ -622,7 +622,7 @@ static int do_chpasswd(bool useStdin, bool annotate, bool checkOnly, int argc,
   if (!checkDir(rootDir)) return EXIT_FAILURE;
 
   EncFSConfig *config = new EncFSConfig;
-  ConfigType cfgType = readConfig(rootDir, config);
+  ConfigType cfgType = readConfig(rootDir, config, "");
 
   if (cfgType == Config_None) {
     cout << _("Unable to load or parse config file\n");
@@ -683,7 +683,7 @@ static int do_chpasswd(bool useStdin, bool annotate, bool checkOnly, int argc,
     config->assignKeyData(keyBuf, encodedKeySize);
     delete[] keyBuf;
 
-    if (saveConfig(cfgType, rootDir, config)) {
+    if (saveConfig(cfgType, rootDir, config, "")) {
       // password modified -- changes volume key of filesystem..
       cout << _("Volume Key successfully updated.\n");
       result = EXIT_SUCCESS;

@@ -222,10 +222,19 @@ ConfigType readConfig_load(ConfigInfo *nm, const char *path,
  * Try to locate the config file
  * Tries the most recent format first, then looks for older versions
  */
-ConfigType readConfig(const string &rootDir, EncFSConfig *config) {
+ConfigType readConfig(const string &rootDir, EncFSConfig *config, const string &cmdConfig) {
   ConfigInfo *nm = ConfigFileMapping;
   while (nm->fileName != nullptr) {
-    // allow environment variable to override default config path
+   // allow command line argument to override default config path 
+    if (!cmdConfig.empty()) {
+      if (!fileExists(cmdConfig.c_str())) {
+        RLOG(ERROR)
+            << "fatal: config file specified on command line does not exist: "
+            << cmdConfig;
+        exit(1);
+      }
+      return readConfig_load(nm, cmdConfig.c_str(), config);
+    }    // allow environment variable to override default config path
     if (nm->environmentOverride != nullptr) {
       char *envFile = getenv(nm->environmentOverride);
       if (envFile != nullptr) {
@@ -433,14 +442,18 @@ bool readV4Config(const char *configFile, EncFSConfig *config,
 }
 
 bool saveConfig(ConfigType type, const string &rootDir,
-                const EncFSConfig *config) {
+                const EncFSConfig *config, const string &cmdConfig) {
   bool ok = false;
 
   ConfigInfo *nm = ConfigFileMapping;
   while (nm->fileName != nullptr) {
     if (nm->type == type && (nm->saveFunc != nullptr)) {
       string path = rootDir + nm->fileName;
-      if (nm->environmentOverride != nullptr) {
+      if (!cmdConfig.empty()) {
+        // use command line argument if specified
+        path.assign(cmdConfig);
+      }
+      else if (nm->environmentOverride != nullptr) {
         // use environment file if specified..
         const char *envFile = getenv(nm->environmentOverride);
         if (envFile != nullptr) {
@@ -1199,7 +1212,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
     return rootInfo;
   }
 
-  if (!saveConfig(Config_V6, rootDir, config.get())) {
+  if (!saveConfig(Config_V6, rootDir, config.get(), opts->config)) {
     return rootInfo;
   }
 
@@ -1559,7 +1572,7 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
   RootPtr rootInfo;
   std::shared_ptr<EncFSConfig> config(new EncFSConfig);
 
-  if (readConfig(opts->rootDir, config.get()) != Config_None) {
+  if (readConfig(opts->rootDir, config.get(), opts->config) != Config_None) {
     if (config->blockMACBytes == 0 && opts->requireMac) {
       cout << _(
           "The configuration disabled MAC, but you passed --require-macs\n");

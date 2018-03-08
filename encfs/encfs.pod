@@ -16,7 +16,7 @@ encfs - mounts or creates an encrypted virtual filesystem
 
 =head1 SYNOPSIS
 
-B<encfs> [B<--version>] [B<-v>|B<--verbose>] [B<-t>|B<--syslogtag>] 
+B<encfs> [B<--version>] [B<-v>|B<--verbose>] [B<-c>|B<--config>] [B<-t>|B<--syslogtag>] 
 [B<-s>] [B<-f>] [B<--annotate>] [B<--standard>] [B<--paranoia>] 
 [B<--reverse>] [B<--reversewrite>] [B<--extpass=program>] [B<-S>|B<--stdinpass>] 
 [B<--anykey>] [B<--forcedecode>] [B<-require-macs>] 
@@ -47,6 +47,10 @@ may be an increasing number of choices.
 
 Shows B<EncFS> version.  Using B<--verbose> before B<--version> may display
 additional information.
+
+=item B<-c>, B<--config>
+
+Causes B<EncFS> to use the supplied file as the configuration file.
 
 =item B<-v>, B<--verbose>
 
