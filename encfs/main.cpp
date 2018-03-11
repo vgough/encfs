@@ -615,7 +615,7 @@ int main(int argc, char *argv[]) {
     unmount(encfsArgs->opts->mountPoint.c_str(), MNT_FORCE);
 #endif
     // fuse_unmount succeeds and returns void
-    cerr << "Filesystem unmounting: " << encfsArgs->opts->mountPoint << endl;
+    cout << "Filesystem unmounting: " << encfsArgs->opts->mountPoint << endl;
     return 0;
   }
 
