@@ -76,6 +76,7 @@ struct EncFS_Opts {
   bool idleTracking;       // turn on idle monitoring of filesystem
   bool mountOnDemand;      // mounting on-demand
   bool delayMount;         // delay initial mount
+  bool unmount;            // unmount
 
   bool checkKey;     // check crypto key decoding
   bool forceDecode;  // force decode on MAC block failures
@@ -105,6 +106,7 @@ struct EncFS_Opts {
     idleTracking = false;
     mountOnDemand = false;
     delayMount = false;
+    unmount = false;
     checkKey = true;
     forceDecode = false;
     useStdin = false;

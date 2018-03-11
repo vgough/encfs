@@ -35,6 +35,10 @@
 #include <fstream>
 #include <iostream>
 #include <list>
+#ifdef __APPLE__
+#include <sys/mount.h>
+#include <sys/param.h>
+#endif
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -1703,10 +1707,10 @@ bool unmountFS(EncFS_Context *ctx) {
     return false;
   }
 // Time to unmount!
-#if FUSE_USE_VERSION < 30
   fuse_unmount(ctx->opts->mountPoint.c_str(), nullptr);
-#else
-  fuse_unmount(fuse_get_context()->fuse);
+#ifdef __APPLE__
+  // fuse_unmount does not work on Mac OS, see #428
+  unmount(ctx->opts->mountPoint.c_str(), MNT_FORCE);
 #endif
   // fuse_unmount succeeds and returns void
   RLOG(INFO) << "Filesystem inactive, unmounted: " << ctx->opts->mountPoint;

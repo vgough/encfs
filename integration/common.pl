@@ -2,13 +2,7 @@
 # works on Linux AND OSX
 sub portable_unmount {
     my $crypt = shift;
-    my $fusermount = qx(which fusermount);
-    chomp($fusermount);
-    if(-f $fusermount) {
-        qx($fusermount -u "$crypt");
-    } else {
-        qx(umount "$crypt");
-    }
+    qx(./build/encfs -u "$crypt");
 }
 
 # Helper function

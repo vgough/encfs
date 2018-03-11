@@ -28,6 +28,10 @@
 #include <pthread.h>
 #include <sstream>
 #include <string>
+#ifdef __APPLE__
+#include <sys/mount.h>
+#include <sys/param.h>
+#endif
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -164,6 +168,8 @@ static void usage(const char *name) {
             "reverse encryption with writes enabled\n")
        << _("  -c, --config=path\t\t"
             "specifies config file (overrides ENV variable)\n")
+       << _("  -u, --unmount\t\t"
+            "unmounts specified mountPoint\n")
 
        // xgroup(usage)
        << _("  --extpass=program\tUse external program for password prompt\n"
@@ -219,6 +225,7 @@ static bool processArgs(int argc, char *argv[],
   out->opts->annotate = false;
   out->opts->reverseEncryption = false;
   out->opts->requireMac = false;
+  out->opts->unmount = false;
 
   bool useDefaultFlags = true;
 
@@ -257,7 +264,8 @@ static bool processArgs(int argc, char *argv[],
       {"standard", 0, nullptr, '1'},              // standard configuration
       {"paranoia", 0, nullptr, '2'},              // standard configuration
       {"require-macs", 0, nullptr, LONG_OPT_REQUIRE_MAC},  // require MACs
-      { "config", 1, nullptr, 'c'},               // command-line-supplied config location 
+      {"config", 1, nullptr, 'c'},                // command-line-supplied config location
+      {"unmount", 1, nullptr, 'u'},               // unmount
       {nullptr, 0, nullptr, 0}};
 
   while (true) {
@@ -273,8 +281,9 @@ static bool processArgs(int argc, char *argv[],
     // 'o' : arguments meant for fuse
     // 't' : syslog tag
     // 'c' : configuration file
+    // 'u' : unmount
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:t:c:", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfvdmi:o:t:c:u", long_options, &option_index);
 
     if (res == -1) {
       break;
@@ -306,6 +315,9 @@ static bool processArgs(int argc, char *argv[],
         /* Take config file path from command 
          * line instead of ENV variable */
         out->opts->config.assign(optarg);
+        break;
+      case 'u':
+        out->opts->unmount = true;
         break;
       case 'f':
         out->isDaemon = false;
@@ -385,7 +397,7 @@ static bool processArgs(int argc, char *argv[],
         break;
       case 'P':
         if (geteuid() != 0) {
-          RLOG(WARNING) << "option '--public' ignored for non-root user";
+          cerr << "option '--public' ignored for non-root user";
         } else {
           out->opts->ownerCreate = true;
           // add 'allow_other' option
@@ -416,13 +428,24 @@ static bool processArgs(int argc, char *argv[],
         // missing parameter for option..
         break;
       default:
-        RLOG(WARNING) << "getopt error: " << res;
+        cerr << "getopt error: " << res;
         break;
     }
   }
 
   if (!out->isThreaded) {
     PUSHARG("-s");
+  }
+
+  // for --unmount, we should have exactly 1 argument - the mount point
+  if (out->opts->unmount) {
+    if (optind + 1 == argc) {
+      out->opts->mountPoint = slashTerminate(argv[optind++]);
+      return true;
+    }
+    // no mount point specified
+    cerr << _("Expecting one argument, aborting.") << endl;
+    return false;
   }
 
   // we should have at least 2 arguments left over - the source directory and
@@ -434,7 +457,7 @@ static bool processArgs(int argc, char *argv[],
     out->opts->mountPoint = slashTerminate(argv[optind++]);
   } else {
     // no mount point specified
-    cerr << _("Missing one or more arguments, aborting.");
+    cerr << _("Missing one or more arguments, aborting.") << endl;
     return false;
   }
 
@@ -582,6 +605,18 @@ int main(int argc, char *argv[]) {
   if (argc == 1 || !processArgs(argc, argv, encfsArgs)) {
     usage(argv[0]);
     return EXIT_FAILURE;
+  }
+
+  // Let's unmount if requested
+  if (encfsArgs->opts->unmount) {
+    fuse_unmount(encfsArgs->opts->mountPoint.c_str(), nullptr);
+#ifdef __APPLE__
+    // fuse_unmount does not work on Mac OS, see #428
+    unmount(encfsArgs->opts->mountPoint.c_str(), MNT_FORCE);
+#endif
+    // fuse_unmount succeeds and returns void
+    cerr << "Filesystem unmounting: " << encfsArgs->opts->mountPoint << endl;
+    return 0;
   }
 
   encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
