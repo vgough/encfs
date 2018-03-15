@@ -609,14 +609,14 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
   return res;
 }
 
-int DirNode::link(const char *from, const char *to) {
+int DirNode::link(const char *to, const char *from) {
   Lock _lock(mutex);
 
-  string fromCName = rootDir + naming->encodePath(from);
   string toCName = rootDir + naming->encodePath(to);
+  string fromCName = rootDir + naming->encodePath(from);
 
-  rAssert(!fromCName.empty());
   rAssert(!toCName.empty());
+  rAssert(!fromCName.empty());
 
   VLOG(1) << "link " << fromCName << " -> " << toCName;
 
@@ -624,7 +624,7 @@ int DirNode::link(const char *from, const char *to) {
   if (fsConfig->config->externalIVChaining) {
     VLOG(1) << "hard links not supported with external IV chaining!";
   } else {
-    res = ::link(fromCName.c_str(), toCName.c_str());
+    res = ::link(toCName.c_str(), fromCName.c_str());
     if (res == -1) {
       res = -errno;
     } else {
