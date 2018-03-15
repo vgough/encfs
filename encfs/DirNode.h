@@ -130,7 +130,7 @@ class DirNode {
 
   int rename(const char *fromPlaintext, const char *toPlaintext);
 
-  int link(const char *from, const char *to);
+  int link(const char *to, const char *from);
 
   // returns idle time of filesystem in seconds
   int idleSeconds();
