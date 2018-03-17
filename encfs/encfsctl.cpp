@@ -379,7 +379,7 @@ int processContents(const std::shared_ptr<EncFS_Root> &rootInfo,
   std::shared_ptr<FileNode> node;
 
   try {
-    rootInfo->root->openNode(path, "encfsctl", O_RDONLY, &errCode);
+    node = rootInfo->root->openNode(path, "encfsctl", O_RDONLY, &errCode);
   }
   catch(...) {}
 
