@@ -76,6 +76,7 @@ struct EncFS_Opts {
   bool idleTracking;       // turn on idle monitoring of filesystem
   bool mountOnDemand;      // mounting on-demand
   bool delayMount;         // delay initial mount
+  bool unmount;            // unmount
 
   bool checkKey;     // check crypto key decoding
   bool forceDecode;  // force decode on MAC block failures
@@ -98,12 +99,14 @@ struct EncFS_Opts {
   bool requireMac;  // Throw an error if MAC is disabled
 
   ConfigMode configMode;
+  std::string config;  // path to configuration file (or empty)
 
   EncFS_Opts() {
     createIfNotFound = true;
     idleTracking = false;
     mountOnDemand = false;
     delayMount = false;
+    unmount = false;
     checkKey = true;
     forceDecode = false;
     useStdin = false;
@@ -120,18 +123,20 @@ struct EncFS_Opts {
 /*
     Read existing config file.  Looks for any supported configuration version.
 */
-ConfigType readConfig(const std::string &rootDir, EncFSConfig *config);
+ConfigType readConfig(const std::string &rootDir, EncFSConfig *config, const std::string &cmdConfig);
 
 /*
     Save the configuration.  Saves back as the same configuration type as was
     read from.
 */
 bool saveConfig(ConfigType type, const std::string &rootdir,
-                const EncFSConfig *config);
+                const EncFSConfig *config, const std::string &cmdConfig);
 
 class EncFS_Context;
 
 RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts);
+
+void unmountFS(const char *mountPoint);
 
 RootPtr createV6Config(EncFS_Context *ctx,
                        const std::shared_ptr<EncFS_Opts> &opts);

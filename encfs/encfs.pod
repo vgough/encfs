@@ -16,11 +16,11 @@ encfs - mounts or creates an encrypted virtual filesystem
 
 =head1 SYNOPSIS
 
-B<encfs> [B<--version>] [B<-v>|B<--verbose>] [B<-t>|B<--syslogtag>] 
+B<encfs> [B<--version>] [B<-v>|B<--verbose>] [B<-c>|B<--config>] [B<-t>|B<--syslogtag>] 
 [B<-s>] [B<-f>] [B<--annotate>] [B<--standard>] [B<--paranoia>] 
 [B<--reverse>] [B<--reversewrite>] [B<--extpass=program>] [B<-S>|B<--stdinpass>] 
 [B<--anykey>] [B<--forcedecode>] [B<-require-macs>] 
-[B<-i MINUTES>|B<--idle=MINUTES>] [B<-m>|B<--ondemand>] [B<--delaymount>] 
+[B<-i MINUTES>|B<--idle=MINUTES>] [B<-m>|B<--ondemand>] [B<--delaymount>] [B<-u>|B<--unmount>] 
 [B<--public>] [B<--nocache>] [B<--no-default-flags>]
 [B<-o FUSE_OPTION>] [B<-d>|B<--fuse-debug>] [B<-H>|B<--fuse-help>] 
 I<rootdir> I<mountPoint> 
@@ -47,6 +47,10 @@ may be an increasing number of choices.
 
 Shows B<EncFS> version.  Using B<--verbose> before B<--version> may display
 additional information.
+
+=item B<-c>, B<--config>
+
+Causes B<EncFS> to use the supplied file as the configuration file.
 
 =item B<-v>, B<--verbose>
 
@@ -203,6 +207,10 @@ password.  If this succeeds, then the filesystem becomes available again.
 
 Do not mount the filesystem when encfs starts; instead, delay mounting until
 first use. This option only makes sense with B<--ondemand>.
+
+=item B<-u>, B<--unmount>
+
+Unmounts the specified I<mountPoint>.
 
 =item B<--public>
 
