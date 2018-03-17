@@ -884,7 +884,7 @@ static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
     // xgroup(setup)
     addMAC = boolDefaultNo(
         _("Enable block authentication code headers\n"
-          "on every block in a file?  This adds about 12 bytes per block\n"
+          "on every block in a file?  This adds about 8 bytes per block\n"
           "to the storage requirements for a file, and significantly affects\n"
           "performance but it also means [almost] any modifications or errors\n"
           "within a block will be caught and will cause a read error."));

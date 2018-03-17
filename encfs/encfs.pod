@@ -644,6 +644,8 @@ Support, bug reports... : B<https://github.com/vgough/encfs>.
 
 Mailing list : none.
 
+Windows port : B<https://github.com/jetwhiz/encfs4win>.
+
 =head1 SEE ALSO
 
 encfsctl(1)
