@@ -52,8 +52,8 @@ class DirDeleter {
 };
 
 DirTraverse::DirTraverse(std::shared_ptr<DIR> _dirPtr, uint64_t _iv,
-                         std::shared_ptr<NameIO> _naming)
-    : dir(std::move(_dirPtr)), iv(_iv), naming(std::move(_naming)) {}
+                         std::shared_ptr<NameIO> _naming, bool _root)
+    : dir(std::move(_dirPtr)), iv(_iv), naming(std::move(_naming)), root(_root) {}
 
 DirTraverse &DirTraverse::operator=(const DirTraverse &src) = default;
 
@@ -61,6 +61,7 @@ DirTraverse::~DirTraverse() {
   dir.reset();
   iv = 0;
   naming.reset();
+  root = false;
 }
 
 static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
@@ -90,6 +91,10 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
 std::string DirTraverse::nextPlaintextName(int *fileType, ino_t *inode) {
   struct dirent *de = nullptr;
   while (_nextName(de, dir, fileType, inode)) {
+    if (root && (strcmp(".encfs6.xml", de->d_name) == 0)) {
+      VLOG(1) << "skipping filename: " << de->d_name;
+      continue;
+    }
     try {
       uint64_t localIv = iv;
       return naming->decodePath(de->d_name, &localIv);
@@ -106,6 +111,10 @@ std::string DirTraverse::nextInvalid() {
   struct dirent *de = nullptr;
   // find the first name which produces a decoding error...
   while (_nextName(de, dir, (int *)nullptr, (ino_t *)nullptr)) {
+    if (root && (strcmp(".encfs6.xml", de->d_name) == 0)) {
+      VLOG(1) << "skipping filename: " << de->d_name;
+      continue;
+    }
     try {
       uint64_t localIv = iv;
       naming->decodePath(de->d_name, &localIv);
@@ -355,7 +364,7 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
   if (dir == nullptr) {
     int eno = errno;
     VLOG(1) << "opendir error " << strerror(eno);
-    return DirTraverse(shared_ptr<DIR>(), 0, std::shared_ptr<NameIO>());
+    return DirTraverse(shared_ptr<DIR>(), 0, std::shared_ptr<NameIO>(), false);
   }
   std::shared_ptr<DIR> dp(dir, DirDeleter());
 
@@ -369,7 +378,7 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "encode err: " << err.what();
   }
-  return DirTraverse(dp, iv, naming);
+  return DirTraverse(dp, iv, naming, (strlen(plaintextPath) == 1));
 }
 
 bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,
@@ -609,14 +618,14 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
   return res;
 }
 
-int DirNode::link(const char *from, const char *to) {
+int DirNode::link(const char *to, const char *from) {
   Lock _lock(mutex);
 
-  string fromCName = rootDir + naming->encodePath(from);
   string toCName = rootDir + naming->encodePath(to);
+  string fromCName = rootDir + naming->encodePath(from);
 
-  rAssert(!fromCName.empty());
   rAssert(!toCName.empty());
+  rAssert(!fromCName.empty());
 
   VLOG(1) << "link " << fromCName << " -> " << toCName;
 
@@ -624,7 +633,7 @@ int DirNode::link(const char *from, const char *to) {
   if (fsConfig->config->externalIVChaining) {
     VLOG(1) << "hard links not supported with external IV chaining!";
   } else {
-    res = ::link(fromCName.c_str(), toCName.c_str());
+    res = ::link(toCName.c_str(), fromCName.c_str());
     if (res == -1) {
       res = -errno;
     } else {
