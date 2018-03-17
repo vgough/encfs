@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 132;
+use Test::More tests => 136;
 use File::Path;
 use File::Copy;
 use File::Temp;
