@@ -56,6 +56,7 @@ class EncFS_Context {
 
   void setRoot(const std::shared_ptr<DirNode> &root);
   std::shared_ptr<DirNode> getRoot(int *err);
+  std::shared_ptr<DirNode> getRoot(int *err, bool skipUsageCount);
 
   std::shared_ptr<EncFS_Args> args;
   std::shared_ptr<EncFS_Opts> opts;

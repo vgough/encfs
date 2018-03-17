@@ -139,7 +139,11 @@ static int withFileNode(const char *opName, const char *path,
   EncFS_Context *ctx = context();
 
   int res = -EIO;
-  std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
+  bool skipUsageCount = false;
+  if (strlen(path) == 1) {
+    skipUsageCount = true;
+  }
+  std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res, skipUsageCount);
   if (!FSRoot) {
     return res;
   }
