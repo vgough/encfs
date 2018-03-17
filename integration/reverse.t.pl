@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 31;
+use Test::More tests => 34;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -99,6 +99,20 @@ sub copy_test
     ok(-f "$plain/encfs/encfs.cpp", "file exists");
     unlink("$plain/encfs/encfs.cpp");
     ok(! -f "$decrypted/encfs.cpp", "file deleted");
+}
+
+# Encfsctl cat test
+sub encfsctl_cat_test
+{
+    my $contents = "hello world\n";
+    ok( open(OUT, "> $plain/hello.txt"), "create file for encfsctl cat test" );
+    print OUT $contents;
+    close OUT;
+    qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfsctl cat --extpass="echo test" $ciphertext hello.txt > $plain/hellodec.txt);
+    qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfsctl cat --extpass="echo test" --reverse $plain hello.txt > $plain/helloenc.txt);
+    my $cname = encName("hello.txt");
+    ok(system("diff -q $plain/helloenc.txt $ciphertext/$cname")==0, "encfsctl correctly encrypts");
+    ok(system("diff -q $plain/hello.txt $plain/hellodec.txt")==0, "encfsctl correctly decrypts");
 }
 
 # Create symlinks and verify they are correctly decrypted
@@ -207,6 +221,7 @@ mount();
 grow();
 largeRead();
 copy_test();
+encfsctl_cat_test();
 symlink_test("/"); # absolute
 symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
