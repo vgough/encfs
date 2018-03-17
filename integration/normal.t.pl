@@ -235,6 +235,11 @@ sub truncate
 # Test file creation and removal
 sub fileCreation
 {
+    # first be sure .encfs6.xml does not show up
+    my $f = encName(".encfs6.xml");
+    cmp_ok( length($f), '>', 8, "encrypted name ok" );
+    ok( ! -f "$raw/$f", "configuration file .encfs6.xml not visible in $raw" );
+
     # create a file
     qx(date > "$crypt/df.txt");
     ok( -f "$crypt/df.txt", "file created" ) || BAIL_OUT("file create failed");
