@@ -91,11 +91,11 @@ sub encName
 	return $enc;
 }
 
-# Copy a directory tree and verify that the decrypted data is identical
+# Copy a directory tree and verify that the decrypted data is identical, we also create a foo/.encfs6.xml file, to be sure it correctly shows-up
 sub copy_test
 {
-    ok(system("cp -a encfs $plain")==0, "copying files to plain");
-    ok(system("diff -r -q $plain $decrypted")==0, "decrypted files are identical");
+    ok(system("cp -a encfs $plain && mkdir $plain/foo && touch $plain/foo/.encfs6.xml")==0, "copying files to plain");
+    ok(system("diff -r -q --exclude='.encfs6.xml' $plain $decrypted")==0, "decrypted files are identical");
     ok(-f "$plain/encfs/encfs.cpp", "file exists");
     unlink("$plain/encfs/encfs.cpp");
     ok(! -f "$decrypted/encfs.cpp", "file deleted");
