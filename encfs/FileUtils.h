@@ -136,6 +136,8 @@ class EncFS_Context;
 
 RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts);
 
+void unmountFS(const char *mountPoint);
+
 RootPtr createV6Config(EncFS_Context *ctx,
                        const std::shared_ptr<EncFS_Opts> &opts);
 
