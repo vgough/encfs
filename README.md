@@ -9,7 +9,7 @@ EncFS provides an encrypted filesystem in user-space. It runs in userspace,
 using the FUSE library for the filesystem interface. EncFS is open source
 software, licensed under the LGPL.
 
-EncFS is now over 10 years old (first release in 2003).  It was written because
+EncFS is now over 15 years old (first release in 2003).  It was written because
 older NFS and kernel-based encrypted filesystems such as CFS had not kept pace with Linux
 development.  When FUSE became available, I wrote a CFS replacement for my own
 use and released the first version to Open Source in 2003.
@@ -25,7 +25,7 @@ For more info, see:
 
 ## Status
 
-Over the last 10 years, a number of good alternatives have grown up.  Computing
+Over the last 15 years, a number of good alternatives have grown up.  Computing
 power has increased to the point where it is reasonable to encrypt the entire
 filesystem of personal computers (and even mobile phones!).  On Linux, ecryptfs
 provides a nice dynamically mountable encrypted home directory, and is well
@@ -34,8 +34,9 @@ integrated in distributions I use, such as Ubuntu.
 EncFS has been dormant for a while.  I've started cleaning up in order to try
 and provide a better base for a version 2, but whether EncFS flowers again
 depends upon community interest.  In order to make it easier for anyone to
-contribute, it is moving a new home on Github.  So if you're interested in
-EncFS, please dive in!
+contribute, it is moving a new home on GitHub (2014).  Since then project has
+been updated a few times thanks to several contributors, so if you're
+interested in EncFS, please dive in!
 
 ## Unique Features
 
@@ -77,6 +78,11 @@ between changes.
 ## Donations
 
 How about a nice email instead?
+
+## Windows
+
+A Windows port exists and is maintained by JetWhiz in the GitHub
+[jetwhiz/encfs4win](https://github.com/jetwhiz/encfs4win) repository.
 
 ## FAQ
 
