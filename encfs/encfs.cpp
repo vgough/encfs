@@ -139,7 +139,11 @@ static int withFileNode(const char *opName, const char *path,
   EncFS_Context *ctx = context();
 
   int res = -EIO;
-  std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res);
+  bool skipUsageCount = false;
+  if (strlen(path) == 1) {
+    skipUsageCount = true;
+  }
+  std::shared_ptr<DirNode> FSRoot = ctx->getRoot(&res, skipUsageCount);
   if (!FSRoot) {
     return res;
   }
@@ -500,7 +504,7 @@ int encfs_symlink(const char *to, const char *from) {
   return res;
 }
 
-int encfs_link(const char *from, const char *to) {
+int encfs_link(const char *to, const char *from) {
   EncFS_Context *ctx = context();
 
   if (isReadOnly(ctx)) {
@@ -514,7 +518,7 @@ int encfs_link(const char *from, const char *to) {
   }
 
   try {
-    res = FSRoot->link(from, to);
+    res = FSRoot->link(to, from);
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in link: " << err.what();
   }

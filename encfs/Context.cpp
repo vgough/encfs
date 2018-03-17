@@ -47,7 +47,12 @@ EncFS_Context::~EncFS_Context() {
   // release all entries from map
   openFiles.clear();
 }
+
 std::shared_ptr<DirNode> EncFS_Context::getRoot(int *errCode) {
+  return getRoot(errCode, false);
+}
+
+std::shared_ptr<DirNode> EncFS_Context::getRoot(int *errCode, bool skipUsageCount) {
   std::shared_ptr<DirNode> ret = nullptr;
   do {
     {
@@ -57,7 +62,11 @@ std::shared_ptr<DirNode> EncFS_Context::getRoot(int *errCode) {
         break;      	
       }
       ret = root;
-      ++usageCount;
+      // On some system, stat of "/" is allowed even if the calling user is
+      // not allowed to list / to go deeper. Do not then count this call.
+      if (!skipUsageCount) {
+        ++usageCount;
+      }
     }
 
     if (!ret) {
