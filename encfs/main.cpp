@@ -48,6 +48,7 @@
 #define LONG_OPT_ANNOTATE 513
 #define LONG_OPT_NOCACHE 514
 #define LONG_OPT_REQUIRE_MAC 515
+#define LONG_OPT_UNSAFE 516
 
 using namespace std;
 using namespace encfs;
@@ -221,6 +222,7 @@ static bool processArgs(int argc, char *argv[],
   out->opts->annotate = false;
   out->opts->reverseEncryption = false;
   out->opts->requireMac = false;
+  out->opts->unsafe = false;
   out->opts->unmount = false;
 
   bool useDefaultFlags = true;
@@ -260,6 +262,7 @@ static bool processArgs(int argc, char *argv[],
       {"standard", 0, nullptr, '1'},              // standard configuration
       {"paranoia", 0, nullptr, '2'},              // standard configuration
       {"require-macs", 0, nullptr, LONG_OPT_REQUIRE_MAC},  // require MACs
+      {"unsafe", 0, nullptr, LONG_OPT_UNSAFE},  // require MACs
       {"config", 1, nullptr, 'c'},                // command-line-supplied config location
       {"unmount", 1, nullptr, 'u'},               // unmount
       {nullptr, 0, nullptr, 0}};
@@ -306,6 +309,9 @@ static bool processArgs(int argc, char *argv[],
         break;
       case LONG_OPT_REQUIRE_MAC:
         out->opts->requireMac = true;
+        break;
+      case LONG_OPT_UNSAFE:
+        out->opts->unsafe = true;
         break;
       case 'c':
         /* Take config file path from command 
