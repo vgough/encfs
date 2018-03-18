@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 34;
+use Test::More tests => 36;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -94,6 +94,12 @@ sub encName
 # Copy a directory tree and verify that the decrypted data is identical, we also create a foo/.encfs6.xml file, to be sure it correctly shows-up
 sub copy_test
 {
+    # first be sure .encfs6.xml does not show up
+    # We does not use -f for this test, as it would succeed, .encfs6.xml is only hidden from readdir.
+    my $f = encName(".encfs6.xml");
+    cmp_ok( length($f), '>', 8, "encrypted name ok" );
+    ok(system("ls -1 $ciphertext | grep -qwF -- $f") != 0, "configuration file .encfs6.xml not visible in $ciphertext");
+    # copy test
     ok(system("cp -a encfs $plain && mkdir $plain/foo && touch $plain/foo/.encfs6.xml")==0, "copying files to plain");
     ok(system("diff -r -q --exclude='.encfs6.xml' $plain $decrypted")==0, "decrypted files are identical");
     ok(-f "$plain/encfs/encfs.cpp", "file exists");
