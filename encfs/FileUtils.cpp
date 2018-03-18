@@ -884,7 +884,9 @@ static bool selectPlainData(bool unsafe) {
   bool plainData = false;
   if (unsafe) {
     plainData = boolDefaultNo(
-        _("You used --unsafe, Disable file data crypt?"));
+        _("You used --unsafe, you can then disable file data encoding\n"
+           "which is of course abolutely discouraged.\n"
+           "Disable file data encoding?"));
   }
   return plainData;
 }
@@ -1117,29 +1119,40 @@ RootPtr createV6Config(EncFS_Context *ctx,
     blockSize = selectBlockSize(alg);
     plainData = selectPlainData(opts->unsafe);
     nameIOIface = selectNameCoding();
-    if (reverseEncryption) {
-      cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
-      uniqueIV = selectUniqueIV(false);
-      /* If uniqueIV is off, writing can be allowed, because there
-       * is no header that could be overwritten.
-       * So if it is on, enforce readOnly. */
-      if (uniqueIV) {
-        opts->readOnly = true;
-      }
-    } else {
-      chainedIV = selectChainedIV();
-      uniqueIV = selectUniqueIV(true);
-      if (chainedIV && uniqueIV) {
-        externalIV = selectExternalChainedIV();
+    if (plainData) {
+      cout << _("plain data - IV, MAC and file-hole disabled") << "\n";
+      allowHoles = false;
+      chainedIV = false;
+      externalIV = false;
+      uniqueIV = false;
+      blockMACBytes = 0;
+      blockMACRandBytes = 0;
+    }
+    else {
+      if (reverseEncryption) {
+        cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
+        uniqueIV = selectUniqueIV(false);
+        /* If uniqueIV is off, writing can be allowed, because there
+         * is no header that could be overwritten.
+         * So if it is on, enforce readOnly. */
+        if (uniqueIV) {
+          opts->readOnly = true;
+        }
       } else {
-        // xgroup(setup)
-        cout << _("External chained IV disabled, as both 'IV chaining'\n"
-                  "and 'unique IV' features are required for this option.")
-             << "\n";
-        externalIV = false;
+        chainedIV = selectChainedIV();
+        uniqueIV = selectUniqueIV(true);
+        if (chainedIV && uniqueIV) {
+          externalIV = selectExternalChainedIV();
+        } else {
+          // xgroup(setup)
+          cout << _("External chained IV disabled, as both 'IV chaining'\n"
+                    "and 'unique IV' features are required for this option.")
+               << "\n";
+          externalIV = false;
+        }
+        selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac);
+        allowHoles = selectZeroBlockPassThrough();
       }
-      selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac);
-      allowHoles = selectZeroBlockPassThrough();
     }
   }
 
