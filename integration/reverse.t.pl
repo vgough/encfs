@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 34;
+use Test::More tests => 46;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -94,6 +94,12 @@ sub encName
 # Copy a directory tree and verify that the decrypted data is identical, we also create a foo/.encfs6.xml file, to be sure it correctly shows-up
 sub copy_test
 {
+    # first be sure .encfs6.xml does not show up
+    # We does not use -f for this test, as it would succeed, .encfs6.xml is only hidden from readdir.
+    my $f = encName(".encfs6.xml");
+    cmp_ok( length($f), '>', 8, "encrypted name ok" );
+    ok(system("ls -1 $ciphertext | grep -qwF -- $f") != 0, "configuration file .encfs6.xml not visible in $ciphertext");
+    # copy test
     ok(system("cp -a encfs $plain && mkdir $plain/foo && touch $plain/foo/.encfs6.xml")==0, "copying files to plain");
     ok(system("diff -r -q --exclude='.encfs6.xml' $plain $decrypted")==0, "decrypted files are identical");
     ok(-f "$plain/encfs/encfs.cpp", "file exists");
@@ -105,7 +111,7 @@ sub copy_test
 sub encfsctl_cat_test
 {
     my $contents = "hello world\n";
-    ok( open(OUT, "> $plain/hello.txt"), "create file for encfsctl cat test" );
+    ok(open(OUT, "> $plain/hello.txt"), "create file for encfsctl cat test");
     print OUT $contents;
     close OUT;
     qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfsctl cat --extpass="echo test" $ciphertext hello.txt > $plain/hellodec.txt);
@@ -120,12 +126,12 @@ sub encfsctl_cat_test
 sub symlink_test
 {
     my $target = shift;
-    symlink($target, "$plain/symlink");
-    $dec = readlink("$decrypted/symlink");
-    ok( $dec eq $target, "symlink to '$target'") or
-        print("# (original) $target' != '$dec' (decrypted)\n");
+    ok(symlink($target, "$plain/symlink"), "Symlink create, $plain/symlink -> $target");
+    ok(my $dec = readlink("$decrypted/symlink"), "Symlink read, $decrypted/symlink");
+    $dec.="";
+    ok($dec eq $target, "Symlink compare, '$target' != '$dec'");
     my $return_code = ($have_xattr) ? system(@binattr, "$decrypted/symlink") : 0;
-    is($return_code, 0, "symlink to '$target' extended attributes can be read (return code was $return_code)");
+    is($return_code, 0, "Symlink xattr, $plain/symlink -> $target, extended attributes can be read (return code was $return_code)");
     unlink("$plain/symlink");
 }
 
