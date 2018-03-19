@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 36;
+use Test::More tests => 46;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -111,7 +111,7 @@ sub copy_test
 sub encfsctl_cat_test
 {
     my $contents = "hello world\n";
-    ok( open(OUT, "> $plain/hello.txt"), "create file for encfsctl cat test" );
+    ok(open(OUT, "> $plain/hello.txt"), "create file for encfsctl cat test");
     print OUT $contents;
     close OUT;
     qx(ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfsctl cat --extpass="echo test" $ciphertext hello.txt > $plain/hellodec.txt);
@@ -126,12 +126,12 @@ sub encfsctl_cat_test
 sub symlink_test
 {
     my $target = shift;
-    symlink($target, "$plain/symlink");
-    $dec = readlink("$decrypted/symlink");
-    ok( $dec eq $target, "symlink to '$target'") or
-        print("# (original) $target' != '$dec' (decrypted)\n");
+    ok(symlink($target, "$plain/symlink"), "Symlink create, $plain/symlink -> $target");
+    ok(my $dec = readlink("$decrypted/symlink"), "Symlink read, $decrypted/symlink");
+    $dec.="";
+    ok($dec eq $target, "Symlink compare, '$target' != '$dec'");
     my $return_code = ($have_xattr) ? system(@binattr, "$decrypted/symlink") : 0;
-    is($return_code, 0, "symlink to '$target' extended attributes can be read (return code was $return_code)");
+    is($return_code, 0, "Symlink xattr, $plain/symlink -> $target, extended attributes can be read (return code was $return_code)");
     unlink("$plain/symlink");
 }
 
