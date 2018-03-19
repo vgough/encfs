@@ -429,6 +429,11 @@ static int cmd_cat(int argc, char **argv) {
   if (!rootInfo) return EXIT_FAILURE;
 
   const char *path = argv[0];
+  // If user provides a leading slash, in reverse mode, it will be converted
+  // to "+" by plainpath, and will fail to decode... Workaround below then...
+  if (path[0] == '/') {
+    path++;
+  }
   WriteOutput output(STDOUT_FILENO);
   int errCode = processContents(rootInfo, path, output);
 
