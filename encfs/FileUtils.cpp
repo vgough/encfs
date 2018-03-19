@@ -880,11 +880,11 @@ static bool boolDefaultYes(const char *prompt) {
 /**
  * Ask the user to select plain data
  */
-static bool selectPlainData(bool unsafe) {
+static bool selectPlainData(bool insecure) {
   bool plainData = false;
-  if (unsafe) {
+  if (insecure) {
     plainData = boolDefaultNo(
-        _("You used --unsafe, you can then disable file data encryption\n"
+        _("You used --insecure, you can then disable file data encryption\n"
            "which is of course abolutely discouraged.\n"
            "Disable file data encryption?"));
   }
@@ -1117,7 +1117,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
     alg = selectCipherAlgorithm();
     keySize = selectKeySize(alg);
     blockSize = selectBlockSize(alg);
-    plainData = selectPlainData(opts->unsafe);
+    plainData = selectPlainData(opts->insecure);
     nameIOIface = selectNameCoding();
     if (plainData) {
       cout << _("plain data - IV, MAC and file-hole disabled") << "\n";
@@ -1701,8 +1701,8 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
 
     FSConfigPtr fsConfig(new FSConfig);
     if (config->plainData) {
-      if (! opts->unsafe) {
-        cout << _("Configuration use plainData but you did not use --unsafe\n");
+      if (! opts->insecure) {
+        cout << _("Configuration use plainData but you did not use --insecure\n");
         return rootInfo;
       }
       static Interface NullInterface("nullCipher", 1, 0, 0);
