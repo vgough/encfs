@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 43;
+use Test::More tests => 7;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -224,16 +224,16 @@ newWorkingDir();
 mount();
 
 # Actual tests
-grow();
-largeRead();
-copy_test();
-#encfsctl_cat_test();
-symlink_test("/"); # absolute
-symlink_test("foo"); # relative
-symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
-symlink_test("!§\$%&/()\\<>#+="); # special characters
-symlink_test("$plain/foo");
-writesDenied();
+#grow();
+#largeRead();
+#copy_test();
+encfsctl_cat_test();
+#symlink_test("/"); # absolute
+#symlink_test("foo"); # relative
+#symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
+#symlink_test("!§\$%&/()\\<>#+="); # special characters
+#symlink_test("$plain/foo");
+#writesDenied();
 
 # Umount and delete files
 cleanup();
