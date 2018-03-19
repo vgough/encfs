@@ -139,6 +139,7 @@ find_package (Threads REQUIRED)
 # Logging.
 add_definitions (-DELPP_THREAD_SAFE -DELPP_DISABLE_DEFAULT_CRASH_HANDLING)
 add_definitions (-DELPP_NO_DEFAULT_LOG_FILE)
+add_definitions (-DELPP_CUSTOM_COUT=std::cerr)
 check_include_file_cxx (syslog.h HAVE_SYSLOG_H)
 if (HAVE_SYSLOG_H)
   message ("-- Enabled syslog logging support")
