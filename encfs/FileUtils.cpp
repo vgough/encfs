@@ -884,9 +884,9 @@ static bool selectPlainData(bool unsafe) {
   bool plainData = false;
   if (unsafe) {
     plainData = boolDefaultNo(
-        _("You used --unsafe, you can then disable file data encoding\n"
+        _("You used --unsafe, you can then disable file data encryption\n"
            "which is of course abolutely discouraged.\n"
-           "Disable file data encoding?"));
+           "Disable file data encryption?"));
   }
   return plainData;
 }

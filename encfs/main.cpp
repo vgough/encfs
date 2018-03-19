@@ -262,7 +262,7 @@ static bool processArgs(int argc, char *argv[],
       {"standard", 0, nullptr, '1'},              // standard configuration
       {"paranoia", 0, nullptr, '2'},              // standard configuration
       {"require-macs", 0, nullptr, LONG_OPT_REQUIRE_MAC},  // require MACs
-      {"unsafe", 0, nullptr, LONG_OPT_UNSAFE},  // require MACs
+      {"unsafe", 0, nullptr, LONG_OPT_UNSAFE},    // allows to use null data encryption
       {"config", 1, nullptr, 'c'},                // command-line-supplied config location
       {"unmount", 1, nullptr, 'u'},               // unmount
       {nullptr, 0, nullptr, 0}};
