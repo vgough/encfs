@@ -51,7 +51,7 @@ else ()
 endif ()
 
 # Let's enable some compilation warnings
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -O0")
 
 # Let's enable some shared lib flags
 if (BUILD_SHARED_LIBS)
