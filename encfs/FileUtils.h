@@ -96,6 +96,8 @@ struct EncFS_Opts {
 
   bool readOnly;  // Mount read-only
 
+  bool insecure; // Allow to use plain data / to disable data encoding
+
   bool requireMac;  // Throw an error if MAC is disabled
 
   ConfigMode configMode;
@@ -116,6 +118,7 @@ struct EncFS_Opts {
     configMode = Config_Prompt;
     noCache = false;
     readOnly = false;
+    insecure = false;
     requireMac = false;
   }
 };

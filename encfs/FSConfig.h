@@ -67,6 +67,8 @@ struct EncFSConfig {
   int kdfIterations;
   long desiredKDFDuration;
 
+  bool plainData;         // do not encrypt file content
+
   int blockMACBytes;      // MAC headers on blocks..
   int blockMACRandBytes;  // number of random bytes in the block header
 
@@ -79,6 +81,7 @@ struct EncFSConfig {
   EncFSConfig() : keyData(), salt() {
     cfgType = Config_None;
     subVersion = 0;
+    plainData = false;
     blockMACBytes = 0;
     blockMACRandBytes = 0;
     uniqueIV = false;

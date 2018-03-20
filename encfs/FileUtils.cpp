@@ -319,6 +319,7 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
   config->read("keySize", &cfg->keySize);
 
   config->read("blockSize", &cfg->blockSize);
+  config->read("plainData", &cfg->plainData);
   config->read("uniqueIV", &cfg->uniqueIV);
   config->read("chainedNameIV", &cfg->chainedNameIV);
   config->read("externalIVChaining", &cfg->externalIVChaining);
@@ -547,6 +548,7 @@ bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
   addEl(doc, config, "nameAlg", cfg->nameIface);
   addEl(doc, config, "keySize", cfg->keySize);
   addEl(doc, config, "blockSize", cfg->blockSize);
+  addEl(doc, config, "plainData", (int)cfg->plainData);
   addEl(doc, config, "uniqueIV", (int)cfg->uniqueIV);
   addEl(doc, config, "chainedNameIV", (int)cfg->chainedNameIV);
   addEl(doc, config, "externalIVChaining", (int)cfg->externalIVChaining);
@@ -876,6 +878,20 @@ static bool boolDefaultYes(const char *prompt) {
 }
 
 /**
+ * Ask the user to select plain data
+ */
+static bool selectPlainData(bool insecure) {
+  bool plainData = false;
+  if (insecure) {
+    plainData = boolDefaultNo(
+        _("You used --insecure, you can then disable file data encryption\n"
+           "which is of course abolutely discouraged.\n"
+           "Disable file data encryption?"));
+  }
+  return plainData;
+}
+
+/**
  * Ask the user whether to enable block MAC and random header bytes
  */
 static void selectBlockMAC(int *macBytes, int *macRandBytes, bool forceMac) {
@@ -1020,6 +1036,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   Interface nameIOIface;        // selectNameCoding()
   int blockMACBytes = 0;        // selectBlockMAC()
   int blockMACRandBytes = 0;    // selectBlockMAC()
+  bool plainData = false;       // selectPlainData()
   bool uniqueIV = true;         // selectUniqueIV()
   bool chainedIV = true;        // selectChainedIV()
   bool externalIV = false;      // selectExternalChainedIV()
@@ -1100,30 +1117,42 @@ RootPtr createV6Config(EncFS_Context *ctx,
     alg = selectCipherAlgorithm();
     keySize = selectKeySize(alg);
     blockSize = selectBlockSize(alg);
+    plainData = selectPlainData(opts->insecure);
     nameIOIface = selectNameCoding();
-    if (reverseEncryption) {
-      cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
-      uniqueIV = selectUniqueIV(false);
-      /* If uniqueIV is off, writing can be allowed, because there
-       * is no header that could be overwritten.
-       * So if it is on, enforce readOnly. */
-      if (uniqueIV) {
-        opts->readOnly = true;
-      }
-    } else {
-      chainedIV = selectChainedIV();
-      uniqueIV = selectUniqueIV(true);
-      if (chainedIV && uniqueIV) {
-        externalIV = selectExternalChainedIV();
+    if (plainData) {
+      cout << _("plain data - IV, MAC and file-hole disabled") << "\n";
+      allowHoles = false;
+      chainedIV = false;
+      externalIV = false;
+      uniqueIV = false;
+      blockMACBytes = 0;
+      blockMACRandBytes = 0;
+    }
+    else {
+      if (reverseEncryption) {
+        cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
+        uniqueIV = selectUniqueIV(false);
+        /* If uniqueIV is off, writing can be allowed, because there
+         * is no header that could be overwritten.
+         * So if it is on, enforce readOnly. */
+        if (uniqueIV) {
+          opts->readOnly = true;
+        }
       } else {
-        // xgroup(setup)
-        cout << _("External chained IV disabled, as both 'IV chaining'\n"
-                  "and 'unique IV' features are required for this option.")
-             << "\n";
-        externalIV = false;
+        chainedIV = selectChainedIV();
+        uniqueIV = selectUniqueIV(true);
+        if (chainedIV && uniqueIV) {
+          externalIV = selectExternalChainedIV();
+        } else {
+          // xgroup(setup)
+          cout << _("External chained IV disabled, as both 'IV chaining'\n"
+                    "and 'unique IV' features are required for this option.")
+               << "\n";
+          externalIV = false;
+        }
+        selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac);
+        allowHoles = selectZeroBlockPassThrough();
       }
-      selectBlockMAC(&blockMACBytes, &blockMACRandBytes, opts->requireMac);
-      allowHoles = selectZeroBlockPassThrough();
     }
   }
 
@@ -1143,6 +1172,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   config->cipherIface = cipher->interface();
   config->keySize = keySize;
   config->blockSize = blockSize;
+  config->plainData = plainData;
   config->nameIface = nameIOIface;
   config->creator = "EncFS " VERSION;
   config->subVersion = V6SubVersion;
@@ -1234,7 +1264,13 @@ RootPtr createV6Config(EncFS_Context *ctx,
   nameCoder->setReverseEncryption(reverseEncryption);
 
   FSConfigPtr fsConfig(new FSConfig);
-  fsConfig->cipher = cipher;
+  if (plainData) {
+    static Interface NullInterface("nullCipher", 1, 0, 0);
+    fsConfig->cipher = Cipher::New(NullInterface, 0);
+  }
+  else {
+    fsConfig->cipher = cipher;
+  }
   fsConfig->key = volumeKey;
   fsConfig->nameCoding = nameCoder;
   fsConfig->config = config;
@@ -1664,7 +1700,17 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
     nameCoder->setReverseEncryption(opts->reverseEncryption);
 
     FSConfigPtr fsConfig(new FSConfig);
-    fsConfig->cipher = cipher;
+    if (config->plainData) {
+      if (! opts->insecure) {
+        cout << _("Configuration use plainData but you did not use --insecure\n");
+        return rootInfo;
+      }
+      static Interface NullInterface("nullCipher", 1, 0, 0);
+      fsConfig->cipher = Cipher::New(NullInterface, 0);
+    }
+    else {
+      fsConfig->cipher = cipher;
+    }
     fsConfig->key = volumeKey;
     fsConfig->nameCoding = nameCoder;
     fsConfig->config = config;

@@ -17,7 +17,7 @@ encfs - mounts or creates an encrypted virtual filesystem
 =head1 SYNOPSIS
 
 B<encfs> [B<--version>] [B<-v>|B<--verbose>] [B<-c>|B<--config>] [B<-t>|B<--syslogtag>] 
-[B<-s>] [B<-f>] [B<--annotate>] [B<--standard>] [B<--paranoia>] 
+[B<-s>] [B<-f>] [B<--annotate>] [B<--standard>] [B<--paranoia>] [B<--insecure>] 
 [B<--reverse>] [B<--reversewrite>] [B<--extpass=program>] [B<-S>|B<--stdinpass>] 
 [B<--anykey>] [B<--forcedecode>] [B<-require-macs>] 
 [B<-i MINUTES>|B<--idle=MINUTES>] [B<-m>|B<--ondemand>] [B<--delaymount>] [B<-u>|B<--unmount>] 
@@ -96,6 +96,11 @@ When not creating a filesystem, this flag does nothing.
 =item B<--paranoia>
 
 Same as B<--standard>, but for B<paranoia> mode.
+
+=item B<--insecure>
+
+Allows you to disable data encoding, thus to pass plain data as is.  Fully
+discouraged of course!
 
 =item B<--reverse>
 
