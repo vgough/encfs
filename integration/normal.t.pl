@@ -441,7 +441,7 @@ sub create_unmount_remount
     # Unmount
     portable_unmount($mnt);
 
-    # Mount again, testing -c as the same time
+    # Mount again, testing -c at the same time
     rename("$crypt/.encfs6.xml", "$crypt/.encfs6_moved.xml");
     system("./build/encfs -c $crypt/.encfs6_moved.xml --extpass=\"echo test\" $crypt $mnt 2>&1");
     ok( $? == 0, "encfs command returns 0") || return;
