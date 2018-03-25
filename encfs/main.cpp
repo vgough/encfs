@@ -47,8 +47,10 @@
  * not have a short version */
 #define LONG_OPT_ANNOTATE 513
 #define LONG_OPT_NOCACHE 514
-#define LONG_OPT_REQUIRE_MAC 515
-#define LONG_OPT_INSECURE 516
+#define LONG_OPT_NODATACACHE 515
+#define LONG_OPT_NOATTRCACHE 516
+#define LONG_OPT_REQUIRE_MAC 517
+#define LONG_OPT_INSECURE 518
 
 using namespace std;
 using namespace encfs;
@@ -254,7 +256,9 @@ static bool processArgs(int argc, char *argv[],
       {"syslogtag", 1, nullptr, 't'},  // syslog tag
       {"annotate", 0, nullptr,
        LONG_OPT_ANNOTATE},  // Print annotation lines to stderr
-      {"nocache", 0, nullptr, LONG_OPT_NOCACHE},  // disable caching
+      {"nocache", 0, nullptr, LONG_OPT_NOCACHE},         // disable all caching
+      {"nodatacache", 0, nullptr, LONG_OPT_NODATACACHE}, // disable data caching
+      {"noattrcache", 0, nullptr, LONG_OPT_NOATTRCACHE}, // disable attr caching
       {"verbose", 0, nullptr, 'v'},               // verbose mode
       {"version", 0, nullptr, 'V'},               // version
       {"reverse", 0, nullptr, 'r'},               // reverse encryption
@@ -380,6 +384,16 @@ static bool processArgs(int argc, char *argv[],
         /* Disable kernel dentry cache
          * Fallout unknown, disabling for safety */
         PUSHARG("-oentry_timeout=0");
+        break;
+      case LONG_OPT_NODATACACHE:
+        out->opts->noCache = true;
+        break;
+      case LONG_OPT_NOATTRCACHE:
+        PUSHARG("-oattr_timeout=0");
+        PUSHARG("-oentry_timeout=0");
+#ifdef __CYGWIN__
+        PUSHARG("-oFileInfoTimeout=0");
+#endif
         break;
       case 'm':
         out->opts->mountOnDemand = true;

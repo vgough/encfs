@@ -21,7 +21,7 @@ B<encfs> [B<--version>] [B<-v>|B<--verbose>] [B<-c>|B<--config>] [B<-t>|B<--sysl
 [B<--reverse>] [B<--reversewrite>] [B<--extpass=program>] [B<-S>|B<--stdinpass>] 
 [B<--anykey>] [B<--forcedecode>] [B<-require-macs>] 
 [B<-i MINUTES>|B<--idle=MINUTES>] [B<-m>|B<--ondemand>] [B<--delaymount>] [B<-u>|B<--unmount>] 
-[B<--public>] [B<--nocache>] [B<--no-default-flags>]
+[B<--public>] [B<--nocache>] [B<--noattrcache>] [B<--nodatacache>] [B<--no-default-flags>]
 [B<-o FUSE_OPTION>] [B<-d>|B<--fuse-debug>] [B<-H>|B<--fuse-help>] 
 I<rootdir> I<mountPoint> 
 [B<--> [I<Fuse Mount Options>]]
@@ -238,9 +238,17 @@ you want before considering the use of B<--public>.
 
 Disable the kernel's cache of file attributes.
 Setting this option makes EncFS pass "attr_timeout=0" and "entry_timeout=0" to
-FUSE. This makes sure that modifications to the backing files that occour
-outside EncFS show up immediately in the EncFS mount. The main use case
-for "--nocache" is reverse mode.
+FUSE. This makes sure that modifications to the backing file attributes that
+occour outside EncFS show up immediately in the EncFS mount. The internal EncFS
+data cache is also disabled. The main use case for B<--nocache> is reverse mode.
+
+=item B<--noattrcache>
+
+Same as B<--nocache> but for attributes only.
+
+=item B<--nodatacache>
+
+Same as B<--nocache> but for data only.
 
 =item B<--no-default-flags>
 
