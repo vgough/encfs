@@ -115,6 +115,8 @@ struct CommandOpts {
      gettext_noop("  -- print version number and exit")},
     {0, 0, 0, 0, 0, 0}};
 
+auto ctx = std::make_shared<EncFS_Context>();
+
 static void usage(const char *name) {
   cerr << autosprintf(_("encfsctl version %s"), VERSION) << "\n"
        << _("Usage:\n")
@@ -252,7 +254,6 @@ static RootPtr initRootInfo(int &argc, char **&argv) {
     --argc;
     ++argv;
 
-    auto ctx = std::make_shared<EncFS_Context>();
     ctx->publicFilesystem = opts->ownerCreate;
     if (checkDir(opts->rootDir)) result = initFS(ctx.get(), opts);
 
@@ -273,7 +274,6 @@ static RootPtr initRootInfo(const char *crootDir) {
     opts->createIfNotFound = false;
     opts->checkKey = false;
 
-    auto ctx = std::make_shared<EncFS_Context>();
     ctx->publicFilesystem = opts->ownerCreate;
     result = initFS(ctx.get(), opts);
   }
