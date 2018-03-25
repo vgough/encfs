@@ -146,8 +146,8 @@ std::string NameIO::recodePath(
   string output;
 
   while (*path != 0) {
-    if (*path == '/') {
-      if (!output.empty()) {  // don't start the string with '/'
+    if (*path == '/' || *path == '+') {
+      if (!output.empty()) {  // don't start the string with '/' (and also drop the trailing '+')
         output += '/';
       }
       ++path;
