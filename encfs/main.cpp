@@ -380,6 +380,11 @@ static bool processArgs(int argc, char *argv[],
         /* Disable kernel dentry cache
          * Fallout unknown, disabling for safety */
         PUSHARG("-oentry_timeout=0");
+#ifdef __CYGWIN__
+        // Should be enforced due to attr_timeout=0, but does not seem to work correctly
+        // https://github.com/billziss-gh/winfsp/issues/155
+        PUSHARG("-oFileInfoTimeout=0");
+#endif
         break;
       case 'm':
         out->opts->mountOnDemand = true;
