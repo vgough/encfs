@@ -1,3 +1,5 @@
+set(CMAKE_LEGACY_CYGWIN_WIN32 0)
+
 # 3.0.2 preferred, but we can often get by with 2.8.
 cmake_minimum_required(VERSION 2.8)
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION} LESS 3.0.2)
@@ -73,7 +75,7 @@ if (APPLE)
    endif()
 endif()
 
-if (WIN32 OR APPLE)
+if (CYGWIN OR WIN32 OR APPLE)
   set(DEFAULT_CASE_INSENSITIVE TRUE)
 else()
   set(DEFAULT_CASE_INSENSITIVE FALSE)
@@ -83,6 +85,10 @@ endif()
 find_package (FUSE REQUIRED)
 include_directories (SYSTEM ${FUSE_INCLUDE_DIR})
 add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=29)
+if (CYGWIN)
+  # Cygwin build is intended to use WinFsp
+  add_definitions(-DCYGFUSE)
+endif()
 
 # Check for OpenSSL.
 find_package (OpenSSL REQUIRED)
