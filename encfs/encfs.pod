@@ -649,6 +649,8 @@ Support, bug reports... : B<https://github.com/vgough/encfs>.
 
 Mailing list : none.
 
+Cygwin : B<https://github.com/vgough/encfs/wiki>.
+
 Windows port : B<https://github.com/jetwhiz/encfs4win>.
 
 =head1 SEE ALSO
