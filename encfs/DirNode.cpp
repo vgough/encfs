@@ -739,7 +739,9 @@ int DirNode::unlink(const char *plaintextName) {
 
   Lock _lock(mutex);
 
-  int res = 0;
+// Windows does not allow deleting opened files, so no need to check
+// There is this "issue" however : https://github.com/billziss-gh/winfsp/issues/157
+#ifndef __CYGWIN__
   if ((ctx != nullptr) && ctx->lookupNode(plaintextName)) {
     // If FUSE is running with "hard_remove" option where it doesn't
     // hide open files for us, then we can't allow an unlink of an open
@@ -747,14 +749,16 @@ int DirNode::unlink(const char *plaintextName) {
     RLOG(WARNING) << "Refusing to unlink open file: " << cyName
                   << ", hard_remove option "
                      "is probably in effect";
-    res = -EBUSY;
-  } else {
-    string fullName = rootDir + cyName;
-    res = ::unlink(fullName.c_str());
-    if (res == -1) {
-      res = -errno;
-      VLOG(1) << "unlink error: " << strerror(-res);
-    }
+    return -EBUSY;
+  }
+#endif
+
+  int res = 0;
+  string fullName = rootDir + cyName;
+  res = ::unlink(fullName.c_str());
+  if (res == -1) {
+    res = -errno;
+    VLOG(1) << "unlink error: " << strerror(-res);
   }
 
   return res;
