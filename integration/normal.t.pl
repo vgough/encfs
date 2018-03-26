@@ -107,6 +107,10 @@ sub newWorkingDir
 
     our $raw = "$workingDir/raw";
     our $crypt = "$workingDir/crypt";
+    if ($^O eq "cygwin")
+    {
+        $crypt = "/cygdrive/x";
+    }
 }
 
 # Test Corruption
@@ -124,7 +128,8 @@ sub corruption
     ok( open(IN, "< $crypt/corrupt"), "open corrupted file");
     my $content;
     $result = read(IN, $content, 20);
-    ok($!{EBADMSG} && (! defined $result), "corrupted file with MAC returns read error: $!");
+    # Cygwin returns EINVAL for now
+    ok(($!{EBADMSG} || $!{EINVAL}) && (! defined $result), "corrupted file with MAC returns read error: $!");
 }
 
 # Test internal modification
@@ -363,7 +368,10 @@ sub mount
 
     # When these fail, the rest of the tests makes no sense
     mkdir($raw) || BAIL_OUT("Could not create $raw: $!");
-    mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
+    if ($^O ne "cygwin")
+    {
+        mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
+    }
 
     delete $ENV{"ENCFS6_CONFIG"};
     remount($args);
@@ -425,8 +433,15 @@ sub create_unmount_remount
 {
     my $crypt = "$workingDir/create_remount.crypt";
     my $mnt = "$workingDir/create_remount.mnt";
+    if ($^O eq "cygwin")
+    {
+        $mnt = "/cygdrive/y";
+    }
     mkdir($crypt) || BAIL_OUT($!);
-    mkdir($mnt)  || BAIL_OUT($!);
+    if ($^O ne "cygwin")
+    {
+        mkdir($mnt)  || BAIL_OUT($!);
+    }
 
     system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");
     ok( $? == 0, "encfs command returns 0") || return;
@@ -472,8 +487,15 @@ sub checkWriteError
     else {
             my $crypt = "$workingDir/checkWriteError.crypt";
             my $mnt = "$workingDir/checkWriteError.mnt";
+            if ($^O eq "cygwin")
+            {
+                $mnt = "/cygdrive/z";
+            }
             mkdir($crypt) || BAIL_OUT($!);
-            mkdir($mnt)  || BAIL_OUT($!);
+            if ($^O ne "cygwin")
+            {
+                mkdir($mnt)  || BAIL_OUT($!);
+            }
             system("$sudo_cmd mount -t tmpfs -o size=1m tmpfs $crypt");
             ok( $? == 0, "mount command returns 0") || return;
             system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");

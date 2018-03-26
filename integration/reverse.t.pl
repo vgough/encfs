@@ -49,9 +49,23 @@ sub newWorkingDir
     our $plain = "$workingDir/plain";
     mkdir($plain);
     our $ciphertext = "$workingDir/ciphertext";
-    mkdir($ciphertext);
+    if ($^O ne "cygwin")
+    {
+        mkdir($ciphertext);
+    }
+    else
+    {
+        $ciphertext = "/cygdrive/x";
+    }
     our $decrypted = "$workingDir/decrypted";
-    mkdir($decrypted);
+    if ($^O ne "cygwin")
+    {
+        mkdir($decrypted);
+    }
+    else
+    {
+        $decrypted = "/cygdrive/y";
+    }
 }
 
 # Helper function
@@ -231,7 +245,14 @@ encfsctl_cat_test();
 symlink_test("/"); # absolute
 symlink_test("foo"); # relative
 symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
-symlink_test("!§\$%&/()\\<>#+="); # special characters
+if ($^O ne "cygwin")
+{
+    symlink_test("!§\$%&/()\\<>#+="); # special characters
+}
+else
+{
+    symlink_test("!§\$%&/()//<>#+="); # special characters but without \ which is not Windows compliant
+}                                     # Absolute symlinks may failed on Windows : https://github.com/billziss-gh/winfsp/issues/153
 symlink_test("$plain/foo");
 writesDenied();
 

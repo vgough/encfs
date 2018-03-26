@@ -167,6 +167,13 @@ static int withFileNode(const char *opName, const char *path,
     if (fi != nullptr && fi->fh != 0) {
       auto node = ctx->lookupFuseFh(fi->fh);
       if (node == nullptr) {
+#ifdef __CYGWIN__
+        if (strcmp(opName, "flush") == 0) {
+          RLOG(WARNING) << "Filenode to flush not found, file has certainly be renamed: "
+                        << path;
+          return 0;
+        }
+#endif
         auto msg = "fh=" + std::to_string(fi->fh) + " not found in fuseFhMap";
         throw Error(msg.c_str());
       }

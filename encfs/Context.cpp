@@ -171,6 +171,15 @@ void EncFS_Context::eraseNode(const char *path,
   Lock lock(contextMutex);
 
   auto it = openFiles.find(std::string(path));
+#ifdef __CYGWIN__
+  // When renaming a file, Windows first opens it, renames it and then closes it
+  // Filenode may have then been renamed too
+  if (it == openFiles.end()) {
+    RLOG(WARNING) << "Filenode to erase not found, file has certainly be renamed: "
+                  << path;
+    return;
+  }
+#endif
   rAssert(it != openFiles.end());
   auto &list = it->second;
 

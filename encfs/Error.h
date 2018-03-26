@@ -6,6 +6,13 @@
 #include "easylogging++.h"
 #include <stdexcept>
 
+// Cygwin / WinFsp does not support EBADMSG yet
+// https://github.com/billziss-gh/winfsp/issues/156
+#ifdef __CYGWIN__
+#undef EBADMSG
+#define EBADMSG EINVAL
+#endif
+
 namespace encfs {
 
 class Error : public std::runtime_error {

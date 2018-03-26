@@ -1089,7 +1089,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
     alg = findCipherAlgorithm("AES", keySize);
 
 // If case-insensitive system, opt for Block32 filename encoding
-#if defined(__APPLE__) || defined(WIN32)
+#if defined(DEFAULT_CASE_INSENSITIVE)
     nameIOIface = BlockNameIO::CurrentInterface(true);
 #else
     nameIOIface = BlockNameIO::CurrentInterface();
@@ -1738,6 +1738,14 @@ void unmountFS(const char *mountPoint) {
 #ifdef __APPLE__
   // fuse_unmount does not work on Mac OS, see #428
   unmount(mountPoint, MNT_FORCE);
+#endif
+#ifdef __CYGWIN__
+  if(fork() == 0)
+  {
+    execl("/usr/bin/pkill", "/usr/bin/pkill", "-f", string("(^|/)encfs .*/.* ").append(mountPoint).append("?( |$)").c_str(), (char *)0);
+  }
+  int status;
+  wait(&status);
 #endif
 }
 
