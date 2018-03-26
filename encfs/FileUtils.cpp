@@ -1739,6 +1739,14 @@ void unmountFS(const char *mountPoint) {
   // fuse_unmount does not work on Mac OS, see #428
   unmount(mountPoint, MNT_FORCE);
 #endif
+#ifdef __CYGWIN__
+  if(fork() == 0)
+  {
+    execl("/usr/bin/pkill", "/usr/bin/pkill", "-f", string("(^|/)encfs .*/.* ").append(mountPoint).append("?( |$)").c_str(), (char *)0);
+  }
+  int status;
+  wait(&status);
+#endif
 }
 
 int remountFS(EncFS_Context *ctx) {

@@ -81,6 +81,13 @@ else()
   set(DEFAULT_CASE_INSENSITIVE FALSE)
 endif()
 
+if (CYGWIN)
+  find_program(PKILL NAMES "pkill")
+  if(NOT PKILL)
+    message(FATAL_ERROR "pkill not found, please install procps-ng package.")
+  endif()
+endif()
+
 # Check for FUSE.
 find_package (FUSE REQUIRED)
 include_directories (SYSTEM ${FUSE_INCLUDE_DIR})
