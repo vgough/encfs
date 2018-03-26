@@ -599,11 +599,26 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
       if (renameOp) {
         renameOp->undo();
       }
-    } else if (preserve_mtime) {
-      struct utimbuf ut;
-      ut.actime = st.st_atime;
-      ut.modtime = st.st_mtime;
-      ::utime(toCName.c_str(), &ut);
+    }
+    else {
+#ifdef __CYGWIN__
+      // When renaming a file, Windows first opens it, renames it and then closes it
+      // We then must decrease the target openFiles count
+      // We could recreate the source so that close will not (silently) fails,
+      // however it will update modification time of the file, so break what we do below.
+      // Let's simply warn in eraseNode().
+      if (!isDirectory(toCName.c_str())) {
+        std::shared_ptr<FileNode> toNode = findOrCreate(toPlaintext);
+        ctx->eraseNode(toPlaintext, toNode);
+        //ctx->putNode(fromPlaintext, toNode);
+      }
+#endif
+      if (preserve_mtime) {
+        struct utimbuf ut;
+        ut.actime = st.st_atime;
+        ut.modtime = st.st_mtime;
+        ::utime(toCName.c_str(), &ut);
+      }
     }
   } catch (encfs::Error &err) {
     // exception from renameNode, just show the error and continue..
@@ -739,7 +754,9 @@ int DirNode::unlink(const char *plaintextName) {
 
   Lock _lock(mutex);
 
-  int res = 0;
+// Windows does not allow deleting opened files, so no need to check
+// There is this "issue" however : https://github.com/billziss-gh/winfsp/issues/157
+#ifndef __CYGWIN__
   if ((ctx != nullptr) && ctx->lookupNode(plaintextName)) {
     // If FUSE is running with "hard_remove" option where it doesn't
     // hide open files for us, then we can't allow an unlink of an open
@@ -747,14 +764,16 @@ int DirNode::unlink(const char *plaintextName) {
     RLOG(WARNING) << "Refusing to unlink open file: " << cyName
                   << ", hard_remove option "
                      "is probably in effect";
-    res = -EBUSY;
-  } else {
-    string fullName = rootDir + cyName;
-    res = ::unlink(fullName.c_str());
-    if (res == -1) {
-      res = -errno;
-      VLOG(1) << "unlink error: " << strerror(-res);
-    }
+    return -EBUSY;
+  }
+#endif
+
+  int res = 0;
+  string fullName = rootDir + cyName;
+  res = ::unlink(fullName.c_str());
+  if (res == -1) {
+    res = -errno;
+    VLOG(1) << "unlink error: " << strerror(-res);
   }
 
   return res;

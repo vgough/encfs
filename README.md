@@ -81,7 +81,10 @@ How about a nice email instead?
 
 ## Windows
 
-A Windows port exists and is maintained by JetWhiz in the GitHub
+EncFS works on Cygwin, see [the wiki](https://github.com/vgough/encfs/wiki)
+for additional info.
+
+A Windows port also exists and is maintained by JetWhiz in the GitHub
 [jetwhiz/encfs4win](https://github.com/jetwhiz/encfs4win) repository.
 
 ## FAQ

@@ -1,3 +1,5 @@
+set(CMAKE_LEGACY_CYGWIN_WIN32 0)
+
 # 3.0.2 preferred, but we can often get by with 2.8.
 cmake_minimum_required(VERSION 2.8)
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}.${CMAKE_PATCH_VERSION} LESS 3.0.2)
@@ -73,16 +75,27 @@ if (APPLE)
    endif()
 endif()
 
-if (WIN32 OR APPLE)
+if (CYGWIN OR WIN32 OR APPLE)
   set(DEFAULT_CASE_INSENSITIVE TRUE)
 else()
   set(DEFAULT_CASE_INSENSITIVE FALSE)
+endif()
+
+if (CYGWIN)
+  find_program(PKILL NAMES "pkill")
+  if(NOT PKILL)
+    message(FATAL_ERROR "pkill not found, please install procps-ng package.")
+  endif()
 endif()
 
 # Check for FUSE.
 find_package (FUSE REQUIRED)
 include_directories (SYSTEM ${FUSE_INCLUDE_DIR})
 add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=29)
+if (CYGWIN)
+  # Cygwin build is intended to use WinFsp
+  add_definitions(-DCYGFUSE)
+endif()
 
 # Check for OpenSSL.
 find_package (OpenSSL REQUIRED)
@@ -92,8 +105,10 @@ find_program (POD2MAN pod2man)
 
 # Check for include files and stdlib properties.
 include (CheckIncludeFileCXX)
-check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
-check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
+if (NOT CYGWIN)
+  check_include_file_cxx (attr/xattr.h HAVE_ATTR_XATTR_H)
+  check_include_file_cxx (sys/xattr.h HAVE_SYS_XATTR_H)
+endif()
 
 include(CheckStructHasMember)
 check_struct_has_member("struct dirent" d_type dirent.h HAVE_DIRENT_D_TYPE LANGUAGE CXX)

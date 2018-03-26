@@ -384,6 +384,11 @@ static bool processArgs(int argc, char *argv[],
         /* Disable kernel dentry cache
          * Fallout unknown, disabling for safety */
         PUSHARG("-oentry_timeout=0");
+#ifdef __CYGWIN__
+        // Should be enforced due to attr_timeout=0, but does not seem to work correctly
+        // https://github.com/billziss-gh/winfsp/issues/155
+        PUSHARG("-oFileInfoTimeout=0");
+#endif
         break;
       case LONG_OPT_NODATACACHE:
         out->opts->noCache = true;
@@ -556,18 +561,38 @@ static bool processArgs(int argc, char *argv[],
   if (!isDirectory(out->opts->rootDir.c_str()) &&
       !userAllowMkdir(out->opts->annotate ? 1 : 0, out->opts->rootDir.c_str(),
                       0700)) {
-    cerr << _("Unable to locate root directory, aborting.");
+    cerr << _("Unable to locate root directory, aborting.") << endl;
     return false;
   }
+#ifdef __CYGWIN__
+  if (isDirectory(out->opts->mountPoint.c_str())) {
+    cerr << _("Mount point must not exist before mouting, aborting.") << endl;
+    return false;
+  }
+  if ((strncmp(out->opts->mountPoint.c_str(), "/cygdrive/", 10) != 0) ||
+      (out->opts->mountPoint.length() != 12)) {
+    cerr << _("A drive is prefered for mouting, ")
+         << _("so a path like /cygdrive/x should rather be used. ")
+         << _("Mounting anyway.")  << endl;
+  }
+#else
   if (!isDirectory(out->opts->mountPoint.c_str()) &&
       !userAllowMkdir(out->opts->annotate ? 2 : 0,
                       out->opts->mountPoint.c_str(), 0700)) {
-    cerr << _("Unable to locate mount point, aborting.");
+    cerr << _("Unable to locate mount point, aborting.") << endl;
     return false;
   }
+#endif
 
   // fill in mount path for fuse
   out->fuseArgv[1] = out->opts->mountPoint.c_str();
+#ifdef __CYGWIN__
+  if ((strncmp(out->opts->mountPoint.c_str(), "/cygdrive/", 10) == 0) &&
+      (out->opts->mountPoint.length() == 12)) {
+    out->opts->cygDrive = out->opts->mountPoint.substr(10,1).append(":");
+    out->fuseArgv[1] = out->opts->cygDrive.c_str();
+  }
+#endif
 
   return true;
 }
