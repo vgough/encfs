@@ -599,11 +599,26 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
       if (renameOp) {
         renameOp->undo();
       }
-    } else if (preserve_mtime) {
-      struct utimbuf ut;
-      ut.actime = st.st_atime;
-      ut.modtime = st.st_mtime;
-      ::utime(toCName.c_str(), &ut);
+    }
+    else {
+#ifdef __CYGWIN__
+      // When renaming a file, Windows first opens it, renames it and then closes it
+      // We then must decrease the target openFiles count
+      // We could recreate the source so that close will not (silently) fails,
+      // however it will update modification time of the file, so break what we do below.
+      // Let's simply warn in eraseNode().
+      if (!isDirectory(toCName.c_str())) {
+        std::shared_ptr<FileNode> toNode = findOrCreate(toPlaintext);
+        ctx->eraseNode(toPlaintext, toNode);
+        //ctx->putNode(fromPlaintext, toNode);
+      }
+#endif
+      if (preserve_mtime) {
+        struct utimbuf ut;
+        ut.actime = st.st_atime;
+        ut.modtime = st.st_mtime;
+        ::utime(toCName.c_str(), &ut);
+      }
     }
   } catch (encfs::Error &err) {
     // exception from renameNode, just show the error and continue..
