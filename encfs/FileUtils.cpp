@@ -1737,15 +1737,27 @@ void unmountFS(const char *mountPoint) {
   fuse_unmount(mountPoint, nullptr);
 #ifdef __APPLE__
   // fuse_unmount does not work on Mac OS, see #428
-  unmount(mountPoint, MNT_FORCE);
+  int ret = 3;
+  while (ret-- > 0) {
+    if (unmount(mountPoint, MNT_FORCE) == 0) {
+      break;
+    }
+  }
 #endif
 #ifdef __CYGWIN__
-  if(fork() == 0)
-  {
-    execl("/usr/bin/pkill", "/usr/bin/pkill", "-f", string("(^|/)encfs .*/.* ").append(mountPoint).append("?( |$)").c_str(), (char *)0);
-  }
+  int ret = 3;
+  pid_t pid;
   int status;
-  wait(&status);
+  while (ret-- > 0) {
+    if ((pid = fork()) == 0) {
+      execl("/usr/bin/pkill", "/usr/bin/pkill", "-INT", "-f", string("(^|/)encfs .*/.* ").append(mountPoint).append("?( |$)").c_str(), (char *)0);
+      _Exit(127);
+    }
+    // pkill returns 1 if no process has been found
+    if ((pid > 0) && (waitpid(pid, &status, 0) > 0) && WIFEXITED(status) && (WEXITSTATUS(status) == 1)) {
+      break;
+    }
+  }
 #endif
 }
 
