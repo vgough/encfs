@@ -141,7 +141,7 @@ sub symlink_test
 {
     my $target = shift;
     ok(symlink($target, "$plain/symlink"), "Symlink create, $plain/symlink -> $target");
-    ok(my $dec = readlink("$decrypted/symlink"), "Symlink read, $decrypted/symlink");
+    ok(my $dec = readlink("$decrypted/symlink"), "Symlink read, $decrypted/symlink -> $target");
     $dec.="";
     ok($dec eq $target, "Symlink compare, '$target' != '$dec'");
     my $return_code = ($have_xattr) ? system(@binattr, "$decrypted/symlink") : 0;
