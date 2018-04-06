@@ -842,7 +842,6 @@ static void *idleMonitor(void *_arg) {
   while (ctx->running) {
     unmountres = ctx->usageAndUnmount(timeoutCycles);
     if (unmountres) {
-      pthread_cond_wait(&ctx->wakeupCond, &ctx->wakeupMutex);
       break;
     }
 
