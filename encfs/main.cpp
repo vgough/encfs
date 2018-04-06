@@ -605,6 +605,14 @@ void *encfs_init(fuse_conn_info *conn) {
   // set fuse connection options
   conn->async_read = 1u;
 
+#ifdef __CYGWIN__
+  // WinFsp needs this to partially handle read-only FS
+  // See https://github.com/billziss-gh/winfsp/issues/157 for details
+  if (ctx->opts->readOnly) {
+    conn->want |= (conn->capable & FSP_FUSE_CAP_READ_ONLY);
+  }
+#endif
+
   // if an idle timeout is specified, then setup a thread to monitor the
   // filesystem.
   if (ctx->args->idleTimeout > 0) {
