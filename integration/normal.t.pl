@@ -329,7 +329,7 @@ sub links
 {
     my $hardlinkTests = shift;
 
-    my $contents = "hello world\n";
+    my $contents = "hello world";
     ok( open(OUT, "> $crypt/data"), "create file for link test" );
     print OUT $contents;
     close OUT;
