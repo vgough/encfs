@@ -373,8 +373,8 @@ inherited by B<EncFS> (or possibly be further limited).
 
 One such limitation is filename length.  If your underlying filesystem limits
 you to N characters in a filename, then B<EncFS> will limit you to approximately
-3*(N-2)/4.  For example if the host filesystem limits to 256 characters, then
-B<EncFS> will be limited to 190 character filenames.  This is because encrypted
+3*(N-2)/4.  For example if the host filesystem limits to 255 characters, then
+B<EncFS> will be limited to 189 character filenames.  This is because encrypted
 filenames are always longer than plaintext filenames.
 
 =head1 FILESYSTEM OPTIONS
@@ -487,6 +487,11 @@ encrypted data can't tell as much about the length of your filenames.  It is
 on by default, as it takes a similar amount of time to using the stream cipher.
 However stream cipher mode may be useful if you want shorter encrypted
 filenames for some reason.
+
+Based on an underlying filesystem supporting a maximum of 255 characters in
+filenames, here is the maximum possible filename length depending on the choosen
+encoding scheme : stream (189), block (176), block32 (143). Note that we should
+rather talk about bytes, when filenames contain special (multi-bytes) characters.
 
 Prior to version 1.1, only stream encoding was supported.
 
