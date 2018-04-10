@@ -323,6 +323,8 @@ static bool processArgs(int argc, char *argv[],
         out->opts->config.assign(optarg);
         break;
       case 'u':
+        //we want to log to console, not to syslog, in case of error
+        out->isDaemon = false;
         out->opts->unmount = true;
         break;
       case 'f':
@@ -656,15 +658,16 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  // Let's unmount if requested
-  if (encfsArgs->opts->unmount) {
-    unmountFS(encfsArgs->opts->mountPoint.c_str());
-    cout << "Filesystem unmounting: " << encfsArgs->opts->mountPoint << endl;
-    return 0;
-  }
-
   encfs::initLogging(encfsArgs->isVerbose, encfsArgs->isDaemon);
   ELPP_INITIALIZE_SYSLOG(encfsArgs->syslogTag.c_str(), LOG_PID, LOG_USER);
+
+  // Let's unmount if requested
+  if (encfsArgs->opts->unmount) {
+    // We use cout here to avoid logging to stderr (and to mess-up tests output)
+    cout << "Filesystem unmounting: " << encfsArgs->opts->mountPoint << endl;
+    unmountFS(encfsArgs->opts->mountPoint.c_str());
+    return 0;
+  }
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
   VLOG(1) << "Fuse arguments: " << encfsArgs->toString();

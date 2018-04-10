@@ -1733,19 +1733,30 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
 }
 
 void unmountFS(const char *mountPoint) {
-  // fuse_unmount succeeds and returns void
+  // fuse_unmount returns void, is assumed to succeed
   fuse_unmount(mountPoint, nullptr);
 #ifdef __APPLE__
   // fuse_unmount does not work on Mac OS, see #428
-  unmount(mountPoint, MNT_FORCE);
+  // However it makes encfs to hang, so we must unmount
+  if (unmount(mountPoint, MNT_FORCE) != 0) {
+    int eno = errno;
+    if (eno != EINVAL) { //[EINVAL] The requested directory is not in the mount table.
+      RLOG(ERROR) << "Filesystem unmount failed: " << strerror(eno);
+    }
+  }
 #endif
 #ifdef __CYGWIN__
-  if(fork() == 0)
-  {
-    execl("/usr/bin/pkill", "/usr/bin/pkill", "-f", string("(^|/)encfs .*/.* ").append(mountPoint).append("?( |$)").c_str(), (char *)0);
-  }
+  pid_t pid;
   int status;
-  wait(&status);
+  if ((pid = fork()) == 0) {
+    execl("/usr/bin/pkill", "/usr/bin/pkill", "-INT", "-f", string("(^|/)encfs .*/.* ").append(mountPoint).append("?( |$)").c_str(), (char *)0);
+    int eno = errno;
+    RLOG(ERROR) << "Filesystem unmount failed: " << strerror(eno);
+    _Exit(127);
+  }
+  if (pid > 0) {
+    waitpid(pid, &status, 0);
+  }
 #endif
 }
 
@@ -1770,8 +1781,8 @@ bool unmountFS(EncFS_Context *ctx) {
     return false;
   }
   // Time to unmount!
+  RLOG(INFO) << "Filesystem inactive, unmounting: " << ctx->opts->mountPoint;
   unmountFS(ctx->opts->mountPoint.c_str());
-  RLOG(INFO) << "Filesystem inactive, unmounted: " << ctx->opts->mountPoint;
   return true;
 }
 
