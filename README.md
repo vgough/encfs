@@ -81,11 +81,10 @@ How about a nice email instead?
 
 ## Windows
 
-EncFS works on Cygwin, see [the wiki](https://github.com/vgough/encfs/wiki)
-for additional info.
+EncFS works on Cygwin, there are also some Windows ports.
 
-A Windows port also exists and is maintained by JetWhiz in the GitHub
-[jetwhiz/encfs4win](https://github.com/jetwhiz/encfs4win) repository.
+See [the wiki](https://github.com/vgough/encfs/wiki)
+for additional info.
 
 ## FAQ
 

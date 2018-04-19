@@ -662,9 +662,7 @@ Support, bug reports... : B<https://github.com/vgough/encfs>.
 
 Mailing list : none.
 
-Cygwin : B<https://github.com/vgough/encfs/wiki>.
-
-Windows port : B<https://github.com/jetwhiz/encfs4win>.
+Cygwin, Windows ports : B<https://github.com/vgough/encfs/wiki>.
 
 =head1 SEE ALSO
 
