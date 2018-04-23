@@ -484,7 +484,7 @@ static bool processArgs(int argc, char *argv[],
     // rest of the code.
     out->opts->rootDir = slashTerminate(argv[optind++]);
     out->opts->unmountPoint = string(argv[optind++]);
-    out->opts->mountPoint = slashTerminate(out->opts->unmountPoint.c_str());
+    out->opts->mountPoint = slashTerminate(out->opts->unmountPoint);
   } else {
     // no mount point specified
     cerr << _("Missing one or more arguments, aborting.") << endl;
