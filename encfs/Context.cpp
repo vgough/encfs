@@ -116,7 +116,7 @@ bool EncFS_Context::usageAndUnmount(int timeoutCycles) {
     if (!openFiles.empty()) {
       if (idleCount % timeoutCycles == 0) {
         RLOG(WARNING) << "Filesystem inactive, but " << openFiles.size()
-                      << " files opened: " << this->opts->mountPoint;
+                      << " files opened: " << this->opts->unmountPoint;
       }
       return false;
     }

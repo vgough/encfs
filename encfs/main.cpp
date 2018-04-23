@@ -28,6 +28,9 @@
 #include <pthread.h>
 #include <sstream>
 #include <string>
+#ifdef __CYGWIN__
+#include <sys/cygwin.h>
+#endif
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -463,7 +466,10 @@ static bool processArgs(int argc, char *argv[],
   // for --unmount, we should have exactly 1 argument - the mount point
   if (out->opts->unmount) {
     if (optind + 1 == argc) {
-      out->opts->mountPoint = slashTerminate(argv[optind++]);
+      // unmountPoint is kept as given by the user : in Cygwin, it is used
+      // by pkill to terminate the correct process. We can't then use a
+      // Linux-converted Windows-style mountPoint to unmount...
+      out->opts->unmountPoint = string(argv[optind++]);
       return true;
     }
     // no mount point specified
@@ -477,7 +483,8 @@ static bool processArgs(int argc, char *argv[],
     // both rootDir and mountPoint are assumed to be slash terminated in the
     // rest of the code.
     out->opts->rootDir = slashTerminate(argv[optind++]);
-    out->opts->mountPoint = slashTerminate(argv[optind++]);
+    out->opts->unmountPoint = string(argv[optind++]);
+    out->opts->mountPoint = slashTerminate(out->opts->unmountPoint.c_str());
   } else {
     // no mount point specified
     cerr << _("Missing one or more arguments, aborting.") << endl;
@@ -518,6 +525,13 @@ static bool processArgs(int argc, char *argv[],
     PUSHARG("local");
 #endif
   }
+
+#ifdef __CYGWIN__
+  // Windows users may use Windows paths
+  // https://cygwin.com/cygwin-api/cygwin-functions.html
+  out->opts->mountPoint = string((char *)cygwin_create_path(CCP_WIN_A_TO_POSIX | CCP_RELATIVE, out->opts->mountPoint.c_str()));
+  out->opts->rootDir = string((char *)cygwin_create_path(CCP_WIN_A_TO_POSIX | CCP_RELATIVE, out->opts->rootDir.c_str()));
+#endif
 
   // sanity check
   if (out->isDaemon && (!isAbsolutePath(out->opts->mountPoint.c_str()) ||
@@ -574,7 +588,7 @@ static bool processArgs(int argc, char *argv[],
   if ((strncmp(out->opts->mountPoint.c_str(), "/cygdrive/", 10) != 0) ||
       (out->opts->mountPoint.length() != 12)) {
     cerr << _("A drive is prefered for mouting, ")
-         << _("so a path like /cygdrive/x should rather be used. ")
+         << _("so a path like X: (or /cygdrive/x) should rather be used. ")
          << _("Mounting anyway.")  << endl;
   }
 #else
@@ -664,8 +678,8 @@ int main(int argc, char *argv[]) {
   // Let's unmount if requested
   if (encfsArgs->opts->unmount) {
     // We use cout here to avoid logging to stderr (and to mess-up tests output)
-    cout << "Filesystem unmounting: " << encfsArgs->opts->mountPoint << endl;
-    unmountFS(encfsArgs->opts->mountPoint.c_str());
+    cout << "Filesystem unmounting: " << encfsArgs->opts->unmountPoint << endl;
+    unmountFS(encfsArgs->opts->unmountPoint.c_str());
     return 0;
   }
 
@@ -846,7 +860,7 @@ static void *idleMonitor(void *_arg) {
 
   // We will notify when FS will be unmounted, so notify that it has just been
   // mounted
-  RLOG(INFO) << "Filesystem mounted: " << arg->opts->mountPoint;
+  RLOG(INFO) << "Filesystem mounted: " << arg->opts->unmountPoint;
 
   pthread_mutex_lock(&ctx->wakeupMutex);
 
@@ -869,7 +883,7 @@ static void *idleMonitor(void *_arg) {
   // If we are here FS has been unmounted, so if the idleMonitor did not unmount itself,
   // let's notify (certainly due to a kill signal, a manual unmount...)
   if (!unmountres) {
-    RLOG(INFO) << "Filesystem unmounted: " << arg->opts->mountPoint;
+    RLOG(INFO) << "Filesystem unmounted: " << arg->opts->unmountPoint;
   }
 
   VLOG(1) << "Idle monitoring thread exiting";
