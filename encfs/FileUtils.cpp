@@ -1749,7 +1749,7 @@ void unmountFS(const char *mountPoint) {
   pid_t pid;
   int status;
   if ((pid = fork()) == 0) {
-    execl("/usr/bin/pkill", "/usr/bin/pkill", "-INT", "-f", string("(^|/)encfs .*/.* ").append(mountPoint).append("?( |$)").c_str(), (char *)0);
+    execl("/bin/pkill", "/bin/pkill", "-INT", "-if", string("(^|/)encfs .*(/|.:).* ").append(mountPoint).append("( |$)").c_str(), (char *)0);
     int eno = errno;
     RLOG(ERROR) << "Filesystem unmount failed: " << strerror(eno);
     _Exit(127);
@@ -1775,14 +1775,14 @@ int remountFS(EncFS_Context *ctx) {
 bool unmountFS(EncFS_Context *ctx) {
   if (ctx->opts->mountOnDemand) {
     VLOG(1) << "Detaching filesystem due to inactivity: "
-            << ctx->opts->mountPoint;
+            << ctx->opts->unmountPoint;
 
     ctx->setRoot(std::shared_ptr<DirNode>());
     return false;
   }
   // Time to unmount!
-  RLOG(INFO) << "Filesystem inactive, unmounting: " << ctx->opts->mountPoint;
-  unmountFS(ctx->opts->mountPoint.c_str());
+  RLOG(INFO) << "Filesystem inactive, unmounting: " << ctx->opts->unmountPoint;
+  unmountFS(ctx->opts->unmountPoint.c_str());
   return true;
 }
 

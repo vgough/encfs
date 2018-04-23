@@ -72,6 +72,7 @@ enum ConfigMode { Config_Prompt, Config_Standard, Config_Paranoia };
 struct EncFS_Opts {
   std::string rootDir;
   std::string mountPoint;  // where to make filesystem visible
+  std::string unmountPoint;// same as mountPoint, but as given by the user
   std::string cygDrive;    // Cygwin mount drive
   bool createIfNotFound;   // create filesystem if not found
   bool idleTracking;       // turn on idle monitoring of filesystem
