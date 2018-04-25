@@ -6,7 +6,21 @@
 #define MyAppPublisher "encfs"
 #define MyAppURL "https://github.com/vgough/encfs"
 #define MyAppExeName "encfs.exe"
-#define MySourcePath "C:\cygwin\usr\encfs\"
+
+; This variable should contain a path to where libraries needed by encfs are installed.
+#define MyLibraryPath "C:\cygwin\usr\bin"
+
+; This variable should contain a path to where cygwin binaries to be packaged are located.
+#define MyEXEPath "C:\cygwin\usr\bin"
+
+; This variable should contain a path to where encfs is installed.
+; Encfs should not be installed in its own private path.
+#define MyEncfsInstalledPath "C:\cygwin\encfs"
+
+; This variable should contain a path to where LICENSE files are located.
+#define MyLisenceFilesPath "C:\encfs.src"
+
+; This variable should contain a path to where the installer will be created.
 #define MyOutPutPath "C:\encfs-binary"
 
 [Setup]
@@ -24,11 +38,30 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={pf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
-LicenseFile={#MySourcePath}\COPYING
+LicenseFile={#MyLisenceFilesPath}\COPYING
 OutputDir={#MyOutPutPath}
 OutputBaseFilename=encfs-setup
 Compression=lzma
 SolidCompression=yes
+
+[Files]
+Source: "{#MyLisenceFilesPath}\COPYING*"       ; DestDir: "{app}"      ; Flags: ignoreversion
+Source: "{#MyEncfsInstalledPath}\share\*"      ; DestDir: "{app}\share"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#MyEXEPath}\pkill.exe"               ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyEncfsInstalledPath}\bin\*"        ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygcrypto-1.0.0.dll" ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygfuse-2.8.dll"     ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygprocps-6.dll"     ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cyggcc_s-1.dll"      ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygiconv-2.dll"      ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygintl-8.dll"       ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygssl-1.0.0.dll"    ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygstdc++-6.dll"     ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygwin1.dll"         ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+Source: "{#MyLibraryPath}\cygz.dll"            ; DestDir: "{app}\bin"  ; Flags: ignoreversion
+
+[Registry]
+Root: HKLM; Subkey: "SOFTWARE\\WOW6432Node\\ENCFS"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}" ;Flags: uninsdeletekey
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -57,13 +90,3 @@ Name: "slovenian"; MessagesFile: "compiler:Languages\Slovenian.isl"
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 Name: "ukrainian"; MessagesFile: "compiler:Languages\Ukrainian.isl"
-
-[Files]
-Source: "{#MySourcePath}\COPYING*"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#MySourcePath}\bin\*"; DestDir: "{app}\bin"; Flags: ignoreversion
-Source: "{#MySourcePath}\share\*"; DestDir: "{app}\share"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-; NOTE: Don't use "Flags: ignoreversion" on any shared system files
-
-[Registry]
-Root: HKLM; Subkey: "SOFTWARE\\WOW6432Node\\ENCFS"; ValueType: string; ValueName: "InstallDir"; ValueData: "{app}" ;Flags: uninsdeletekey
