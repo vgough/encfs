@@ -36,7 +36,9 @@ if (NOT DEFINED LIB_INSTALL_DIR)
 endif ()
 
 if (CYGWIN)
-  set (CMAKE_INSTALL_PREFIX /usr)
+  if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set (CMAKE_INSTALL_PREFIX /usr)
+  endif()
 endif()
 
 # We need C++ 11
