@@ -35,6 +35,12 @@ if (NOT DEFINED LIB_INSTALL_DIR)
   set (LIB_INSTALL_DIR lib)
 endif ()
 
+if (CYGWIN)
+  if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set (CMAKE_INSTALL_PREFIX /usr)
+  endif()
+endif()
+
 # We need C++ 11
 if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.0)
   # CMake 3.1 has built-in CXX standard checks.
