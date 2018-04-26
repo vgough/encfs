@@ -8,10 +8,10 @@
 #define MyAppExeName "encfs.exe"
 
 ; This variable should contain a path to where libraries needed by encfs are installed.
-#define MyLibraryPath "C:\cygwin\usr\bin"
+#define MyLibraryPath "C:\cygwin\bin"
 
 ; This variable should contain a path to where cygwin binaries to be packaged are located.
-#define MyEXEPath "C:\cygwin\usr\bin"
+#define MyEXEPath "C:\cygwin\bin"
 
 ; This variable should contain a path to where encfs is installed.
 ; Encfs should not be installed in its own private path.
