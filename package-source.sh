@@ -9,3 +9,6 @@ PREFIX="encfs-$VERSION"
 
 # Actually create archive
 git archive --prefix "$PREFIX/" -o $PREFIX.tar.gz HEAD
+
+gpg --list-secret-keys --keyid-format LONG
+echo "Hint for signing: gpg -u <user> --armor --detach-sig $PREFIX.tar.gz"
