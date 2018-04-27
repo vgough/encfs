@@ -1,4 +1,4 @@
-v1.9.5 / 2018-04-26
+v1.9.5 / 2018-04-27
 ===================
 	* Correct a int/off_t buffer overflow in getSize()
 	* Correct a possible write crash
