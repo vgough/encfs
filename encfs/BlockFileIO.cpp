@@ -186,7 +186,7 @@ ssize_t BlockFileIO::read(const IORequest &req) const {
     ++blockNum;
     partialOffset = 0;
 
-    if (readSize < _blockSize) {
+    if ((size_t)readSize < _blockSize) {
       break;
     }
   }

@@ -1,3 +1,16 @@
+v1.9.5 / 2018-04-27
+===================
+	* Correct a int/off_t buffer overflow in getSize()
+	* Correct a possible write crash
+	* Correct encfsctl cat and add reverse cat
+	* Add -c & -u cmdline options
+	* Add --noattrcache & --nodatacache cmdline options
+	* Ignore .encfs6.xml file in reverse mode
+	* Do not count usage on root path (to avoid resetting the --idle option)
+	* Use stderr instead of stdout for error messages
+	* Add the ability to disable data encryption (absolutely discouraged)
+	* Add Cygwin support
+
 v1.9.4 / 2018-01-28
 ===================
 	* Fix packaging error leading to wrong version output
