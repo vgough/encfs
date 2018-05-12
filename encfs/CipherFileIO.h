@@ -90,6 +90,7 @@ class CipherFileIO : public BlockFileIO {
 
   std::shared_ptr<Cipher> cipher;
   CipherKey key;
+  bool haveCBCPadding;
 };
 
 }  // namespace encfs

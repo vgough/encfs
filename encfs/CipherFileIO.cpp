@@ -48,9 +48,39 @@ static Interface CipherFileIO_iface("FileIO/Cipher", 2, 0, 1);
 
 const int HEADER_SIZE = 8;  // 64 bit initialization vector..
 
+/*
+ * Check if we enable CBC padding (instead of using stream cipher for the last block).
+ * Here we check against the cipher interface version rather than our own FileIO/Cipher one,
+ * because this latter is not stored in the configuration file...
+ * Padding (of files > 0 bytes) follows the OneAndZeroes rule :
+ * - each data block to encode is at most blockSize -1 bytes in length ;
+ * - each data block is padded with a 0x80 byte ;
+ * - the last data block is padded with cipherBlockSize -1 additional 0x00 bytes.
+ * Some 0x00 padding bytes may then be written out of the ciphertext, at the end of the file,
+ * if the length of the last data block is not already a multiple of cipherBlockSize.
+ * This allows to compute files' length without having to read the last block, at a cost of :
+ * int((fileSize - 1) / (blockSize - 1)) + cipherBlockSize.
+ * This function returns :
+ * - 2 if we pad in reverse mode
+ * - 1 if we pad in normal mode
+ * - 0 if we don't pad
+ * The return value helps us in CipherFileIO initialization below to set the blockSize.
+ * blockSize = blockSize - 1 in normal mode.
+ */
+int checkCBCPadding(const FSConfigPtr &cfg) {
+  if (((cfg->config->cipherIface.current() == 3) && (cfg->config->cipherIface.revision() >= 1)) ||
+      (cfg->config->cipherIface.current() > 3)) {
+    if (cfg->reverseEncryption) {
+      return 2;
+    }
+    return 1;
+  }
+  return 0;
+}
+
 CipherFileIO::CipherFileIO(std::shared_ptr<FileIO> _base,
                            const FSConfigPtr &cfg)
-    : BlockFileIO(cfg->config->blockSize, cfg),
+    : BlockFileIO(cfg->config->blockSize - checkCBCPadding(cfg) % 2, cfg),
       base(std::move(_base)),
       haveHeader(cfg->config->uniqueIV),
       externalIV(0),
@@ -59,6 +89,7 @@ CipherFileIO::CipherFileIO(std::shared_ptr<FileIO> _base,
   fsConfig = cfg;
   cipher = cfg->cipher;
   key = cfg->key;
+  haveCBCPadding = (checkCBCPadding(cfg) > 0);
 
   CHECK_EQ(fsConfig->config->blockSize % fsConfig->cipher->cipherBlockSize(), 0)
       << "FS block size must be multiple of cipher block size";
