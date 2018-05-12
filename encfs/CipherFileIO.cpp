@@ -383,26 +383,73 @@ int CipherFileIO::generateReverseHeader(unsigned char *headerBuf) {
  * Read block from backing plaintext file, then encrypt it (reverse mode)
  */
 ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
+
+  int cbs = fsConfig->cipher->cipherBlockSize();
   int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
   IORequest tmpReq = req;
 
+  // adjust offset and length if we pad
+  if (haveCBCPadding && !fsConfig->reverseEncryption) {
+    tmpReq.offset += tmpReq.offset / tmpReq.dataLen;
+    tmpReq.dataLen += 1;
+  }
+
   // adjust offset if we have a file header
   if (haveHeader && !fsConfig->reverseEncryption) {
     tmpReq.offset += HEADER_SIZE;
   }
+
   ssize_t readSize = base->read(tmpReq);
 
-  bool ok;
-  if (readSize > 0) {
-    if (haveHeader && fileIV == 0) {
-      int res = const_cast<CipherFileIO *>(this)->initHeader();
-      if (res < 0) {
-        return res;
-      }
+  if (haveHeader && (fileIV == 0) && (readSize > 0)) {
+    int res = const_cast<CipherFileIO *>(this)->initHeader();
+    if (res < 0) {
+      return res;
     }
+  }
 
+  bool ok = true;
+
+  if (haveCBCPadding && (readSize >= 0)) {
+    if (!fsConfig->reverseEncryption) {
+      // remove the padding bytes which could have been added after the ciphertext
+      int padBytes = readSize % cbs;
+      readSize -= padBytes;
+      if (readSize > 0) {
+        ok = blockRead(tmpReq.data, (int)readSize,
+                       blockNum ^ fileIV);  // cast works because we work on a
+                                            // block and blocksize fit an int
+        if (ok) {
+          // we could have some padding bytes at the end of the plain data (X * 0x00)
+          padBytes = 0;
+          while ((padBytes < readSize) && (tmpReq.data[readSize - padBytes - 1] == 0x00)) {
+            padBytes++;
+          }
+          // there's the holes specific case
+          if (_allowHoles && (padBytes == readSize) && (readSize == (bs + 1))) {
+            readSize--;
+          // otherwise we should have at least one byte of data followed by the first padding byte (0x80)
+          } else if (((readSize - padBytes) > 1) && (tmpReq.data[readSize - padBytes - 1] == 0x80)) {
+            padBytes++;
+            readSize -= padBytes;
+          } else {
+            VLOG(1) << "readOneBlock failed (wrong padding) for block " << blockNum << ", size "
+                    << readSize;
+            readSize = -EBADMSG;
+          }
+        }
+      } else {
+        VLOG(1) << "readSize zero (" << padBytes << " padBytes) for offset " << req.offset;
+      }
+    } else {
+      // todo
+    }
+  }
+
+  // no CBC padding, stream cipher instead
+  else if (readSize > 0) {
     if (readSize != bs) {
       VLOG(1) << "streamRead(data, " << readSize << ", IV)";
       ok = streamRead(tmpReq.data, (int)readSize,
@@ -413,14 +460,16 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
                      blockNum ^ fileIV);  // cast works because we work on a
                                           // block and blocksize fit an int
     }
+  }
 
-    if (!ok) {
-      VLOG(1) << "decodeBlock failed for block " << blockNum << ", size "
-              << readSize;
-      readSize = -EBADMSG;
-    }
-  } else if (readSize == 0) {
+  else if (readSize == 0) {
     VLOG(1) << "readSize zero for offset " << req.offset;
+  }
+
+  if (!ok) {
+    VLOG(1) << "decodeBlock failed for block " << blockNum << ", size "
+            << readSize;
+    readSize = -EBADMSG;
   }
 
   return readSize;
