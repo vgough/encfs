@@ -168,18 +168,33 @@ int CipherFileIO::getAttr(struct stat *stbuf) const {
   // stat() the backing file
   int res = base->getAttr(stbuf);
 
-  // adjust size if we have a file header
-  if ((res == 0) && haveHeader && S_ISREG(stbuf->st_mode) &&
-      (stbuf->st_size > 0)) {
+  // adjust size if we have a file header or padding
+  if ((res == 0) && S_ISREG(stbuf->st_mode)) {
     if (!fsConfig->reverseEncryption) {
       /* In normal mode, the upper file (plaintext) is smaller
        * than the backing ciphertext file */
-      rAssert(stbuf->st_size >= HEADER_SIZE);
-      stbuf->st_size -= HEADER_SIZE;
-    } else {
+      if (haveHeader && (stbuf->st_size > 0)) {
+      	/* Instead of using rAssert, we could also relax the rule and return 0.
+      	 * Think about a file which would have been partially written.
+      	 * Same for getSize() below. */
+        rAssert(stbuf->st_size >= HEADER_SIZE);
+        stbuf->st_size -= HEADER_SIZE;
+      }
+      if (haveCBCPadding && (stbuf->st_size > 0)) {
+        rAssert(stbuf->st_size >= fsConfig->cipher->cipherBlockSize());
+        stbuf->st_size -= fsConfig->cipher->cipherBlockSize();
+        stbuf->st_size -= stbuf->st_size / (blockSize() + 1);
+      }
+    } else if (stbuf->st_size > 0) {
+      if (haveCBCPadding) {
+        stbuf->st_size += (stbuf->st_size - 1) / (blockSize() - 1);
+        stbuf->st_size += fsConfig->cipher->cipherBlockSize();
+      }
       /* In reverse mode, the upper file (ciphertext) is larger than
        * the backing plaintext file */
-      stbuf->st_size += HEADER_SIZE;
+      if (haveHeader) {
+        stbuf->st_size += HEADER_SIZE;
+      }
     }
   }
 
@@ -194,11 +209,22 @@ off_t CipherFileIO::getSize() const {
   off_t size = base->getSize();
   // No check on S_ISREG here -- don't call getSize over getAttr unless this
   // is a normal file!
-  if (haveHeader && size > 0) {
-    if (!fsConfig->reverseEncryption) {
+  if (!fsConfig->reverseEncryption) {
+    if (haveHeader && (size > 0)) {
       rAssert(size >= HEADER_SIZE);
       size -= HEADER_SIZE;
-    } else {
+    }
+    if (haveCBCPadding && (size > 0)) {
+      rAssert(size >= fsConfig->cipher->cipherBlockSize());
+      size -= fsConfig->cipher->cipherBlockSize();
+      size -= size / (blockSize() + 1);
+    }
+  } else if (size > 0) {
+    if (haveCBCPadding) {
+      size += (size - 1) / (blockSize() - 1);
+      size += fsConfig->cipher->cipherBlockSize();
+    }
+    if (haveHeader) {
       size += HEADER_SIZE;
     }
   }
