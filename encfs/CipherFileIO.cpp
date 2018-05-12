@@ -483,10 +483,11 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
     return -EPERM;
   }
 
+  int cbs = fsConfig->cipher->cipherBlockSize();
   unsigned int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
-  if (haveHeader && fileIV == 0) {
+  if (haveHeader && (fileIV == 0)) {
     int res = initHeader();
     if (res < 0) {
       return res;
@@ -494,25 +495,80 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
   }
 
   bool ok;
-  if (req.dataLen != bs) {
-    ok = streamWrite(req.data, (int)req.dataLen,
-                     blockNum ^ fileIV);  // cast works because we work on a
-                                          // block and blocksize fit an int
-  } else {
-    ok = blockWrite(req.data, (int)req.dataLen,
-                    blockNum ^ fileIV);  // cast works because we work on a
-                                         // block and blocksize fit an int
+
+  int padBytes = 0;
+  if (haveCBCPadding) {
+    if (!fsConfig->reverseEncryption) {
+      // we need padding bytes so that dataLen is a multiple of cipherBlockSize()
+      padBytes = cbs - (req.dataLen % cbs);
+      // we then add the first padding byte : 0x80
+      req.data[req.dataLen] = 0x80;
+      // if needed, we add the other padding bytes : 0x00
+      memset(req.data + req.dataLen + 1, 0x00, padBytes - 1);
+      ok = blockWrite(req.data, (int)req.dataLen + padBytes,
+                      blockNum ^ fileIV);  // cast works because we work on a
+                                           // block and blocksize fit an int
+      if (ok) {
+      	/* here we use getSize() in write normal mode, we can safely assume that
+      	 * backing file has not been modified by others since we opened it
+      	 * (otherwise getSize() could return a wrong cached result). */
+        if ((padBytes > 1) || (req.offset + bs >= getSize())) {
+          // this is the last block, we must pad it with cipherBlockSize() bytes
+          memset(req.data + req.dataLen + padBytes, 0x00, cbs - padBytes);
+          padBytes = cbs;
+        }
+      }
+    } else {
+      // todo
+    }
+  }
+
+  else { // no CBC padding, stream cipher instead
+    if (req.dataLen != bs) {
+      ok = streamWrite(req.data, (int)req.dataLen,
+                       blockNum ^ fileIV);  // cast works because we work on a
+                                            // block and blocksize fit an int
+    } else {
+      ok = blockWrite(req.data, (int)req.dataLen,
+                      blockNum ^ fileIV);  // cast works because we work on a
+                                           // block and blocksize fit an int
+    }
   }
 
   ssize_t res = 0;
   if (ok) {
-    if (haveHeader) {
-      IORequest tmpReq = req;
-      tmpReq.offset += HEADER_SIZE;
-      res = base->write(tmpReq);
-    } else {
-      res = base->write(req);
+    IORequest tmpReq = req;
+    if (haveCBCPadding) {
+      tmpReq.offset += tmpReq.offset / bs;
+      tmpReq.dataLen += padBytes;
     }
+    if (haveHeader) {
+      tmpReq.offset += HEADER_SIZE;
+    }
+    res = base->write(tmpReq);
+    /* I first went with the following (interesting) commented block, but
+     * as base->write() returns -errno or dataLen, let's simplify it. */
+    /* this was not the last block written (only one padding byte)
+    if (padBytes == 1) {
+      // padding byte has been written
+      if (res > req.dataLen) {
+        res--;
+      }
+    // this is the last block written (more than one padding byte)
+    } else if (padBytes > 0) {
+      // we wrote above the last previous block + padding
+      if ((req.offset + res) > (upperSize + cbs)) {
+        res -= cbs;
+      // we wrote up to somewhere inside the previous padding
+      } else if ((req.offset + res) > upperSize) {
+        res = upperSize - req.offset;
+      }
+    } */
+    // Simple version :
+    if (res > 0) {
+      res -= padBytes;
+    }
+
   } else {
     VLOG(1) << "encodeBlock failed for block " << blockNum << ", size "
             << req.dataLen;
