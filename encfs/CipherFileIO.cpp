@@ -635,10 +635,10 @@ int CipherFileIO::truncate(off_t size) {
     }
     reopen = 1;
   }
-  if (!haveHeader) {
+  if (!haveHeader && !haveCBCPadding) {
     res = BlockFileIO::truncateBase(size, base.get());
   } else {
-    if (0 == fileIV) {
+    if (haveHeader && (0 == fileIV)) {
       // empty file.. create the header..
       res = initHeader();
     }
@@ -648,7 +648,13 @@ int CipherFileIO::truncate(off_t size) {
       res = BlockFileIO::truncateBase(size, nullptr);
     }
     if (res == 0) {
-      res = base->truncate(size + HEADER_SIZE);
+      if (haveCBCPadding && (size > 0)) {
+        size += (size - 1) / blockSize() + fsConfig->cipher->cipherBlockSize();
+      }
+      if (haveHeader) {
+        size += HEADER_SIZE;
+      }
+      res = base->truncate(size);
     }
   }
   if (reopen == 1) {
