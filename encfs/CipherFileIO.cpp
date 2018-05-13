@@ -391,14 +391,23 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
   IORequest tmpReq = req;
 
   // adjust offset and length if we pad
-  if (haveCBCPadding && !fsConfig->reverseEncryption) {
-    tmpReq.offset += tmpReq.offset / tmpReq.dataLen;
-    tmpReq.dataLen += 1;
+  if (haveCBCPadding) {
+    if (!fsConfig->reverseEncryption) {
+      tmpReq.offset += tmpReq.offset / tmpReq.dataLen;
+      tmpReq.dataLen += 1;
+    } else {
+      tmpReq.offset -= tmpReq.offset / tmpReq.dataLen;
+      tmpReq.dataLen -= 1;
+    }
   }
 
   // adjust offset if we have a file header
-  if (haveHeader && !fsConfig->reverseEncryption) {
-    tmpReq.offset += HEADER_SIZE;
+  if (haveHeader) {
+    if (!fsConfig->reverseEncryption) {
+      tmpReq.offset += HEADER_SIZE;
+    } else {
+      // done in CipherFileIO::read()
+    }
   }
 
   ssize_t readSize = base->read(tmpReq);
@@ -443,8 +452,37 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
       } else {
         VLOG(1) << "readSize zero (" << padBytes << " padBytes) for offset " << req.offset;
       }
+    } else if (readSize > 0) {
+      int padBytes = cbs - (readSize % cbs);
+      tmpReq.data[readSize] = 0x80;
+      memset(tmpReq.data + readSize + 1, 0x00, padBytes - 1);
+      readSize += padBytes;
+      ok = blockRead(tmpReq.data, (int)readSize,
+                     blockNum ^ fileIV);  // cast works because we work on a
+                                          // block and blocksize fit an int
+      if (ok) {
+        if (readSize < req.dataLen) {
+          // this is the last block, we must pad it with cipherBlockSize() bytes
+          memset(tmpReq.data + readSize, 0x00, cbs - padBytes);
+          readSize += cbs - padBytes;
+        }
+      }
     } else {
-      // todo
+      // This could be a request for the last padding bytes after the last ciphered block.
+      // we could use getSize() to find out, but as we reverse read, we can assume size
+      // could have changed since our last check, we would then get a wrong cached result.
+      // Let's simply try to read the previous block instead.
+      if (tmpReq.offset > 0) {
+        tmpReq.offset -= tmpReq.dataLen;
+        readSize = base->read(tmpReq);
+      }
+      if ((readSize > 0) && ((bs - readSize) < cbs)) {
+        readSize = cbs - (bs - readSize);
+        memset(tmpReq.data, 0x00, readSize);
+      } else {
+        readSize = 0;
+        VLOG(1) << "readSize zero for offset " << req.offset;
+      }
     }
   }
 
