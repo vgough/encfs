@@ -1,6 +1,6 @@
 This document provides generic information for compiling EncFS.
 
-If you are looking for specific instructions for your distribution,
+If you are looking for specific instructions for your operating system or distribution,
 take a look at the **[wiki](https://github.com/vgough/encfs/wiki)**.
 
 Compiling EncFS
