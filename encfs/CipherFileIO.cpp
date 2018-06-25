@@ -60,27 +60,23 @@ const int HEADER_SIZE = 8;  // 64 bit initialization vector..
  * if the length of the last data block is not already a multiple of cipherBlockSize.
  * This allows to compute files' length without having to read the last block, at a cost of :
  * int((fileSize - 1) / (blockSize - 1)) + cipherBlockSize.
- * This function returns :
- * - 2 if we pad in reverse mode
- * - 1 if we pad in normal mode
- * - 0 if we don't pad
- * The return value helps us in CipherFileIO initialization below to set the blockSize.
+ * The return value helps us in CipherFileIO initialization below to set the blockSize :
  * blockSize = blockSize - 1 in normal mode.
  */
-int checkCBCPadding(const FSConfigPtr &cfg) {
+PaddingType checkCBCPadding(const FSConfigPtr &cfg) {
   if (((cfg->config->cipherIface.current() == 3) && (cfg->config->cipherIface.revision() >= 1)) ||
       (cfg->config->cipherIface.current() > 3)) {
     if (cfg->reverseEncryption) {
-      return 2;
+      return Padding_Reverse;
     }
-    return 1;
+    return Padding_Normal;
   }
-  return 0;
+  return Padding_Disabled;
 }
 
 CipherFileIO::CipherFileIO(std::shared_ptr<FileIO> _base,
                            const FSConfigPtr &cfg)
-    : BlockFileIO(cfg->config->blockSize - checkCBCPadding(cfg) % 2, cfg),
+    : BlockFileIO(cfg->config->blockSize - (checkCBCPadding(cfg) == Padding_Normal ? 1 : 0), cfg),
       base(std::move(_base)),
       haveHeader(cfg->config->uniqueIV),
       externalIV(0),
@@ -89,7 +85,7 @@ CipherFileIO::CipherFileIO(std::shared_ptr<FileIO> _base,
   fsConfig = cfg;
   cipher = cfg->cipher;
   key = cfg->key;
-  haveCBCPadding = (checkCBCPadding(cfg) > 0);
+  haveCBCPadding = (checkCBCPadding(cfg) != Padding_Disabled);
 
   CHECK_EQ(fsConfig->config->blockSize % fsConfig->cipher->cipherBlockSize(), 0)
       << "FS block size must be multiple of cipher block size";

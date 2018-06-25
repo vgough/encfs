@@ -38,6 +38,8 @@ class Cipher;
 class FileIO;
 struct IORequest;
 
+enum PaddingType { Padding_Disabled, Padding_Normal, Padding_Reverse };
+
 /*
     Implement the FileIO interface encrypting data in blocks.
 
