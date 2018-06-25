@@ -155,6 +155,49 @@ bool CipherFileIO::setIV(uint64_t iv) {
 }
 
 /**
+ * Helper function to adjust plain size to cipher size
+ * according to configuration (file header, padding).
+ */
+void CipherFileIO::plainSizeToCipherSize(off_t *size) const {
+  if (*size > 0) {
+    if (haveCBCPadding) {
+      // for all the blocks but the last one, we add 1 padding byte to compute blockSize bytes blocks
+      // remember, in normal mode, blockSize is set to blockSize - 1
+      *size += (*size - 1) / (blockSize() - (fsConfig->reverseEncryption ? 1 : 0));
+      // for the last block we add cipherBlockSize padding bytes
+      *size += fsConfig->cipher->cipherBlockSize();
+    }
+    /* In reverse mode, the upper file (ciphertext) is larger than
+     * the backing plaintext file */
+    if (haveHeader) {
+      *size += HEADER_SIZE;
+    }
+  }
+}
+
+/**
+ * Helper function to adjust cipher size to plain size
+ * according to configuration (file header, padding).
+ */
+void CipherFileIO::cipherSizeToPlainSize(off_t *size) const {
+  if (haveHeader && (*size > 0)) {
+    /* Instead of using rAssert, we could also relax the rule and return 0.
+     * Think about a file which could have been partially written. */
+    rAssert(*size >= HEADER_SIZE);
+    *size -= HEADER_SIZE;
+  }
+  if (haveCBCPadding && (*size > 0)) {
+    // same note as above regarding rAssert
+    rAssert(*size >= fsConfig->cipher->cipherBlockSize());
+    // we have cipherBlockSize bytes added to the last block, let's remove them
+    *size -= fsConfig->cipher->cipherBlockSize();
+    // the remaining blocks have a 1 byte padding, let's remove them
+    // remember, in normal mode, blockSize is set to blockSize - 1
+    *size -= *size / (blockSize() + (fsConfig->reverseEncryption ? 0 : 1));
+  }
+}
+
+/**
  * Get file attributes (FUSE-speak for "stat()") for an upper file
  * Upper file   = file we present to the user via FUSE
  * Backing file = file that is actually on disk
@@ -164,36 +207,14 @@ int CipherFileIO::getAttr(struct stat *stbuf) const {
   // stat() the backing file
   int res = base->getAttr(stbuf);
 
-  // adjust size if we have a file header or padding
+  // let's adjust size
   if ((res == 0) && S_ISREG(stbuf->st_mode)) {
     if (!fsConfig->reverseEncryption) {
-      /* In normal mode, the upper file (plaintext) is smaller
-       * than the backing ciphertext file */
-      if (haveHeader && (stbuf->st_size > 0)) {
-      	/* Instead of using rAssert, we could also relax the rule and return 0.
-      	 * Think about a file which would have been partially written.
-      	 * Same for getSize() below. */
-        rAssert(stbuf->st_size >= HEADER_SIZE);
-        stbuf->st_size -= HEADER_SIZE;
-      }
-      if (haveCBCPadding && (stbuf->st_size > 0)) {
-        rAssert(stbuf->st_size >= fsConfig->cipher->cipherBlockSize());
-        stbuf->st_size -= fsConfig->cipher->cipherBlockSize();
-        stbuf->st_size -= stbuf->st_size / (blockSize() + 1);
-      }
-    } else if (stbuf->st_size > 0) {
-      if (haveCBCPadding) {
-        stbuf->st_size += (stbuf->st_size - 1) / (blockSize() - 1);
-        stbuf->st_size += fsConfig->cipher->cipherBlockSize();
-      }
-      /* In reverse mode, the upper file (ciphertext) is larger than
-       * the backing plaintext file */
-      if (haveHeader) {
-        stbuf->st_size += HEADER_SIZE;
-      }
+      cipherSizeToPlainSize(&(stbuf->st_size));
+    } else {
+      plainSizeToCipherSize(&(stbuf->st_size));
     }
   }
-
   return res;
 }
 
@@ -205,23 +226,12 @@ off_t CipherFileIO::getSize() const {
   off_t size = base->getSize();
   // No check on S_ISREG here -- don't call getSize over getAttr unless this
   // is a normal file!
-  if (!fsConfig->reverseEncryption) {
-    if (haveHeader && (size > 0)) {
-      rAssert(size >= HEADER_SIZE);
-      size -= HEADER_SIZE;
-    }
-    if (haveCBCPadding && (size > 0)) {
-      rAssert(size >= fsConfig->cipher->cipherBlockSize());
-      size -= fsConfig->cipher->cipherBlockSize();
-      size -= size / (blockSize() + 1);
-    }
-  } else if (size > 0) {
-    if (haveCBCPadding) {
-      size += (size - 1) / (blockSize() - 1);
-      size += fsConfig->cipher->cipherBlockSize();
-    }
-    if (haveHeader) {
-      size += HEADER_SIZE;
+  // let's adjust size
+  if (size >= 0) {
+    if (!fsConfig->reverseEncryption) {
+      cipherSizeToPlainSize(&size);
+    } else {
+      plainSizeToCipherSize(&size);
     }
   }
   return size;
@@ -682,11 +692,11 @@ int CipherFileIO::truncate(off_t size) {
       res = BlockFileIO::truncateBase(size, nullptr);
     }
     if (res == 0) {
-      if (haveCBCPadding && (size > 0)) {
-        size += (size - 1) / blockSize() + fsConfig->cipher->cipherBlockSize();
-      }
-      if (haveHeader) {
-        size += HEADER_SIZE;
+      // let's adjust size
+      if (!fsConfig->reverseEncryption) {
+        plainSizeToCipherSize(&size);
+      } else {
+        cipherSizeToPlainSize(&size);
       }
       res = base->truncate(size);
     }

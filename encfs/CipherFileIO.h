@@ -77,6 +77,9 @@ class CipherFileIO : public BlockFileIO {
   bool blockWrite(unsigned char *buf, int size, uint64_t iv64) const;
   bool streamWrite(unsigned char *buf, int size, uint64_t iv64) const;
 
+  void plainSizeToCipherSize(off_t *size) const;
+  void cipherSizeToPlainSize(off_t *size) const;
+
   ssize_t read(const IORequest &req) const;
 
   std::shared_ptr<FileIO> base;
