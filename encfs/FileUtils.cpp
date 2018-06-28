@@ -320,6 +320,7 @@ bool readV6Config(const char *configFile, EncFSConfig *cfg, ConfigInfo *info) {
 
   config->read("blockSize", &cfg->blockSize);
   config->read("plainData", &cfg->plainData);
+  config->read("padding", &cfg->padding);
   config->read("uniqueIV", &cfg->uniqueIV);
   config->read("chainedNameIV", &cfg->chainedNameIV);
   config->read("externalIVChaining", &cfg->externalIVChaining);
@@ -549,6 +550,7 @@ bool writeV6Config(const char *configFile, const EncFSConfig *cfg) {
   addEl(doc, config, "keySize", cfg->keySize);
   addEl(doc, config, "blockSize", cfg->blockSize);
   addEl(doc, config, "plainData", (int)cfg->plainData);
+  addEl(doc, config, "padding", (int)cfg->padding);
   addEl(doc, config, "uniqueIV", (int)cfg->uniqueIV);
   addEl(doc, config, "chainedNameIV", (int)cfg->chainedNameIV);
   addEl(doc, config, "externalIVChaining", (int)cfg->externalIVChaining);
@@ -800,9 +802,9 @@ static int selectBlockSize(const Cipher::CipherAlgorithm &alg) {
 
   cout << autosprintf(
       // xgroup(setup)
-      _("Select a block size in bytes.  The cipher you have chosen\n"
-        "supports sizes from %i to %i bytes in increments of %i.\n"
-        "Or just hit enter for the default (%i bytes)\n"),
+      _("Select a block size in bytes EncFS will internally deal with.\n"
+        "The cipher you have chosen supports sizes from %i to %i bytes\n"
+        "in increments of %i. Or just hit enter for the default (%i bytes)\n"),
       alg.blockSize.min(), alg.blockSize.max(), alg.blockSize.inc(),
       DefaultBlockSize);
 
@@ -885,10 +887,21 @@ static bool selectPlainData(bool insecure) {
   if (insecure) {
     plainData = boolDefaultNo(
         _("You used --insecure, you can then disable file data encryption\n"
-           "which is of course abolutely discouraged.\n"
-           "Disable file data encryption?"));
+          "which is of course abolutely discouraged.\n"
+          "Disable file data encryption?"));
   }
   return plainData;
+}
+
+/**
+ * Ask the user whether to use CBC padding or cipher stream mode for the last block
+ */
+static bool selectPadding() {
+  return ! boolDefaultNo(
+      _("Every block of data is padded and encrypted using CBC.\n"
+        "You can however, and at your own risk, use the old behavior which was\n"
+        "to use cipher stream mode for the last partial block, without any padding.\n"
+        "Use cipher stream mode?"));
 }
 
 /**
@@ -964,7 +977,7 @@ static bool selectChainedIV() {
   // xgroup(setup)
   return boolDefaultYes(
       _("Enable filename initialization vector chaining?\n"
-        "This makes filename encoding dependent on the complete path, \n"
+        "This makes filename encoding dependent on the complete path,\n"
         "rather then encoding each path element individually."));
 }
 
@@ -1037,6 +1050,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   int blockMACBytes = 0;        // selectBlockMAC()
   int blockMACRandBytes = 0;    // selectBlockMAC()
   bool plainData = false;       // selectPlainData()
+  bool padding = true;          // selectPadding()
   bool uniqueIV = true;         // selectUniqueIV()
   bool chainedIV = true;        // selectChainedIV()
   bool externalIV = false;      // selectExternalChainedIV()
@@ -1129,6 +1143,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
       blockMACRandBytes = 0;
     }
     else {
+      padding = selectPadding();
       if (reverseEncryption) {
         cout << _("reverse encryption - chained IV and MAC disabled") << "\n";
         uniqueIV = selectUniqueIV(false);
@@ -1173,6 +1188,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   config->keySize = keySize;
   config->blockSize = blockSize;
   config->plainData = plainData;
+  config->padding = padding;
   config->nameIface = nameIOIface;
   config->creator = "EncFS " VERSION;
   config->subVersion = V6SubVersion;

@@ -64,8 +64,8 @@ const int HEADER_SIZE = 8;  // 64 bit initialization vector..
  * blockSize = blockSize - 1 in normal mode.
  */
 PaddingType checkCBCPadding(const FSConfigPtr &cfg) {
-  if (((cfg->config->cipherIface.current() == 3) && (cfg->config->cipherIface.revision() >= 1)) ||
-      (cfg->config->cipherIface.current() > 3)) {
+  if ((((cfg->config->cipherIface.current() == 3) && (cfg->config->cipherIface.revision() >= 1)) ||
+       (cfg->config->cipherIface.current() > 3)) && (cfg->config->padding)) {
     if (cfg->reverseEncryption) {
       return Padding_Reverse;
     }
