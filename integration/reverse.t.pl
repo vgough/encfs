@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 46;
+use Test::More tests => 46*2*1;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -37,6 +37,56 @@ my $have_xattr = 1;
 if(system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
 {
     $have_xattr = 0;
+}
+
+# Configuration file related global variables
+my $encfs6xml;
+my $padding;
+
+# Test in standard mode, second call same conf but without padding
+$padding = 1;
+&runTests('standard');
+$padding = 0;
+&runTests('standard');
+
+# Test in paranoia mode, second call same conf but without padding
+#$padding = 1;
+#&runTests('paranoia');
+#$padding = 0;
+#&runTests('paranoia');
+
+# Wrapper function - runs all tests in the specified mode
+sub runTests
+{
+    my $mode = shift;
+    print STDERR "\nrunTests: mode=$mode";
+    print STDERR ($padding ? " padding=on" : " padding=off")."\n";
+
+    # Setup mounts
+    &newWorkingDir();
+    &mount();
+    
+    # Actual tests
+    &grow();
+    &largeRead();
+    &copy_test();
+    &encfsctl_cat_test();
+    &symlink_test("/"); # absolute
+    &symlink_test("foo"); # relative
+    &symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
+    if ($^O ne "cygwin")
+    {
+        &symlink_test("!§\$%&/()\\<>#+="); # special characters
+    }
+    else
+    {
+        &symlink_test("!§\$%&/()//<>#+="); # special characters but without \ which is not Windows compliant
+    }                                      # Absolute symlinks may failed on Windows : https://github.com/billziss-gh/winfsp/issues/153
+    &symlink_test("$plain/foo");
+    &writesDenied();
+    
+    # Umount and delete files
+    &cleanup();
 }
 
 # Helper function
@@ -85,6 +135,15 @@ sub cleanup
 # Directory structure: plain -[encrypt]-> ciphertext -[decrypt]-> decrypted
 sub mount
 {
+    # Let's disable padding in our saved config and use it
+    if (!$padding)
+    {
+        $encfs6xml =~ s/<padding>1/<padding>0/;
+        open my $fh, ">", "$plain/.encfs6.xml";
+        print $fh $encfs6xml;
+        close $fh;
+    }
+
     delete $ENV{"ENCFS6_CONFIG"};
     system("./build/encfs --extpass=\"echo test\" --standard $plain $ciphertext --reverse --nocache");
     ok(waitForFile("$plain/.encfs6.xml"), "plain .encfs6.xml exists") or BAIL_OUT("'$plain/.encfs6.xml'");
@@ -92,6 +151,14 @@ sub mount
     ok(waitForFile("$ciphertext/$e"), "encrypted .encfs6.xml exists") or BAIL_OUT("'$ciphertext/$e'");
     system("ENCFS6_CONFIG=$plain/.encfs6.xml ./build/encfs --noattrcache --nodatacache --extpass=\"echo test\" $ciphertext $decrypted");
     ok(waitForFile("$decrypted/.encfs6.xml"), "decrypted .encfs6.xml exists") or BAIL_OUT("'$decrypted/.encfs6.xml'");
+
+    open my $fh, "<", "$plain/.encfs6.xml";
+    $encfs6xml = do
+    {
+        local $/ = undef;
+        <$fh>;
+    };
+    close $fh;
 }
 
 # Helper function
@@ -178,7 +245,14 @@ sub grow {
         # autoflush should make sure the write goes to the kernel
         # immediately. Just to be sure, check it here.
         sizeVerify($vfh, $i) or die("unexpected plain file size");
-        sizeVerify($cfh, $i + int(($i - 1) / 1023) + 16) or $ok = 0;
+        if($padding)
+        {
+            sizeVerify($cfh, $i + int(($i - 1) / 1023) + 16) or $ok = 0;
+        }
+        else
+        {
+            sizeVerify($cfh, $i) or $ok = 0;
+        }
         sizeVerify($dfh, $i) or $ok = 0;
         
         if(md5fh($vfh) ne md5fh($dfh))
@@ -204,7 +278,14 @@ sub largeRead {
     my $cname = encName("largeRead");
     # cfh ... ciphertext file handle
     ok(open(my $cfh, "<", "$ciphertext/$cname"), "open ciphertext largeRead file");
-    ok(sizeVerify($cfh, (1024 * 1024) + int((1024 * 1024 - 1) / 1023) + 16), "1M file size");
+    if($padding)
+    {
+        ok(sizeVerify($cfh, (1024 * 1024) + int((1024 * 1024 - 1) / 1023) + 16), "1M file size");
+    }
+    else
+    {
+        ok(sizeVerify($cfh, 1024*1024), "1M file size");
+    }
 }
 
 # Check that the reverse mount is read-only
@@ -232,29 +313,3 @@ sub writesDenied {
     truncate($efn, 10);
     ok( $! == EROFS, "truncate denied, EROFS");
 }
-
-# Setup mounts
-newWorkingDir();
-mount();
-
-# Actual tests
-grow();
-largeRead();
-copy_test();
-encfsctl_cat_test();
-symlink_test("/"); # absolute
-symlink_test("foo"); # relative
-symlink_test("/1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/15/17/18"); # long
-if ($^O ne "cygwin")
-{
-    symlink_test("!§\$%&/()\\<>#+="); # special characters
-}
-else
-{
-    symlink_test("!§\$%&/()//<>#+="); # special characters but without \ which is not Windows compliant
-}                                     # Absolute symlinks may failed on Windows : https://github.com/billziss-gh/winfsp/issues/153
-symlink_test("$plain/foo");
-writesDenied();
-
-# Umount and delete files
-cleanup();
