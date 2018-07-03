@@ -467,7 +467,7 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
                      blockNum ^ fileIV);  // cast works because we work on a
                                           // block and blocksize fit an int
       if (ok) {
-        if (readSize < req.dataLen) {
+        if ((size_t)readSize < req.dataLen) {
           // this is the last block, we must pad it with cipherBlockSize() bytes
           memset(tmpReq.data + readSize, 0x00, cbs - padBytes);
           readSize += cbs - padBytes;
@@ -531,6 +531,8 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
   unsigned int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
+  ssize_t writeSize = req.dataLen;
+
   if (haveHeader && (fileIV == 0)) {
     int res = initHeader();
     if (res < 0) {
@@ -540,26 +542,26 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
 
   bool ok;
 
-  int padBytes = 0;
   if (haveCBCPadding) {
     if (!fsConfig->reverseEncryption) {
-      // we need padding bytes so that dataLen is a multiple of cipherBlockSize()
-      padBytes = cbs - (req.dataLen % cbs);
+      // we need padding bytes so that writeSize is a multiple of cipherBlockSize()
+      int padBytes = cbs - (writeSize % cbs);
       // we then add the first padding byte : 0x80
-      req.data[req.dataLen] = 0x80;
+      req.data[writeSize] = 0x80;
       // if needed, we add the other padding bytes : 0x00
-      memset(req.data + req.dataLen + 1, 0x00, padBytes - 1);
-      ok = blockWrite(req.data, (int)req.dataLen + padBytes,
+      memset(req.data + writeSize + 1, 0x00, padBytes - 1);
+      writeSize+= padBytes;
+      ok = blockWrite(req.data, (int)writeSize,
                       blockNum ^ fileIV);  // cast works because we work on a
                                            // block and blocksize fit an int
       if (ok) {
-      	/* here we use getSize() in write normal mode, we can safely assume that
-      	 * backing file has not been modified by others since we opened it
-      	 * (otherwise getSize() could return a wrong cached result). */
+        /* here we use getSize() in write normal mode, we can safely assume that
+         * backing file has not been modified by others since we opened it
+         * (otherwise getSize() could return a wrong cached result). */
         if ((padBytes > 1) || (req.offset + bs >= getSize())) {
           // this is the last block, we must pad it with cipherBlockSize() bytes
-          memset(req.data + req.dataLen + padBytes, 0x00, cbs - padBytes);
-          padBytes = cbs;
+          memset(req.data + writeSize, 0x00, cbs - padBytes);
+          writeSize += cbs - padBytes;
         }
       }
     } else {
@@ -567,29 +569,29 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
     }
   }
 
-  else { // no CBC padding, stream cipher instead
+  // no CBC padding, stream cipher instead
+  else {
     if (req.dataLen != bs) {
-      ok = streamWrite(req.data, (int)req.dataLen,
+      ok = streamWrite(req.data, (int)writeSize,
                        blockNum ^ fileIV);  // cast works because we work on a
                                             // block and blocksize fit an int
     } else {
-      ok = blockWrite(req.data, (int)req.dataLen,
+      ok = blockWrite(req.data, (int)writeSize,
                       blockNum ^ fileIV);  // cast works because we work on a
                                            // block and blocksize fit an int
     }
   }
 
-  ssize_t res = 0;
   if (ok) {
     IORequest tmpReq = req;
     if (haveCBCPadding) {
       tmpReq.offset += tmpReq.offset / bs;
-      tmpReq.dataLen += padBytes;
+      tmpReq.dataLen = writeSize;
     }
     if (haveHeader) {
       tmpReq.offset += HEADER_SIZE;
     }
-    res = base->write(tmpReq);
+    writeSize = base->write(tmpReq);
     /* I first went with the following (interesting) commented block, but
      * as base->write() returns -errno or dataLen, let's simplify it. */
     /* this was not the last block written (only one padding byte)
@@ -609,16 +611,16 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
       }
     } */
     // Simple version :
-    if (res > 0) {
-      res -= padBytes;
+    if (writeSize > 0) {
+      writeSize = req.dataLen;
     }
 
   } else {
     VLOG(1) << "encodeBlock failed for block " << blockNum << ", size "
             << req.dataLen;
-    res = -EBADMSG;
+    writeSize = -EBADMSG;
   }
-  return res;
+  return writeSize;
 }
 
 bool CipherFileIO::blockWrite(unsigned char *buf, int size,
