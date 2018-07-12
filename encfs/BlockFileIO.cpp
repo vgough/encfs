@@ -45,6 +45,13 @@ BlockFileIO::BlockFileIO(unsigned int blockSize, const FSConfigPtr &cfg)
   CHECK(_blockSize > 1);
   _cache.data = new unsigned char[_blockSize + 16]; // we will need some room for padding
   _noCache = cfg->opts->noCache;
+  /* Even if cache is disabled, we may need to cache some data.
+   * This is the case in reverse mode, with CBC padding, partially writing the last block.
+   * If a write request is made with only some of the first bytes of the last block,
+   * the last bytes of this request won't certainly be properly written to disk (because of CBC mode).
+   * We must then cache these bytes so that subsequent request, which will certainly complete
+   * this last block, will properly retrieve them and finally write the full (or correctly padded) block. */
+  _cachePartialWrite = cfg->reverseEncryption && cfg->config->padding;
 }
 
 BlockFileIO::~BlockFileIO() {
@@ -65,9 +72,9 @@ ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
   /* we can satisfy the request even if _cache.dataLen is too short, because
    * we always request a full block during reads. This just means we are
    * in the last block of a file, which may be smaller than the blocksize.
-   * For reverse encryption, the cache must not be used at all, because
+   * For reverse encryption, the cache should not be used at all, because
    * the lower file may have changed behind our back. */
-  if ((!_noCache) && (req.offset == _cache.offset) && (_cache.dataLen != 0)) {
+  if ((_cache.dataLen != 0) && (req.offset == _cache.offset)) {
     // satisfy request from cache
     size_t len = req.dataLen;
     if (_cache.dataLen < len) {
@@ -76,23 +83,25 @@ ssize_t BlockFileIO::cacheReadOneBlock(const IORequest &req) const {
     memcpy(req.data, _cache.data, len);
     return len;
   }
-  if (_cache.dataLen > 0) {
-    clearCache(_cache, _blockSize);
-  }
 
-  // cache results of read -- issue reads for full blocks
-  IORequest tmp;
-  tmp.offset = req.offset;
-  tmp.data = _cache.data;
-  tmp.dataLen = _blockSize;
-  ssize_t result = readOneBlock(tmp);
+  // issue reads for full blocks, and keep result in cache if we're allowed to
+  _cache.offset = req.offset;
+  _cache.dataLen = _blockSize;
+  ssize_t result = readOneBlock(_cache);
   if (result > 0) {
-    _cache.offset = req.offset;
     _cache.dataLen = result;  // the amount we really have
     if ((size_t)result > req.dataLen) {
       result = req.dataLen;  // only as much as requested
     }
     memcpy(req.data, _cache.data, result);
+    if (!_noCache) {
+      // zero the last bytes of the cache
+      memset(_cache.data + _cache.dataLen, 0, _blockSize - _cache.dataLen);
+    } else {
+      clearCache(_cache, _blockSize);
+    }
+  } else {
+    clearCache(_cache, _blockSize);
   }
   return result;
 }
@@ -101,19 +110,16 @@ ssize_t BlockFileIO::cacheWriteOneBlock(const IORequest &req) {
   // Let's point request buffer to our own buffer, as it may be modified by
   // encryption : originating process may not like to have its buffer modified
   memcpy(_cache.data, req.data, req.dataLen);
-  IORequest tmp;
-  tmp.offset = req.offset;
-  tmp.data = _cache.data;
-  tmp.dataLen = req.dataLen;
-  ssize_t res = writeOneBlock(tmp);
-  if (res < 0) {
-    clearCache(_cache, _blockSize);
-  }
-  else {
-    // And now we can cache the write buffer from the request
+  _cache.offset = req.offset;
+  _cache.dataLen = req.dataLen;
+  ssize_t res = writeOneBlock(_cache);
+  // we cache if we're allowed to or if we are writing the last partial block in CBC reverse mode
+  if ((res > 0) && (!_noCache || (_cachePartialWrite && (req.dataLen < _blockSize)))) {
     memcpy(_cache.data, req.data, req.dataLen);
-    _cache.offset = req.offset;
-    _cache.dataLen = req.dataLen;
+    // zero the last bytes of the cache
+    memset(_cache.data + req.dataLen, 0, _blockSize - req.dataLen);
+  } else {
+    clearCache(_cache, _blockSize);
   }
   return res;
 }

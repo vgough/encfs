@@ -62,6 +62,7 @@ class BlockFileIO : public FileIO {
   unsigned int _blockSize;
   bool _allowHoles;
   bool _noCache;
+  bool _cachePartialWrite;
 
   // cache last block for speed...
   mutable IORequest _cache;

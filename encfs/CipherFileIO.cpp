@@ -540,7 +540,7 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
     }
   }
 
-  bool ok;
+  bool ok = true;
 
   if (haveCBCPadding) {
     if (!fsConfig->reverseEncryption) {
@@ -565,7 +565,41 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
         }
       }
     } else {
-      // todo
+      // let's drop last bytes at a cipherBlockSize() modulo,
+      // they could be padding or result from a partial write
+      int padBytes = writeSize % cbs;
+      writeSize -= padBytes;
+      if (writeSize > 0) {
+        ok = blockWrite(req.data, (int)writeSize,
+                        blockNum ^ fileIV);  // cast works because we work on a
+                                             // block and blocksize fit an int
+        if (ok) {
+          padBytes = 0;
+          // let's look for the 0x00 padding bytes at the end inside the data block
+          while ((padBytes < (cbs - 1)) && (req.data[writeSize - padBytes - 1] == 0x00)) {
+            padBytes++;
+          }
+          // let's look for the first and needed padding byte, 0x80
+          if (req.data[writeSize - padBytes - 1] == 0x80) {
+            padBytes++;
+          } else {
+            padBytes = 0;
+          }
+          // let's check if fully-sized block is correctly padded
+          if (writeSize == bs) {
+            if ((padBytes >= 1) && (padBytes <= cbs)) {
+              writeSize -= padBytes;
+            } else {
+              VLOG(1) << "writeOneBlock failed (wrong padding) for block " << blockNum << ", size "
+                      << writeSize;
+              writeSize = -EBADMSG;
+            }
+          // for a partial block (could be a partial write), don't write what looks like padding
+          } else if ((int)((req.dataLen - writeSize) + padBytes) <= cbs) {
+            writeSize -= padBytes;
+          }
+        }
+      }
     }
   }
 
@@ -582,44 +616,37 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
     }
   }
 
-  if (ok) {
-    IORequest tmpReq = req;
-    if (haveCBCPadding) {
-      tmpReq.offset += tmpReq.offset / bs;
-      tmpReq.dataLen = writeSize;
-    }
-    if (haveHeader) {
-      tmpReq.offset += HEADER_SIZE;
-    }
-    writeSize = base->write(tmpReq);
-    /* I first went with the following (interesting) commented block, but
-     * as base->write() returns -errno or dataLen, let's simplify it. */
-    /* this was not the last block written (only one padding byte)
-    if (padBytes == 1) {
-      // padding byte has been written
-      if (res > req.dataLen) {
-        res--;
-      }
-    // this is the last block written (more than one padding byte)
-    } else if (padBytes > 0) {
-      // we wrote above the last previous block + padding
-      if ((req.offset + res) > (upperSize + cbs)) {
-        res -= cbs;
-      // we wrote up to somewhere inside the previous padding
-      } else if ((req.offset + res) > upperSize) {
-        res = upperSize - req.offset;
-      }
-    } */
-    // Simple version :
-    if (writeSize > 0) {
-      writeSize = req.dataLen;
-    }
-
-  } else {
+  if (!ok) {
     VLOG(1) << "encodeBlock failed for block " << blockNum << ", size "
             << req.dataLen;
     writeSize = -EBADMSG;
   }
+
+  if (writeSize > 0) {
+    IORequest tmpReq = req;
+    tmpReq.dataLen = writeSize;
+    if (!fsConfig->reverseEncryption) {
+      if (haveCBCPadding) {
+        tmpReq.offset += tmpReq.offset / bs;
+      }
+      if (haveHeader) {
+        tmpReq.offset += HEADER_SIZE;
+      }
+    } else {
+      if (haveHeader) {
+        tmpReq.offset -= HEADER_SIZE;
+      }
+      if (haveCBCPadding) {
+        tmpReq.offset -= tmpReq.offset / bs;
+      }
+    }
+    writeSize = base->write(tmpReq);
+    // base->write() returns -errno or dataLen
+    if (writeSize > 0) {
+      writeSize = req.dataLen;
+    }
+  }
+
   return writeSize;
 }
 
