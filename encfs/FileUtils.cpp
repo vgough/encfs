@@ -1054,7 +1054,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   bool uniqueIV = true;         // selectUniqueIV()
   bool chainedIV = true;        // selectChainedIV()
   bool externalIV = false;      // selectExternalChainedIV()
-  bool allowHoles = true;       // selectZeroBlockPassThrough()
+  bool allowHoles = false;       // selectZeroBlockPassThrough()
   long desiredKDFDuration = NormalKDFDuration;
 
   if (reverseEncryption) {

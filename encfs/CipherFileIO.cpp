@@ -430,33 +430,41 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
   if (haveCBCPadding && (readSize >= 0)) {
     if (!fsConfig->reverseEncryption) {
       // remove the padding bytes which could have been added after the ciphertext
-      int padBytes = readSize % cbs;
-      readSize -= padBytes;
+      int padOutBytes = readSize % cbs;
+      readSize -= padOutBytes;
       if (readSize > 0) {
         ok = blockRead(tmpReq.data, (int)readSize,
                        blockNum ^ fileIV);  // cast works because we work on a
                                             // block and blocksize fit an int
         if (ok) {
           // we could have some padding bytes at the end of the plain data (X * 0x00)
-          padBytes = 0;
-          while ((padBytes < readSize) && (tmpReq.data[readSize - padBytes - 1] == 0x00)) {
-            padBytes++;
+          int padInBytes = 0;
+          while ((padInBytes < (cbs - padOutBytes - 1)) && (tmpReq.data[readSize - padInBytes - 1] == 0x00)) {
+            padInBytes++;
           }
-          // there's the holes specific case
-          if (_allowHoles && (padBytes == readSize) && (readSize == (bs + 1))) {
-            readSize--;
-          // otherwise we should have at least one byte of data followed by the first padding byte (0x80)
-          } else if (((readSize - padBytes) > 1) && (tmpReq.data[readSize - padBytes - 1] == 0x80)) {
-            padBytes++;
-            readSize -= padBytes;
+          // let's look for the first and needed padding byte, 0x80
+          if (tmpReq.data[readSize - padInBytes - 1] == 0x80) {
+            padInBytes++;
           } else {
-            VLOG(1) << "readOneBlock failed (wrong padding) for block " << blockNum << ", size "
-                    << readSize;
-            readSize = -EBADMSG;
+            padInBytes = 0;
+          }
+          // let's check if fully-sized block is correctly padded
+          if (readSize == bs) {
+            if ((padInBytes >= 1) && (padInBytes <= cbs)) {
+              readSize -= padInBytes;
+            } else {
+              VLOG(1) << "readOneBlock failed (wrong padding) for block " << blockNum << ", size "
+                      << readSize;
+              readSize = -EBADMSG;
+            }
+          // for a partial block, don't return what looks like padding
+          // could be a partially on-disk written block, for whatever reason (write failed, disk full...)
+          } else if ((padOutBytes + padInBytes) <= cbs) {
+            readSize -= padInBytes;
           }
         }
       } else {
-        VLOG(1) << "readSize zero (" << padBytes << " padBytes) for offset " << req.offset;
+        VLOG(1) << "readSize zero (" << padOutBytes << " padBytes) for offset " << req.offset;
       }
     } else if (readSize > 0) {
       int padBytes = cbs - (readSize % cbs);
@@ -567,36 +575,36 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
     } else {
       // let's drop last bytes at a cipherBlockSize() modulo,
       // they could be padding or result from a partial write
-      int padBytes = writeSize % cbs;
-      writeSize -= padBytes;
+      int padOutBytes = writeSize % cbs;
+      writeSize -= padOutBytes;
       if (writeSize > 0) {
         ok = blockWrite(req.data, (int)writeSize,
                         blockNum ^ fileIV);  // cast works because we work on a
                                              // block and blocksize fit an int
         if (ok) {
-          padBytes = 0;
+          int padInBytes = 0;
           // let's look for the 0x00 padding bytes at the end inside the data block
-          while ((padBytes < (cbs - 1)) && (req.data[writeSize - padBytes - 1] == 0x00)) {
-            padBytes++;
+          while ((padInBytes < (cbs - padOutBytes - 1)) && (req.data[writeSize - padInBytes - 1] == 0x00)) {
+            padInBytes++;
           }
           // let's look for the first and needed padding byte, 0x80
-          if (req.data[writeSize - padBytes - 1] == 0x80) {
-            padBytes++;
+          if (req.data[writeSize - padInBytes - 1] == 0x80) {
+            padInBytes++;
           } else {
-            padBytes = 0;
+            padInBytes = 0;
           }
           // let's check if fully-sized block is correctly padded
           if (writeSize == bs) {
-            if ((padBytes >= 1) && (padBytes <= cbs)) {
-              writeSize -= padBytes;
+            if ((padInBytes >= 1) && (padInBytes <= cbs)) {
+              writeSize -= padInBytes;
             } else {
               VLOG(1) << "writeOneBlock failed (wrong padding) for block " << blockNum << ", size "
                       << writeSize;
               writeSize = -EBADMSG;
             }
           // for a partial block (could be a partial write), don't write what looks like padding
-          } else if ((int)((req.dataLen - writeSize) + padBytes) <= cbs) {
-            writeSize -= padBytes;
+          } else if ((padOutBytes + padInBytes) <= cbs) {
+            writeSize -= padInBytes;
           }
         }
       }
