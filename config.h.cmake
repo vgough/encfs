@@ -6,6 +6,7 @@
 #cmakedefine XATTR_LLIST
 
 #cmakedefine HAVE_LCHMOD
+#cmakedefine HAVE_UTIMENSAT
 #cmakedefine HAVE_FDATASYNC
 
 #cmakedefine HAVE_DIRENT_D_TYPE
