@@ -77,7 +77,7 @@ fuse_umount() {
 }
 
 # Honor the SHELL environment variable to select a shell to run
-"$SHELL"; retval=$?
+"${SHELL:-/bin/sh}"; retval=$?
 
 # ensure that this shell isn't itself holding the mounted directory open
 # ...but avoid terminating on failure, *or* causing a shellcheck warning for
