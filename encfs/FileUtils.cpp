@@ -1247,6 +1247,7 @@ RootPtr createV6Config(EncFS_Context *ctx,
   }
 
   if (!saveConfig(Config_V6, rootDir, config.get(), opts->config)) {
+    cout << _("Error saving config file.\n");
     return rootInfo;
   }
 
