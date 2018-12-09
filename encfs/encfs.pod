@@ -490,7 +490,7 @@ filenames for some reason.
 
 Based on an underlying filesystem supporting a maximum of 255 characters in
 filenames, here is the maximum possible filename length depending on the choosen
-encoding scheme : stream (189), block (176), block32 (143). Note that we should
+encoding scheme : stream (189), block (175), block32 (143). Note that we should
 rather talk about bytes, when filenames contain special (multi-bytes) characters.
 
 Prior to version 1.1, only stream encoding was supported.
