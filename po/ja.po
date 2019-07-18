@@ -608,7 +608,7 @@ msgid ""
 " - invalid options -- see usage message\n"
 msgstr ""
 "fuse が失敗しました。一般的な原因としては:\n"
-" - fuse カーネルモジュールがインストールされていない (modeprobe fuse)\n"
+" - fuse カーネルモジュールがインストールされていない (modprobe fuse)\n"
 " - 無効なオプション -- 使い方を参照してください\n"
 
 #, c-format
