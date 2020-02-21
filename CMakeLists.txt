@@ -96,7 +96,7 @@ endif()
 
 # Check for FUSE.
 find_package (FUSE REQUIRED)
-include_directories (SYSTEM ${FUSE_INCLUDE_DIR})
+include_directories (${FUSE_INCLUDE_DIR})
 add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=29)
 if (CYGWIN)
   # Cygwin build is intended to use WinFsp
@@ -105,7 +105,7 @@ endif()
 
 # Check for OpenSSL.
 find_package (OpenSSL REQUIRED)
-include_directories (SYSTEM ${OPENSSL_INCLUDE_DIR})
+include_directories (${OPENSSL_INCLUDE_DIR})
 
 find_program (POD2MAN pod2man)
 
@@ -187,7 +187,7 @@ include_directories (${CMAKE_CURRENT_LIST_DIR})
 if (ENABLE_NLS)
   find_package (Intl)
   if (Intl_FOUND)
-    include_directories (SYSTEM ${Intl_INCLUDE_DIRS})
+    include_directories (${Intl_INCLUDE_DIRS})
   endif()
 
   add_subdirectory(po)
@@ -236,11 +236,11 @@ if (USE_INTERNAL_TINYXML)
   endif ()
   set(BUILD_TESTS OFF CACHE BOOL "build tests")
   add_subdirectory(${TINYXML_DIR} EXCLUDE_FROM_ALL)
-  include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
   link_directories(${CMAKE_BINARY_DIR}/${TINYXML_DIR})
 else ()
   find_package (TinyXML REQUIRED)
-  include_directories (SYSTEM ${TINYXML_INCLUDE_DIR})
+  include_directories (${TINYXML_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_EASYLOGGING)
@@ -248,13 +248,13 @@ if (USE_INTERNAL_EASYLOGGING)
   set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
   set(build_static_lib ON CACHE BOOL "build static libs")
   add_subdirectory(${EASYLOGGING_DIR} EXCLUDE_FROM_ALL)
-  include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
   link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
   set(EASYLOGGINGPP_LIBRARY easyloggingpp)
 else ()
   set(EASYLOGGINGPP_USE_SHARED_LIBS ON CACHE BOOL "look for shared lib")
   find_package (EASYLOGGINGPP REQUIRED)
-  include_directories (SYSTEM ${EASYLOGGINGPP_INCLUDE_DIR})
+  include_directories (${EASYLOGGINGPP_INCLUDE_DIR})
 endif ()
 
 set(SOURCE_FILES
