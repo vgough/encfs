@@ -196,30 +196,26 @@ if (ENABLE_NLS)
   add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_PREFIX}/share/locale")
 endif (ENABLE_NLS)
 
-if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or above.
-  find_program(CLANG_TIDY_EXE NAMES "clang-tidy-4.0" "clang-tidy40" "clang-tidy" DOC "Path to clang-tidy executable")
-  if(NOT CLANG_TIDY_EXE)
-    message(STATUS "clang-tidy not found.")
-  else()
-    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
-    string(CONCAT TIDY_OPTS "-checks=*"
-      ",-cert-err58-cpp"
-      ",-cppcoreguidelines-pro-*"
-      ",-google-build-using-namespace"
-      ",-google-readability-casting"
-      ",-google-readability-todo"
-      ",-google-runtime-int"
-      ",-google-runtime-references"
-      ",-modernize-loop-convert"
-      ",-performance-inefficient-string-concatenation"
-      ",-readability-inconsistent-declaration-parameter-name"
-      ",-readability-named-parameter"
-      )
-    set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" ${TIDY_OPTS})
-    #set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,google-readability-redundant-smartptr-get")
-  endif()
+find_program(CLANG_TIDY_EXE NAMES "clang-tidy-4.0" "clang-tidy40" "clang-tidy" DOC "Path to clang-tidy executable")
+if(NOT CLANG_TIDY_EXE)
+  message(STATUS "clang-tidy not found.")
 else()
-  message(STATUS "clang-tidy check skipped, need newer cmake")
+  message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
+  string(CONCAT TIDY_OPTS "-checks=*"
+    ",-cert-err58-cpp"
+    ",-cppcoreguidelines-pro-*"
+    ",-google-build-using-namespace"
+    ",-google-readability-casting"
+    ",-google-readability-todo"
+    ",-google-runtime-int"
+    ",-google-runtime-references"
+    ",-modernize-loop-convert"
+    ",-performance-inefficient-string-concatenation"
+    ",-readability-inconsistent-declaration-parameter-name"
+    ",-readability-named-parameter"
+    )
+  set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" ${TIDY_OPTS})
+  #set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,google-readability-redundant-smartptr-get")
 endif()
 
 if (USE_INTERNAL_TINYXML)
