@@ -2,7 +2,7 @@
 
 # Test EncFS normal and paranoid mode
 
-use Test::More tests => 136;
+use Test::More tests => 68*2*2;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -53,18 +53,30 @@ elsif (defined($ENV{'SUDO_TESTS'}))
     $sudo_cmd="sudo";
 }
 
-# test filesystem in standard config mode
+# Configuration file related global variables
+my $encfs6xml;
+my $padding;
+
+# Test in standard mode, second call same conf but without padding
+$padding = 1;
+&runTests('standard');
+$padding = 0;
 &runTests('standard');
 
-# test in paranoia mode
+# Test in paranoia mode, second call same conf but without padding
+$padding = 1;
+&runTests('paranoia');
+$padding = 0;
 &runTests('paranoia');
 
 # Wrapper function - runs all tests in the specified mode
 sub runTests
 {
     my $mode = shift;
-    print STDERR "\nrunTests: mode=$mode sudo=";
-    print STDERR (defined($sudo_cmd) ? "on" : "off")."\n";
+    print STDERR "\nrunTests: mode=$mode";
+    print STDERR ($padding ? " padding=on" : " padding=off");
+    print STDERR (defined($sudo_cmd) ? " sudo=on" : " sudo=off")."\n";
+
 
     &newWorkingDir;
 
@@ -373,10 +385,27 @@ sub mount
         mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
     }
 
+    # Let's disable padding in our saved config and use it
+    if (!$padding)
+    {
+        $encfs6xml =~ s/<padding>1/<padding>0/;
+        open my $fh, ">", "$raw/.encfs6.xml";
+        print $fh $encfs6xml;
+        close $fh;
+    }
+
     delete $ENV{"ENCFS6_CONFIG"};
     remount($args);
     ok( $? == 0, "encfs command returns 0") || BAIL_OUT("");
     ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
+
+    open my $fh, "<", "$raw/.encfs6.xml";
+    $encfs6xml = do
+    {
+        local $/ = undef;
+        <$fh>;
+    };
+    close $fh;
 }
 
 # Helper function

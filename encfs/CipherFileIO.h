@@ -38,6 +38,8 @@ class Cipher;
 class FileIO;
 struct IORequest;
 
+enum PaddingType { Padding_Disabled, Padding_Normal, Padding_Reverse };
+
 /*
     Implement the FileIO interface encrypting data in blocks.
 
@@ -75,6 +77,9 @@ class CipherFileIO : public BlockFileIO {
   bool blockWrite(unsigned char *buf, int size, uint64_t iv64) const;
   bool streamWrite(unsigned char *buf, int size, uint64_t iv64) const;
 
+  void plainSizeToCipherSize(off_t *size) const;
+  void cipherSizeToPlainSize(off_t *size) const;
+
   ssize_t read(const IORequest &req) const;
 
   std::shared_ptr<FileIO> base;
@@ -90,6 +95,7 @@ class CipherFileIO : public BlockFileIO {
 
   std::shared_ptr<Cipher> cipher;
   CipherKey key;
+  bool haveCBCPadding;
 };
 
 }  // namespace encfs

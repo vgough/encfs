@@ -48,9 +48,35 @@ static Interface CipherFileIO_iface("FileIO/Cipher", 2, 0, 1);
 
 const int HEADER_SIZE = 8;  // 64 bit initialization vector..
 
+/*
+ * Check if we enable CBC padding (instead of using stream cipher for the last block).
+ * Here we check against the cipher interface version rather than our own FileIO/Cipher one,
+ * because this latter is not stored in the configuration file...
+ * Padding (of files > 0 bytes) follows the OneAndZeroes rule :
+ * - each data block to encode is at most blockSize -1 bytes in length ;
+ * - each data block is padded with a 0x80 byte ;
+ * - the last data block is padded with cipherBlockSize -1 additional 0x00 bytes.
+ * Some 0x00 padding bytes may then be written out of the ciphertext, at the end of the file,
+ * if the length of the last data block is not already a multiple of cipherBlockSize.
+ * This allows to compute files' length without having to read the last block, at a cost of :
+ * int((fileSize - 1) / (blockSize - 1)) + cipherBlockSize.
+ * The return value helps us in CipherFileIO initialization below to set the blockSize :
+ * blockSize = blockSize - 1 in normal mode.
+ */
+PaddingType checkCBCPadding(const FSConfigPtr &cfg) {
+  if ((((cfg->config->cipherIface.current() == 3) && (cfg->config->cipherIface.revision() >= 1)) ||
+       (cfg->config->cipherIface.current() > 3)) && (cfg->config->padding)) {
+    if (cfg->reverseEncryption) {
+      return Padding_Reverse;
+    }
+    return Padding_Normal;
+  }
+  return Padding_Disabled;
+}
+
 CipherFileIO::CipherFileIO(std::shared_ptr<FileIO> _base,
                            const FSConfigPtr &cfg)
-    : BlockFileIO(cfg->config->blockSize, cfg),
+    : BlockFileIO(cfg->config->blockSize - (checkCBCPadding(cfg) == Padding_Normal ? 1 : 0), cfg),
       base(std::move(_base)),
       haveHeader(cfg->config->uniqueIV),
       externalIV(0),
@@ -59,6 +85,7 @@ CipherFileIO::CipherFileIO(std::shared_ptr<FileIO> _base,
   fsConfig = cfg;
   cipher = cfg->cipher;
   key = cfg->key;
+  haveCBCPadding = (checkCBCPadding(cfg) != Padding_Disabled);
 
   CHECK_EQ(fsConfig->config->blockSize % fsConfig->cipher->cipherBlockSize(), 0)
       << "FS block size must be multiple of cipher block size";
@@ -128,6 +155,49 @@ bool CipherFileIO::setIV(uint64_t iv) {
 }
 
 /**
+ * Helper function to adjust plain size to cipher size
+ * according to configuration (file header, padding).
+ */
+void CipherFileIO::plainSizeToCipherSize(off_t *size) const {
+  if (*size > 0) {
+    if (haveCBCPadding) {
+      // for all the blocks but the last one, we add 1 padding byte to compute blockSize bytes blocks
+      // remember, in normal mode, blockSize is set to blockSize - 1
+      *size += (*size - 1) / (blockSize() - (fsConfig->reverseEncryption ? 1 : 0));
+      // for the last block we add cipherBlockSize padding bytes
+      *size += fsConfig->cipher->cipherBlockSize();
+    }
+    /* In reverse mode, the upper file (ciphertext) is larger than
+     * the backing plaintext file */
+    if (haveHeader) {
+      *size += HEADER_SIZE;
+    }
+  }
+}
+
+/**
+ * Helper function to adjust cipher size to plain size
+ * according to configuration (file header, padding).
+ */
+void CipherFileIO::cipherSizeToPlainSize(off_t *size) const {
+  if (haveHeader && (*size > 0)) {
+    /* Instead of using rAssert, we could also relax the rule and return 0.
+     * Think about a file which could have been partially written. */
+    rAssert(*size >= HEADER_SIZE);
+    *size -= HEADER_SIZE;
+  }
+  if (haveCBCPadding && (*size > 0)) {
+    // same note as above regarding rAssert
+    rAssert(*size >= fsConfig->cipher->cipherBlockSize());
+    // we have cipherBlockSize bytes added to the last block, let's remove them
+    *size -= fsConfig->cipher->cipherBlockSize();
+    // the remaining blocks have a 1 byte padding, let's remove them
+    // remember, in normal mode, blockSize is set to blockSize - 1
+    *size -= *size / (blockSize() + (fsConfig->reverseEncryption ? 0 : 1));
+  }
+}
+
+/**
  * Get file attributes (FUSE-speak for "stat()") for an upper file
  * Upper file   = file we present to the user via FUSE
  * Backing file = file that is actually on disk
@@ -137,21 +207,14 @@ int CipherFileIO::getAttr(struct stat *stbuf) const {
   // stat() the backing file
   int res = base->getAttr(stbuf);
 
-  // adjust size if we have a file header
-  if ((res == 0) && haveHeader && S_ISREG(stbuf->st_mode) &&
-      (stbuf->st_size > 0)) {
+  // let's adjust size
+  if ((res == 0) && S_ISREG(stbuf->st_mode)) {
     if (!fsConfig->reverseEncryption) {
-      /* In normal mode, the upper file (plaintext) is smaller
-       * than the backing ciphertext file */
-      rAssert(stbuf->st_size >= HEADER_SIZE);
-      stbuf->st_size -= HEADER_SIZE;
+      cipherSizeToPlainSize(&(stbuf->st_size));
     } else {
-      /* In reverse mode, the upper file (ciphertext) is larger than
-       * the backing plaintext file */
-      stbuf->st_size += HEADER_SIZE;
+      plainSizeToCipherSize(&(stbuf->st_size));
     }
   }
-
   return res;
 }
 
@@ -163,12 +226,12 @@ off_t CipherFileIO::getSize() const {
   off_t size = base->getSize();
   // No check on S_ISREG here -- don't call getSize over getAttr unless this
   // is a normal file!
-  if (haveHeader && size > 0) {
+  // let's adjust size
+  if (size >= 0) {
     if (!fsConfig->reverseEncryption) {
-      rAssert(size >= HEADER_SIZE);
-      size -= HEADER_SIZE;
+      cipherSizeToPlainSize(&size);
     } else {
-      size += HEADER_SIZE;
+      plainSizeToCipherSize(&size);
     }
   }
   return size;
@@ -326,26 +389,119 @@ int CipherFileIO::generateReverseHeader(unsigned char *headerBuf) {
  * Read block from backing plaintext file, then encrypt it (reverse mode)
  */
 ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
+
+  int cbs = fsConfig->cipher->cipherBlockSize();
   int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
   IORequest tmpReq = req;
 
-  // adjust offset if we have a file header
-  if (haveHeader && !fsConfig->reverseEncryption) {
-    tmpReq.offset += HEADER_SIZE;
+  // adjust offset and length if we pad
+  if (haveCBCPadding) {
+    if (!fsConfig->reverseEncryption) {
+      tmpReq.offset += tmpReq.offset / tmpReq.dataLen;
+      tmpReq.dataLen += 1;
+    } else {
+      tmpReq.offset -= tmpReq.offset / tmpReq.dataLen;
+      tmpReq.dataLen -= 1;
+    }
   }
+
+  // adjust offset if we have a file header
+  if (haveHeader) {
+    if (!fsConfig->reverseEncryption) {
+      tmpReq.offset += HEADER_SIZE;
+    } else {
+      // done in CipherFileIO::read()
+    }
+  }
+
   ssize_t readSize = base->read(tmpReq);
 
-  bool ok;
-  if (readSize > 0) {
-    if (haveHeader && fileIV == 0) {
-      int res = const_cast<CipherFileIO *>(this)->initHeader();
-      if (res < 0) {
-        return res;
+  if (haveHeader && (fileIV == 0) && (readSize > 0)) {
+    int res = const_cast<CipherFileIO *>(this)->initHeader();
+    if (res < 0) {
+      return res;
+    }
+  }
+
+  bool ok = true;
+
+  if (haveCBCPadding && (readSize >= 0)) {
+    if (!fsConfig->reverseEncryption) {
+      // remove the padding bytes which could have been added after the ciphertext
+      int padOutBytes = readSize % cbs;
+      readSize -= padOutBytes;
+      if (readSize > 0) {
+        ok = blockRead(tmpReq.data, (int)readSize,
+                       blockNum ^ fileIV);  // cast works because we work on a
+                                            // block and blocksize fit an int
+        if (ok) {
+          // we could have some padding bytes at the end of the plain data (X * 0x00)
+          int padInBytes = 0;
+          while ((padInBytes < (cbs - padOutBytes - 1)) && (tmpReq.data[readSize - padInBytes - 1] == 0x00)) {
+            padInBytes++;
+          }
+          // let's look for the first and needed padding byte, 0x80
+          if (tmpReq.data[readSize - padInBytes - 1] == 0x80) {
+            padInBytes++;
+          } else {
+            padInBytes = 0;
+          }
+          // let's check if fully-sized block is correctly padded
+          if (readSize == bs) {
+            if ((padInBytes >= 1) && (padInBytes <= cbs)) {
+              readSize -= padInBytes;
+            } else {
+              VLOG(1) << "readOneBlock failed (wrong padding) for block " << blockNum << ", size "
+                      << readSize;
+              readSize = -EBADMSG;
+            }
+          // for a partial block, don't return what looks like padding
+          // could be a partially on-disk written block, for whatever reason (write failed, disk full...)
+          } else if ((padOutBytes + padInBytes) <= cbs) {
+            readSize -= padInBytes;
+          }
+        }
+      } else {
+        VLOG(1) << "readSize zero (" << padOutBytes << " padBytes) for offset " << req.offset;
+      }
+    } else if (readSize > 0) {
+      int padBytes = cbs - (readSize % cbs);
+      tmpReq.data[readSize] = 0x80;
+      memset(tmpReq.data + readSize + 1, 0x00, padBytes - 1);
+      readSize += padBytes;
+      ok = blockRead(tmpReq.data, (int)readSize,
+                     blockNum ^ fileIV);  // cast works because we work on a
+                                          // block and blocksize fit an int
+      if (ok) {
+        if ((size_t)readSize < req.dataLen) {
+          // this is the last block, we must pad it with cipherBlockSize() bytes
+          memset(tmpReq.data + readSize, 0x00, cbs - padBytes);
+          readSize += cbs - padBytes;
+        }
+      }
+    } else {
+      // This could be a request for the last padding bytes after the last ciphered block.
+      // we could use getSize() to find out, but as we reverse read, we can assume size
+      // could have changed since our last check, we would then get a wrong cached result.
+      // Let's simply try to read the previous block instead.
+      if (tmpReq.offset > 0) {
+        tmpReq.offset -= tmpReq.dataLen;
+        readSize = base->read(tmpReq);
+      }
+      if ((readSize > 0) && ((bs - readSize) < cbs)) {
+        readSize = cbs - (bs - readSize);
+        memset(tmpReq.data, 0x00, readSize);
+      } else {
+        readSize = 0;
+        VLOG(1) << "readSize zero for offset " << req.offset;
       }
     }
+  }
 
+  // no CBC padding, stream cipher instead
+  else if (readSize > 0) {
     if (readSize != bs) {
       VLOG(1) << "streamRead(data, " << readSize << ", IV)";
       ok = streamRead(tmpReq.data, (int)readSize,
@@ -356,14 +512,16 @@ ssize_t CipherFileIO::readOneBlock(const IORequest &req) const {
                      blockNum ^ fileIV);  // cast works because we work on a
                                           // block and blocksize fit an int
     }
+  }
 
-    if (!ok) {
-      VLOG(1) << "decodeBlock failed for block " << blockNum << ", size "
-              << readSize;
-      readSize = -EBADMSG;
-    }
-  } else if (readSize == 0) {
+  else if (readSize == 0) {
     VLOG(1) << "readSize zero for offset " << req.offset;
+  }
+
+  if (!ok) {
+    VLOG(1) << "decodeBlock failed for block " << blockNum << ", size "
+            << readSize;
+    readSize = -EBADMSG;
   }
 
   return readSize;
@@ -377,42 +535,127 @@ ssize_t CipherFileIO::writeOneBlock(const IORequest &req) {
     return -EPERM;
   }
 
+  int cbs = fsConfig->cipher->cipherBlockSize();
   unsigned int bs = blockSize();
   off_t blockNum = req.offset / bs;
 
-  if (haveHeader && fileIV == 0) {
+  ssize_t writeSize = req.dataLen;
+
+  if (haveHeader && (fileIV == 0)) {
     int res = initHeader();
     if (res < 0) {
       return res;
     }
   }
 
-  bool ok;
-  if (req.dataLen != bs) {
-    ok = streamWrite(req.data, (int)req.dataLen,
-                     blockNum ^ fileIV);  // cast works because we work on a
-                                          // block and blocksize fit an int
-  } else {
-    ok = blockWrite(req.data, (int)req.dataLen,
-                    blockNum ^ fileIV);  // cast works because we work on a
-                                         // block and blocksize fit an int
+  bool ok = true;
+
+  if (haveCBCPadding) {
+    if (!fsConfig->reverseEncryption) {
+      // we need padding bytes so that writeSize is a multiple of cipherBlockSize()
+      int padBytes = cbs - (writeSize % cbs);
+      // we then add the first padding byte : 0x80
+      req.data[writeSize] = 0x80;
+      // if needed, we add the other padding bytes : 0x00
+      memset(req.data + writeSize + 1, 0x00, padBytes - 1);
+      writeSize+= padBytes;
+      ok = blockWrite(req.data, (int)writeSize,
+                      blockNum ^ fileIV);  // cast works because we work on a
+                                           // block and blocksize fit an int
+      if (ok) {
+        /* here we use getSize() in write normal mode, we can safely assume that
+         * backing file has not been modified by others since we opened it
+         * (otherwise getSize() could return a wrong cached result). */
+        if ((padBytes > 1) || (req.offset + bs >= getSize())) {
+          // this is the last block, we must pad it with cipherBlockSize() bytes
+          memset(req.data + writeSize, 0x00, cbs - padBytes);
+          writeSize += cbs - padBytes;
+        }
+      }
+    } else {
+      // let's drop last bytes at a cipherBlockSize() modulo,
+      // they could be padding or result from a partial write
+      int padOutBytes = writeSize % cbs;
+      writeSize -= padOutBytes;
+      if (writeSize > 0) {
+        ok = blockWrite(req.data, (int)writeSize,
+                        blockNum ^ fileIV);  // cast works because we work on a
+                                             // block and blocksize fit an int
+        if (ok) {
+          int padInBytes = 0;
+          // let's look for the 0x00 padding bytes at the end inside the data block
+          while ((padInBytes < (cbs - padOutBytes - 1)) && (req.data[writeSize - padInBytes - 1] == 0x00)) {
+            padInBytes++;
+          }
+          // let's look for the first and needed padding byte, 0x80
+          if (req.data[writeSize - padInBytes - 1] == 0x80) {
+            padInBytes++;
+          } else {
+            padInBytes = 0;
+          }
+          // let's check if fully-sized block is correctly padded
+          if (writeSize == bs) {
+            if ((padInBytes >= 1) && (padInBytes <= cbs)) {
+              writeSize -= padInBytes;
+            } else {
+              VLOG(1) << "writeOneBlock failed (wrong padding) for block " << blockNum << ", size "
+                      << writeSize;
+              writeSize = -EBADMSG;
+            }
+          // for a partial block (could be a partial write), don't write what looks like padding
+          } else if ((padOutBytes + padInBytes) <= cbs) {
+            writeSize -= padInBytes;
+          }
+        }
+      }
+    }
   }
 
-  ssize_t res = 0;
-  if (ok) {
-    if (haveHeader) {
-      IORequest tmpReq = req;
-      tmpReq.offset += HEADER_SIZE;
-      res = base->write(tmpReq);
+  // no CBC padding, stream cipher instead
+  else {
+    if (req.dataLen != bs) {
+      ok = streamWrite(req.data, (int)writeSize,
+                       blockNum ^ fileIV);  // cast works because we work on a
+                                            // block and blocksize fit an int
     } else {
-      res = base->write(req);
+      ok = blockWrite(req.data, (int)writeSize,
+                      blockNum ^ fileIV);  // cast works because we work on a
+                                           // block and blocksize fit an int
     }
-  } else {
+  }
+
+  if (!ok) {
     VLOG(1) << "encodeBlock failed for block " << blockNum << ", size "
             << req.dataLen;
-    res = -EBADMSG;
+    writeSize = -EBADMSG;
   }
-  return res;
+
+  if (writeSize > 0) {
+    IORequest tmpReq = req;
+    tmpReq.dataLen = writeSize;
+    if (!fsConfig->reverseEncryption) {
+      if (haveCBCPadding) {
+        tmpReq.offset += tmpReq.offset / bs;
+      }
+      if (haveHeader) {
+        tmpReq.offset += HEADER_SIZE;
+      }
+    } else {
+      if (haveHeader) {
+        tmpReq.offset -= HEADER_SIZE;
+      }
+      if (haveCBCPadding) {
+        tmpReq.offset -= tmpReq.offset / bs;
+      }
+    }
+    writeSize = base->write(tmpReq);
+    // base->write() returns -errno or dataLen
+    if (writeSize > 0) {
+      writeSize = req.dataLen;
+    }
+  }
+
+  return writeSize;
 }
 
 bool CipherFileIO::blockWrite(unsigned char *buf, int size,
@@ -473,10 +716,10 @@ int CipherFileIO::truncate(off_t size) {
     }
     reopen = 1;
   }
-  if (!haveHeader) {
+  if (!haveHeader && !haveCBCPadding) {
     res = BlockFileIO::truncateBase(size, base.get());
   } else {
-    if (0 == fileIV) {
+    if (haveHeader && (0 == fileIV)) {
       // empty file.. create the header..
       res = initHeader();
     }
@@ -486,7 +729,13 @@ int CipherFileIO::truncate(off_t size) {
       res = BlockFileIO::truncateBase(size, nullptr);
     }
     if (res == 0) {
-      res = base->truncate(size + HEADER_SIZE);
+      // let's adjust size
+      if (!fsConfig->reverseEncryption) {
+        plainSizeToCipherSize(&size);
+      } else {
+        cipherSizeToPlainSize(&size);
+      }
+      res = base->truncate(size);
     }
   }
   if (reopen == 1) {

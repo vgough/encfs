@@ -159,9 +159,9 @@ int TimedPBKDF2(const char *pass, int passlen, const unsigned char *salt,
 // - Version 2:1 adds support for Message Digest function interface
 // - Version 2:2 adds PBKDF2 for password derivation
 // - Version 3:0 adds a new IV mechanism
-static Interface BlowfishInterface("ssl/blowfish", 3, 0, 2);
-static Interface AESInterface("ssl/aes", 3, 0, 2);
-static Interface CAMELLIAInterface("ssl/camellia", 3, 0, 2);
+static Interface BlowfishInterface("ssl/blowfish", 3, 1, 2);
+static Interface AESInterface("ssl/aes", 3, 1, 2);
+static Interface CAMELLIAInterface("ssl/camellia", 3, 1, 2);
 
 #ifndef OPENSSL_NO_CAMELLIA
 

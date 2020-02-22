@@ -419,7 +419,9 @@ In the expert / manual configuration mode, each of the above options is
 configurable.  Here is a list of current options with some notes about what
 they mean:
 
-=head1 Key Derivation Function
+=over 4
+
+=item I<Key Derivation Function (and generation time)>
 
 As of version 1.5, B<EncFS> now uses PBKDF2 as the default key derivation
 function.  The number of iterations in the keying function is selected based on
@@ -436,9 +438,7 @@ If an B<EncFS> filesystem configuration from 1.4.x is modified with version 1.5
 function will be used and the filesystem will no longer be readable by older
 versions.
 
-=over 4
-
-=item I<Cipher>
+=item I<Cipher Algorithms>
 
 Which encryption algorithm to use.  The list is generated automatically based
 on what supported algorithms B<EncFS> found in the encryption libraries.
@@ -457,9 +457,8 @@ default) is probably overkill.
 =item I<Filesystem Block Size>
 
 This is the size (in bytes) that B<EncFS> deals with at one time.  Each block
-gets its own initialization vector and is encoded in the cipher's
-cipher-block-chaining mode.  A partial block at the end of a file is encoded
-using a stream mode to avoid having to store the filesize somewhere.
+is padded (see below), gets its own initialization vector, and is encoded in
+the cipher's cipher-block-chaining mode.
 
 Having larger block sizes reduces the overhead of B<EncFS> a little, but it can
 also add overhead if your programs read small parts of files.  In order to read
@@ -468,9 +467,22 @@ read and decoded, so a large block size adds overhead to small requests.  With
 write calls it is even worse, as a block must be read and decoded, the change
 applied and the block encoded and written back out.
 
-The default is 512 bytes as of version 1.0.  It was hard coded to 64 bytes in
-version 0.x, which was not as efficient as the current setting for general
-usage.
+The default is 1024 bytes as of version 1.4.2 (512 bytes as of version 1.0).
+It was hard coded to 64 bytes in version 0.x, which was not as efficient as
+the current setting for general usage.
+
+=item I<Padding>
+
+As of 1.9.6, every block is padded with 1 byte before being encrypted in
+CBC (cipher-block-chaining) mode.  The last block is padded with the cipher
+block sier (16 bytes with AES).  This allows to compute the filesize without
+having to store it somewhere.  This however has a cost, in bytes,
+for files > 0 byte : int((fileSize - 1) / (blockSize - 1)) + cipherBlockSize.
+
+Previous behavior was to use cipher stream mode for the last partial block,
+without any padding.  This also avoids to have to store the filesize, and has
+no impact on it.  However, it is known to have some potential security issue.
+This can still be enabled in expert mode.
 
 =item I<Filename Encoding>
 

@@ -69,6 +69,8 @@ struct EncFSConfig {
 
   bool plainData;         // do not encrypt file content
 
+  bool padding;           // use CBC padding instead of cipher stream mode
+
   int blockMACBytes;      // MAC headers on blocks..
   int blockMACRandBytes;  // number of random bytes in the block header
 
@@ -82,6 +84,7 @@ struct EncFSConfig {
     cfgType = Config_None;
     subVersion = 0;
     plainData = false;
+    padding = true;
     blockMACBytes = 0;
     blockMACRandBytes = 0;
     uniqueIV = false;
