@@ -4,44 +4,54 @@ matrix:
   include:
     - os: linux
       compiler: gcc
-      dist: trusty
+      dist: bionic
       sudo: required
       addons:
         apt:
-          sources:
-            - ubuntu-toolchain-r-test
           packages:
             - attr
             - fuse
             - libfuse-dev
             - gettext
-            - cmake3
+            - cmake
+      env:
+        - SUDO_TESTS=true
+
+    - os: linux
+      compiler: gcc
+      dist: xenial
+      sudo: required
+      addons:
+        apt:
+          packages:
+            - attr
+            - fuse
+            - libfuse-dev
+            - gettext
+            - cmake
       env:
         - SUDO_TESTS=true
 
     - os: linux
       compiler: clang
-      dist: trusty
+      dist: xenial
       sudo: false
       addons:
         apt:
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-4.0
           packages:
             - attr
             - fuse
             - libfuse-dev
             - gettext
-            - cmake3
+            - cmake
             - clang-4.0
             - clang-tidy-4.0
       env:
-        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=false CMAKE=/tmp/bin/cmake
+        - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=false
 
     - os: osx
       compiler: clang
-      osx_image: xcode9
+      osx_image: xcode9.2
       sudo: required
       env:
         - SUDO_TESTS=true

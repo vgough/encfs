@@ -107,8 +107,8 @@ discouraged of course!
 Normally B<EncFS> provides a plaintext view of data on demand: it stores
 enciphered data and displays plaintext data.  With B<--reverse> it takes as
 source plaintext data and produces enciphered data on-demand.  This can be
-useful for creating remote encrypted backups, where you do not wish to keep the
-local files unencrypted.
+useful for creating remote encrypted backups, where you do not wish to store
+the local files encrypted.
 
 For example, the following would create an encrypted view in /tmp/crypt-view.
 
