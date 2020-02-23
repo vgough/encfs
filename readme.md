@@ -1,5 +1,8 @@
-TinyXML-2 [![TravisCI Status](https://travis-ci.org/leethomason/tinyxml2.svg?branch=master)](https://travis-ci.org/leethomason/tinyxml2) [![AppVeyor Status](https://ci.appveyor.com/api/projects/status/github/leethomason/tinyxml2?branch=master&svg=true)](https://ci.appveyor.com/project/leethomason/tinyxml2)
+TinyXML-2
 =========
+
+[![TravisCI Status](https://travis-ci.org/leethomason/tinyxml2.svg?branch=master)](https://travis-ci.org/leethomason/tinyxml2) [![AppVeyor Status](https://ci.appveyor.com/api/projects/status/github/leethomason/tinyxml2?branch=master&svg=true)](https://ci.appveyor.com/project/leethomason/tinyxml2)
+
 ![TinyXML-2 Logo](http://www.grinninglizard.com/tinyxml2/TinyXML2_small.png)
 
 TinyXML-2 is a simple, small, efficient, C++ XML parser that can be 
@@ -9,7 +12,7 @@ The master is hosted on github:
 https://github.com/leethomason/tinyxml2
 
 The online HTML version of these docs:
-http://grinninglizard.com/tinyxml2docs/index.html
+http://leethomason.github.io/tinyxml2/
 
 Examples are in the "related pages" tab of the HTML docs.
 
