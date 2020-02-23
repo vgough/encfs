@@ -8,6 +8,8 @@ if [[ "$INTEGRATION" == "true" ]]; then
     sudo modprobe fuse
   elif uname -s | grep -q Darwin; then
     brew cask install osxfuse
+  elif uname -s | grep -q FreeBSD; then
+    kldload fuse
   fi
 fi
 
