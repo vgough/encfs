@@ -1,8 +1,8 @@
 #!/usr/bin/perl -w
 
-# Test EncFS normal and paranoid mode
+# Test EncFS standard and paranoid mode
 
-use Test::More tests => 136;
+use Test::More tests => 144;
 use File::Path;
 use File::Copy;
 use File::Temp;
@@ -11,24 +11,22 @@ use IO::Handle;
 require("integration/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
-
 if($^O eq "linux" and $tempDir eq "/tmp") {
-   # On Linux, /tmp is often a tmpfs mount that does not support
-   # extended attributes. Use /var/tmp instead.
+   # On Linux, /tmp is often a tmpfs mount that does not
+   # support extended attributes. Use /var/tmp instead.
    $tempDir = "/var/tmp";
 }
 
-# Find attr binary
-# Linux
+# Find attr binary, Linux
 my $setattr = "attr -s encfs -V hello";
 my $getattr = "attr -g encfs";
-if(system("which xattr > /dev/null 2>&1") == 0)
+if(system("which xattr >/dev/null 2>&1") == 0)
 {
     # Mac OS X
     $setattr = "xattr -sw encfs hello";
     $getattr = "xattr -sp encfs";
 }
-if(system("which lsextattr > /dev/null 2>&1") == 0)
+if(system("which lsextattr >/dev/null 2>&1") == 0)
 {
     # FreeBSD
     $setattr = "setextattr -h user encfs hello";
@@ -53,188 +51,133 @@ elsif (defined($ENV{'SUDO_TESTS'}))
     $sudo_cmd="sudo";
 }
 
-# test filesystem in standard config mode
-&runTests('standard');
+# Test filesystem in standard config mode
+my $mode="standard";
+&runTests();
 
-# test in paranoia mode
-&runTests('paranoia');
+# Test filesystem in paranoia config mode
+$mode="paranoia";
+&runTests();
 
-# Wrapper function - runs all tests in the specified mode
+# Run all tests in the specified mode
 sub runTests
 {
-    my $mode = shift;
-    print STDERR "\nrunTests: mode=$mode sudo=";
-    print STDERR (defined($sudo_cmd) ? "on" : "off")."\n";
+    print STDERR "\nrunTests: mode=$mode xattr=$have_xattr sudo=";
+    print STDERR (defined($sudo_cmd) ? "1" : "0")."\n";
 
     &newWorkingDir;
+    &mount;
+    &remount;
+    &configFromPipe;
 
-    my $hardlinks = 1;
-    if($mode eq 'standard')
-    {
-        &mount("--standard");
-    } elsif($mode eq 'paranoia')
-    {
-        &mount("--paranoia");
-        $hardlinks = 0; # no hardlinks in paranoia mode
-        &corruption;
-    } else
-    {
-        die "invalid test mode";
-    }
-
-    # tests..
     &fileCreation;
-    &links($hardlinks);
-    &truncate;
     &renames;
-    &internalModification;
+    &links;
     &grow;
+    &truncate;
+    &internalModification;
     &umask0777;
-    &create_unmount_remount;
+
+    &corruption;
     &checkReadError;
     &checkWriteError;
 
-    &configFromPipe;
     &cleanup;
 }
 
-# Helper function
+# Helper to convert plain-text filename to encrypted filename
+sub encName
+{
+    my $plain = shift;
+    my $enc = qx(./build/encfsctl encode --extpass="echo test" $ciphertext $plain);
+    chomp($enc);
+    return $enc;
+}
+
 # Create a new empty working directory
 sub newWorkingDir
 {
-    our $workingDir = mkdtemp("$tempDir/encfs-tests-XXXX")
-        || BAIL_OUT("Could not create temporary directory");
+    our $workingDir = mkdtemp("$tempDir/encfs-normal-tests-XXXX") || BAIL_OUT("Could not create temporary directory");
 
-    our $raw = "$workingDir/raw";
-    our $crypt = "$workingDir/crypt";
+    our $ciphertext = "$workingDir/ciphertext";
+    mkdir($ciphertext) || BAIL_OUT("Could not create $ciphertext: $!");
+
+    our $decrypted = "$workingDir/decrypted";
     if ($^O eq "cygwin")
     {
-        $crypt = "/cygdrive/x";
+        $decrypted = "/cygdrive/x";
     }
-}
-
-# Test Corruption
-# Modify the encrypted file and verify that the MAC check detects it
-sub corruption
-{
-    ok( open(OUT, "+> $crypt/corrupt") && print(OUT "12345678901234567890")
-        && close(OUT), "create corruption-test file" );
-
-
-    $e = encName("corrupt");
-    ok( open(OUT, ">> $raw/$e") && print(OUT "garbage") && close(OUT),
-        "corrupting raw file");
-
-    ok( open(IN, "< $crypt/corrupt"), "open corrupted file");
-    my $content;
-    $result = read(IN, $content, 20);
-    # Cygwin returns EINVAL for now
-    ok(($!{EBADMSG} || $!{EINVAL}) && (! defined $result), "corrupted file with MAC returns read error: $!");
-}
-
-# Test internal modification
-# Create a file of fixed size and overwrite data at different offsets
-# (like a database would do)
-sub internalModification
-{
-    $ofile = "$workingDir/crypt-internal-$$";
-    writeZeroes($ofile, 2*1024);
-    ok(copy($ofile, "$crypt/internal"), "copying crypt-internal file");
-
-    open(my $out1, "+<", "$crypt/internal");
-    open(my $out2, "+<", $ofile);
-
-    @fhs = ($out1, $out2);
-
-    $ori = md5fh($out1);
-    $b = md5fh($out2);
-
-    ok( $ori eq $b, "random file md5 matches");
-
-    my @offsets = (10, 30, 1020, 1200);
-    foreach my $o (@offsets)
+    else
     {
-        foreach my $fh(@fhs) {
-            seek($fh, $o, 0);
-            print($fh "garbagegarbagegarbagegarbagegarbage");
-        }
-        $a=md5fh($out1);
-        $b=md5fh($out2);
-        ok( ($a eq $b) && ($a ne $ori), "internal modification at $o");
+        mkdir($decrypted) || BAIL_OUT("Could not create $decrypted: $!");
     }
-
-    close($out1);
-    close($out2);
 }
 
-# Test renames
-sub renames
+# Unmount and delete mountpoint
+sub cleanup
 {
-    ok( open(F, ">$crypt/orig-name") && close F, "create file for rename test");
-    ok( -f "$crypt/orig-name", "file exists");
+    portable_unmount($decrypted);
+    ok(waitForFile("$decrypted/mount", 5, 1), "mount test file gone") || BAIL_OUT("");
 
-    ok( rename("$crypt/orig-name", "$crypt/2nd-name"), "rename");
-    ok( ! -f "$crypt/orig-name", "file exists");
-    ok( -f "$crypt/2nd-name", "file exists");
+    rmdir $decrypted;
+    ok(! -d $decrypted, "unmount ok, mount point removed");
 
-    # rename directory with contents
-    ok( mkpath("$crypt/orig-dir/foo"), "mkdir for rename test");
-    ok( open(F, ">$crypt/orig-dir/foo/bar") && close F, "make file");
-
-    ok( rename("$crypt/orig-dir", "$crypt/new-dir"), "rename dir");
-    ok( -f "$crypt/new-dir/foo/bar", "dir rename contents");
-
-    # TODO: rename failure? (check undo works)
-
-    # check time stamps of files on rename
-    my $mtime = (stat "$crypt/2nd-name")[9];
-    # change time to 60 seconds earlier
-    my $olderTime = $mtime - 60;
-    ok( utime($olderTime, $olderTime, "$crypt/2nd-name"), "change time");
-
-    ok( rename("$crypt/2nd-name", "$crypt/3rd-name"), "rename");
-    is( (stat "$crypt/3rd-name")[9], $olderTime, "time unchanged by rename");
+    rmtree($workingDir);
+    ok(! -d $workingDir, "working dir removed");
 }
 
-# Test truncate and grow
-sub truncate
+# Mount the filesystem
+sub mount
 {
-    # write to file, then truncate it
-    ok( open(OUT, "+> $crypt/trunc"), "create truncate-test file");
-    autoflush OUT 1;
-    print OUT "12345678901234567890";
+    delete $ENV{"ENCFS6_CONFIG"};
 
-    is( -s "$crypt/trunc", 20, "initial file size" );
+    system("./build/encfs --extpass=\"echo test\" --$mode $ciphertext $decrypted");
+    ok($? == 0, "encfs mount command returns 0") || BAIL_OUT("");
+    ok(-f "$ciphertext/.encfs6.xml",  "created control file") || BAIL_OUT("");
 
-    ok( truncate(OUT, 10), "truncate" );
-
-    is( -s "$crypt/trunc", 10, "truncated file size");
-    is( qx(cat "$crypt/trunc"), "1234567890", "truncated file contents");
-
-    # try growing the file as well.
-    ok( truncate(OUT, 30), "truncate extend");
-    is( -s "$crypt/trunc", 30, "truncated file size");
-
-    seek(OUT, 30, 0);
-    print OUT "12345";
-    is( -s "$crypt/trunc", 35, "truncated file size");
-
-    is( md5fh(*OUT), "5f170cc34b1944d75d86cc01496292df",
-        "content digest");
-
-    # try crossing block boundaries
-    seek(OUT, 10000,0);
-    print OUT "abcde";
-
-    is( md5fh(*OUT), "117a51c980b64dcd21df097d02206f98",
-        "content digest");
-
-    # then truncate back to 35 chars
-    truncate(OUT, 35);
-    is( md5fh(*OUT), "5f170cc34b1944d75d86cc01496292df",
-        "content digest");
-
+    open(OUT, "> $ciphertext/" . encName("mount"));
     close OUT;
+    ok(waitForFile("$decrypted/mount"), "mount test file exists") || BAIL_OUT("");
+}
+
+# Remount and verify content, testing -c option at the same time
+sub remount
+{
+    my $contents = "hello world";
+    open(OUT, "> $decrypted/remount");
+    print OUT $contents;
+    close OUT;
+
+    portable_unmount($decrypted);
+    ok(waitForFile("$decrypted/mount", 5, 1), "mount test file gone") || BAIL_OUT("");
+
+    rename("$ciphertext/.encfs6.xml", "$ciphertext/.encfs6_moved.xml");
+    system("./build/encfs -c $ciphertext/.encfs6_moved.xml --extpass=\"echo test\" $ciphertext $decrypted");
+    ok($? == 0, "encfs remount command returns 0") || BAIL_OUT("");
+    ok(waitForFile("$decrypted/mount"), "mount test file exists") || BAIL_OUT("");
+    rename("$ciphertext/.encfs6_moved.xml", "$ciphertext/.encfs6.xml");
+
+    checkContents("$decrypted/remount", $contents);
+}
+
+# Read the configuration from a named pipe (https://github.com/vgough/encfs/issues/253)
+sub configFromPipe
+{
+    portable_unmount($decrypted);
+    ok(waitForFile("$decrypted/mount", 5, 1), "mount test file gone") || BAIL_OUT("");
+
+    rename("$ciphertext/.encfs6.xml", "$ciphertext/.encfs6_moved.xml");
+    system("mkfifo $ciphertext/.encfs6.xml");
+    my $child = fork();
+    unless ($child) {
+        system("./build/encfs --extpass=\"echo test\" $ciphertext $decrypted");
+        exit($? >> 8);
+    }
+    system("cat $ciphertext/.encfs6_moved.xml > $ciphertext/.encfs6.xml");
+    waitpid($child, 0);
+    ok($? == 0, "encfs piped command returns 0") || BAIL_OUT("");
+    ok(waitForFile("$decrypted/mount"), "mount test file exists") || BAIL_OUT("");
+    rename("$ciphertext/.encfs6_moved.xml", "$ciphertext/.encfs6.xml");
 }
 
 # Test file creation and removal
@@ -242,31 +185,102 @@ sub fileCreation
 {
     # first be sure .encfs6.xml does not show up
     my $f = encName(".encfs6.xml");
-    cmp_ok( length($f), '>', 8, "encrypted name ok" );
-    ok( ! -f "$raw/$f", "configuration file .encfs6.xml not visible in $raw" );
+    cmp_ok(length($f), '>', 8, "encrypted name ok");
+    ok(! -f "$ciphertext/$f", "configuration file .encfs6.xml not visible in $ciphertext");
 
     # create a file
-    qx(date > "$crypt/df.txt");
-    ok( -f "$crypt/df.txt", "file created" ) || BAIL_OUT("file create failed");
+    system("cat $0 > $decrypted/create");
+    ok(-f "$decrypted/create", "file created" ) || BAIL_OUT("file create failed");
 
     # ensure there is an encrypted version.
-    my $c = encName("df.txt");
-    cmp_ok( length($c), '>', 8, "encrypted name ok" );
-    ok( -f "$raw/$c", "encrypted file $raw/$c created" );
+    my $c = encName("create");
+    cmp_ok(length($c), '>', 8, "encrypted name ok");
+    ok(-f "$ciphertext/$c", "encrypted file $ciphertext/$c created");
 
     # check contents
-    my $count = qx(grep -c crypt-$$ "$crypt/df.txt");
-    isnt(scalar($count), 0, "encrypted file readable");
+    system("diff $0 $decrypted/create");
+    ok($? == 0, "encrypted file readable");
 
-    unlink "$crypt/df.txt";
-    ok( ! -f "$crypt/df.txt", "file removal" );
-    ok( ! -f "$raw/$c", "file removal" );
+    unlink "$decrypted/create";
+    ok(! -f "$decrypted/create", "file removal");
+    ok(! -f "$ciphertext/$c", "file removal");
+}
+
+# Test renames
+sub renames
+{
+    ok(open(F, ">$decrypted/rename-orig") && close F, "create file for rename test");
+    ok(-f "$decrypted/rename-orig", "file exists");
+
+    ok(rename("$decrypted/rename-orig", "$decrypted/rename-new"), "rename");
+    ok(! -f "$decrypted/rename-orig", "file exists");
+    ok(-f "$decrypted/rename-new", "file exists");
+
+    # rename directory with contents
+    ok(mkpath("$decrypted/rename-dir-orig/foo"), "mkdir for rename test");
+    ok(open(F, ">$decrypted/rename-dir-orig/foo/bar") && close F, "make file");
+
+    ok(rename("$decrypted/rename-dir-orig", "$decrypted/rename-dir-new"), "rename dir");
+    ok(-f "$decrypted/rename-dir-new/foo/bar", "dir rename contents");
+
+    # TODO: rename failure? (check undo works)
+
+    # check time stamps of files on rename
+    my $mtime = (stat "$decrypted/rename-new")[9];
+    # change time to 60 seconds earlier
+    my $olderTime = $mtime - 60;
+    ok(utime($olderTime, $olderTime, "$decrypted/rename-new"), "change time");
+
+    ok(rename("$decrypted/rename-new", "$decrypted/rename-time"), "rename");
+    is((stat "$decrypted/rename-time")[9], $olderTime, "time unchanged by rename");
+
+    # TODO: # check time stamps of directories on rename (https://github.com/vgough/encfs/pull/541)
+}
+
+# Test symlinks & hardlinks, and extended attributes
+sub links
+{
+    my $contents = "hello world";
+    ok(open(OUT, "> $decrypted/link-data"), "create file for link test");
+    print OUT $contents;
+    close OUT;
+
+    # symlinks
+    ok(symlink("$decrypted/link-data", "$decrypted/link-data-fqn") , "fqn symlink");
+    checkContents("$decrypted/link-data-fqn", $contents, "fqn link traversal");
+    is(readlink("$decrypted/link-data-fqn"), "$decrypted/link-data", "read fqn symlink");
+
+    ok(symlink("link-data", "$decrypted/link-data-rel"), "local symlink");
+    checkContents("$decrypted/link-data-rel", $contents, "rel link traversal");
+    is(readlink("$decrypted/link-data-rel"), "link-data", "read rel symlink");
+
+    if ($mode eq "standard")
+    {
+        ok(link("$decrypted/link-data", "$decrypted/link-data-hard"), "hard link");
+        checkContents("$decrypted/link-data-hard", $contents, "hardlink read");
+    }
+
+    # extended attributes
+    SKIP: {
+        skip "No xattr support", 3 unless ($have_xattr);
+
+        system("$setattr $decrypted/link-data");
+        my $rc = $?;
+        is($rc, 0, "extended attributes can be set (return code was $rc)");
+        system("$getattr $decrypted/link-data");
+        $rc = $?;
+        is($rc, 0, "extended attributes can be get (return code was $rc)");
+        # this is suppused to fail, so get rid of the error message
+        system("$getattr $decrypted/link-data-rel 2>/dev/null");
+        $rc = $?;
+        isnt($rc, 0, "extended attributes operations do not follow symlinks (return code was $rc)");
+    };
 }
 
 # Test file growth
 sub grow
 {
-    open(my $fh_a, "+>$crypt/grow");
+    open(my $fh_a, "+>$decrypted/grow");
     open(my $fh_b, "+>$workingDir/grow");
 
     my $d = "1234567"; # Length 7 so we are not aligned to the block size
@@ -276,195 +290,130 @@ sub grow
     my $errs = 0;
 
     my $i;
-    for($i=1; $i<1000; $i++)
+    for ($i=1; $i<1000; $i++)
     {
         print($fh_a $d);
         print($fh_b $d);
-
         my $a = md5fh($fh_a);
         my $b = md5fh($fh_b);
-
         my $size = $len * $i;
-
         # md5sums must be identical but must have changed
         if($a ne $b || $a eq $old)
         {
             $errs++;
         }
-
         $old = $a;
     }
 
     ok($errs == 0, "grow file by $len bytes, $i times");
-
     close($fh_a);
     close($fh_b);
 }
 
-# Helper function
-# Check a file's content
-sub checkContents
+# Test truncate and grow
+sub truncate
 {
-    my ($file, $expected, $testName) = @_;
+    # write to file, then truncate it
+    ok(open(OUT, "+> $decrypted/truncate"), "create truncate-test file");
+    autoflush OUT 1;
+    print OUT "1234567890ABCDEFGHIJ";
 
-    open(IN, "< $file");
-    my $line = <IN>;
-    is( $line, $expected, $testName );
+    is(-s "$decrypted/truncate", 20, "initial file size");
 
-    close IN;
-}
+    ok(truncate(OUT, 10), "truncate");
 
-# Helper function
-# Convert plain-text filename to encrypted filename
-sub encName
-{
-    my $plain = shift;
-    my $enc = qx(./build/encfsctl encode --extpass="echo test" $raw $plain);
-    chomp($enc);
-    return $enc;
-}
+    is(-s "$decrypted/truncate", 10, "truncated file size");
+    is(qx(cat "$decrypted/truncate"), "1234567890", "truncated file contents");
 
-# Test symlinks & hardlinks, and extended attributes
-sub links
-{
-    my $hardlinkTests = shift;
+    # try growing the file as well.
+    ok(truncate(OUT, 30), "truncate extend");
+    is(-s "$decrypted/truncate", 30, "truncated file size");
 
-    my $contents = "hello world";
-    ok( open(OUT, "> $crypt/data"), "create file for link test" );
-    print OUT $contents;
+    seek(OUT, 30, 0);
+    print OUT "12345";
+    is(-s "$decrypted/truncate", 35, "truncated file size");
+
+    is(md5fh(*OUT), "5f170cc34b1944d75d86cc01496292df", "content digest");
+
+    # try crossing block boundaries
+    seek(OUT, 10000,0);
+    print OUT "abcde";
+
+    is(md5fh(*OUT), "117a51c980b64dcd21df097d02206f98", "content digest");
+
+    # then truncate back to 35 chars
+    truncate(OUT, 35);
+    is(md5fh(*OUT), "5f170cc34b1944d75d86cc01496292df", "content digest");
+
     close OUT;
-
-    # symlinks
-    ok( symlink("$crypt/data", "$crypt/data-fqn") , "fqn symlink");
-    checkContents("$crypt/data-fqn", $contents, "fqn link traversal");
-    is( readlink("$crypt/data-fqn"), "$crypt/data", "read fqn symlink");
-
-    ok( symlink("data", "$crypt/data-rel"), "local symlink");
-    checkContents("$crypt/data-rel", $contents, "rel link traversal");
-    is( readlink("$crypt/data-rel"), "data", "read rel symlink");
-
-    SKIP: {
-        skip "No hardlink support", 2 unless $hardlinkTests;
-
-        ok( link("$crypt/data", "$crypt/data.2"), "hard link");
-        checkContents("$crypt/data.2", $contents, "hardlink read");
-    };
-
-    # extended attributes
-    my $return_code = ($have_xattr) ? system("$setattr $crypt/data") : 0;
-    is($return_code, 0, "extended attributes can be set (return code was $return_code)");
-    $return_code = ($have_xattr) ? system("$getattr $crypt/data") : 0;
-    is($return_code, 0, "extended attributes can be get (return code was $return_code)");
-    # this is suppused to fail, so get rid of the error message
-    $return_code = ($have_xattr) ? system("$getattr $crypt/data-rel 2> /dev/null") : 1;
-    isnt($return_code, 0, "extended attributes operations do not follow symlinks (return code was $return_code)");
 }
 
-# Test mount
-# Leaves the filesystem mounted - also used as a helper function
-sub mount
+# Test internal modification
+# Create a file of fixed size and overwrite data at different offsets
+# (like a database would do)
+sub internalModification
 {
-    my $args = shift;
+    $ofile = "$workingDir/internal";
+    writeZeroes($ofile, 2*1024);
+    ok(copy($ofile, "$decrypted/internal"), "copying crypt-internal file");
 
-    # When these fail, the rest of the tests makes no sense
-    mkdir($raw) || BAIL_OUT("Could not create $raw: $!");
-    if ($^O ne "cygwin")
+    open(my $out1, "+<", "$decrypted/internal");
+    open(my $out2, "+<", $ofile);
+
+    @fhs = ($out1, $out2);
+
+    $ori = md5fh($out1);
+    $b = md5fh($out2);
+
+    ok($ori eq $b, "random file md5 matches");
+
+    my @offsets = (10, 30, 1020, 1200);
+    foreach my $o (@offsets)
     {
-        mkdir($crypt)  || BAIL_OUT("Could not create $crypt: $!");
+        foreach my $fh (@fhs)
+        {
+            seek($fh, $o, 0);
+            print($fh "garbagegarbagegarbagegarbagegarbage");
+        }
+        $a = md5fh($out1);
+        $b = md5fh($out2);
+        ok(($a eq $b) && ($a ne $ori), "internal modification at $o");
     }
 
-    delete $ENV{"ENCFS6_CONFIG"};
-    remount($args);
-    ok( $? == 0, "encfs command returns 0") || BAIL_OUT("");
-    ok( -f "$raw/.encfs6.xml",  "created control file") || BAIL_OUT("");
+    close($out1);
+    close($out2);
 }
 
-# Helper function
-# Mount without any prior checks
-sub remount
-{
-    my $args = shift;
-    my $cmdline = "./build/encfs --extpass=\"echo test\" $args $raw $crypt 2>&1";
-    #                                  This makes sure we get to see stderr ^
-    system($cmdline);
-}
-
-# Helper function
-# Unmount and delete mountpoint
-sub cleanup
-{
-    portable_unmount($crypt);
-
-    rmdir $crypt;
-    ok( ! -d $crypt, "unmount ok, mount point removed");
-
-    rmtree($workingDir);
-    ok( ! -d $workingDir, "working dir removed");
-}
-
-# Test that we can create and write to a a file even if umask is set to 0777
-# Regression test for bug https://github.com/vgough/encfs/issues/181
+# Test that we can create and write to a a 0777 file (https://github.com/vgough/encfs/issues/181)
 sub umask0777
 {
     my $old = umask(0777);
-    ok(open(my $fh, "+>$crypt/umask0777"), "open with umask 0777");
+    ok(open(my $fh, "+>$decrypted/umask0777"), "open with umask 0777");
     close($fh);
     umask($old);
 }
 
-# Test that we can read the configuration from a named pipe
-# Regression test for https://github.com/vgough/encfs/issues/253
-sub configFromPipe
+# Test Corruption
+# Modify the encrypted file and verify that the MAC check detects it
+sub corruption
 {
-    portable_unmount($crypt);
-    rename("$raw/.encfs6.xml", "$raw/.encfs6.xml.orig");
-    system("mkfifo $raw/.encfs6.xml");
-    my $child = fork();
-    unless ($child) {
-        &remount("--standard");
-        exit;
-    }
-    system("cat $raw/.encfs6.xml.orig > $raw/.encfs6.xml");
-    waitpid($child, 0);
-    ok( 0 == $?, "encfs mount with named pipe based config failed");
-}
-
-sub create_unmount_remount
-{
-    my $crypt = "$workingDir/create_remount.crypt";
-    my $mnt = "$workingDir/create_remount.mnt";
-    if ($^O eq "cygwin")
+    if ($mode ne "paranoia")
     {
-        $mnt = "/cygdrive/y";
-    }
-    mkdir($crypt) || BAIL_OUT($!);
-    if ($^O ne "cygwin")
-    {
-        mkdir($mnt)  || BAIL_OUT($!);
+        return;
     }
 
-    system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");
-    ok( $? == 0, "encfs command returns 0") || return;
-    ok( -f "$crypt/.encfs6.xml",  "created control file") || return;
+    ok(open(OUT, "+> $decrypted/corruption") && print(OUT "12345678901234567890")
+        && close(OUT), "create corruption-test file");
 
-    # Write some text
-    my $contents = "hello world\n";
-    ok( open(OUT, "> $mnt/test_file_1"), "write content");
-    print OUT $contents;
-    close OUT;
 
-    # Unmount
-    portable_unmount($mnt);
+    $e = encName("corruption");
+    ok(open(OUT, ">> $ciphertext/$e") && print(OUT "garbage") && close(OUT), "corrupting raw file");
 
-    # Mount again, testing -c at the same time
-    rename("$crypt/.encfs6.xml", "$crypt/.encfs6_moved.xml");
-    system("./build/encfs -c $crypt/.encfs6_moved.xml --extpass=\"echo test\" $crypt $mnt 2>&1");
-    ok( $? == 0, "encfs command returns 0") || return;
-
-    # Check if content is still there
-    checkContents("$mnt/test_file_1", $contents);
-
-    portable_unmount($mnt);
+    ok(open(IN, "< $decrypted/corruption"), "open corrupted file");
+    my $content;
+    $result = read(IN, $content, 20);
+    # Cygwin returns EINVAL for now
+    ok(($!{EBADMSG} || $!{EINVAL}) && (! defined $result), "corrupted file with MAC returns read error: $!");
 }
 
 # Test that read errors are correctly thrown up to us
@@ -478,33 +427,41 @@ sub checkReadError
 sub checkWriteError
 {
     # No OSX impl (for now, feel free to find how to), and requires "sudo".
-    if($^O eq "darwin" || !defined($sudo_cmd)) {
-        ok(1, "write error");
-        ok(1, "write error");
-        ok(1, "write error");
-        ok(1, "write error");
-    }
-    else {
-            my $crypt = "$workingDir/checkWriteError.crypt";
-            my $mnt = "$workingDir/checkWriteError.mnt";
-            if ($^O eq "cygwin")
-            {
-                $mnt = "/cygdrive/z";
-            }
-            mkdir($crypt) || BAIL_OUT($!);
-            if ($^O ne "cygwin")
-            {
-                mkdir($mnt)  || BAIL_OUT($!);
-            }
-            system("$sudo_cmd mount -t tmpfs -o size=1m tmpfs $crypt");
-            ok( $? == 0, "mount command returns 0") || return;
-            system("./build/encfs --standard --extpass=\"echo test\" $crypt $mnt 2>&1");
-            ok( $? == 0, "encfs command returns 0") || return;
-            ok(open(OUT , "> $mnt/file"), "write content");
-            while(print OUT "0123456789") {}
-            ok ($!{ENOSPC}, "write returned $! instead of ENOSPC");
-            close OUT;
-            portable_unmount($mnt);
-            system("$sudo_cmd umount $crypt");
-    }
+    SKIP: {
+        skip "No tmpfs/sudo support", 6 unless ($^O ne "darwin" && defined($sudo_cmd));
+
+        rename("$ciphertext/.encfs6.xml", "$workingDir/.encfs6.xml");
+        $ENV{"ENCFS6_CONFIG"} = "$workingDir/.encfs6.xml";
+
+        my $ciphertext = "$ciphertext.tmpfs";
+        mkdir($ciphertext) || BAIL_OUT("Could not create $ciphertext: $!");
+        my $decrypted = "$decrypted.tmpfs";
+        if ($^O eq "cygwin")
+        {
+            $decrypted = "/cygdrive/y";
+        }
+        else
+        {
+            mkdir($decrypted) || BAIL_OUT("Could not create $decrypted: $!");
+        }
+
+        system("$sudo_cmd mount -t tmpfs -o size=1m tmpfs $ciphertext");
+        ok($? == 0, "mount command returns 0") || BAIL_OUT("");
+
+        system("./build/encfs --extpass=\"echo test\" $ciphertext $decrypted");
+        ok($? == 0, "encfs tmpfs command returns 0") || BAIL_OUT("");
+
+        open(OUT, "> $ciphertext/" . encName("mount"));
+        close OUT;
+        ok(waitForFile("$decrypted/mount"), "mount test file exists") || BAIL_OUT("");
+
+        ok(open(OUT , "> $decrypted/file"), "write content");
+        while (print OUT "0123456789") {}
+        ok($!{ENOSPC}, "write returned $! instead of ENOSPC");
+        close OUT;
+
+        portable_unmount($decrypted);
+        ok(waitForFile("$decrypted/mount", 5, 1), "mount test file gone") || BAIL_OUT("");
+        system("$sudo_cmd umount $ciphertext");
+    };
 }
