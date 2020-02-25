@@ -27,10 +27,6 @@
 
 namespace encfs {
 
-#ifndef MIN
-inline int MIN(int a, int b) { return (a < b) ? a : b; }
-#endif
-
 ConfigVar::ConfigVar() : pd(new ConfigVarData) { pd->offset = 0; }
 
 ConfigVar::ConfigVar(const std::string &buf) : pd(new ConfigVarData) {
@@ -54,7 +50,7 @@ ConfigVar &ConfigVar::operator=(const ConfigVar &src) {
 void ConfigVar::resetOffset() { pd->offset = 0; }
 
 int ConfigVar::read(unsigned char *buffer_, int bytes) const {
-  int toCopy = MIN(bytes, pd->buffer.size() - pd->offset);
+  int toCopy = std::min<int>(bytes, pd->buffer.size() - pd->offset);
 
   if (toCopy > 0) {
     memcpy(buffer_, pd->buffer.data() + pd->offset, toCopy);

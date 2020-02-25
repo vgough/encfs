@@ -48,10 +48,6 @@ const int MAX_KEYLENGTH = 32;  // in bytes (256 bit)
 const int MAX_IVLENGTH = 16;   // 128 bit (AES block size, Blowfish has 64)
 const int KEY_CHECKSUM_BYTES = 4;
 
-#ifndef MIN
-inline int MIN(int a, int b) { return (a < b) ? a : b; }
-#endif
-
 /**
     This produces the same result as OpenSSL's EVP_BytesToKey.  The difference
     is that here we can explicitly specify the key size, instead of relying on
@@ -94,14 +90,14 @@ int BytesToKey(int keyLen, int ivLen, const EVP_MD *md,
     }
 
     int offset = 0;
-    int toCopy = MIN(nkey, mds - offset);
+    int toCopy = std::min<int>(nkey, mds - offset);
     if (toCopy != 0) {
       memcpy(key, mdBuf + offset, toCopy);
       key += toCopy;
       nkey -= toCopy;
       offset += toCopy;
     }
-    toCopy = MIN(niv, mds - offset);
+    toCopy = std::min<int>(niv, mds - offset);
     if (toCopy != 0) {
       memcpy(iv, mdBuf + offset, toCopy);
       iv += toCopy;
@@ -760,7 +756,7 @@ static void flipBytes(unsigned char *buf, int size) {
 
   int bytesLeft = size;
   while (bytesLeft != 0) {
-    int toFlip = MIN(sizeof(revBuf), bytesLeft);
+    int toFlip = std::min<int>(sizeof(revBuf), bytesLeft);
 
     for (int i = 0; i < toFlip; ++i) {
       revBuf[i] = buf[toFlip - (i + 1)];
