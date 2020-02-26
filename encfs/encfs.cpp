@@ -54,10 +54,6 @@
 #include "FileUtils.h"
 #include "fuse.h"
 
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
-
 #define ESUCCESS 0
 
 using namespace std;
