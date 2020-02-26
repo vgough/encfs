@@ -38,8 +38,6 @@ Interface::Interface(std::string name_, int Current, int Revision, int Age)
 
 Interface::Interface() : _current(0), _revision(0), _age(0) {}
 
-Interface &Interface::operator=(const Interface &src) = default;
-
 const std::string &Interface::name() const { return _name; }
 
 std::string &Interface::name() { return _name; }

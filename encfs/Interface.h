@@ -57,7 +57,7 @@ class Interface {
   int &revision();
   int &age();
 
-  Interface &operator=(const Interface &src);
+  Interface &operator=(const Interface &src) = default;
 
  private:
   std::string _name;

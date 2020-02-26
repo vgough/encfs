@@ -54,10 +54,6 @@
 #include "FileUtils.h"
 #include "fuse.h"
 
-#ifndef MIN
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
-#endif
-
 #define ESUCCESS 0
 
 using namespace std;
@@ -729,7 +725,7 @@ int encfs_read(const char *path, char *buf, size_t size, off_t offset,
                struct fuse_file_info *file) {
   // Unfortunately we have to convert from ssize_t (pread) to int (fuse), so
   // let's check this will be OK
-  if (size > std::numeric_limits<int>::max()) {
+  if (size > (size_t)std::numeric_limits<int>::max()) {
     size = std::numeric_limits<int>::max();
   }
   return withFileNode("read", path, file,
@@ -757,7 +753,7 @@ int encfs_write(const char *path, const char *buf, size_t size, off_t offset,
                 struct fuse_file_info *file) {
   // Unfortunately we have to convert from ssize_t (pwrite) to int (fuse), so
   // let's check this will be OK
-  if (size > std::numeric_limits<int>::max()) {
+  if (size > (size_t)std::numeric_limits<int>::max()) {
     size = std::numeric_limits<int>::max();
   }
   EncFS_Context *ctx = context();
