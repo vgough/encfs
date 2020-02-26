@@ -96,7 +96,7 @@ endif()
 
 # Check for FUSE.
 find_package (FUSE REQUIRED)
-include_directories (SYSTEM ${FUSE_INCLUDE_DIR})
+include_directories (${FUSE_INCLUDE_DIR})
 add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=29)
 if (CYGWIN)
   # Cygwin build is intended to use WinFsp
@@ -105,7 +105,7 @@ endif()
 
 # Check for OpenSSL.
 find_package (OpenSSL REQUIRED)
-include_directories (SYSTEM ${OPENSSL_INCLUDE_DIR})
+include_directories (${OPENSSL_INCLUDE_DIR})
 
 find_program (POD2MAN pod2man)
 
@@ -187,7 +187,7 @@ include_directories (${CMAKE_CURRENT_LIST_DIR})
 if (ENABLE_NLS)
   find_package (Intl)
   if (Intl_FOUND)
-    include_directories (SYSTEM ${Intl_INCLUDE_DIRS})
+    include_directories (${Intl_INCLUDE_DIRS})
   endif()
 
   add_subdirectory(po)
@@ -196,30 +196,26 @@ if (ENABLE_NLS)
   add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_PREFIX}/share/locale")
 endif (ENABLE_NLS)
 
-if (${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} GREATER 3.5) # Need 3.6 or above.
-  find_program(CLANG_TIDY_EXE NAMES "clang-tidy-4.0" "clang-tidy40" "clang-tidy" DOC "Path to clang-tidy executable")
-  if(NOT CLANG_TIDY_EXE)
-    message(STATUS "clang-tidy not found.")
-  else()
-    message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
-    string(CONCAT TIDY_OPTS "-checks=*"
-      ",-cert-err58-cpp"
-      ",-cppcoreguidelines-pro-*"
-      ",-google-build-using-namespace"
-      ",-google-readability-casting"
-      ",-google-readability-todo"
-      ",-google-runtime-int"
-      ",-google-runtime-references"
-      ",-modernize-loop-convert"
-      ",-performance-inefficient-string-concatenation"
-      ",-readability-inconsistent-declaration-parameter-name"
-      ",-readability-named-parameter"
-      )
-    set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" ${TIDY_OPTS})
-    #set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,google-readability-redundant-smartptr-get")
-  endif()
+find_program(CLANG_TIDY_EXE NAMES "clang-tidy-4.0" "clang-tidy40" "clang-tidy" DOC "Path to clang-tidy executable")
+if(NOT CLANG_TIDY_EXE)
+  message(STATUS "clang-tidy not found.")
 else()
-  message(STATUS "clang-tidy check skipped, need newer cmake")
+  message(STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
+  string(CONCAT TIDY_OPTS "-checks=*"
+    ",-cert-err58-cpp"
+    ",-cppcoreguidelines-pro-*"
+    ",-google-build-using-namespace"
+    ",-google-readability-casting"
+    ",-google-readability-todo"
+    ",-google-runtime-int"
+    ",-google-runtime-references"
+    ",-modernize-loop-convert"
+    ",-performance-inefficient-string-concatenation"
+    ",-readability-inconsistent-declaration-parameter-name"
+    ",-readability-named-parameter"
+    )
+  set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" ${TIDY_OPTS})
+  #set(DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-fix" "-checks=-*,google-readability-redundant-smartptr-get")
 endif()
 
 if (USE_INTERNAL_TINYXML)
@@ -236,11 +232,11 @@ if (USE_INTERNAL_TINYXML)
   endif ()
   set(BUILD_TESTS OFF CACHE BOOL "build tests")
   add_subdirectory(${TINYXML_DIR} EXCLUDE_FROM_ALL)
-  include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/${TINYXML_DIR})
   link_directories(${CMAKE_BINARY_DIR}/${TINYXML_DIR})
 else ()
   find_package (TinyXML REQUIRED)
-  include_directories (SYSTEM ${TINYXML_INCLUDE_DIR})
+  include_directories (${TINYXML_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_EASYLOGGING)
@@ -248,13 +244,13 @@ if (USE_INTERNAL_EASYLOGGING)
   set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
   set(build_static_lib ON CACHE BOOL "build static libs")
   add_subdirectory(${EASYLOGGING_DIR} EXCLUDE_FROM_ALL)
-  include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
+  include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
   link_directories(${CMAKE_BINARY_DIR}/${EASYLOGGING_DIR})
   set(EASYLOGGINGPP_LIBRARY easyloggingpp)
 else ()
   set(EASYLOGGINGPP_USE_SHARED_LIBS ON CACHE BOOL "look for shared lib")
   find_package (EASYLOGGINGPP REQUIRED)
-  include_directories (SYSTEM ${EASYLOGGINGPP_INCLUDE_DIR})
+  include_directories (${EASYLOGGINGPP_INCLUDE_DIR})
 endif ()
 
 set(SOURCE_FILES
