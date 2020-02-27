@@ -26,8 +26,7 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Author: wan@google.com (Zhanyong Wan)
+
 
 // Tests that Google Mock constructs can be used in a large number of
 // threads concurrently.
@@ -38,7 +37,7 @@
 namespace testing {
 namespace {
 
-// From <gtest/internal/gtest-port.h>.
+// From gtest-port.h.
 using ::testing::internal::ThreadWithParam;
 
 // The maximum number of test threads (not including helper threads)
@@ -51,7 +50,7 @@ const int kRepeat = 50;
 class MockFoo {
  public:
   MOCK_METHOD1(Bar, int(int n));  // NOLINT
-  MOCK_METHOD2(Baz, char(const char* s1, const internal::string& s2));  // NOLINT
+  MOCK_METHOD2(Baz, char(const char* s1, const std::string& s2));  // NOLINT
 };
 
 // Helper for waiting for the given thread to finish and then deleting it.
