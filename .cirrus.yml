@@ -10,3 +10,13 @@ task:
     - ./build.sh
   env:
     INTEGRATION: false
+
+macos_task:
+  matrix:
+     - name: MacOS
+       osx_instance:
+         image: catalina-xcode-11.3.1
+  install_script:
+    - ./ci/setup.sh
+  script:
+    - ./build.sh
