@@ -2,6 +2,7 @@
 #
 # FUSE_INCLUDE_DIR - where to find fuse.h, etc.
 # FUSE_LIBRARIES   - List of libraries when using FUSE.
+# FUSE_ROOT_DIR    - Additional search path.
 # FUSE_FOUND       - True if FUSE lib is found.
 
 # check if already in cache, be silent
