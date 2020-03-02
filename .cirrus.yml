@@ -11,12 +11,11 @@ task:
   env:
     INTEGRATION: false
 
-macos_task:
-  matrix:
-     - name: MacOS
-       osx_instance:
-         image: catalina-xcode-11.3.1
+task:
+  name: MacOS
+  osx_instance:
+    image: catalina-xcode-11.3.1
   install_script:
-    - ./ci/setup.sh
+    - brew cask install osxfuse
   script:
     - ./build.sh
