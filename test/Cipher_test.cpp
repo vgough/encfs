@@ -191,5 +191,5 @@ TEST_P(CipherTest, ConfigLoadStore) {
   EXPECT_TRUE(cipher->compareKey(key, key2));
 }
 
-INSTANTIATE_TEST_CASE_P(CipherKey, CipherTest,
+INSTANTIATE_TEST_SUITE_P(CipherKey, CipherTest,
                         ValuesIn(Cipher::GetAlgorithmList()));
