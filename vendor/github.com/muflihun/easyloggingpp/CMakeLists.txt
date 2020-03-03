@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 2.8.7)
 
 project(Easyloggingpp CXX)
 
@@ -26,11 +26,12 @@ option(build_static_lib "Build easyloggingpp as a static library" OFF)
 option(lib_utc_datetime "Build library with UTC date/time logging" OFF)
 
 set(ELPP_MAJOR_VERSION "9")
-set(ELPP_MINOR_VERSION "95")
-set(ELPP_PATCH_VERSION "0")
+set(ELPP_MINOR_VERSION "96")
+set(ELPP_PATCH_VERSION "7")
 set(ELPP_VERSION_STRING "${ELPP_MAJOR_VERSION}.${ELPP_MINOR_VERSION}.${ELPP_PATCH_VERSION}")
 
 set(ELPP_INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/include" CACHE PATH "The directory the headers are installed in")
+set(ELPP_PKGCONFIG_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/share/pkgconfig" CACHE PATH "Installation directory for pkgconfig (.pc) files")
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -40,6 +41,11 @@ install(FILES
     DESTINATION "${ELPP_INCLUDE_INSTALL_DIR}"
     COMPONENT dev)
 
+configure_file( ${CMAKE_CURRENT_SOURCE_DIR}/cmake/easyloggingpp.pc.cmakein
+    ${CMAKE_CURRENT_BINARY_DIR}/easyloggingpp.pc @ONLY)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/easyloggingpp.pc DESTINATION "${ELPP_PKGCONFIG_INSTALL_DIR}")
+
 if (build_static_lib)
         if (lib_utc_datetime)
                 add_definitions(-DELPP_UTC_DATETIME)
@@ -47,6 +53,7 @@ if (build_static_lib)
 
         require_cpp11()
         add_library(easyloggingpp STATIC src/easylogging++.cc)
+        set_property(TARGET easyloggingpp PROPERTY POSITION_INDEPENDENT_CODE ON)
 
         install(TARGETS
             easyloggingpp
@@ -67,6 +74,10 @@ if (test)
     include_directories(${gtest_SOURCE_DIR}/include ${gtest_SOURCE_DIR})
 
     enable_testing()
+
+    if (EMSCRIPTEN)
+        set(CMAKE_EXE_LINKER_FLAGS "-O2 -s TOTAL_MEMORY=134217728")
+    endif()
 
     add_executable(easyloggingpp-unit-tests
         src/easylogging++.cc
