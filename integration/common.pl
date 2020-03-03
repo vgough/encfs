@@ -70,7 +70,7 @@ sub checkContents
 
     open(IN, "< $file");
     my $line = <IN>;
-    is( $line, $expected, $testName );
+    is($line, $expected, $testName);
 
     close IN;
 }
