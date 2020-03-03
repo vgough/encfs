@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Bash script that helps with releasing new versions of EasyLogging++
-# Revision: 1.4
-# @author mkhan3189
+# Bash script that helps with releasing new versions of Easylogging++
+# Revision: 1.5
+# author @abumusamq
 #
 # Usage:
 #        ./release.sh [repo-root] [homepage-repo-root] [curr-version] [new-version] [do-not-ask]
@@ -69,11 +69,12 @@ if [ "$confirm" = "y" ]; then
   cp $1/src/easylogging++.h .
   cp $1/src/easylogging++.cc .
   cp $1/CHANGELOG.md CHANGELOG.txt
-  cp $1/LICENCE LICENCE.txt
-  zip easyloggingpp_v$NEW_VERSION.zip easylogging++.h easylogging++.cc LICENCE.txt CHANGELOG.txt
-  tar -pczf easyloggingpp_v$NEW_VERSION.tar.gz easylogging++.h easylogging++.cc LICENCE.txt CHANGELOG.txt
+  cp $1/README.md README.txt
+  cp $1/LICENSE LICENSE.txt
+  zip easyloggingpp_v$NEW_VERSION.zip easylogging++.h easylogging++.cc LICENSE.txt CHANGELOG.txt README.txt
+  tar -pczf easyloggingpp_v$NEW_VERSION.tar.gz easylogging++.h easylogging++.cc LICENSE.txt CHANGELOG.txt README.txt
   mv easyloggingpp_v$NEW_VERSION.zip $2/
   mv easyloggingpp_v$NEW_VERSION.tar.gz $2/
-  rm easylogging++.h easylogging++.cc CHANGELOG.txt LICENCE.txt
+  rm easylogging++.h easylogging++.cc CHANGELOG.txt LICENSE.txt README.txt
   echo "\n---------- PLEASE CHANGE CMakeLists.txt MANUALLY ----------- \n"
 fi
