@@ -132,8 +132,6 @@ int RawFileIO::open(int flags) {
   if ((flags & O_LARGEFILE) != 0) {
     finalFlags |= O_LARGEFILE;
   }
-#else
-#warning O_LARGEFILE not supported
 #endif
 
   int eno = 0;
