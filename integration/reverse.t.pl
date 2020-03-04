@@ -13,7 +13,7 @@ require("integration/common.pl");
 
 my $tempDir = $ENV{'TMPDIR'} || "/tmp";
 
-if($^O eq "linux" and $tempDir eq "/tmp") {
+if ($^O eq "linux" and $tempDir eq "/tmp") {
    # On Linux, /tmp is often a tmpfs mount that does not support
    # extended attributes. Use /var/tmp instead.
    $tempDir = "/var/tmp";
@@ -22,19 +22,19 @@ if($^O eq "linux" and $tempDir eq "/tmp") {
 # Find attr binary
 # Linux
 my @binattr = ("attr", "-l");
-if(system("which xattr > /dev/null 2>&1") == 0)
+if (system("which xattr > /dev/null 2>&1") == 0)
 {
     # Mac OS X
     @binattr = ("xattr", "-s");
 }
-if(system("which lsextattr > /dev/null 2>&1") == 0)
+if (system("which lsextattr > /dev/null 2>&1") == 0)
 {
     # FreeBSD
     @binattr = ("lsextattr", "-h", "user");
 }
 # Do we support xattr ?
 my $have_xattr = 1;
-if(system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
+if (system("./build/encfs --verbose --version 2>&1 | grep -q HAVE_XATTR") != 0)
 {
     $have_xattr = 0;
 }
@@ -76,7 +76,7 @@ sub cleanup
     portable_unmount($ciphertext);
     our $workingDir;
     rmtree($workingDir);
-    ok( ! -d $workingDir, "working dir removed");
+    ok(! -d $workingDir, "working dir removed");
 }
 
 # Helper function
@@ -111,7 +111,7 @@ sub copy_test
     # first be sure .encfs6.xml does not show up
     # We does not use -f for this test, as it would succeed, .encfs6.xml is only hidden from readdir.
     my $f = encName(".encfs6.xml");
-    cmp_ok( length($f), '>', 8, "encrypted name ok" );
+    cmp_ok(length($f), '>', 8, "encrypted name ok");
     ok(system("ls -1 $ciphertext | grep -qwF -- $f") != 0, "configuration file .encfs6.xml not visible in $ciphertext");
     # copy test
     ok(system("cp -a encfs $plain && mkdir $plain/foo && touch $plain/foo/.encfs6.xml")==0, "copying files to plain");
@@ -172,7 +172,7 @@ sub grow {
 
     my $ok = 1;
     my $max = 9000;
-    for($i=5; $i < $max; $i += 5)
+    for ($i=5; $i < $max; $i += 5)
     {
         print($pfh "abcde") or die("write failed");
         # autoflush should make sure the write goes to the kernel
@@ -181,7 +181,7 @@ sub grow {
         sizeVerify($cfh, $i) or $ok = 0;
         sizeVerify($dfh, $i) or $ok = 0;
         
-        if(md5fh($vfh) ne md5fh($dfh))
+        if (md5fh($vfh) ne md5fh($dfh))
         {
             $ok = 0;
             print("# content is different, unified diff:\n");
@@ -215,22 +215,22 @@ sub writesDenied {
     writeZeroes($fn, 1024);
     my $efn = $ciphertext . "/" . encName("writesDenied");
     open(my $fh, ">", $efn);
-    if( ok( $! == EROFS, "open for write denied, EROFS")) {
-        ok( 1, "writing denied, filehandle not open");
+    if (ok($! == EROFS, "open for write denied, EROFS")) {
+        ok(1, "writing denied, filehandle not open");
     }
     else {
         print($fh "foo");
-        ok( $! == EROFS, "writing denied, EROFS");
+        ok($! == EROFS, "writing denied, EROFS");
     }
     $target = $ciphertext . "/" . encName("writesDenied2");
     rename($efn, $target);
-    ok( $! == EROFS, "rename denied, EROFS") or die();
+    ok($! == EROFS, "rename denied, EROFS") or die();
     unlink($efn);
-    ok( $! == EROFS, "unlink denied, EROFS");
+    ok($! == EROFS, "unlink denied, EROFS");
     utime(undef, undef, $efn) ;
-    ok( $! == EROFS, "touch denied, EROFS");
+    ok($! == EROFS, "touch denied, EROFS");
     truncate($efn, 10);
-    ok( $! == EROFS, "truncate denied, EROFS");
+    ok($! == EROFS, "truncate denied, EROFS");
 }
 
 # Setup mounts

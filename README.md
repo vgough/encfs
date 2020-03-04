@@ -2,6 +2,7 @@
 
 _Build Status_
  - Travis: [![Travis CI](https://travis-ci.org/vgough/encfs.svg?branch=master)](https://travis-ci.org/vgough/encfs)
+ - Cirrus: [![Cirrus CI](https://api.cirrus-ci.com/github/vgough/encfs.svg?branch=master)](https://cirrus-ci.com/github/vgough/encfs)
 
 ## About
 
