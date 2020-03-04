@@ -27,7 +27,11 @@ option (BUILD_UNIT_TESTS "build EncFS unit tests" ON)
 option (USE_INTERNAL_TINYXML "use built-in TinyXML2" ON)
 option (USE_INTERNAL_EASYLOGGING "use built-in Easylogging++" ON)
 option (BUILD_SHARED_LIBS "build internal libraries as shared" OFF)
-option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
+if (APPLE)
+  option (ENABLE_NLS "compile with Native Language Support (using gettext)" OFF)
+else()
+  option (ENABLE_NLS "compile with Native Language Support (using gettext)" ON)
+endif()
 option (INSTALL_LIBENCFS "install libencfs" OFF)
 option (LINT "enable lint output" OFF)
 
@@ -104,6 +108,10 @@ if (CYGWIN)
 endif()
 
 # Check for OpenSSL.
+if (APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
+  # Search both Brew and Macports
+  set(OPENSSL_ROOT_DIR "/usr/local/opt/openssl;/opt/local")
+endif()
 find_package (OpenSSL REQUIRED)
 include_directories (${OPENSSL_INCLUDE_DIR})
 

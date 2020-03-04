@@ -18,7 +18,7 @@
 // Define a function that executes the code to be measured a
 // specified number of times:
 static void BM_StringCreation(benchmark::State& state) {
-  while (state.KeepRunning())
+  for (auto _ : state)
     std::string empty_string;
 }
 
@@ -28,7 +28,7 @@ BENCHMARK(BM_StringCreation);
 // Define another benchmark
 static void BM_StringCopy(benchmark::State& state) {
   std::string x = "hello";
-  while (state.KeepRunning())
+  for (auto _ : state)
     std::string copy(x);
 }
 BENCHMARK(BM_StringCopy);
@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
 static void BM_memcpy(benchmark::State& state) {
   char* src = new char[state.range(0)]; char* dst = new char[state.range(0)];
   memset(src, 'x', state.range(0));
-  while (state.KeepRunning())
+  for (auto _ : state)
     memcpy(dst, src, state.range(0));
   state.SetBytesProcessed(int64_t(state.iterations()) *
                           int64_t(state.range(0)));
@@ -72,29 +72,30 @@ BENCHMARK(BM_memcpy)->Range(8, 8<<10);
 // example, the following code defines a family of microbenchmarks for
 // measuring the speed of set insertion.
 static void BM_SetInsert(benchmark::State& state) {
-  while (state.KeepRunning()) {
+  set<int> data;
+  for (auto _ : state) {
     state.PauseTiming();
-    set<int> data = ConstructRandomSet(state.range(0));
+    data = ConstructRandomSet(state.range(0));
     state.ResumeTiming();
     for (int j = 0; j < state.range(1); ++j)
       data.insert(RandomNumber());
   }
 }
 BENCHMARK(BM_SetInsert)
-   ->Args({1<<10, 1})
-   ->Args({1<<10, 8})
-   ->Args({1<<10, 64})
+   ->Args({1<<10, 128})
+   ->Args({2<<10, 128})
+   ->Args({4<<10, 128})
+   ->Args({8<<10, 128})
    ->Args({1<<10, 512})
-   ->Args({8<<10, 1})
-   ->Args({8<<10, 8})
-   ->Args({8<<10, 64})
+   ->Args({2<<10, 512})
+   ->Args({4<<10, 512})
    ->Args({8<<10, 512});
 
 // The preceding code is quite repetitive, and can be replaced with
 // the following short-hand.  The following macro will pick a few
 // appropriate arguments in the product of the two specified ranges
 // and will generate a microbenchmark for each such pair.
-BENCHMARK(BM_SetInsert)->Ranges({{1<<10, 8<<10}, {1, 512}});
+BENCHMARK(BM_SetInsert)->Ranges({{1<<10, 8<<10}, {128, 512}});
 
 // For more complex patterns of inputs, passing a custom function
 // to Apply allows programmatic specification of an
@@ -114,7 +115,7 @@ BENCHMARK(BM_SetInsert)->Apply(CustomArguments);
 template <class Q> int BM_Sequential(benchmark::State& state) {
   Q q;
   typename Q::value_type v;
-  while (state.KeepRunning()) {
+  for (auto _ : state) {
     for (int i = state.range(0); i--; )
       q.push(v);
     for (int e = state.range(0); e--; )
@@ -135,15 +136,15 @@ void BM_test(benchmark::State& state) {
 BENCHMARK(BM_test)->MinTime(2.0); // Run for at least 2 seconds.
 
 In a multithreaded test, it is guaranteed that none of the threads will start
-until all have called KeepRunning, and all will have finished before KeepRunning
-returns false. As such, any global setup or teardown you want to do can be
-wrapped in a check against the thread index:
+until all have reached the loop start, and all will have finished before any
+thread exits the loop body. As such, any global setup or teardown you want to
+do can be wrapped in a check against the thread index:
 
 static void BM_MultiThreaded(benchmark::State& state) {
   if (state.thread_index == 0) {
     // Setup code here.
   }
-  while (state.KeepRunning()) {
+  for (auto _ : state) {
     // Run the test as normal.
   }
   if (state.thread_index == 0) {
@@ -164,12 +165,14 @@ BENCHMARK(BM_test)->Unit(benchmark::kMillisecond);
 #define BENCHMARK_BENCHMARK_H_
 
 
-#if __cplusplus >= 201103L
+// The _MSVC_LANG check should detect Visual Studio 2015 Update 3 and newer.
+#if __cplusplus >= 201103L || (defined(_MSVC_LANG) && _MSVC_LANG >= 201103L)
 #define BENCHMARK_HAS_CXX11
 #endif
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <iosfwd>
@@ -237,7 +240,6 @@ BENCHMARK(BM_test)->Unit(benchmark::kMillisecond);
 #define BENCHMARK_GCC_VERSION (__GNUC__ * 100 + __GNUC_MINOR__)
 #endif
 
-
 namespace benchmark {
 class BenchmarkReporter;
 
@@ -289,9 +291,11 @@ BENCHMARK_UNUSED static int stream_init_anchor = InitializeStreams();
 }  // namespace internal
 
 
-#if !defined(__GNUC__) || defined(__pnacl__) || defined(EMSCRIPTN)
+#if (!defined(__GNUC__) && !defined(__clang__)) || defined(__pnacl__) || \
+    defined(__EMSCRIPTEN__)
 # define BENCHMARK_HAS_NO_INLINE_ASSEMBLY
 #endif
+
 
 // The DoNotOptimize(...) function can be used to prevent a value or
 // expression from being optimized away by the compiler. This function is
@@ -299,15 +303,20 @@ BENCHMARK_UNUSED static int stream_init_anchor = InitializeStreams();
 // See: https://youtu.be/nXaxk27zwlk?t=2441
 #ifndef BENCHMARK_HAS_NO_INLINE_ASSEMBLY
 template <class Tp>
-inline BENCHMARK_ALWAYS_INLINE void DoNotOptimize(Tp const& value) {
-  // Clang doesn't like the 'X' constraint on `value` and certain GCC versions
-  // don't like the 'g' constraint. Attempt to placate them both.
+inline BENCHMARK_ALWAYS_INLINE
+void DoNotOptimize(Tp const& value) {
+    asm volatile("" : : "r,m"(value) : "memory");
+}
+
+template <class Tp>
+inline BENCHMARK_ALWAYS_INLINE void DoNotOptimize(Tp& value) {
 #if defined(__clang__)
-  asm volatile("" : : "g"(value) : "memory");
+  asm volatile("" : "+r,m"(value) : : "memory");
 #else
-  asm volatile("" : : "i,r,m"(value) : "memory");
+  asm volatile("" : "+m,r"(value) : : "memory");
 #endif
 }
+
 // Force the compiler to flush pending writes to global memory. Acts as an
 // effective read/write barrier
 inline BENCHMARK_ALWAYS_INLINE void ClobberMemory() {
@@ -376,7 +385,19 @@ enum BigO { oNone, o1, oN, oNSquared, oNCubed, oLogN, oNLogN, oAuto, oLambda };
 
 // BigOFunc is passed to a benchmark in order to specify the asymptotic
 // computational complexity for the benchmark.
-typedef double(BigOFunc)(int);
+typedef double(BigOFunc)(int64_t);
+
+// StatisticsFunc is passed to a benchmark in order to compute some descriptive
+// statistics over all the measurements of some type
+typedef double(StatisticsFunc)(const std::vector<double>&);
+
+struct Statistics {
+  std::string name_;
+  StatisticsFunc* compute_;
+
+  Statistics(std::string name, StatisticsFunc* compute)
+    : name_(name), compute_(compute) {}
+};
 
 namespace internal {
 class ThreadTimer;
@@ -398,24 +419,40 @@ enum ReportMode
 // benchmark to use.
 class State {
  public:
+  struct StateIterator;
+  friend struct StateIterator;
+
+  // Returns iterators used to run each iteration of a benchmark using a
+  // C++11 ranged-based for loop. These functions should not be called directly.
+  //
+  // REQUIRES: The benchmark has not started running yet. Neither begin nor end
+  // have been called previously.
+  //
+  // NOTE: KeepRunning may not be used after calling either of these functions.
+  BENCHMARK_ALWAYS_INLINE StateIterator begin();
+  BENCHMARK_ALWAYS_INLINE StateIterator end();
+
   // Returns true if the benchmark should continue through another iteration.
   // NOTE: A benchmark may not return from the test until KeepRunning() has
   // returned false.
-  bool KeepRunning() {
-    if (BENCHMARK_BUILTIN_EXPECT(!started_, false)) {
-      StartKeepRunning();
-    }
-    bool const res = total_iterations_++ < max_iterations;
-    if (BENCHMARK_BUILTIN_EXPECT(!res, false)) {
-      FinishKeepRunning();
-    }
-    return res;
-  }
+  bool KeepRunning();
+
+  // Returns true iff the benchmark should run n more iterations.
+  // REQUIRES: 'n' > 0.
+  // NOTE: A benchmark must not return from the test until KeepRunningBatch()
+  // has returned false.
+  // NOTE: KeepRunningBatch() may overshoot by up to 'n' iterations.
+  //
+  // Intended usage:
+  //   while (state.KeepRunningBatch(1000)) {
+  //     // process 1000 elements
+  //   }
+  bool KeepRunningBatch(size_t n);
 
   // REQUIRES: timer is running and 'SkipWithError(...)' has not been called
   //           by the current thread.
   // Stop the benchmark timer.  If not called, the timer will be
-  // automatically stopped after KeepRunning() returns false for the first time.
+  // automatically stopped after the last iteration of the benchmark loop.
   //
   // For threaded benchmarks the PauseTiming() function only pauses the timing
   // for the current thread.
@@ -431,7 +468,8 @@ class State {
   // REQUIRES: timer is not running and 'SkipWithError(...)' has not been called
   //           by the current thread.
   // Start the benchmark timer.  The timer is NOT running on entrance to the
-  // benchmark function. It begins running after the first call to KeepRunning()
+  // benchmark function. It begins running after control flow enters the
+  // benchmark loop.
   //
   // NOTE: PauseTiming()/ResumeTiming() are relatively
   // heavyweight, and so their use should generally be avoided
@@ -440,9 +478,13 @@ class State {
 
   // REQUIRES: 'SkipWithError(...)' has not been called previously by the
   //            current thread.
-  // Skip any future iterations of the 'KeepRunning()' loop in the current
-  // thread and report an error with the specified 'msg'. After this call
-  // the user may explicitly 'return' from the benchmark.
+  // Report the benchmark as resulting in an error with the specified 'msg'.
+  // After this call the user may explicitly 'return' from the benchmark.
+  //
+  // If the ranged-for style of benchmark loop is used, the user must explicitly
+  // break from the loop, otherwise all future iterations will be run.
+  // If the 'KeepRunning()' loop is used the current thread will automatically
+  // exit the loop at the end of the current iteration.
   //
   // For threaded benchmarks only the current thread stops executing and future
   // calls to `KeepRunning()` will block until all threads have completed
@@ -455,7 +497,7 @@ class State {
   // responsibility to exit the scope as needed.
   void SkipWithError(const char* msg);
 
-  // REQUIRES: called exactly once per iteration of the KeepRunning loop.
+  // REQUIRES: called exactly once per iteration of the benchmarking loop.
   // Set the manually measured time for this benchmark iteration, which
   // is used instead of automatically measured time if UseManualTime() was
   // specified.
@@ -470,12 +512,12 @@ class State {
   // value > 0, the report is printed in MB/sec instead of nanoseconds
   // per iteration.
   //
-  // REQUIRES: a benchmark has exited its KeepRunning loop.
+  // REQUIRES: a benchmark has exited its benchmarking loop.
   BENCHMARK_ALWAYS_INLINE
-  void SetBytesProcessed(size_t bytes) { bytes_processed_ = bytes; }
+  void SetBytesProcessed(int64_t bytes) { bytes_processed_ = bytes; }
 
   BENCHMARK_ALWAYS_INLINE
-  size_t bytes_processed() const { return bytes_processed_; }
+  int64_t bytes_processed() const { return bytes_processed_; }
 
   // If this routine is called with complexity_n > 0 and complexity report is
   // requested for the
@@ -483,22 +525,22 @@ class State {
   // and complexity_n will
   // represent the length of N.
   BENCHMARK_ALWAYS_INLINE
-  void SetComplexityN(int complexity_n) { complexity_n_ = complexity_n; }
+  void SetComplexityN(int64_t complexity_n) { complexity_n_ = complexity_n; }
 
   BENCHMARK_ALWAYS_INLINE
-  int complexity_length_n() { return complexity_n_; }
+  int64_t complexity_length_n() { return complexity_n_; }
 
   // If this routine is called with items > 0, then an items/s
   // label is printed on the benchmark report line for the currently
   // executing benchmark. It is typically called at the end of a processing
   // benchmark where a processing items/second output is desired.
   //
-  // REQUIRES: a benchmark has exited its KeepRunning loop.
+  // REQUIRES: a benchmark has exited its benchmarking loop.
   BENCHMARK_ALWAYS_INLINE
-  void SetItemsProcessed(size_t items) { items_processed_ = items; }
+  void SetItemsProcessed(int64_t items) { items_processed_ = items; }
 
   BENCHMARK_ALWAYS_INLINE
-  size_t items_processed() const { return items_processed_; }
+  int64_t items_processed() const { return items_processed_; }
 
   // If this routine is called, the specified label is printed at the
   // end of the benchmark report line for the currently executing
@@ -506,12 +548,12 @@ class State {
   //  static void BM_Compress(benchmark::State& state) {
   //    ...
   //    double compress = input_size / output_size;
-  //    state.SetLabel(StringPrintf("compress:%.1f%%", 100.0*compression));
+  //    state.SetLabel(StrFormat("compress:%.1f%%", 100.0*compression));
   //  }
   // Produces output that looks like:
   //  BM_Compress   50         50   14115038  compress:27.3%
   //
-  // REQUIRES: a benchmark has exited its KeepRunning loop.
+  // REQUIRES: a benchmark has exited its benchmarking loop.
   void SetLabel(const char* label);
 
   void BENCHMARK_ALWAYS_INLINE SetLabel(const std::string& str) {
@@ -520,33 +562,51 @@ class State {
 
   // Range arguments for this run. CHECKs if the argument has been set.
   BENCHMARK_ALWAYS_INLINE
-  int range(std::size_t pos = 0) const {
+  int64_t range(std::size_t pos = 0) const {
     assert(range_.size() > pos);
     return range_[pos];
   }
 
   BENCHMARK_DEPRECATED_MSG("use 'range(0)' instead")
-  int range_x() const { return range(0); }
+  int64_t range_x() const { return range(0); }
 
   BENCHMARK_DEPRECATED_MSG("use 'range(1)' instead")
-  int range_y() const { return range(1); }
+  int64_t range_y() const { return range(1); }
 
   BENCHMARK_ALWAYS_INLINE
-  size_t iterations() const { return total_iterations_; }
+  size_t iterations() const {
+    if (BENCHMARK_BUILTIN_EXPECT(!started_, false)) {
+      return 0;
+    }
+    return max_iterations - total_iterations_ + batch_leftover_;
+  }
 
- private:
-  bool started_;
-  bool finished_;
+private: // items we expect on the first cache line (ie 64 bytes of the struct)
+
+  // When total_iterations_ is 0, KeepRunning() and friends will return false.
+  // May be larger than max_iterations.
   size_t total_iterations_;
 
-  std::vector<int> range_;
+  // When using KeepRunningBatch(), batch_leftover_ holds the number of
+  // iterations beyond max_iters that were run. Used to track
+  // completed_iterations_ accurately.
+  size_t batch_leftover_;
 
-  size_t bytes_processed_;
-  size_t items_processed_;
+public:
+  const size_t max_iterations;
 
-  int complexity_n_;
-
+private:
+  bool started_;
+  bool finished_;
   bool error_occurred_;
+
+private: // items we don't need on the first cache line
+  std::vector<int64_t> range_;
+
+  int64_t bytes_processed_;
+  int64_t items_processed_;
+
+  int64_t complexity_n_;
 
  public:
   // Container for user-defined counters.
@@ -555,20 +615,109 @@ class State {
   const int thread_index;
   // Number of threads concurrently executing the benchmark.
   const int threads;
-  const size_t max_iterations;
+
 
   // TODO(EricWF) make me private
-  State(size_t max_iters, const std::vector<int>& ranges, int thread_i,
+  State(size_t max_iters, const std::vector<int64_t>& ranges, int thread_i,
         int n_threads, internal::ThreadTimer* timer,
         internal::ThreadManager* manager);
 
  private:
   void StartKeepRunning();
+  // Implementation of KeepRunning() and KeepRunningBatch().
+  // is_batch must be true unless n is 1.
+  bool KeepRunningInternal(size_t n, bool is_batch);
   void FinishKeepRunning();
   internal::ThreadTimer* timer_;
   internal::ThreadManager* manager_;
   BENCHMARK_DISALLOW_COPY_AND_ASSIGN(State);
 };
+
+inline BENCHMARK_ALWAYS_INLINE
+bool State::KeepRunning() {
+  return KeepRunningInternal(1, /*is_batch=*/ false);
+}
+
+inline BENCHMARK_ALWAYS_INLINE
+bool State::KeepRunningBatch(size_t n) {
+  return KeepRunningInternal(n, /*is_batch=*/ true);
+}
+
+inline BENCHMARK_ALWAYS_INLINE
+bool State::KeepRunningInternal(size_t n, bool is_batch) {
+  // total_iterations_ is set to 0 by the constructor, and always set to a
+  // nonzero value by StartKepRunning().
+  assert(n > 0);
+  // n must be 1 unless is_batch is true.
+  assert(is_batch || n == 1);
+  if (BENCHMARK_BUILTIN_EXPECT(total_iterations_ >= n, true)) {
+    total_iterations_ -= n;
+    return true;
+  }
+  if (!started_) {
+    StartKeepRunning();
+    if (!error_occurred_ && total_iterations_ >= n) {
+      total_iterations_-= n;
+      return true;
+    }
+  }
+  // For non-batch runs, total_iterations_ must be 0 by now.
+  if (is_batch && total_iterations_ != 0) {
+    batch_leftover_  = n - total_iterations_;
+    total_iterations_ = 0;
+    return true;
+  }
+  FinishKeepRunning();
+  return false;
+}
+
+struct State::StateIterator {
+  struct BENCHMARK_UNUSED Value {};
+  typedef std::forward_iterator_tag iterator_category;
+  typedef Value value_type;
+  typedef Value reference;
+  typedef Value pointer;
+  typedef std::ptrdiff_t difference_type;
+
+ private:
+  friend class State;
+  BENCHMARK_ALWAYS_INLINE
+  StateIterator() : cached_(0), parent_() {}
+
+  BENCHMARK_ALWAYS_INLINE
+  explicit StateIterator(State* st)
+      : cached_(st->error_occurred_ ? 0 : st->max_iterations), parent_(st) {}
+
+ public:
+  BENCHMARK_ALWAYS_INLINE
+  Value operator*() const { return Value(); }
+
+  BENCHMARK_ALWAYS_INLINE
+  StateIterator& operator++() {
+    assert(cached_ > 0);
+    --cached_;
+    return *this;
+  }
+
+  BENCHMARK_ALWAYS_INLINE
+  bool operator!=(StateIterator const&) const {
+    if (BENCHMARK_BUILTIN_EXPECT(cached_ != 0, true)) return true;
+    parent_->FinishKeepRunning();
+    return false;
+  }
+
+ private:
+  size_t cached_;
+  State* const parent_;
+};
+
+inline BENCHMARK_ALWAYS_INLINE State::StateIterator State::begin() {
+  return StateIterator(this);
+}
+inline BENCHMARK_ALWAYS_INLINE State::StateIterator State::end() {
+  StartKeepRunning();
+  return StateIterator();
+}
 
 namespace internal {
 
@@ -590,7 +739,7 @@ class Benchmark {
   // Run this benchmark once with "x" as the extra argument passed
   // to the function.
   // REQUIRES: The function passed to the constructor must accept an arg1.
-  Benchmark* Arg(int x);
+  Benchmark* Arg(int64_t x);
 
   // Run this benchmark with the given time unit for the generated output report
   Benchmark* Unit(TimeUnit unit);
@@ -598,23 +747,23 @@ class Benchmark {
   // Run this benchmark once for a number of values picked from the
   // range [start..limit].  (start and limit are always picked.)
   // REQUIRES: The function passed to the constructor must accept an arg1.
-  Benchmark* Range(int start, int limit);
+  Benchmark* Range(int64_t start, int64_t limit);
 
   // Run this benchmark once for all values in the range [start..limit] with
   // specific step
   // REQUIRES: The function passed to the constructor must accept an arg1.
-  Benchmark* DenseRange(int start, int limit, int step = 1);
+  Benchmark* DenseRange(int64_t start, int64_t limit, int step = 1);
 
   // Run this benchmark once with "args" as the extra arguments passed
   // to the function.
   // REQUIRES: The function passed to the constructor must accept arg1, arg2 ...
-  Benchmark* Args(const std::vector<int>& args);
+  Benchmark* Args(const std::vector<int64_t>& args);
 
   // Equivalent to Args({x, y})
   // NOTE: This is a legacy C++03 interface provided for compatibility only.
   //   New code should use 'Args'.
-  Benchmark* ArgPair(int x, int y) {
-    std::vector<int> args;
+  Benchmark* ArgPair(int64_t x, int64_t y) {
+    std::vector<int64_t> args;
     args.push_back(x);
     args.push_back(y);
     return Args(args);
@@ -623,7 +772,7 @@ class Benchmark {
   // Run this benchmark once for a number of values picked from the
   // ranges [start..limit].  (starts and limits are always picked.)
   // REQUIRES: The function passed to the constructor must accept arg1, arg2 ...
-  Benchmark* Ranges(const std::vector<std::pair<int, int> >& ranges);
+  Benchmark* Ranges(const std::vector<std::pair<int64_t, int64_t> >& ranges);
 
   // Equivalent to ArgNames({name})
   Benchmark* ArgName(const std::string& name);
@@ -635,8 +784,8 @@ class Benchmark {
   // Equivalent to Ranges({{lo1, hi1}, {lo2, hi2}}).
   // NOTE: This is a legacy C++03 interface provided for compatibility only.
   //   New code should use 'Ranges'.
-  Benchmark* RangePair(int lo1, int hi1, int lo2, int hi2) {
-    std::vector<std::pair<int, int> > ranges;
+  Benchmark* RangePair(int64_t lo1, int64_t hi1, int64_t lo2, int64_t hi2) {
+    std::vector<std::pair<int64_t, int64_t> > ranges;
     ranges.push_back(std::make_pair(lo1, hi1));
     ranges.push_back(std::make_pair(lo2, hi2));
     return Ranges(ranges);
@@ -698,6 +847,9 @@ class Benchmark {
   // the asymptotic computational complexity will be shown on the output.
   Benchmark* Complexity(BigOFunc* complexity);
 
+  // Add this statistics to be computed over all the values of benchmark run
+  Benchmark* ComputeStatistics(std::string name, StatisticsFunc* statistics);
+
   // Support for running multiple copies of the same benchmark concurrently
   // in multiple threads.  This may be useful when measuring the scaling
   // of some piece of code.
@@ -740,15 +892,13 @@ class Benchmark {
 
   int ArgsCnt() const;
 
-  static void AddRange(std::vector<int>* dst, int lo, int hi, int mult);
-
  private:
   friend class BenchmarkFamilies;
 
   std::string name_;
   ReportMode report_mode_;
   std::vector<std::string> arg_names_;   // Args for all benchmark runs
-  std::vector<std::vector<int> > args_;  // Args for all benchmark runs
+  std::vector<std::vector<int64_t> > args_;  // Args for all benchmark runs
   TimeUnit time_unit_;
   int range_multiplier_;
   double min_time_;
@@ -758,6 +908,7 @@ class Benchmark {
   bool use_manual_time_;
   BigO complexity_;
   BigOFunc* complexity_lambda_;
+  std::vector<Statistics> statistics_;
   std::vector<int> thread_counts_;
 
   Benchmark& operator=(Benchmark const&);
@@ -905,7 +1056,7 @@ class Fixture : public internal::Benchmark {
 #define BENCHMARK_RANGE2(n, l1, h1, l2, h2) \
   BENCHMARK(n)->RangePair({{(l1), (h1)}, {(l2), (h2)}})
 
-#if __cplusplus >= 201103L
+#ifdef BENCHMARK_HAS_CXX11
 
 // Register a benchmark which invokes the function specified by `func`
 // with the additional arguments specified by `...`.
@@ -925,7 +1076,7 @@ class Fixture : public internal::Benchmark {
               #func "/" #test_case_name,                 \
               [](::benchmark::State& st) { func(st, __VA_ARGS__); })))
 
-#endif  // __cplusplus >= 11
+#endif  // BENCHMARK_HAS_CXX11
 
 // This will register a benchmark for a templatized function.  For example:
 //
@@ -946,7 +1097,7 @@ class Fixture : public internal::Benchmark {
           new ::benchmark::internal::FunctionBenchmark(#n "<" #a "," #b ">", \
                                                        n<a, b>)))
 
-#if __cplusplus >= 201103L
+#ifdef BENCHMARK_HAS_CXX11
 #define BENCHMARK_TEMPLATE(n, ...)                       \
   BENCHMARK_PRIVATE_DECLARE(n) =                         \
       (::benchmark::internal::RegisterBenchmarkInternal( \
@@ -967,9 +1118,62 @@ class Fixture : public internal::Benchmark {
     virtual void BenchmarkCase(::benchmark::State&);          \
   };
 
+#define BENCHMARK_TEMPLATE1_PRIVATE_DECLARE_F(BaseClass, Method, a) \
+  class BaseClass##_##Method##_Benchmark : public BaseClass<a> {    \
+   public:                                                          \
+    BaseClass##_##Method##_Benchmark() : BaseClass<a>() {           \
+      this->SetName(#BaseClass"<" #a ">/" #Method);                 \
+    }                                                               \
+                                                                    \
+   protected:                                                       \
+    virtual void BenchmarkCase(::benchmark::State&);                \
+  };
+
+#define BENCHMARK_TEMPLATE2_PRIVATE_DECLARE_F(BaseClass, Method, a, b) \
+  class BaseClass##_##Method##_Benchmark : public BaseClass<a, b> {    \
+   public:                                                             \
+    BaseClass##_##Method##_Benchmark() : BaseClass<a, b>() {           \
+      this->SetName(#BaseClass"<" #a "," #b ">/" #Method);             \
+    }                                                                  \
+                                                                       \
+   protected:                                                          \
+    virtual void BenchmarkCase(::benchmark::State&);                   \
+  };
+
+#ifdef BENCHMARK_HAS_CXX11
+#define BENCHMARK_TEMPLATE_PRIVATE_DECLARE_F(BaseClass, Method, ...)       \
+  class BaseClass##_##Method##_Benchmark : public BaseClass<__VA_ARGS__> { \
+   public:                                                                 \
+    BaseClass##_##Method##_Benchmark() : BaseClass<__VA_ARGS__>() {        \
+      this->SetName(#BaseClass"<" #__VA_ARGS__ ">/" #Method);              \
+    }                                                                      \
+                                                                           \
+   protected:                                                              \
+    virtual void BenchmarkCase(::benchmark::State&);                       \
+  };
+#else
+#define BENCHMARK_TEMPLATE_PRIVATE_DECLARE_F(n, a) BENCHMARK_TEMPLATE1_PRIVATE_DECLARE_F(n, a)
+#endif
+
 #define BENCHMARK_DEFINE_F(BaseClass, Method)    \
   BENCHMARK_PRIVATE_DECLARE_F(BaseClass, Method) \
   void BaseClass##_##Method##_Benchmark::BenchmarkCase
+
+#define BENCHMARK_TEMPLATE1_DEFINE_F(BaseClass, Method, a)    \
+  BENCHMARK_TEMPLATE1_PRIVATE_DECLARE_F(BaseClass, Method, a) \
+  void BaseClass##_##Method##_Benchmark::BenchmarkCase
+
+#define BENCHMARK_TEMPLATE2_DEFINE_F(BaseClass, Method, a, b)    \
+  BENCHMARK_TEMPLATE2_PRIVATE_DECLARE_F(BaseClass, Method, a, b) \
+  void BaseClass##_##Method##_Benchmark::BenchmarkCase
+
+#ifdef BENCHMARK_HAS_CXX11
+#define BENCHMARK_TEMPLATE_DEFINE_F(BaseClass, Method, ...)            \
+  BENCHMARK_TEMPLATE_PRIVATE_DECLARE_F(BaseClass, Method, __VA_ARGS__) \
+  void BaseClass##_##Method##_Benchmark::BenchmarkCase
+#else
+#define BENCHMARK_TEMPLATE_DEFINE_F(BaseClass, Method, a) BENCHMARK_TEMPLATE1_DEFINE_F(BaseClass, Method, a)
+#endif
 
 #define BENCHMARK_REGISTER_F(BaseClass, Method) \
   BENCHMARK_PRIVATE_REGISTER_F(BaseClass##_##Method##_Benchmark)
@@ -984,19 +1188,59 @@ class Fixture : public internal::Benchmark {
   BENCHMARK_REGISTER_F(BaseClass, Method);       \
   void BaseClass##_##Method##_Benchmark::BenchmarkCase
 
+#define BENCHMARK_TEMPLATE1_F(BaseClass, Method, a)           \
+  BENCHMARK_TEMPLATE1_PRIVATE_DECLARE_F(BaseClass, Method, a) \
+  BENCHMARK_REGISTER_F(BaseClass, Method);                    \
+  void BaseClass##_##Method##_Benchmark::BenchmarkCase
+
+#define BENCHMARK_TEMPLATE2_F(BaseClass, Method, a, b)           \
+  BENCHMARK_TEMPLATE2_PRIVATE_DECLARE_F(BaseClass, Method, a, b) \
+  BENCHMARK_REGISTER_F(BaseClass, Method);                       \
+  void BaseClass##_##Method##_Benchmark::BenchmarkCase
+
+#ifdef BENCHMARK_HAS_CXX11
+#define BENCHMARK_TEMPLATE_F(BaseClass, Method, ...)           \
+  BENCHMARK_TEMPLATE_PRIVATE_DECLARE_F(BaseClass, Method, __VA_ARGS__) \
+  BENCHMARK_REGISTER_F(BaseClass, Method);                     \
+  void BaseClass##_##Method##_Benchmark::BenchmarkCase
+#else
+#define BENCHMARK_TEMPLATE_F(BaseClass, Method, a) BENCHMARK_TEMPLATE1_F(BaseClass, Method, a)
+#endif
+
 // Helper macro to create a main routine in a test that runs the benchmarks
 #define BENCHMARK_MAIN()                   \
   int main(int argc, char** argv) {        \
     ::benchmark::Initialize(&argc, argv);  \
     if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1; \
     ::benchmark::RunSpecifiedBenchmarks(); \
-  }
+  }                                        \
+  int main(int, char**)
 
 
 // ------------------------------------------------------
 // Benchmark Reporters
 
 namespace benchmark {
+
+struct CPUInfo {
+  struct CacheInfo {
+    std::string type;
+    int level;
+    int size;
+    int num_sharing;
+  };
+
+  int num_cpus;
+  double cycles_per_second;
+  std::vector<CacheInfo> caches;
+  bool scaling_enabled;
+
+  static const CPUInfo& Get();
+
+ private:
+  CPUInfo();
+  BENCHMARK_DISALLOW_COPY_AND_ASSIGN(CPUInfo);
+};
 
 // Interface for custom benchmark result printers.
 // By default, benchmark reports are printed to stdout. However an application
@@ -1006,12 +1250,11 @@ namespace benchmark {
 class BenchmarkReporter {
  public:
   struct Context {
-    int num_cpus;
-    double mhz_per_cpu;
-    bool cpu_scaling_enabled;
-
+    CPUInfo const& cpu_info;
     // The number of chars in the longest benchmark name.
     size_t name_field_width;
+    static const char *executable_name;
+    Context();
   };
 
   struct Run {
@@ -1063,7 +1306,10 @@ class BenchmarkReporter {
     // Keep track of arguments to compute asymptotic complexity
     BigO complexity;
     BigOFunc* complexity_lambda;
-    int complexity_n;
+    int64_t complexity_n;
+
+    // what statistics to compute from the measurements
+    const std::vector<Statistics>* statistics;
 
     // Inform print function whether the current run is a complexity report
     bool report_big_o;
