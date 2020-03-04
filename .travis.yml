@@ -49,13 +49,6 @@ matrix:
       env:
         - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=false
 
-    - os: osx
-      compiler: clang
-      osx_image: xcode9.2
-      sudo: required
-      env:
-        - SUDO_TESTS=true
-
 before_script:
   - ./ci/setup.sh
 
