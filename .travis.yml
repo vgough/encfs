@@ -1,6 +1,10 @@
 language: cpp
 
 matrix:
+
+  allow_failures:
+    - os: windows
+
   include:
     - os: linux
       compiler: gcc
@@ -48,6 +52,17 @@ matrix:
             - clang-tidy-4.0
       env:
         - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=false
+
+    - language: bash
+      os: windows
+      script:
+      - choco uninstall -y mingw
+      - choco install -y winfsp
+      - choco install -y cyg-get
+      - cyg-get.bat cmake make gcc-g++ gettext-devel libssl-devel procps-ng perl-test-harness
+      - export CHERE_INVOKING=1
+      - cmd.exe /c "/C/tools/cygwin/bin/bash.exe --login -c 'cd /cygdrive/c/Program*/WinFsp/opt/cygfuse ; sh install.sh'"
+      - cmd.exe /c "/C/tools/cygwin/bin/bash.exe --login -c './build.sh'"
 
     - os: osx
       compiler: clang
