@@ -61,15 +61,3 @@ matrix:
         - ./build.sh
       env:
         - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=false
-
-    - language: cpp
-      os: osx
-      compiler: clang
-      osx_image: xcode9.2
-      sudo: required
-      before_script:
-        - brew cask install osxfuse
-      script:
-        - ./build.sh
-      env:
-        - SUDO_TESTS=true

@@ -11,10 +11,6 @@ if [[ "$CHECK" == "true" ]]; then
   CFG="-DLINT=ON $CFG"
 fi
 
-if uname -s | grep -q Darwin; then
-  CFG="-DENABLE_NLS=OFF -DOPENSSL_ROOT_DIR=/usr/local/opt/openssl $CFG"
-fi
-
 if [[ ! -d build ]]
 then
   mkdir build

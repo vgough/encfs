@@ -9,3 +9,12 @@ task:
   script:
     - ./build.sh
   allow_failures: true
+
+task:
+  name: MacOS
+  osx_instance:
+    image: catalina-xcode-11.3.1
+  install_script:
+    - brew cask install osxfuse
+  script:
+    - ./build.sh
