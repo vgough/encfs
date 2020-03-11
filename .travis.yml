@@ -1,8 +1,9 @@
-language: cpp
-
 matrix:
+
   include:
-    - os: linux
+
+    - language: cpp
+      os: linux
       compiler: gcc
       dist: bionic
       sudo: required
@@ -14,10 +15,15 @@ matrix:
             - libfuse-dev
             - gettext
             - cmake
+      before_script:
+        - sudo modprobe fuse
+      script:
+        - ./build.sh
       env:
         - SUDO_TESTS=true
 
-    - os: linux
+    - language: cpp
+      os: linux
       compiler: gcc
       dist: xenial
       sudo: required
@@ -29,10 +35,15 @@ matrix:
             - libfuse-dev
             - gettext
             - cmake
+      before_script:
+        - sudo modprobe fuse
+      script:
+        - ./build.sh
       env:
         - SUDO_TESTS=true
 
-    - os: linux
+    - language: cpp
+      os: linux
       compiler: clang
       dist: xenial
       sudo: false
@@ -46,11 +57,7 @@ matrix:
             - cmake
             - clang-4.0
             - clang-tidy-4.0
+      script:
+        - ./build.sh
       env:
         - CC=clang-4.0 CXX=clang++-4.0 CHECK=true INTEGRATION=false
-
-before_script:
-  - ./ci/setup.sh
-
-script:
-  - ./build.sh
