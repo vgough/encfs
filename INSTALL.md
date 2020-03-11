@@ -19,6 +19,10 @@ Or following are the detailed steps to build EncFS:
     cmake ..
     make
 
+If CMake can't find FUSE or OpenSSL, you can use the following options:
+
+    cmake .. -DFUSE_ROOT_DIR=/pathto/fuse -DOPENSSL_ROOT_DIR=/pathto/openssl
+
 Optional, but strongly recommended, is running the unit and integration
 tests to verify that the generated binaries work as expected.  Unit
 tests will run almost instantly:

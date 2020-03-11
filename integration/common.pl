@@ -63,17 +63,35 @@ sub sizeVerify
 	return $ok;
 }
 
-# Wait for a file to appear
+# Helper to check a file's content
+sub checkContents
+{
+    my ($file, $expected, $testName) = @_;
+
+    open(IN, "< $file");
+    my $line = <IN>;
+    is($line, $expected, $testName);
+
+    close IN;
+}
+
+# Wait for a file to (dis)appear
 use Time::HiRes qw(usleep);
 sub waitForFile
 {
 	my $file = shift;
 	my $timeout;
 	$timeout = shift or $timeout = 5;
-	for(my $i = $timeout*10; $i > 0; $i--)
+	my $gone;
+	$gone = shift or $gone = 0;
+	for(my $i = $timeout*2; $i > 0; $i--)
 	{
-		-f $file and return 1;
-		usleep(100000); # 0.1 seconds
+		if (-f $file) {
+			($gone == 0) and return 1;
+		} elsif ($gone == 1) {
+			return 1;
+		}
+		usleep(500000); # 0.5 seconds
 	}
 	print "# timeout waiting for '$file' to appear\n";
 	return 0;

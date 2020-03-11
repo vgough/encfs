@@ -1,12 +1,20 @@
 task:
+  name: FreeBSD
   freebsd_instance:
-    matrix:
-      image: freebsd-12-1-release-amd64
+    image: freebsd-12-1-release-amd64
   install_script:
     - pkg install -y bash cmake fusefs-libs gettext perl5
     - ln -s /usr/local/bin/bash /bin/bash
-    - ./ci/setup.sh
+    - kldload fuse
   script:
     - ./build.sh
-  env:
-    INTEGRATION: false
+  allow_failures: true
+
+task:
+  name: MacOS
+  osx_instance:
+    image: catalina-xcode-11.3.1
+  install_script:
+    - brew cask install osxfuse
+  script:
+    - ./build.sh
