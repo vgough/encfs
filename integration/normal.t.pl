@@ -177,6 +177,7 @@ sub configFromPipe
     waitpid($child, 0);
     ok($? == 0, "encfs piped command returns 0") || BAIL_OUT("");
     ok(waitForFile("$decrypted/mount"), "mount test file exists") || BAIL_OUT("");
+    unlink("$ciphertext/.encfs6.xml");
     rename("$ciphertext/.encfs6_moved.xml", "$ciphertext/.encfs6.xml");
 }
 
