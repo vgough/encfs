@@ -25,6 +25,7 @@
 #include <cstring>
 #ifdef __linux__
 #include <sys/fsuid.h>
+#include <sys/types.h>
 #endif
 #include <pthread.h>
 #include <sys/stat.h>
@@ -199,7 +200,7 @@ bool RenameOp::apply() {
       }
 
       if (preserve_mtime) {
-        struct utimbuf ut;
+        ::utimbuf ut;
         ut.actime = st.st_atime;
         ut.modtime = st.st_mtime;
         ::utime(last->newCName.c_str(), &ut);
@@ -555,7 +556,9 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
   return res;
 }
 
-int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
+// \todo use the flags parameter to handle RENAME_EXCHANGE and RENAME_NOREPLACE.
+int DirNode::rename(const char *fromPlaintext, const char *toPlaintext, const int flags) {
+  (void)flags;
   Lock _lock(mutex);
 
   string fromCName = rootDir + naming->encodePath(fromPlaintext);
@@ -614,7 +617,7 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
       }
 #endif
       if (preserve_mtime) {
-        struct utimbuf ut;
+        ::utimbuf ut;
         ut.actime = st.st_atime;
         ut.modtime = st.st_mtime;
         ::utime(toCName.c_str(), &ut);

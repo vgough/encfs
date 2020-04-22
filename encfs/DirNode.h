@@ -129,7 +129,7 @@ class DirNode {
   int mkdir(const char *plaintextPath, mode_t mode, uid_t uid = 0,
             gid_t gid = 0);
 
-  int rename(const char *fromPlaintext, const char *toPlaintext);
+  int rename(const char *fromPlaintext, const char *toPlaintext, const int flags);
 
   int link(const char *to, const char *from);
 
