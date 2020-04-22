@@ -505,10 +505,6 @@ static bool processArgs(int argc, char *argv[],
   // Add default flags unless --no-default-flags was passed
   if (useDefaultFlags) {
 
-    // Expose the underlying stable inode number
-    PUSHARG("-o");
-    PUSHARG("use_ino");
-
     // "default_permissions" comes with a performance cost, and only makes
     // sense if "allow_other"" is used.
     // But it works around the issues "open_readonly_workaround" causes,
