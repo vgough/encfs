@@ -137,6 +137,8 @@ struct RenameEl {
   string newPName;
 
   bool isDirectory;
+  bool preserve_mtime;
+  struct timespec times[2];
 };
 
 class RenameOp {
@@ -179,12 +181,20 @@ RenameOp::~RenameOp() {
 
 bool RenameOp::apply() {
   try {
+    for (auto it = renameList->begin(); it != renameList->end(); ++it)
+      {
+	struct stat st;
+	it->preserve_mtime = ::stat(it->oldCName.c_str(), &st) == 0;
+	if (it->preserve_mtime)
+	  {
+	    it->times[0] = st.st_atim;
+	    it->times[1] = st.st_mtim;
+	  }
+      }
+
     while (last != renameList->end()) {
       // backing store rename.
       VLOG(1) << "renaming " << last->oldCName << " -> " << last->newCName;
-
-      struct stat st;
-      bool preserve_mtime = ::stat(last->oldCName.c_str(), &st) == 0;
 
       // internal node rename..
       dn->renameNode(last->oldPName.c_str(), last->newPName.c_str());
@@ -198,11 +208,8 @@ bool RenameOp::apply() {
         return false;
       }
 
-      if (preserve_mtime) {
-        struct utimbuf ut;
-        ut.actime = st.st_atime;
-        ut.modtime = st.st_mtime;
-        ::utime(last->newCName.c_str(), &ut);
+      if (last->preserve_mtime) {
+	::utimensat(AT_FDCWD, last->newCName.c_str(), last->times, AT_SYMLINK_NOFOLLOW);
       }
 
       ++last;
@@ -565,6 +572,9 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
 
   VLOG(1) << "rename " << fromCName << " -> " << toCName;
 
+  struct stat st;
+  bool preserve_mtime = ::stat(fromCName.c_str(), &st) == 0;
+
   std::shared_ptr<FileNode> toNode = findOrCreate(toPlaintext);
 
   std::shared_ptr<RenameOp> renameOp;
@@ -585,8 +595,6 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
 
   int res = 0;
   try {
-    struct stat st;
-    bool preserve_mtime = ::stat(fromCName.c_str(), &st) == 0;
 
     renameNode(fromPlaintext, toPlaintext);
     res = ::rename(fromCName.c_str(), toCName.c_str());
@@ -614,10 +622,10 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
       }
 #endif
       if (preserve_mtime) {
-        struct utimbuf ut;
-        ut.actime = st.st_atime;
-        ut.modtime = st.st_mtime;
-        ::utime(toCName.c_str(), &ut);
+	struct timespec times[2];
+	times[0] = st.st_atim;
+	times[1] = st.st_mtim;
+	::utimensat(AT_FDCWD, toCName.c_str(), times, AT_SYMLINK_NOFOLLOW);
       }
     }
   } catch (encfs::Error &err) {
