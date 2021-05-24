@@ -26,7 +26,8 @@ If CMake can't find FUSE or OpenSSL, you can use the following options:
 Optional, but strongly recommended, is running the unit and integration
 tests to verify that the generated binaries work as expected.  Unit
 tests will run almost instantly:
-
+    
+    cd build
     make unittests
     make test
 
