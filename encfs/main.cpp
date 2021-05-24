@@ -806,6 +806,7 @@ int main(int argc, char *argv[]) {
         FILE *out = fdopen(oldStderr, "a");
         // xgroup(usage)
         fputs(_("fuse failed.  Common problems:\n"
+                " - your volume is already mounted\n"
                 " - fuse kernel module not installed (modprobe fuse)\n"
                 " - invalid options -- see usage message\n"),
               out);
