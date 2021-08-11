@@ -5,7 +5,7 @@ EncFS runs in user-space while eCryptfs runs in the kernel.
 This is why it is often assumed that eCryptfs is faster than EncFS.
 To compare the actual performance of EncFS and eCryptfs on top of
 different backing disks, the EncFS test suite contains an automated
-performance test - [benchmark.pl](tests/benchmark.pl).
+performance test - [benchmark.pl](integration/benchmark.pl).
 
 performance.pl takes care of setting up EncFS and eCryptfs mounts,
 clearing caches and syncing disks between the tests, and also to unmount
@@ -22,18 +22,18 @@ It performance the following tests:
   of stat() calls.
 * delete: Recursively delete the extracted files
 
-For EncFS, the [default options](tests/benchmark.pl#L47) are used.
+For EncFS, the [default options](integration/benchmark.pl#L47) are used.
 This means:
 
 * AES with 192 bit key
 * Filename encryption
 
-For eCryptfs, the [options used](tests/mount-ecryptfs.expect) are
+For eCryptfs, the [options used](integration/mount-ecryptfs.expect) are
 
 * AES with 128 bit key
 * Filename encryption
 
-For all the details, take a look at [benchmark.pl](tests/benchmark.pl) .
+For all the details, take a look at [benchmark.pl](integration/benchmark.pl) .
 
 Results
 -------
@@ -50,7 +50,7 @@ G630 (Sandy Bridge, 2 x 2.7GHz).
 
 If you want to replicate the test, just run
 
-    sudo tests/benchmark.pl /path/to/test/directory
+    sudo integration/benchmark.pl /path/to/test/directory
 
 (the test must be run as root as normal users cannot mount ecryptfs or
 clear the caches)
