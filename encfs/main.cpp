@@ -256,6 +256,7 @@ static bool processArgs(int argc, char *argv[],
       {"delaymount", 0, nullptr, 'M'},        // delay initial mount until use
       {"public", 0, nullptr, 'P'},            // public mode
       {"extpass", 1, nullptr, 'p'},           // external password program
+      {"exclude", 1, nullptr, 'e'},           // exclude from reverse
       // {"single-thread", 0, 0, 's'},  // single-threaded mode
       {"stdinpass", 0, nullptr, 'S'},  // read password from stdin
       {"syslogtag", 1, nullptr, 't'},  // syslog tag
@@ -290,8 +291,9 @@ static bool processArgs(int argc, char *argv[],
     // 't' : syslog tag
     // 'c' : configuration file
     // 'u' : unmount
+    // 'e' : exclude
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:t:c:u", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfvdmi:e:o:t:c:u", long_options, &option_index);
 
     if (res == -1) {
       break;
@@ -343,6 +345,9 @@ static bool processArgs(int argc, char *argv[],
       case 'd':
         PUSHARG("-d");
         break;
+      case 'e':
+	cerr << "Saw exclude on the command line\n\n";
+	break;
       case 'i':
         out->idleTimeout = strtol(optarg, (char **)nullptr, 10);
         out->opts->idleTracking = true;
