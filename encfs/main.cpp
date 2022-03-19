@@ -346,7 +346,19 @@ static bool processArgs(int argc, char *argv[],
         PUSHARG("-d");
         break;
       case 'e':
-	cerr << "Saw exclude on the command line\n\n";
+	/* optarg contains a c-style string. Let's save it to an array
+	   of c-style strings in excludeArgv, and count them in
+	   excludeArgc */
+	if (out->opts->excludeArgc < MaxExcludeArgs) {
+	    out->opts->excludeArgv[out->opts->excludeArgc++] = optarg;
+	    if (out->isVerbose) {
+	      cout << autosprintf(_("Excluding '%s'"), optarg) << "\n";
+	    }
+	  } else {
+	    if (out->isVerbose) {
+	      cout << autosprintf(_("Too many excludes. Omitting '%s'"), optarg) << "\n";
+	    }
+	}
 	break;
       case 'i':
         out->idleTimeout = strtol(optarg, (char **)nullptr, 10);
@@ -468,6 +480,11 @@ static bool processArgs(int argc, char *argv[],
 
   if (!out->isThreaded) {
     PUSHARG("-s");
+  }
+
+  if (out->opts->excludeArgc != 0 && out->opts->reverseEncryption == false) {
+    cerr << "Must specify --reverse if patterns are specified with --exclude\n";
+    return false;
   }
 
   // for --unmount, we should have exactly 1 argument - the mount point
