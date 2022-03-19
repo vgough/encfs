@@ -156,6 +156,8 @@ static void usage(const char *name) {
             "verbose: output encfs debug messages\n"
             "  -i, --idle=MINUTES\t"
             "Auto unmount after period of inactivity\n"
+	    "  --exclude\t\t"
+	    "Exclude glob during reverse (may be specified multiple times)\n"
             "  --anykey\t\t"
             "Do not verify correct key is being used\n"
             "  --forcedecode\t\t"
