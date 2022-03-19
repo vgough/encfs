@@ -323,7 +323,7 @@ static bool processArgs(int argc, char *argv[],
         out->opts->insecure = true;
         break;
       case 'c':
-        /* Take config file path from command 
+        /* Take config file path from command
          * line instead of ENV variable */
         out->opts->config.assign(optarg);
         break;
