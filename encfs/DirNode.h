@@ -49,10 +49,14 @@ struct RenameEl;
 class DirTraverse {
  public:
   DirTraverse(std::shared_ptr<DIR> dirPtr, uint64_t iv,
-              std::shared_ptr<NameIO> naming, bool root);
+              std::shared_ptr<NameIO> naming, bool root,
+	      std::shared_ptr<EncFS_Opts>);
   ~DirTraverse();
 
   DirTraverse &operator=(const DirTraverse &src);
+
+  // pass options through so we can, e.g., get at opts->excludeArgv
+  std::shared_ptr<EncFS_Opts> opts;
 
   // returns FALSE to indicate an invalid DirTraverse (such as when
   // an invalid directory is requested for traversal)

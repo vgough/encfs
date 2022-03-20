@@ -26,6 +26,7 @@
 #ifdef __linux__
 #include <sys/fsuid.h>
 #endif
+#include <fnmatch.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -52,9 +53,11 @@ class DirDeleter {
 };
 
 DirTraverse::DirTraverse(std::shared_ptr<DIR> _dirPtr, uint64_t _iv,
-                         std::shared_ptr<NameIO> _naming, bool _root)
-    : dir(std::move(_dirPtr)), iv(_iv), naming(std::move(_naming)), root(_root) {}
-
+                         std::shared_ptr<NameIO> _naming, bool _root,
+			 std::shared_ptr<EncFS_Opts> _opts)
+    : dir(std::move(_dirPtr)), iv(_iv), naming(std::move(_naming)), root(_root) {
+  opts = _opts;
+}
 DirTraverse &DirTraverse::operator=(const DirTraverse &src) = default;
 
 DirTraverse::~DirTraverse() {
@@ -90,11 +93,27 @@ static bool _nextName(struct dirent *&de, const std::shared_ptr<DIR> &dir,
 
 std::string DirTraverse::nextPlaintextName(int *fileType, ino_t *inode) {
   struct dirent *de = nullptr;
+  bool exclude = false;
   while (_nextName(de, dir, fileType, inode)) {
     if (root && (strcmp(".encfs6.xml", de->d_name) == 0)) {
       VLOG(1) << "skipping filename: " << de->d_name;
       continue;
     }
+
+    // Exclude any files that match our exclude patterns
+    if (opts->reverseEncryption) {
+      for (int i=0; i<opts->excludeArgc; i++) {
+	if (! fnmatch(opts->excludeArgv[i], de->d_name, FNM_PATHNAME)) {
+	  VLOG(1) << "excluding filename: " << de->d_name;
+	  exclude = true;
+	}
+      }
+      if (exclude) {
+	exclude = false;
+	continue;
+      }
+    }
+
     try {
       uint64_t localIv = iv;
       return naming->decodePath(de->d_name, &localIv);
@@ -364,7 +383,7 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
   if (dir == nullptr) {
     int eno = errno;
     VLOG(1) << "opendir error " << strerror(eno);
-    return DirTraverse(shared_ptr<DIR>(), 0, std::shared_ptr<NameIO>(), false);
+    return DirTraverse(shared_ptr<DIR>(), 0, std::shared_ptr<NameIO>(), false, NULL);
   }
   std::shared_ptr<DIR> dp(dir, DirDeleter());
 
@@ -378,7 +397,7 @@ DirTraverse DirNode::openDir(const char *plaintextPath) {
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "encode err: " << err.what();
   }
-  return DirTraverse(dp, iv, naming, (strlen(plaintextPath) == 1));
+  return DirTraverse(dp, iv, naming, (strlen(plaintextPath) == 1), fsConfig->opts);
 }
 
 bool DirNode::genRenameList(list<RenameEl> &renameList, const char *fromP,

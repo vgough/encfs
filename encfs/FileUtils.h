@@ -64,6 +64,12 @@ using RootPtr = std::shared_ptr<EncFS_Root>;
 
 enum ConfigMode { Config_Prompt, Config_Standard, Config_Paranoia };
 
+// Maximum number of exclude strings we'll process.  If the user
+// passes more, we complain and ignore the extra ones.
+#if !defined(MaxExcludeArgs)
+#define MaxExcludeArgs 64
+#endif
+
 /**
  * EncFS_Opts stores internal settings
  *
@@ -102,6 +108,9 @@ struct EncFS_Opts {
 
   bool requireMac;  // Throw an error if MAC is disabled
 
+  const char *excludeArgv[MaxExcludeArgs]; // exclude patterns
+  int excludeArgc; // number of exclude patterns
+
   ConfigMode configMode;
   std::string config;  // path to configuration file (or empty)
 
@@ -122,6 +131,7 @@ struct EncFS_Opts {
     readOnly = false;
     insecure = false;
     requireMac = false;
+    excludeArgc = 0;
   }
 };
 
