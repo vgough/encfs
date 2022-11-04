@@ -26,14 +26,13 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Author: vladl@google.com (Vlad Losev)
 
 // Google Mock - a framework for writing C++ mock classes.
 //
 // This file tests the internal cross-platform support utilities.
 
 #include "gmock/internal/gmock-port.h"
+
 #include "gtest/gtest.h"
 
 // NOTE: if this file is left without tests for some reason, put a dummy

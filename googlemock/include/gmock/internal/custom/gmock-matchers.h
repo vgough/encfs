@@ -26,14 +26,12 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// ============================================================
-// An installation-specific extension point for gmock-matchers.h.
-// ============================================================
-//
-// Adds google3 callback support to CallableTraits.
-//
-#ifndef GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_CALLBACK_MATCHERS_H_
-#define GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_CALLBACK_MATCHERS_H_
 
-#endif  //  GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_CALLBACK_MATCHERS_H_
+// Injection point for custom user configurations. See README for details
+
+// IWYU pragma: private, include "gmock/gmock.h"
+// IWYU pragma: friend gmock/.*
+
+#ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_MATCHERS_H_
+#define GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_MATCHERS_H_
+#endif  // GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_MATCHERS_H_

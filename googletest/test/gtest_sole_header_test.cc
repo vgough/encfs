@@ -26,8 +26,7 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Author: mheule@google.com (Markus Heule)
+
 //
 // This test verifies that it's possible to use Google Test by including
 // the gtest.h header file alone.
@@ -36,9 +35,7 @@
 
 namespace {
 
-void Subroutine() {
-  EXPECT_EQ(42, 42);
-}
+void Subroutine() { EXPECT_EQ(42, 42); }
 
 TEST(NoFatalFailureTest, ExpectNoFatalFailure) {
   EXPECT_NO_FATAL_FAILURE(;);

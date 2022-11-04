@@ -26,21 +26,15 @@
 // THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-// Injection point for custom user configurations.
-// The following macros can be defined:
-//
-//   Flag related macros:
-//     GMOCK_DECLARE_bool_(name)
-//     GMOCK_DECLARE_int32_(name)
-//     GMOCK_DECLARE_string_(name)
-//     GMOCK_DEFINE_bool_(name, default_val, doc)
-//     GMOCK_DEFINE_int32_(name, default_val, doc)
-//     GMOCK_DEFINE_string_(name, default_val, doc)
+
+// Injection point for custom user configurations. See README for details
 //
 // ** Custom implementation starts here **
 
-#ifndef GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_PORT_H_
-#define GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_PORT_H_
+// IWYU pragma: private, include "gmock/gmock.h"
+// IWYU pragma: friend gmock/.*
 
-#endif  // GMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_PORT_H_
+#ifndef GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_PORT_H_
+#define GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_PORT_H_
+
+#endif  // GOOGLEMOCK_INCLUDE_GMOCK_INTERNAL_CUSTOM_GMOCK_PORT_H_
