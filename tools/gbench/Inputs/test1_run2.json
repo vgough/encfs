@@ -29,6 +29,20 @@
       "time_unit": "ns"
     },
     {
+      "name": "BM_1PercentFaster",
+      "iterations": 1000,
+      "real_time": 98.9999999,
+      "cpu_time": 98.9999999,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_1PercentSlower",
+      "iterations": 1000,
+      "real_time": 100.9999999,
+      "cpu_time": 100.9999999,
+      "time_unit": "ns"
+    },
+    {
       "name": "BM_10PercentFaster",
       "iterations": 1000,
       "real_time": 90,
@@ -45,8 +59,8 @@
     {
       "name": "BM_100xSlower",
       "iterations": 1000,
-      "real_time": 10000,
-      "cpu_time": 10000,
+      "real_time": 1.0000e+04,
+      "cpu_time": 1.0000e+04,
       "time_unit": "ns"
     },
     {
@@ -55,6 +69,59 @@
       "real_time": 100,
       "cpu_time": 100,
       "time_unit": "ns"
+    },
+    {
+      "name": "BM_10PercentCPUToTime",
+      "iterations": 1000,
+      "real_time": 110,
+      "cpu_time": 90,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ThirdFaster",
+      "iterations": 1000,
+      "real_time": 66.665,
+      "cpu_time": 66.664,
+      "time_unit": "ns"
+    },
+    {
+      "name": "MyComplexityTest_BigO",
+      "run_name": "MyComplexityTest",
+      "run_type": "aggregate",
+      "aggregate_name": "BigO",
+      "cpu_coefficient": 5.6215779594361486e+00,
+      "real_coefficient": 5.6288314793554610e+00,
+      "big_o": "N",
+      "time_unit": "ns"
+    },
+    {
+      "name": "MyComplexityTest_RMS",
+      "run_name": "MyComplexityTest",
+      "run_type": "aggregate",
+      "aggregate_name": "RMS",
+      "rms": 3.3128901852342174e-03
+    },
+    {
+      "name": "BM_NotBadTimeUnit",
+      "iterations": 1000,
+      "real_time": 0.04,
+      "cpu_time": 0.6,
+      "time_unit": "s"
+    },
+    {
+      "name": "BM_DifferentTimeUnit",
+      "iterations": 1,
+      "real_time": 1,
+      "cpu_time": 1,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_hasLabel",
+      "label": "a label",
+      "iterations": 1,
+      "real_time": 1,
+      "cpu_time": 1,
+      "time_unit": "s"
     }
   ]
 }
