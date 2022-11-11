@@ -31,6 +31,11 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/core_names.h>
+#include <openssl/provider.h>
+#endif
+
 #include "Cipher.h"
 #include "Error.h"
 #include "Interface.h"
@@ -47,6 +52,13 @@ namespace encfs {
 const int MAX_KEYLENGTH = 32;  // in bytes (256 bit)
 const int MAX_IVLENGTH = 16;   // 128 bit (AES block size, Blowfish has 64)
 const int KEY_CHECKSUM_BYTES = 4;
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+const OSSL_PARAM HMAC_PARAMS[2] = {
+  OSSL_PARAM_construct_utf8_string(OSSL_MAC_PARAM_DIGEST, OSSL_DIGEST_NAME_SHA1, 0),
+  OSSL_PARAM_construct_end()
+};
+#endif
 
 /**
     This produces the same result as OpenSSL's EVP_BytesToKey.  The difference
@@ -159,6 +171,11 @@ static Interface BlowfishInterface("ssl/blowfish", 3, 0, 2);
 static Interface AESInterface("ssl/aes", 3, 0, 2);
 static Interface CAMELLIAInterface("ssl/camellia", 3, 0, 2);
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+static OSSL_PROVIDER *default_provider = NULL;
+static OSSL_PROVIDER *legacy_provider = NULL;
+#endif
+
 #ifndef OPENSSL_NO_CAMELLIA
 
 static Range CAMELLIAKeyRange(128, 256, 64);
@@ -207,6 +224,23 @@ static Range BFKeyRange(128, 256, 32);
 static Range BFBlockRange(64, 4096, 8);
 
 static std::shared_ptr<Cipher> NewBFCipher(const Interface &iface, int keyLen) {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  /**
+      With OpenSSL 3.0, Blowfish is considered a legacy cipher.
+      The legacy provider is not normally loaded, and loading it
+      also disables the default fallback provider, so we load
+      them both here.
+
+      We should also unload these providers when we finish
+      with them, but for encfs, that happens when the library
+      exits anyway.
+  */
+  if (legacy_provider == NULL) {
+    default_provider = OSSL_PROVIDER_load(NULL, "default");
+    legacy_provider = OSSL_PROVIDER_load(NULL, "legacy");
+  }
+#endif
+
   if (keyLen <= 0) {
     keyLen = 160;
   }
@@ -286,7 +320,12 @@ class SSLKey : public AbstractCipherKey {
   EVP_CIPHER_CTX *stream_enc;
   EVP_CIPHER_CTX *stream_dec;
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  EVP_MAC *evp_mac;
+  EVP_MAC_CTX *evp_mac_ctx;
+#else
   HMAC_CTX *mac_ctx;
+#endif
 
   SSLKey(int keySize, int ivLength);
 
@@ -318,8 +357,14 @@ SSLKey::SSLKey(int keySize_, int ivLength_) {
   EVP_CIPHER_CTX_init(stream_enc);
   stream_dec = EVP_CIPHER_CTX_new();
   EVP_CIPHER_CTX_init(stream_dec);
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  evp_mac = EVP_MAC_fetch(NULL, OSSL_MAC_NAME_HMAC, NULL);
+  evp_mac_ctx = EVP_MAC_CTX_new(evp_mac);
+#else
   mac_ctx = HMAC_CTX_new();
   HMAC_CTX_reset(mac_ctx);
+#endif
 }
 
 SSLKey::~SSLKey() {
@@ -336,7 +381,13 @@ SSLKey::~SSLKey() {
   EVP_CIPHER_CTX_free(block_dec);
   EVP_CIPHER_CTX_free(stream_enc);
   EVP_CIPHER_CTX_free(stream_dec);
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  EVP_MAC_CTX_free(evp_mac_ctx);
+  EVP_MAC_free(evp_mac);
+#else
   HMAC_CTX_free(mac_ctx);
+#endif
 
   pthread_mutex_destroy(&mutex);
 }
@@ -373,7 +424,11 @@ void initKey(const std::shared_ptr<SSLKey> &key, const EVP_CIPHER *_blockCipher,
   EVP_EncryptInit_ex(key->stream_enc, nullptr, nullptr, KeyData(key), nullptr);
   EVP_DecryptInit_ex(key->stream_dec, nullptr, nullptr, KeyData(key), nullptr);
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  EVP_MAC_init(key->evp_mac_ctx, KeyData(key), _keySize, HMAC_PARAMS);
+#else
   HMAC_Init_ex(key->mac_ctx, KeyData(key), _keySize, EVP_sha1(), nullptr);
+#endif
 }
 
 SSL_Cipher::SSL_Cipher(const Interface &iface_, const Interface &realIface_,
@@ -515,8 +570,17 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
   unsigned char md[EVP_MAX_MD_SIZE];
   unsigned int mdLen = EVP_MAX_MD_SIZE;
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#if OPENSSL_VERSION_NUMBER >= 0x30000030L
+  EVP_MAC_init(key->evp_mac_ctx, NULL, 0, NULL);
+#else
+  EVP_MAC_init(key->evp_mac_ctx, key->buffer, key->keySize, HMAC_PARAMS);
+#endif
+  EVP_MAC_update(key->evp_mac_ctx, data, dataLen);
+#else
   HMAC_Init_ex(key->mac_ctx, nullptr, 0, nullptr, nullptr);
   HMAC_Update(key->mac_ctx, data, dataLen);
+#endif
   if (chainedIV != nullptr) {
     // toss in the chained IV as well
     uint64_t tmp = *chainedIV;
@@ -526,10 +590,18 @@ static uint64_t _checksum_64(SSLKey *key, const unsigned char *data,
       tmp >>= 8;
     }
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+    EVP_MAC_update(key->evp_mac_ctx, h, 8);
+#else
     HMAC_Update(key->mac_ctx, h, 8);
+#endif
   }
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+  EVP_MAC_final(key->evp_mac_ctx, md, (size_t *)&mdLen, sizeof(md));
+#else
   HMAC_Final(key->mac_ctx, md, &mdLen);
+#endif
 
   rAssert(mdLen >= 8);
 
@@ -698,10 +770,21 @@ void SSL_Cipher::setIVec(unsigned char *ivec, uint64_t seed,
     }
 
     // combine ivec and seed with HMAC
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#if OPENSSL_VERSION_NUMBER >= 0x30000030L
+    EVP_MAC_init(key->evp_mac_ctx, NULL, 0, NULL);
+#else
+    EVP_MAC_init(key->evp_mac_ctx, key->buffer, key->keySize, HMAC_PARAMS);
+#endif
+    EVP_MAC_update(key->evp_mac_ctx, ivec, _ivLength);
+    EVP_MAC_update(key->evp_mac_ctx, md, 8);
+    EVP_MAC_final(key->evp_mac_ctx, md, (size_t *)&mdLen, sizeof(md));
+#else
     HMAC_Init_ex(key->mac_ctx, nullptr, 0, nullptr, nullptr);
     HMAC_Update(key->mac_ctx, ivec, _ivLength);
     HMAC_Update(key->mac_ctx, md, 8);
     HMAC_Final(key->mac_ctx, md, &mdLen);
+#endif
     rAssert(mdLen >= _ivLength);
 
     memcpy(ivec, md, _ivLength);
