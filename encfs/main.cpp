@@ -818,7 +818,10 @@ int main(int argc, char *argv[]) {
       RLOG(ERROR) << "Internal error: Caught unexpected exception";
     }
 
-    if (ctx->args->idleTimeout > 0) {
+    // We need to check if returnCode is equal to EXIT_SUCCESS
+    // when directory is mounted, because if we do not check and
+    // user added -i option, it will exit with coredump SIGSEGV.
+    if (ctx->args->idleTimeout > 0 && returnCode == EXIT_SUCCESS) {
       ctx->running = false;
       // wake up the thread if it is waiting..
       VLOG(1) << "waking up monitoring thread";
