@@ -675,8 +675,7 @@ int main(int argc, char *argv[]) {
   if (encfsArgs->opts->unmount) {
     // We use cout here to avoid logging to stderr (and to mess-up tests output)
     cout << "Filesystem unmounting: " << encfsArgs->opts->unmountPoint << endl;
-    unmountFS(encfsArgs->opts->unmountPoint.c_str());
-    return 0;
+    return unmountFS(encfsArgs->opts->unmountPoint.c_str()) ? 0 : EXIT_FAILURE;
   }
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;

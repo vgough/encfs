@@ -1733,13 +1733,42 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
   return rootInfo;
 }
 
-void unmountFS(const char *mountPoint) {
-  // \todo DOJ: find a way to do fuse_unmount()
-  (void)mountPoint;
-#if 0
-  // fuse_unmount returns void, is assumed to succeed
+bool unmountFS(const char *mountPoint) {
+  auto ctx = fuse_get_context();
+  if (! ctx)  {
+    RLOG(ERROR) << "could not get fuse context object for mountPoint " << mountPoint;
+    return false;
+  }
+
+  auto enc = reinterpret_cast<encfs::EncFS_Context*>(ctx->private_data);
+  if (! enc) {
+    RLOG(ERROR) << "could not get EncFS_Context object for mountPoint " << mountPoint;
+    return false;
+  }
+
+  int err = 0;
+  auto root = enc->getRoot(&err);
+  if (err != 0) {
+    RLOG(ERROR) << "could not get root directory object, err=" << err << " for mountPoint " << mountPoint;
+    return false;
+  }
+  if (! root) {
+    RLOG(ERROR) << "could not get root directory object for mountPoint " << mountPoint;
+    return false;
+  }
+  if (root->rootDirectory() != mountPoint) {
+    RLOG(ERROR) << "root directory " << root->rootDirectory() << " != mountPoint " << mountPoint;
+    return false;
+  }
+
+  auto f = ctx->fuse;
+  if (! f) {
+    RLOG(ERROR) << "could not get fuse object for mountPoint " << mountPoint;
+    return false;
+  }
+
   fuse_unmount(f);
-#endif
+
 #ifdef __APPLE__
   // fuse_unmount does not work on Mac OS, see #428
   // However it makes encfs to hang, so we must unmount
@@ -1748,6 +1777,7 @@ void unmountFS(const char *mountPoint) {
     if (eno != EINVAL) { //[EINVAL] The requested directory is not in the mount table.
       RLOG(ERROR) << "Filesystem unmount failed: " << strerror(eno);
     }
+    return false;
   }
 #endif
 #ifdef __CYGWIN__
@@ -1763,6 +1793,7 @@ void unmountFS(const char *mountPoint) {
     waitpid(pid, &status, 0);
   }
 #endif
+  return true;
 }
 
 int remountFS(EncFS_Context *ctx) {
@@ -1787,8 +1818,7 @@ bool unmountFS(EncFS_Context *ctx) {
   }
   // Time to unmount!
   RLOG(INFO) << "Filesystem inactive, unmounting: " << ctx->opts->unmountPoint;
-  unmountFS(ctx->opts->unmountPoint.c_str());
-  return true;
+  return unmountFS(ctx->opts->unmountPoint.c_str());
 }
 
 }  // namespace encfs

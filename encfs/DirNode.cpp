@@ -556,7 +556,6 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
   return res;
 }
 
-// \todo use the flags parameter to handle RENAME_EXCHANGE and RENAME_NOREPLACE.
 int DirNode::rename(const char *fromPlaintext, const char *toPlaintext, const int flags) {
   (void)flags;
   Lock _lock(mutex);
@@ -567,6 +566,27 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext, const in
   rAssert(!toCName.empty());
 
   VLOG(1) << "rename " << fromCName << " -> " << toCName;
+
+  if ((flags & (RENAME_NOREPLACE | RENAME_EXCHANGE)) == (RENAME_NOREPLACE | RENAME_EXCHANGE))
+  {
+    return -EINVAL;
+  }
+  if (flags & RENAME_NOREPLACE)
+  {
+    if (encfs::fileExists(toCName.c_str()))
+    {
+      RLOG(WARNING) << "rename aborted, " << toPlaintext << " (" << toCName << ") exists and RENAME_NOREPLACE used";
+      return -EEXIST;
+    }
+  }
+  if (flags & RENAME_EXCHANGE)
+  {
+    // TODO: implement this operation:
+    // If `RENAME_EXCHANGE` is specified, the filesystem
+    // must atomically exchange the two files, i.e. both must
+    // exist and neither may be deleted.
+    return -EINVAL;
+  }
 
   std::shared_ptr<FileNode> toNode = findOrCreate(toPlaintext);
 
