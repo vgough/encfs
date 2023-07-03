@@ -1734,41 +1734,12 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
 }
 
 bool unmountFS(const char *mountPoint) {
-  auto ctx = fuse_get_context();
-  if (! ctx)  {
-    RLOG(ERROR) << "could not get fuse context object for mountPoint " << mountPoint;
-    return false;
-  }
-
-  auto enc = reinterpret_cast<encfs::EncFS_Context*>(ctx->private_data);
-  if (! enc) {
-    RLOG(ERROR) << "could not get EncFS_Context object for mountPoint " << mountPoint;
-    return false;
-  }
-
-  int err = 0;
-  auto root = enc->getRoot(&err);
-  if (err != 0) {
-    RLOG(ERROR) << "could not get root directory object, err=" << err << " for mountPoint " << mountPoint;
-    return false;
-  }
-  if (! root) {
-    RLOG(ERROR) << "could not get root directory object for mountPoint " << mountPoint;
-    return false;
-  }
-  if (root->rootDirectory() != mountPoint) {
-    RLOG(ERROR) << "root directory " << root->rootDirectory() << " != mountPoint " << mountPoint;
-    return false;
-  }
-
-  auto f = ctx->fuse;
-  if (! f) {
-    RLOG(ERROR) << "could not get fuse object for mountPoint " << mountPoint;
-    return false;
-  }
-
-  fuse_unmount(f);
-
+#ifdef __linux__
+  std::string cmd = "fusermount3 -u '";
+  cmd += mountPoint;
+  cmd += '\'';
+  return system(cmd.c_str()) == 0;
+#endif
 #ifdef __APPLE__
   // fuse_unmount does not work on Mac OS, see #428
   // However it makes encfs to hang, so we must unmount
@@ -1779,6 +1750,7 @@ bool unmountFS(const char *mountPoint) {
     }
     return false;
   }
+  return true;
 #endif
 #ifdef __CYGWIN__
   pid_t pid;
@@ -1792,8 +1764,11 @@ bool unmountFS(const char *mountPoint) {
   if (pid > 0) {
     waitpid(pid, &status, 0);
   }
-#endif
   return true;
+#endif
+
+  RLOG(ERROR) << "unknown system, Filesystem unmount failed";
+  return false;
 }
 
 int remountFS(EncFS_Context *ctx) {
