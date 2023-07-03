@@ -224,17 +224,13 @@ int _do_getattr(FileNode *fnode, struct stat *stbuf) {
   return res;
 }
 
-int encfs_getattr(const char *path, struct stat *stbuf) {
-  return withFileNode("getattr", path, nullptr, bind(_do_getattr, _1, stbuf));
-}
-
-int encfs_fgetattr(const char *path, struct stat *stbuf,
+int encfs_getattr(const char *path, struct stat *stbuf,
                    struct fuse_file_info *fi) {
   return withFileNode("fgetattr", path, fi, bind(_do_getattr, _1, stbuf));
 }
 
 int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
-                  off_t offset, struct fuse_file_info *finfo) {
+                  off_t offset, struct fuse_file_info *finfo, enum fuse_readdir_flags) {
   EncFS_Context *ctx = context();
 
   //unused parameters
@@ -264,13 +260,9 @@ int encfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
         st.st_mode = fileType << 12;
 
 // TODO: add offset support.
-#if defined(fuse_fill_dir_flags)
-        if (filler(buf, name.c_str(), &st, 0, 0)) break;
-#else
-        if (filler(buf, name.c_str(), &st, 0) != 0) {
+        if (filler(buf, name.c_str(), &st, 0, FUSE_FILL_DIR_PLUS)) {
           break;
         }
-#endif
 
         name = dt.nextPlaintextName(&fileType, &inode);
       }
@@ -528,7 +520,7 @@ int encfs_link(const char *to, const char *from) {
   return res;
 }
 
-int encfs_rename(const char *from, const char *to) {
+int encfs_rename(const char *from, const char *to, unsigned int flags) {
   EncFS_Context *ctx = context();
 
   if (isReadOnly(ctx)) {
@@ -542,7 +534,7 @@ int encfs_rename(const char *from, const char *to) {
   }
 
   try {
-    res = FSRoot->rename(from, to);
+    res = FSRoot->rename(from, to, flags);
   } catch (encfs::Error &err) {
     RLOG(ERROR) << "error caught in rename: " << err.what();
   }
@@ -553,7 +545,8 @@ int _do_chmod(EncFS_Context *, const string &cipherPath, mode_t mode) {
   return chmod(cipherPath.c_str(), mode);
 }
 
-int encfs_chmod(const char *path, mode_t mode) {
+int encfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi) {
+  (void)fi;
   EncFS_Context *ctx = context();
   if (isReadOnly(ctx)) {
     return -EROFS;
@@ -566,7 +559,8 @@ int _do_chown(EncFS_Context *, const string &cyName, uid_t u, gid_t g) {
   return (res == -1) ? -errno : ESUCCESS;
 }
 
-int encfs_chown(const char *path, uid_t uid, gid_t gid) {
+int encfs_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_info *fi) {
+  (void)fi;
   EncFS_Context *ctx = context();
   if (isReadOnly(ctx)) {
     return -EROFS;
@@ -576,33 +570,12 @@ int encfs_chown(const char *path, uid_t uid, gid_t gid) {
 
 int _do_truncate(FileNode *fnode, off_t size) { return fnode->truncate(size); }
 
-int encfs_truncate(const char *path, off_t size) {
-  EncFS_Context *ctx = context();
-  if (isReadOnly(ctx)) {
-    return -EROFS;
-  }
-  return withFileNode("truncate", path, nullptr, bind(_do_truncate, _1, size));
-}
-
-int encfs_ftruncate(const char *path, off_t size, struct fuse_file_info *fi) {
+int encfs_truncate(const char *path, off_t size, struct fuse_file_info *fi) {
   EncFS_Context *ctx = context();
   if (isReadOnly(ctx)) {
     return -EROFS;
   }
   return withFileNode("ftruncate", path, fi, bind(_do_truncate, _1, size));
-}
-
-int _do_utime(EncFS_Context *, const string &cyName, struct utimbuf *buf) {
-  int res = utime(cyName.c_str(), buf);
-  return (res == -1) ? -errno : ESUCCESS;
-}
-
-int encfs_utime(const char *path, struct utimbuf *buf) {
-  EncFS_Context *ctx = context();
-  if (isReadOnly(ctx)) {
-    return -EROFS;
-  }
-  return withCipherPath("utime", path, bind(_do_utime, _1, _2, buf));
 }
 
 int _do_utimens(EncFS_Context *, const string &cyName,
@@ -621,7 +594,8 @@ int _do_utimens(EncFS_Context *, const string &cyName,
   return (res == -1) ? -errno : ESUCCESS;
 }
 
-int encfs_utimens(const char *path, const struct timespec ts[2]) {
+int encfs_utimens(const char *path, const struct timespec ts[2], struct fuse_file_info *fi) {
+  (void)fi;
   EncFS_Context *ctx = context();
   if (isReadOnly(ctx)) {
     return -EROFS;

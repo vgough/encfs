@@ -252,7 +252,7 @@ Same as B<--nocache> but for data only.
 
 =item B<--no-default-flags>
 
-B<Encfs> adds the FUSE flags "use_ino" and "default_permissions" by default, as
+B<Encfs> adds the FUSE flag "default_permissions" by default, as
 of version 1.2.2, because that improves compatibility with some programs.  If
 for some reason you need to disable one or both of these flags, use the option
 B<--no-default-flags>.
@@ -260,7 +260,7 @@ B<--no-default-flags>.
 The following command lines produce the same result:
 
     encfs raw crypt
-    encfs --no-default-flags raw crypt -- -o use_ino,default_permissions
+    encfs --no-default-flags raw crypt -- -o default_permissions
 
 =item B<-o FUSE_ARG>
 

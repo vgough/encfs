@@ -2,7 +2,7 @@
 # works on Linux AND OSX
 sub portable_unmount {
     my $crypt = shift;
-    qx(./build/encfs -u "$crypt" >/dev/null);
+    return system("./build/encfs -u '$crypt'") == 0;
 }
 
 # Helper function
@@ -93,7 +93,7 @@ sub waitForFile
 		}
 		usleep(500000); # 0.5 seconds
 	}
-	print "# timeout waiting for '$file' to appear\n";
+	print "# timeout waiting for '$file' to ".($gone ? 'disappear' : 'appear')." in $timeout seconds\n";
 	return 0;
 }
 
