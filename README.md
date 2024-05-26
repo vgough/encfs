@@ -1,19 +1,18 @@
 # EncFS - an Encrypted Filesystem
 
-_Build Status_
- - Travis: [![Travis CI](https://travis-ci.org/vgough/encfs.svg?branch=master)](https://travis-ci.org/vgough/encfs)
- - Cirrus: [![Cirrus CI](https://api.cirrus-ci.com/github/vgough/encfs.svg?branch=master)](https://cirrus-ci.com/github/vgough/encfs)
+**This project is NOT maintained.  For details, see the [Status](#status) section.**
 
 ## About
 
 EncFS provides an encrypted filesystem in user-space. It runs in userspace,
-using the FUSE library for the filesystem interface. EncFS is open source
+using the [FUSE library](https://github.com/libfuse/libfuse) for the filesystem interface. EncFS is open source
 software, licensed under the LGPL.
 
-EncFS is now over 15 years old (first release in 2003).  It was written because
-older NFS and kernel-based encrypted filesystems such as CFS had not kept pace with Linux
+EncFS was first released in 2003, making it one of the earlier FUSE filesystems!
+I wrote it because I needed to encrypt my data while traveling, and the existing NFS and
+kernel-based encrypted filesystems such as CFS had not kept pace with Linux
 development.  When FUSE became available, I wrote a CFS replacement for my own
-use and released the first version to Open Source in 2003.
+use and later released it to Open Source when it seemed stable.
 
 EncFS encrypts individual files, by translating all requests for the virtual
 EncFS filesystem into the equivalent encrypted operations on the raw
@@ -21,23 +20,35 @@ filesystem.
 
 For more info, see:
 
- - The excellent [encfs manpage](encfs/encfs.pod)
+ - The [encfs manpage](encfs/encfs.pod)
  - The technical overview in [DESIGN.md](DESIGN.md)
 
 ## Status
 
-Over the last 15 years, a number of good alternatives have grown up.  Computing
-power has increased to the point where it is reasonable to encrypt the entire
-filesystem of personal computers (and even mobile phones!).  On Linux, ecryptfs
-provides a nice dynamically mountable encrypted home directory, and is well
-integrated in distributions I use, such as Ubuntu.
+In the time since EncFS was written, a lot has changed in the security,
+privacy, and computing landscapes. Computing power has increased enormously over
+what a circa-2003 laptop can provide, and so it is no longer a performance burden
+to encrypt the entire filesystem of a personal device. Software encryption has also
+spread widely - data encryption is built into most systems and programs, so there is
+far less of a need to have a separate encryption system.
 
-EncFS has been dormant for a while.  I've started cleaning up in order to try
-and provide a better base for a version 2, but whether EncFS flowers again
-depends upon community interest.  In order to make it easier for anyone to
-contribute, it is moving a new home on GitHub (2014).  Since then project has
-been updated a few times thanks to several contributors, so if you're
-interested in EncFS, please dive in!
+EncFS has been dormant for a long time now. I haven't used or worked on EncFS in
+many years. I've left the repository here because I don't want to prevent anyone
+from using it if they have a need that can't be met otherwise. I'm sure that I have
+some very old backups that would still require EncFS to access, so I expect that I
+might have to compile it again someday.
+
+Don't expect any updates on this project. You're free to fork it, of course, but
+remember that this is a 20+yr old codebase which was only funded by personal
+interest, so I wouldn't expect it to live up to modern-day coding standards.
+
+If you're considering setting up a new encrypted filesystem wrapper, I'd recommend
+looking into newer alternatives, such as the excellent [GoCryptFS](https://github.com/rfjakob/gocryptfs).
+
+Thank you all for the early support, especially the FUSE author Miklos Szeredi,
+and all the interesting discussions at Open Source and Linux meetups over the years.
+Valient Gough
+May 2024
 
 ## Unique Features
 
@@ -75,10 +86,6 @@ The [dev](https://github.com/vgough/encfs/tree/dev) branch contains experimental
 work, some of which may be back-ported to the master branch when it is stable. The
 dev branch is not stable, and there is no guarantee of backward compatibility
 between changes.
-
-## Donations
-
-How about a nice email instead?
 
 ## Windows
 
