@@ -156,6 +156,8 @@ static void usage(const char *name) {
             "verbose: output encfs debug messages\n"
             "  -i, --idle=MINUTES\t"
             "Auto unmount after period of inactivity\n"
+	    "  --exclude\t\t"
+	    "Exclude glob during reverse (may be specified multiple times)\n"
             "  --anykey\t\t"
             "Do not verify correct key is being used\n"
             "  --forcedecode\t\t"
@@ -254,6 +256,7 @@ static bool processArgs(int argc, char *argv[],
       {"delaymount", 0, nullptr, 'M'},        // delay initial mount until use
       {"public", 0, nullptr, 'P'},            // public mode
       {"extpass", 1, nullptr, 'p'},           // external password program
+      {"exclude", 1, nullptr, 'e'},           // exclude from reverse
       // {"single-thread", 0, 0, 's'},  // single-threaded mode
       {"stdinpass", 0, nullptr, 'S'},  // read password from stdin
       {"syslogtag", 1, nullptr, 't'},  // syslog tag
@@ -288,8 +291,9 @@ static bool processArgs(int argc, char *argv[],
     // 't' : syslog tag
     // 'c' : configuration file
     // 'u' : unmount
+    // 'e' : exclude
     int res =
-        getopt_long(argc, argv, "HsSfvdmi:o:t:c:u", long_options, &option_index);
+        getopt_long(argc, argv, "HsSfvdmi:e:o:t:c:u", long_options, &option_index);
 
     if (res == -1) {
       break;
@@ -321,7 +325,7 @@ static bool processArgs(int argc, char *argv[],
         out->opts->insecure = true;
         break;
       case 'c':
-        /* Take config file path from command 
+        /* Take config file path from command
          * line instead of ENV variable */
         out->opts->config.assign(optarg);
         break;
@@ -341,6 +345,21 @@ static bool processArgs(int argc, char *argv[],
       case 'd':
         PUSHARG("-d");
         break;
+      case 'e':
+	/* optarg contains a c-style string. Let's save it to an array
+	   of c-style strings in excludeArgv, and count them in
+	   excludeArgc */
+	if (out->opts->excludeArgc < MaxExcludeArgs) {
+	    out->opts->excludeArgv[out->opts->excludeArgc++] = optarg;
+	    if (out->isVerbose) {
+	      cout << autosprintf(_("Excluding '%s'"), optarg) << "\n";
+	    }
+	  } else {
+	    if (out->isVerbose) {
+	      cout << autosprintf(_("Too many excludes. Omitting '%s'"), optarg) << "\n";
+	    }
+	}
+	break;
       case 'i':
         out->idleTimeout = strtol(optarg, (char **)nullptr, 10);
         out->opts->idleTracking = true;
@@ -461,6 +480,11 @@ static bool processArgs(int argc, char *argv[],
 
   if (!out->isThreaded) {
     PUSHARG("-s");
+  }
+
+  if (out->opts->excludeArgc != 0 && out->opts->reverseEncryption == false) {
+    cerr << "Must specify --reverse if patterns are specified with --exclude\n";
+    return false;
   }
 
   // for --unmount, we should have exactly 1 argument - the mount point
