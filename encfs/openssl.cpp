@@ -27,7 +27,7 @@
 #define NO_DES
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
-#ifndef OPENSSL_NO_ENGINE
+#if OPENSSL_VERSION_NUMBER < 0x30000000L && !defined(OPENSSL_NO_ENGINE)
 #include <openssl/engine.h>
 #endif
 
@@ -77,7 +77,7 @@ void openssl_init(bool threaded) {
   RAND_bytes((unsigned char *)&randSeed, sizeof(randSeed));
   srand(randSeed);
 
-#ifndef OPENSSL_NO_ENGINE
+#if OPENSSL_VERSION_NUMBER < 0x30000000L && !defined(OPENSSL_NO_ENGINE)
   /* Load all bundled ENGINEs into memory and make them visible */
   ENGINE_load_builtin_engines();
   /* Register all of them for every algorithm they collectively implement */
@@ -93,7 +93,7 @@ void openssl_init(bool threaded) {
 }
 
 void openssl_shutdown(bool threaded) {
-#ifndef OPENSSL_NO_ENGINE
+#if OPENSSL_VERSION_NUMBER < 0x30000000L && !defined(OPENSSL_NO_ENGINE)
   ENGINE_cleanup();
 #endif
 

@@ -42,7 +42,7 @@
 
 #define NO_DES
 #include <openssl/ssl.h>
-#ifndef OPENSSL_NO_ENGINE
+#if OPENSSL_VERSION_NUMBER < 0x30000000L && !defined(OPENSSL_NO_ENGINE)
 #include <openssl/engine.h>
 #endif
 
@@ -402,7 +402,7 @@ int main(int argc, char *argv[]) {
   SSL_load_error_strings();
   SSL_library_init();
 
-#ifndef OPENSSL_NO_ENGINE
+#if OPENSSL_VERSION_NUMBER < 0x30000000L && !defined(OPENSSL_NO_ENGINE)
   ENGINE_load_builtin_engines();
   ENGINE_register_all_ciphers();
   ENGINE_register_all_digests();
