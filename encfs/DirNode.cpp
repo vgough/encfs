@@ -25,6 +25,7 @@
 #include <cstring>
 #ifdef __linux__
 #include <sys/fsuid.h>
+#include <sys/types.h>
 #endif
 #include <pthread.h>
 #include <sys/stat.h>
@@ -199,7 +200,7 @@ bool RenameOp::apply() {
       }
 
       if (preserve_mtime) {
-        struct utimbuf ut;
+        ::utimbuf ut;
         ut.actime = st.st_atime;
         ut.modtime = st.st_mtime;
         ::utime(last->newCName.c_str(), &ut);
@@ -555,7 +556,8 @@ int DirNode::mkdir(const char *plaintextPath, mode_t mode, uid_t uid,
   return res;
 }
 
-int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
+int DirNode::rename(const char *fromPlaintext, const char *toPlaintext, const int flags) {
+  (void)flags;
   Lock _lock(mutex);
 
   string fromCName = rootDir + naming->encodePath(fromPlaintext);
@@ -564,6 +566,27 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
   rAssert(!toCName.empty());
 
   VLOG(1) << "rename " << fromCName << " -> " << toCName;
+
+  if ((flags & (RENAME_NOREPLACE | RENAME_EXCHANGE)) == (RENAME_NOREPLACE | RENAME_EXCHANGE))
+  {
+    return -EINVAL;
+  }
+  if (flags & RENAME_NOREPLACE)
+  {
+    if (encfs::fileExists(toCName.c_str()))
+    {
+      RLOG(WARNING) << "rename aborted, " << toPlaintext << " (" << toCName << ") exists and RENAME_NOREPLACE used";
+      return -EEXIST;
+    }
+  }
+  if (flags & RENAME_EXCHANGE)
+  {
+    // TODO: implement this operation:
+    // If `RENAME_EXCHANGE` is specified, the filesystem
+    // must atomically exchange the two files, i.e. both must
+    // exist and neither may be deleted.
+    return -EINVAL;
+  }
 
   std::shared_ptr<FileNode> toNode = findOrCreate(toPlaintext);
 
@@ -614,7 +637,7 @@ int DirNode::rename(const char *fromPlaintext, const char *toPlaintext) {
       }
 #endif
       if (preserve_mtime) {
-        struct utimbuf ut;
+        ::utimbuf ut;
         ut.actime = st.st_atime;
         ut.modtime = st.st_mtime;
         ::utime(toCName.c_str(), &ut);

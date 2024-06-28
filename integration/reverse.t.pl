@@ -3,7 +3,7 @@
 # Test EncFS --reverse mode
 
 use warnings;
-use Test::More tests => 46;
+use Test::More tests => 48;
 use File::Path;
 use File::Temp;
 use IO::Handle;
@@ -72,8 +72,8 @@ sub newWorkingDir
 # Unmount and delete mountpoint
 sub cleanup
 {
-    portable_unmount($decrypted);
-    portable_unmount($ciphertext);
+    ok(portable_unmount($decrypted), "unmount $decrypted");
+    ok(portable_unmount($ciphertext), "unmount $ciphertext");
     our $workingDir;
     rmtree($workingDir);
     ok(! -d $workingDir, "working dir removed");

@@ -1733,9 +1733,13 @@ RootPtr initFS(EncFS_Context *ctx, const std::shared_ptr<EncFS_Opts> &opts) {
   return rootInfo;
 }
 
-void unmountFS(const char *mountPoint) {
-  // fuse_unmount returns void, is assumed to succeed
-  fuse_unmount(mountPoint, nullptr);
+bool unmountFS(const char *mountPoint) {
+#ifdef __linux__
+  std::string cmd = "fusermount3 -u '";
+  cmd += mountPoint;
+  cmd += '\'';
+  return system(cmd.c_str()) == 0;
+#endif
 #ifdef __APPLE__
   // fuse_unmount does not work on Mac OS, see #428
   // However it makes encfs to hang, so we must unmount
@@ -1744,7 +1748,9 @@ void unmountFS(const char *mountPoint) {
     if (eno != EINVAL) { //[EINVAL] The requested directory is not in the mount table.
       RLOG(ERROR) << "Filesystem unmount failed: " << strerror(eno);
     }
+    return false;
   }
+  return true;
 #endif
 #ifdef __CYGWIN__
   pid_t pid;
@@ -1758,7 +1764,11 @@ void unmountFS(const char *mountPoint) {
   if (pid > 0) {
     waitpid(pid, &status, 0);
   }
+  return true;
 #endif
+
+  RLOG(ERROR) << "unknown system, Filesystem unmount failed";
+  return false;
 }
 
 int remountFS(EncFS_Context *ctx) {
@@ -1783,8 +1793,7 @@ bool unmountFS(EncFS_Context *ctx) {
   }
   // Time to unmount!
   RLOG(INFO) << "Filesystem inactive, unmounting: " << ctx->opts->unmountPoint;
-  unmountFS(ctx->opts->unmountPoint.c_str());
-  return true;
+  return unmountFS(ctx->opts->unmountPoint.c_str());
 }
 
 }  // namespace encfs

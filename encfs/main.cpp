@@ -505,10 +505,6 @@ static bool processArgs(int argc, char *argv[],
   // Add default flags unless --no-default-flags was passed
   if (useDefaultFlags) {
 
-    // Expose the underlying stable inode number
-    PUSHARG("-o");
-    PUSHARG("use_ino");
-
     // "default_permissions" comes with a performance cost, and only makes
     // sense if "allow_other"" is used.
     // But it works around the issues "open_readonly_workaround" causes,
@@ -615,11 +611,11 @@ static bool processArgs(int argc, char *argv[],
 
 static void *idleMonitor(void *);
 
-void *encfs_init(fuse_conn_info *conn) {
+// \todo use the cfg object to configure EncFS behavior.
+void *encfs_init(fuse_conn_info *conn, struct fuse_config *cfg) {
+  (void)conn;
+  (void)cfg;
   auto *ctx = (EncFS_Context *)fuse_get_context()->private_data;
-
-  // set fuse connection options
-  conn->async_read = 1u;
 
 #ifdef __CYGWIN__
   // WinFsp needs this to partially handle read-only FS
@@ -679,8 +675,7 @@ int main(int argc, char *argv[]) {
   if (encfsArgs->opts->unmount) {
     // We use cout here to avoid logging to stderr (and to mess-up tests output)
     cout << "Filesystem unmounting: " << encfsArgs->opts->unmountPoint << endl;
-    unmountFS(encfsArgs->opts->unmountPoint.c_str());
-    return 0;
+    return unmountFS(encfsArgs->opts->unmountPoint.c_str()) ? 0 : EXIT_FAILURE;
   }
 
   VLOG(1) << "Root directory: " << encfsArgs->opts->rootDir;
@@ -705,7 +700,6 @@ int main(int argc, char *argv[]) {
   encfs_oper.chmod = encfs_chmod;
   encfs_oper.chown = encfs_chown;
   encfs_oper.truncate = encfs_truncate;
-  encfs_oper.utime = encfs_utime;  // deprecated for utimens
   encfs_oper.open = encfs_open;
   encfs_oper.read = encfs_read;
   encfs_oper.write = encfs_write;
@@ -726,8 +720,6 @@ int main(int argc, char *argv[]) {
   encfs_oper.init = encfs_init;
   // encfs_oper.access = encfs_access;
   encfs_oper.create = encfs_create;
-  encfs_oper.ftruncate = encfs_ftruncate;
-  encfs_oper.fgetattr = encfs_fgetattr;
   // encfs_oper.lock = encfs_lock;
   encfs_oper.utimens = encfs_utimens;
   // encfs_oper.bmap = encfs_bmap;
