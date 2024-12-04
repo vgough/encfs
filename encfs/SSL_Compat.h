@@ -21,8 +21,9 @@
 #ifndef _SSL_Compat_incl_
 #define _SSL_Compat_incl_
 
-// OpenSSL < 1.1.0 or LibreSSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
+// OpenSSL < 1.1.0 or LibreSSL < 3.5.0
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || \
+  (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x3050000fL)
 
 // Equivalent methods
 #define EVP_MD_CTX_new EVP_MD_CTX_create
