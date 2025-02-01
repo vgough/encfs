@@ -28,6 +28,10 @@
 #include <pthread.h>
 #include <sstream>
 #include <string>
+#ifdef __APPLE__
+#include <sys/mount.h>
+#include <sys/param.h>
+#endif
 #ifdef __CYGWIN__
 #include <sys/cygwin.h>
 #endif

@@ -76,7 +76,7 @@ class NullDestructor {
   NullDestructor &operator=(const NullDestructor &) = delete; // copy assignment
   NullDestructor& operator=(NullDestructor&& other) = delete; // move assignment
 
-  void operator()(NullKey *&) {}
+  void operator()(NullKey *) {}
 };
 std::shared_ptr<AbstractCipherKey> gNullKey(new NullKey(), NullDestructor());
 
