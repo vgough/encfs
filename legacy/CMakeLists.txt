@@ -198,7 +198,7 @@ if (ENABLE_NLS)
     include_directories (${Intl_INCLUDE_DIRS})
   endif()
 
-  add_subdirectory(po)
+  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/po)
 
   add_definitions(-DENABLE_NLS)
   add_definitions(-DLOCALEDIR="${CMAKE_INSTALL_PREFIX}/share/locale")
@@ -228,7 +228,7 @@ endif()
 
 if (USE_INTERNAL_TINYXML)
   message("-- Using vendored TinyXML2")
-  set(TINYXML_DIR vendor/github.com/leethomason/tinyxml2)
+  set(TINYXML_DIR ${CMAKE_CURRENT_LIST_DIR}/vendor/github.com/leethomason/tinyxml2)
   if (BUILD_SHARED_LIBS)
     set(BUILD_STATIC_LIBS OFF CACHE BOOL "build static libs")
     set(BUILD_SHARED_LIBS ON CACHE BOOL "build shared libs")
@@ -249,7 +249,7 @@ endif ()
 
 if (USE_INTERNAL_EASYLOGGING)
   message("-- Using vendored Easylogging++")
-  set(EASYLOGGING_DIR vendor/github.com/muflihun/easyloggingpp)
+  set(EASYLOGGING_DIR ${CMAKE_CURRENT_LIST_DIR}/vendor/github.com/muflihun/easyloggingpp)
   set(build_static_lib ON CACHE BOOL "build static libs")
   add_subdirectory(${EASYLOGGING_DIR} EXCLUDE_FROM_ALL)
   include_directories(${CMAKE_CURRENT_LIST_DIR}/${EASYLOGGING_DIR}/src)
@@ -262,34 +262,34 @@ else ()
 endif ()
 
 set(SOURCE_FILES
-  encfs/autosprintf.cpp
-  encfs/base64.cpp
-  encfs/BlockFileIO.cpp
-  encfs/BlockNameIO.cpp
-  encfs/Cipher.cpp
-  encfs/CipherFileIO.cpp
-  encfs/CipherKey.cpp
-  encfs/ConfigReader.cpp
-  encfs/ConfigVar.cpp
-  encfs/Context.cpp
-  encfs/DirNode.cpp
-  encfs/encfs.cpp
-  encfs/Error.cpp
-  encfs/FileIO.cpp
-  encfs/FileNode.cpp
-  encfs/FileUtils.cpp
-  encfs/Interface.cpp
-  encfs/MACFileIO.cpp
-  encfs/MemoryPool.cpp
-  encfs/NameIO.cpp
-  encfs/NullCipher.cpp
-  encfs/NullNameIO.cpp
-  encfs/openssl.cpp
-  encfs/RawFileIO.cpp
-  encfs/readpassphrase.cpp
-  encfs/SSL_Cipher.cpp
-  encfs/StreamNameIO.cpp
-  encfs/XmlReader.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/autosprintf.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/base64.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/BlockFileIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/BlockNameIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/Cipher.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/CipherFileIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/CipherKey.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/ConfigReader.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/ConfigVar.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/Context.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/DirNode.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/encfs.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/Error.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/FileIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/FileNode.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/FileUtils.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/Interface.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/MACFileIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/MemoryPool.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/NameIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/NullCipher.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/NullNameIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/openssl.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/RawFileIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/readpassphrase.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/SSL_Cipher.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/StreamNameIO.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/encfs/XmlReader.cpp
 )
 add_library(encfs ${SOURCE_FILES})
 set_target_properties(encfs PROPERTIES
@@ -322,7 +322,7 @@ endif()
 # Set RPATH to library install path.
 set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}")
 
-add_executable (encfs-bin encfs/main.cpp)
+add_executable (encfs-bin ${CMAKE_CURRENT_LIST_DIR}/encfs/main.cpp)
 target_link_libraries (encfs-bin encfs)
 set_target_properties (encfs-bin PROPERTIES OUTPUT_NAME "encfs")
 install (TARGETS encfs-bin DESTINATION bin)
@@ -332,17 +332,17 @@ if(LINT AND CLANG_TIDY_EXE)
   set_target_properties(encfs-bin PROPERTIES CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
 endif()
 
-add_executable (encfsctl encfs/encfsctl.cpp)
+add_executable (encfsctl ${CMAKE_CURRENT_LIST_DIR}/encfs/encfsctl.cpp)
 target_link_libraries (encfsctl encfs)
 install (TARGETS encfsctl DESTINATION bin)
 
-add_executable (makekey encfs/makeKey.cpp)
+add_executable (makekey ${CMAKE_CURRENT_LIST_DIR}/encfs/makeKey.cpp)
 target_link_libraries (makekey encfs)
 
-add_executable (checkops encfs/test.cpp)
+add_executable (checkops ${CMAKE_CURRENT_LIST_DIR}/encfs/test.cpp)
 target_link_libraries (checkops encfs)
 
-install (PROGRAMS encfs/encfssh DESTINATION bin)
+install (PROGRAMS ${CMAKE_CURRENT_LIST_DIR}/encfs/encfssh DESTINATION bin)
 
 # Reference all headers, to make certain IDEs happy.
 file (GLOB_RECURSE all_headers ${CMAKE_CURRENT_LIST_DIR}/*.h)
@@ -373,18 +373,18 @@ endif (POD2MAN)
 if (BUILD_UNIT_TESTS)
   enable_testing()
 
-  set(GOOGLETEST_DIR vendor/github.com/google/googletest)
+  set(GOOGLETEST_DIR ${CMAKE_CURRENT_LIST_DIR}/vendor/github.com/google/googletest)
   add_subdirectory(${GOOGLETEST_DIR} EXCLUDE_FROM_ALL)
   link_directories(${CMAKE_BINARY_DIR}/${GOOGLETEST_DIR}/googletest)
 
-  set(GOOGLEBENCH_DIR vendor/github.com/google/benchmark)
+  set(GOOGLEBENCH_DIR ${CMAKE_CURRENT_LIST_DIR}/vendor/github.com/google/benchmark)
   set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "benchmark tests")
   add_subdirectory(${GOOGLEBENCH_DIR} EXCLUDE_FROM_ALL)
   link_directories(${CMAKE_BINARY_DIR}/${GOOGLEBENCH_DIR})
 
   # Unit tests.
-  add_subdirectory(test EXCLUDE_FROM_ALL)
+  add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/test EXCLUDE_FROM_ALL)
 
   # Integration test target - runs against built encfs.
-  add_custom_target(integration COMMAND ${CMAKE_CURRENT_LIST_DIR}/integration.sh)
+  add_custom_target(integration COMMAND ${CMAKE_CURRENT_LIST_DIR}/../integration.sh)
 endif ()

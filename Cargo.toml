@@ -1,0 +1,25 @@
+[package]
+name = "encfs"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.100"
+base64 = "0.22.1"
+daemonize = "0.5"
+chrono = "0.4"
+clap = { version = "4.5.53", features = ["derive"] }
+env_logger = "0.11.8"
+fuse_mt = "0.6.1"
+libc = "0.2.178"
+log = "0.4.29"
+openssl = "0.10.75"
+quick-xml = { version = "0.38.4", features = ["serialize"] }
+rpassword = "7.4.0"
+serde = { version = "1.0.228", features = ["derive"] }
+
+[[bin]]
+name = "encfsctl"
+path = "src/encfsctl.rs"

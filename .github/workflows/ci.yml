@@ -1,0 +1,38 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y fuse libfuse-dev pkg-config libssl-dev
+    
+    - name: Load fuse module
+      run: sudo modprobe fuse
+      continue-on-error: true
+      
+    - name: Build
+      run: cargo build --release
+      
+    - name: Run tests
+      run: cargo test
+      
+    - name: Run live mount tests
+      run: ENCFS_LIVE_TESTS=1 cargo test --test live_mount -- --ignored --test-threads=1
+      env:
+         RUST_BACKTRACE: 1

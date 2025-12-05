@@ -3,17 +3,31 @@ This document provides generic information for compiling EncFS.
 If you are looking for specific instructions for your operating system or distribution,
 take a look at the **[wiki](https://github.com/vgough/encfs/wiki)**.
 
-Compiling EncFS
-===============
+## Building the Rust Implementation (Primary)
 
-EncFS uses the CMake toolchain to create makefiles.
+EncFS is now primarily implemented in Rust. To build:
 
-Quickest way to build and test EncFS :
+    cargo build --release
 
-    ./build.sh
+To run tests:
 
-Or following are the detailed steps to build EncFS:
+    cargo test
 
+To install:
+
+    cargo install --path .
+
+Dependencies:
+    * Rust toolchain (stable or nightly)
+    * FUSE library (libfuse or OSXFUSE on macOS)
+    * OpenSSL development libraries
+
+## Building the Legacy C++ Implementation
+
+The original C++ implementation has been moved to the `legacy/` directory.
+To build the legacy version:
+
+    cd legacy
     mkdir build
     cd build
     cmake ..
@@ -36,8 +50,8 @@ encrypted filesystem and run tests on it:
 
     make integration
 
-The compilation process creates two executables, encfs and encfsctl in
-the encfs directory.  You can install to in a system directory via:
+The compilation process creates two executables, encfs and encfsctl.
+You can install to in a system directory via:
 
     make install
 
@@ -49,10 +63,10 @@ installed, then set the CMAKE_INSTALL_PREFIX option when running cmake.  Eg:
 Encfs and encfsctl can also be installed by hand.  They need no special
 permissions.  You may also want the man pages encfs.1 and encfsctl.1.
 
-Dependencies
-============
+Legacy C++ Dependencies
+========================
 
-EncFS depends on a number of libraries:
+The legacy C++ implementation depends on:
 
     * fuse                   : the userspace filesystem layer
     * openssl / libressl     : used for cryptographic primitives
