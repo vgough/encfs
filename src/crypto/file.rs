@@ -461,8 +461,8 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
 
             let written = bytes_to_write_in_block;
             total_written += written as usize;
-            current_offset += written as u64;
-            bytes_remaining -= written as u64;
+            current_offset += written;
+            bytes_remaining -= written;
         }
 
         Ok(total_written)

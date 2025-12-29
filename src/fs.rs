@@ -454,11 +454,11 @@ impl FilesystemMT for EncFs {
         }
 
         Ok(Statfs {
-            blocks: stat.f_blocks as u64,
-            bfree: stat.f_bfree as u64,
-            bavail: stat.f_bavail as u64,
-            files: stat.f_files as u64,
-            ffree: stat.f_ffree as u64,
+            blocks: stat.f_blocks,
+            bfree: stat.f_bfree,
+            bavail: stat.f_bavail,
+            files: stat.f_files,
+            ffree: stat.f_ffree,
             bsize: stat.f_bsize as u32,
             namelen: stat.f_namemax as u32,
             frsize: stat.f_frsize as u32,
