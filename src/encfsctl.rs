@@ -1050,8 +1050,8 @@ fn find_undecodable_files(
         match cipher.decrypt_filename(name_str, dir_iv) {
             Ok((_, new_iv)) => {
                 // Successfully decoded - check if it's a directory
-                let metadata = entry.metadata()?;
-                if metadata.is_dir() {
+                let file_type = entry.file_type()?;
+                if file_type.is_dir() {
                     // Store both the path and the IV for recursion
                     let next_iv = if chained_iv { new_iv } else { 0 };
                     dirs_to_recurse.push((entry.path(), next_iv));
@@ -1418,6 +1418,85 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_dir_all(temp_dir);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_showcruft_broken_symlink() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("encfs_showcruft_test_{}", std::process::id()));
+        fs::create_dir_all(&temp_dir)?;
+
+        // Setup Cipher
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 192)?;
+        let key = vec![0u8; 24]; // 192 bits
+        let iv = vec![0u8; cipher.iv_len()];
+        cipher.set_key(&key, &iv);
+        let dir_iv = 0;
+
+        // 1. Create a broken symlink with encrypted name
+        let (enc_broken_name, _) = cipher.encrypt_filename("broken_link", dir_iv)?;
+        let broken_path = temp_dir.join(&enc_broken_name);
+        symlink("non_existent_target", &broken_path)?;
+
+        // 2. Create a directory with encrypted name
+        let (enc_subdir_name, _sub_iv) = cipher.encrypt_filename("subdir", dir_iv)?;
+        let subdir_path = temp_dir.join(&enc_subdir_name);
+        fs::create_dir_all(&subdir_path)?;
+
+        // 3. Create a valid file inside the subdirectory (undecodable/plaintext to trigger issue count)
+        // We leave it plaintext so it counts as 1 issue found inside the dir
+        fs::write(subdir_path.join("plaintext_file"), "content")?;
+
+        // 4. Create a symlink to the directory (encrypted name)
+        let (enc_link_name, _) = cipher.encrypt_filename("link_to_subdir", dir_iv)?;
+        let link_path = temp_dir.join(&enc_link_name);
+        // Point to the relative name of the subdir
+        symlink(&enc_subdir_name, &link_path)?;
+
+        let mut stats = ShowcruftStats {
+            files_checked: 0,
+            dirs_checked: 0,
+            issues_found: 0,
+        };
+
+        // Run find_undecodable_files
+        find_undecodable_files(&temp_dir, &temp_dir, &cipher, false, dir_iv, &mut stats)?;
+
+        // Cleanup
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        // Verification:
+        // Root dir checked: 1
+        // Subdir checked: 1 (recurse into enc_subdir)
+        // Symlink checked: 0 (should NOT recurse into enc_link_name)
+        // Total dirs: 2
+        assert_eq!(stats.dirs_checked, 2, "Should check exactly 2 directories");
+
+        // Files checked:
+        // Root: 3 entries (broken_link, subdir, link_to_subdir)
+        // Subdir: 1 entry (plaintext_file)
+        // Total files checked: 4
+        assert_eq!(stats.files_checked, 4, "Should check 4 files");
+
+        // Issues found:
+        // plaintext_file inside subdir is undecodable -> 1
+        // invalid broken symlink target? No, we don't check target validity in showcruft, only filename.
+        // Filenames in root are all valid encrypted names.
+        // So issues should be 1.
+        assert_eq!(
+            stats.issues_found, 1,
+            "Should find 1 issue (plaintext file in subdir)"
+        );
 
         Ok(())
     }
