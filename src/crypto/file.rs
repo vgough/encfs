@@ -316,17 +316,26 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
 
         if offset > current_logical_size {
             // Fill the gap with encrypted zeros
+            const CHUNK_SIZE: u64 = 128 * 1024;
             let gap_size = offset - current_logical_size;
-            let zeros = vec![0u8; gap_size as usize];
-            // Recursively call write_at to fill the gap with properly encrypted zeros
-            self.write_at_internal(
-                &zeros,
-                current_logical_size,
-                data_block_size,
-                physical_block_size,
-                physical_block_size_usize,
-                mac_len_usize,
-            )?;
+            let mut remaining_gap = gap_size;
+            let zeros = vec![0u8; std::cmp::min(remaining_gap, CHUNK_SIZE) as usize];
+            let mut gap_offset = current_logical_size;
+
+            while remaining_gap > 0 {
+                let write_len = std::cmp::min(remaining_gap, CHUNK_SIZE);
+                // Recursively call write_at to fill the gap with properly encrypted zeros
+                self.write_at_internal(
+                    &zeros[..write_len as usize],
+                    gap_offset,
+                    data_block_size,
+                    physical_block_size,
+                    physical_block_size_usize,
+                    mac_len_usize,
+                )?;
+                remaining_gap -= write_len;
+                gap_offset += write_len;
+            }
         }
 
         // Now write the actual data
@@ -844,5 +853,70 @@ mod tests {
         expected[10..13].copy_from_slice(overwrite);
 
         assert_eq!(buf, expected);
+    }
+
+    #[test]
+    fn test_large_gap_write() {
+        let mut cipher = create_cipher();
+        let key = vec![0u8; 16];
+        let iv = vec![0u8; 32];
+        cipher.set_key(&key, &iv);
+
+        let file_iv = 123;
+        let header_size = 8;
+        let block_size = 64;
+        let block_mac_bytes = 8;
+
+        let mock_file = MockFile::new(vec![0u8; header_size as usize]);
+        let encoder = FileEncoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+
+        // Initial write at offset 0
+        encoder.write_at(b"Start", 0).expect("Write failed");
+
+        // Write at large offset (1MB gap).
+        // 1MB is large enough to trigger the loop with 128KB chunks.
+        let large_offset = 1024 * 1024 + 5; // 1MB + 5
+        encoder
+            .write_at(b"End", large_offset)
+            .expect("Gap write failed");
+
+        // Verify content size
+        // Logical size = large_offset + 3 ("End")
+        // let expected_logical = large_offset + 3;
+
+        let decoder = FileDecoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+
+        // Read back the "End"
+        let mut buf = vec![0u8; 3];
+        decoder
+            .read_at(&mut buf, large_offset)
+            .expect("Read failed");
+        assert_eq!(&buf, b"End");
+
+        // Verify gap is zeros at a few points
+        let mut zero_buf = vec![0u8; 100];
+        // Check near start of gap
+        decoder.read_at(&mut zero_buf, 100).expect("Read gap start");
+        assert_eq!(zero_buf, vec![0u8; 100]);
+
+        // Check near end of gap
+        decoder
+            .read_at(&mut zero_buf, large_offset - 100)
+            .expect("Read gap end");
+        assert_eq!(zero_buf, vec![0u8; 100]);
     }
 }
