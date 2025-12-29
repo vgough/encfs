@@ -425,13 +425,14 @@ impl EncfsConfig {
             self.save_xml(path)
         } else {
             // For .encfs5 or other extensions, try to save as XML if it was originally XML
-            // Otherwise, we'd need binary format support which is more complex
-            // For now, default to XML for V6 configs
-            if self.version >= 20100713 {
-                // V6 config - save as XML
-                let xml_path = path.parent().unwrap_or(Path::new(".")).join(".encfs6.xml");
-                self.save_xml(&xml_path)
+            // (ConfigType::V6). We assume that if it was loaded as XML, it's safe to save
+            // as XML back to the same path, even if the extension implies otherwise.
+            if self.config_type == ConfigType::V6 {
+                self.save_xml(path)
             } else {
+                // For V5 or other binary formats, we don't support saving yet.
+                // We return an error rather than silently saving to a different file (e.g. .encfs6.xml)
+                // which would break tools expecting the config at the provided path.
                 Err(anyhow::anyhow!(
                     "Binary config format (V5) save not yet implemented"
                 ))
