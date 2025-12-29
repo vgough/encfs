@@ -5,11 +5,6 @@ vars:
   LIVE_TIMEOUT_SECS: '{{default "30" .LIVE_TIMEOUT_SECS}}'
 
 tasks:
-  default:
-    desc: Run the normal test suite
-    cmds:
-      - task: test
-
   build:
     desc: Build debug binaries
     cmds:

@@ -108,7 +108,7 @@ fn test_mkdir_various_modes() {
     for (name, mode) in test_cases {
         encfs
             .mkdir(r, Path::new("/"), OsStr::new(name), mode)
-            .expect(&format!("mkdir {} failed", name));
+            .unwrap_or_else(|_| panic!("mkdir {} failed", name));
     }
 
     // Check the modes via getattr
@@ -116,7 +116,7 @@ fn test_mkdir_various_modes() {
         let path = PathBuf::from("/").join(name);
         let (_, attr) = encfs
             .getattr(r, &path, None)
-            .expect(&format!("getattr for {} failed", name));
+            .unwrap_or_else(|_| panic!("getattr for {} failed", name));
         let actual_mode = (attr.perm as u32) & 0o777;
 
         println!(
@@ -232,7 +232,7 @@ fn test_create_file_various_modes() {
                 mode,
                 (libc::O_CREAT | libc::O_RDWR) as u32,
             )
-            .expect(&format!("create {} failed", name));
+            .unwrap_or_else(|_| panic!("create {} failed", name));
 
         // Release the file handle
         let _ = encfs.release(r, &PathBuf::from("/").join(name), created.fh, 0, 0, true);
@@ -243,7 +243,7 @@ fn test_create_file_various_modes() {
         let path = PathBuf::from("/").join(name);
         let (_, attr) = encfs
             .getattr(r, &path, None)
-            .expect(&format!("getattr for {} failed", name));
+            .unwrap_or_else(|_| panic!("getattr for {} failed", name));
         let actual_mode = (attr.perm as u32) & 0o777;
 
         println!(
