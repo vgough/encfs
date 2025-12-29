@@ -25,7 +25,10 @@ jobs:
     - name: Load fuse module
       run: sudo modprobe fuse
       continue-on-error: true
-      
+
+    - name: Lint
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
     - name: Build
       run: cargo build --release
       
