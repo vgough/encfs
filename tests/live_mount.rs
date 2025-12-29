@@ -2,7 +2,7 @@ mod live;
 
 use anyhow::{Context, Result};
 use encfs::crypto::file::FileEncoder;
-use live::{data_block_size, live_enabled, load_live_config, MountGuard};
+use live::{MountGuard, data_block_size, live_enabled, load_live_config};
 use std::ffi::CString;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -186,9 +186,11 @@ fn run_truncate_matrix(cfg_kind: live::LiveConfigKind) -> Result<()> {
         expected_physical_size(s1, &cfg)
     );
     // Read past EOF should yield nothing.
-    assert!(read_range(&p, s1, 10)
-        .with_context(|| format!("read_range past EOF {:?}", p))?
-        .is_empty());
+    assert!(
+        read_range(&p, s1, 10)
+            .with_context(|| format!("read_range past EOF {:?}", p))?
+            .is_empty()
+    );
 
     // Shrink at exact block boundary: 2*dbs
     eprintln!("truncate_matrix: shrink at boundary");
@@ -232,9 +234,11 @@ fn run_truncate_matrix(cfg_kind: live::LiveConfigKind) -> Result<()> {
             .len(),
         0
     );
-    assert!(read_all(&p)
-        .context("read_all after truncate-to-zero")?
-        .is_empty());
+    assert!(
+        read_all(&p)
+            .context("read_all after truncate-to-zero")?
+            .is_empty()
+    );
     assert_eq!(
         ciphertext_single_file_size(&mount.backing_root).context("ciphertext size after zero")?,
         expected_physical_size(0, &cfg)

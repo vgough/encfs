@@ -460,19 +460,25 @@ fn cmd_cat(rootdir: &Path, path: &str, extpass: Option<String>, reverse: bool) -
 
         // Read header to get file IV
         use std::os::unix::fs::FileExt;
-        let mut header = [0u8; 8];
-        let n = file.read_at(&mut header, 0)?;
-        if n < 8 {
-            return Err(anyhow::anyhow!("Encrypted file has incomplete header"));
-        }
 
-        // Use path IV for external IV chaining (paranoia mode)
-        let external_iv = if config.external_iv_chaining {
-            path_iv
+        let header_size = config.header_size();
+        let file_iv = if header_size > 0 {
+            let mut header = vec![0u8; header_size as usize];
+            let n = file.read_at(&mut header, 0)?;
+            if n < header.len() {
+                return Err(anyhow::anyhow!("Encrypted file has incomplete header"));
+            }
+
+            // Use path IV for external IV chaining (paranoia mode)
+            let external_iv = if config.external_iv_chaining {
+                path_iv
+            } else {
+                0
+            };
+            cipher.decrypt_header(&mut header, external_iv)?
         } else {
             0
         };
-        let file_iv = cipher.decrypt_header(&mut header, external_iv)?;
 
         // Use FileDecoder to decrypt content
         use encfs::crypto::file::FileDecoder;
@@ -480,7 +486,7 @@ fn cmd_cat(rootdir: &Path, path: &str, extpass: Option<String>, reverse: bool) -
             &cipher,
             &file,
             file_iv,
-            8, // header_size
+            header_size, // header_size
             config.block_size as u64,
             config.block_mac_bytes as u64,
         );
@@ -548,7 +554,7 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
                 let size = if metadata.is_file() {
                     FileDecoder::<std::fs::File>::calculate_logical_size(
                         metadata.len(),
-                        8, // header_size
+                        config.header_size(),
                         config.block_size as u64,
                         config.block_mac_bytes as u64,
                     )
@@ -806,30 +812,35 @@ fn export_directory(
             // Decrypt and copy file content
             let src_file = std::fs::File::open(entry.path())?;
 
-            // Read and decrypt file header
-            let mut header = [0u8; 8];
-            let bytes_read = src_file.read_at(&mut header, 0)?;
+            let header_size = config.header_size();
+            let file_iv = if header_size > 0 {
+                // Read and decrypt file header
+                let mut header = vec![0u8; header_size as usize];
+                let bytes_read = src_file.read_at(&mut header, 0)?;
 
-            if bytes_read < 8 {
-                eprintln!("Warning: File {} has incomplete header", decrypted_name);
-                continue;
-            }
+                if bytes_read < header.len() {
+                    eprintln!("Warning: File {} has incomplete header", decrypted_name);
+                    continue;
+                }
 
-            // Calculate path IV for external IV chaining
-            let path_iv = if config.external_iv_chaining {
-                if config.chained_name_iv { new_iv } else { 0 }
+                // Calculate path IV for external IV chaining
+                let path_iv = if config.external_iv_chaining && config.chained_name_iv {
+                    new_iv
+                } else {
+                    0
+                };
+
+                cipher.decrypt_header(&mut header, path_iv)?
             } else {
                 0
             };
-
-            let file_iv = cipher.decrypt_header(&mut header, path_iv)?;
 
             // Decrypt content using FileDecoder
             let decoder = FileDecoder::new(
                 cipher,
                 &src_file,
                 file_iv,
-                8, // header_size
+                header_size, // header_size
                 config.block_size as u64,
                 config.block_mac_bytes as u64,
             );
@@ -837,7 +848,7 @@ fn export_directory(
             let file_size = metadata.len();
             let logical_size = FileDecoder::<std::fs::File>::calculate_logical_size(
                 file_size,
-                8,
+                header_size,
                 config.block_size as u64,
                 config.block_mac_bytes as u64,
             );
@@ -1296,6 +1307,114 @@ mod tests {
             !exported_link.exists() && fs::symlink_metadata(&exported_link).is_err(),
             "Bad symlink should be skipped"
         );
+
+        // Cleanup
+        let _ = fs::remove_dir_all(temp_dir);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_v4_export_header_issue() -> Result<()> {
+        use std::io::Write;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("encfs_v4_export_test_{}", std::process::id()));
+        let src_dir = temp_dir.join("src");
+        let dst_dir = temp_dir.join("dst");
+        fs::create_dir_all(&src_dir)?;
+        fs::create_dir_all(&dst_dir)?;
+
+        // Setup Cipher (Use same as V6 for simplicity of test, but config is V4)
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 192)?;
+        let key = vec![0u8; 24];
+        let iv = vec![0u8; cipher.iv_len()];
+        cipher.set_key(&key, &iv);
+
+        // Setup V4 Config (unique_iv = false)
+        let config = EncfsConfig {
+            config_type: ConfigType::V4,
+            creator: "test".to_string(),
+            version: 0,
+            cipher_iface: iface.clone(),
+            name_iface: iface.clone(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            plain_data: false,
+            block_mac_bytes: 0,
+            block_mac_rand_bytes: 0,
+            unique_iv: false, // Critical for this test
+            external_iv_chaining: false,
+            chained_name_iv: false, // V4 usually false
+            allow_holes: false,
+        };
+
+        // Create a plain file
+        let filename = "myfile.txt";
+        let content = b"Hello V4 World";
+
+        // encrypt filename (V4 usually stream encoding, but we reuse cipher setup)
+        let (enc_name, _) = cipher.encrypt_filename(filename, 0)?;
+
+        // Encrypt content WITHOUT header (because unique_iv is false)
+        // For V4, typically we just encrypt with file_iv = 0 (if no external chaining)
+        let enc_path = src_dir.join(&enc_name);
+        let mut enc_file = std::fs::File::create(&enc_path)?;
+
+        // Manually encrypt content
+        // We use block 0, file_iv 0.
+        // FileDecoder/Encoder handles this. We can use SslCipher directly.
+        // For partial block (stream cipher):
+        let mut enc_content = content.to_vec();
+        // encrypt_block_inplace(buffer, block_num, file_iv, block_size)
+        // logical block 0.
+        cipher.encrypt_block_inplace(&mut enc_content, 0, 0, 1024)?;
+        enc_file.write_all(&enc_content)?;
+
+        // Run export
+        // If the bug exists, export_directory will try to read 8 bytes header.
+        // "Hello V4 World" is 14 bytes.
+        // It will take first 8 bytes as "header", decrypt them (garbage IV),
+        // then decrypt the rest (6 bytes) using that garbage IV.
+        // The output will be truncated (6 bytes instead of 14) and garbage.
+        export_directory(&src_dir, &dst_dir, &cipher, &config, 0)?;
+
+        let exported_path = dst_dir.join(filename);
+        if !exported_path.exists() {
+            panic!("Exported file not found");
+        }
+
+        let exported_content = fs::read(&exported_path)?;
+
+        // Diagnostic output
+        println!("Original len: {}", content.len());
+        println!("Exported len: {}", exported_content.len());
+
+        if exported_content.len() != content.len() {
+            println!(
+                "Bug reproduced: Exported content length mismatch. Expected {}, got {}",
+                content.len(),
+                exported_content.len()
+            );
+            // Assert failure to confirm repro
+            assert_eq!(
+                exported_content.len(),
+                content.len(),
+                "Content length mismatch (header likely consumed)"
+            );
+        }
+
+        assert_eq!(exported_content, content, "Content mismatch");
 
         // Cleanup
         let _ = fs::remove_dir_all(temp_dir);

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use log::debug;
 use serde::Deserialize;
 use std::fs::File;
@@ -111,7 +111,7 @@ impl Interface {
 }
 
 mod base64_serde {
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use serde::{Deserialize, Deserializer};
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -414,6 +414,9 @@ impl EncfsConfig {
         cipher.set_name_encoding(&self.name_iface);
 
         Ok(cipher)
+    }
+    pub fn header_size(&self) -> u64 {
+        if self.unique_iv { 8 } else { 0 }
     }
 }
 

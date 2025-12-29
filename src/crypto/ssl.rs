@@ -1,5 +1,5 @@
 use crate::config::Interface;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use openssl::hash::MessageDigest;
 use openssl::pkcs5::pbkdf2_hmac;
 use openssl::rand::rand_bytes;

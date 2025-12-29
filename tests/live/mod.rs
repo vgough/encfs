@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use encfs::config::EncfsConfig;
 use std::ffi::OsStr;
 use std::fs;

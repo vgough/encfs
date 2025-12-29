@@ -665,8 +665,8 @@ mod tests {
         // Setup key
         let key = vec![0u8; 16];
         let iv = vec![0u8; 16]; // IV length depends on cipher, AES usually 16?
-                                // SslCipher handles IV length internally, we just pass slice.
-                                // Actually SslCipher wrapper expects key/IV set via set_key
+        // SslCipher handles IV length internally, we just pass slice.
+        // Actually SslCipher wrapper expects key/IV set via set_key
         cipher.set_key(&key, &iv);
 
         let file_iv = 123456789;
@@ -714,7 +714,7 @@ mod tests {
     fn test_read_write_roundtrip_with_mac() {
         let mut cipher = create_cipher();
         let key = vec![0u8; 16]; // AES-128 needs 16 bytes
-                                 // But let's provide enough bytes.
+        // But let's provide enough bytes.
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
