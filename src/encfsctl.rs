@@ -576,7 +576,7 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
 }
 
 fn cmd_showkey(rootdir: &Path, extpass: Option<String>) -> Result<()> {
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
     let config_path = find_config_file(rootdir)?;
     let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
@@ -796,6 +796,11 @@ fn export_directory(
 
                 #[cfg(unix)]
                 std::os::unix::fs::symlink(&decrypted_target, &dest_path)?;
+            } else {
+                eprintln!(
+                    "Warning: Skipping symlink with non-UTF-8 target: {:?}",
+                    entry.path()
+                );
             }
         } else if metadata.is_file() {
             // Decrypt and copy file content
@@ -812,11 +817,7 @@ fn export_directory(
 
             // Calculate path IV for external IV chaining
             let path_iv = if config.external_iv_chaining {
-                if config.chained_name_iv {
-                    new_iv
-                } else {
-                    0
-                }
+                if config.chained_name_iv { new_iv } else { 0 }
             } else {
                 0
             };
@@ -1219,6 +1220,82 @@ mod tests {
         // Verify target
         let target = fs::read_link(&exported_link)?;
         assert_eq!(target.to_str().unwrap(), symlink_target);
+
+        // Cleanup
+        let _ = fs::remove_dir_all(temp_dir);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_export_bad_symlink_repro() -> Result<()> {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("encfs_export_bad_symlink_{}", std::process::id()));
+        let src_dir = temp_dir.join("src");
+        let dst_dir = temp_dir.join("dst");
+        fs::create_dir_all(&src_dir)?;
+        fs::create_dir_all(&dst_dir)?;
+
+        // Setup Cipher
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 192)?;
+        let key = vec![0u8; 24];
+        let iv = vec![0u8; cipher.iv_len()];
+        cipher.set_key(&key, &iv);
+
+        // Setup Config
+        let config = EncfsConfig {
+            config_type: ConfigType::V6,
+            creator: "test".to_string(),
+            version: 20100713,
+            cipher_iface: iface.clone(),
+            name_iface: iface.clone(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            plain_data: false,
+            block_mac_bytes: 0,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+        };
+
+        // Create a symlink with non-UTF8 target
+        // 0xFF is invalid UTF-8
+        let bad_bytes = b"target_\xff_path";
+        let bad_target = OsStr::from_bytes(bad_bytes);
+
+        let link_name = "bad_link";
+        // Encrypt name so it's picked up
+        let (enc_link_name, _) = cipher.encrypt_filename(link_name, 0)?;
+
+        let link_path = src_dir.join(&enc_link_name);
+        symlink(bad_target, &link_path)?;
+
+        // Run export
+        // This should NOT fail, but should just output a warning (after we fix it)
+        // and skip the file.
+        export_directory(&src_dir, &dst_dir, &cipher, &config, 0)?;
+
+        // Check destination - should NOT exist
+        let exported_link = dst_dir.join(link_name);
+        assert!(
+            !exported_link.exists() && fs::symlink_metadata(&exported_link).is_err(),
+            "Bad symlink should be skipped"
+        );
 
         // Cleanup
         let _ = fs::remove_dir_all(temp_dir);
