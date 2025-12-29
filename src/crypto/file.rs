@@ -316,7 +316,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
 
         if offset > current_logical_size {
             // Fill the gap with encrypted zeros
-            const CHUNK_SIZE: u64 = 128 * 1024;
+            const CHUNK_SIZE: u64 = crate::constants::FILE_BUFFER_SIZE as u64;
             let gap_size = offset - current_logical_size;
             let mut remaining_gap = gap_size;
             let zeros = vec![0u8; std::cmp::min(remaining_gap, CHUNK_SIZE) as usize];

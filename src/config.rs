@@ -296,7 +296,7 @@ impl EncfsConfig {
             .ok_or_else(|| anyhow::anyhow!("Missing subVersion"))?
             .read_int_default(0);
 
-        if sub_version < 20040813 {
+        if sub_version < crate::constants::V5_MIN_SUBVERSION {
             return Err(anyhow::anyhow!("Unsupported old version: {}", sub_version));
         }
 
@@ -534,7 +534,10 @@ impl EncfsConfig {
         writeln!(file, "        <encodedKeyData>")?;
         let key_data_b64 = BASE64.encode(&self.key_data);
         // Split into lines of reasonable length (76 chars is standard)
-        for chunk in key_data_b64.as_bytes().chunks(76) {
+        for chunk in key_data_b64
+            .as_bytes()
+            .chunks(crate::constants::XML_BASE64_LINE_LEN)
+        {
             writeln!(file, "{}", String::from_utf8_lossy(chunk))?;
         }
         writeln!(file, "</encodedKeyData>")?;
@@ -543,7 +546,10 @@ impl EncfsConfig {
         writeln!(file, "        <saltLen>{}</saltLen>", self.salt.len())?;
         writeln!(file, "        <saltData>")?;
         let salt_b64 = BASE64.encode(&self.salt);
-        for chunk in salt_b64.as_bytes().chunks(76) {
+        for chunk in salt_b64
+            .as_bytes()
+            .chunks(crate::constants::XML_BASE64_LINE_LEN)
+        {
             writeln!(file, "{}", String::from_utf8_lossy(chunk))?;
         }
         writeln!(file, "</saltData>")?;
@@ -628,7 +634,7 @@ mod tests {
         EncfsConfig {
             config_type: ConfigType::V6,
             creator: "test".to_string(),
-            version: 20100713,
+            version: crate::constants::DEFAULT_CONFIG_VERSION,
             cipher_iface: Interface {
                 name: "ssl/aes".to_string(),
                 major: 3,

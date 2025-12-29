@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use encfs::{config, crypto::ssl::SslCipher};
+use encfs::{config, constants, crypto::ssl::SslCipher};
 use rpassword::prompt_password;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -275,7 +275,7 @@ fn cmd_passwd(rootdir: &Path) -> Result<()> {
     // Generate new salt and iterations for new password
     use openssl::rand::rand_bytes;
     if config.salt.is_empty() {
-        config.salt = vec![0u8; 20];
+        config.salt = vec![0u8; constants::DEFAULT_SALT_SIZE];
     }
     rand_bytes(&mut config.salt).context("Failed to generate salt")?;
 
@@ -283,7 +283,7 @@ fn cmd_passwd(rootdir: &Path) -> Result<()> {
     if config.kdf_iterations == 0 {
         // For new passwords, use a default iteration count
         // In practice, EncFS would calculate this based on desired duration
-        config.kdf_iterations = 100000; // Default reasonable value
+        config.kdf_iterations = constants::DEFAULT_KDF_ITERATIONS; // Default reasonable value
     }
 
     // Create new cipher for encryption
@@ -494,7 +494,7 @@ fn cmd_cat(rootdir: &Path, path: &str, extpass: Option<String>, reverse: bool) -
         // Stream to stdout to avoid allocating the full file in memory.
         let mut out = io::stdout().lock();
         let mut offset = 0u64;
-        let mut buf = vec![0u8; 128 * 1024];
+        let mut buf = vec![0u8; constants::FILE_BUFFER_SIZE];
         loop {
             let bytes_read = decoder.read_at(&mut buf, offset)?;
             if bytes_read == 0 {
@@ -678,12 +678,12 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     // Generate new salt
     use openssl::rand::rand_bytes;
     if config.salt.is_empty() {
-        config.salt = vec![0u8; 20];
+        config.salt = vec![0u8; constants::DEFAULT_SALT_SIZE];
     }
     rand_bytes(&mut config.salt).context("Failed to generate salt")?;
 
     if config.kdf_iterations == 0 {
-        config.kdf_iterations = 100000;
+        config.kdf_iterations = constants::DEFAULT_KDF_ITERATIONS;
     }
 
     // Create new cipher for encryption
@@ -1168,7 +1168,7 @@ mod tests {
         let config = EncfsConfig {
             config_type: ConfigType::V6,
             creator: "test".to_string(),
-            version: 20100713,
+            version: constants::DEFAULT_CONFIG_VERSION,
             cipher_iface: iface.clone(),
             name_iface: iface.clone(),
             key_size: 192,
@@ -1266,7 +1266,7 @@ mod tests {
         let config = EncfsConfig {
             config_type: ConfigType::V6,
             creator: "test".to_string(),
-            version: 20100713,
+            version: constants::DEFAULT_CONFIG_VERSION,
             cipher_iface: iface.clone(),
             name_iface: iface.clone(),
             key_size: 192,
