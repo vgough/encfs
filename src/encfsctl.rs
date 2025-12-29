@@ -773,7 +773,8 @@ fn export_directory(
             }
         };
 
-        let metadata = entry.metadata()?;
+        // Use symlink_metadata to avoid following symlinks
+        let metadata = std::fs::symlink_metadata(entry.path())?;
         let dest_path = current_dest_dir.join(&decrypted_name);
 
         if metadata.is_dir() {
@@ -1119,4 +1120,109 @@ fn decrypt_path_with_iv(
     }
 
     Ok((decrypted_path, iv))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use encfs::config::{ConfigType, EncfsConfig, Interface};
+    use encfs::crypto::ssl::SslCipher;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn test_export_symlink_repro() -> Result<()> {
+        let temp_dir =
+            std::env::temp_dir().join(format!("encfs_export_test_{}", std::process::id()));
+        let src_dir = temp_dir.join("src");
+        let dst_dir = temp_dir.join("dst");
+        fs::create_dir_all(&src_dir)?;
+        fs::create_dir_all(&dst_dir)?;
+
+        // Setup Cipher
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        // 192 bit key
+        let mut cipher = SslCipher::new(&iface, 192)?;
+        let key = vec![0u8; 24];
+        let iv = vec![0u8; cipher.iv_len()];
+        cipher.set_key(&key, &iv);
+
+        // Setup Config
+        let config = EncfsConfig {
+            config_type: ConfigType::V6,
+            creator: "test".to_string(),
+            version: 20100713,
+            cipher_iface: iface.clone(),
+            name_iface: iface.clone(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            plain_data: false,
+            block_mac_bytes: 0,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+        };
+
+        // Prepare symlink
+        let symlink_name = "mysymlink";
+        let symlink_target = "target_path";
+
+        // Encrypt name
+        let (enc_name, name_iv) = cipher.encrypt_filename(symlink_name, 0)?;
+
+        // Encrypt target string (to be content of symlink)
+        // export_directory uses link_path_iv = new_iv (from name decryption) if chained_name_iv
+        let link_iv = if config.chained_name_iv { name_iv } else { 0 };
+        let (enc_target, _) = cipher.encrypt_filename(symlink_target, link_iv)?;
+
+        // Create the symlink in source
+        // The symlink points to 'enc_target'
+        let link_path = src_dir.join(&enc_name);
+        symlink(&enc_target, &link_path)?;
+
+        // Make the target exist so metadata() doesn't fail (simulating follows symlink bug)
+        // The symlink points to enc_target relative to src_dir
+        fs::write(src_dir.join(&enc_target), "dummy content")?;
+
+        // Run export
+        export_directory(&src_dir, &dst_dir, &cipher, &config, 0)?;
+
+        // Check destination
+        let exported_link = dst_dir.join(symlink_name);
+
+        // Assertions
+        if !exported_link.exists() && fs::symlink_metadata(&exported_link).is_err() {
+            panic!("Exported link/file not found at {:?}", exported_link);
+        }
+
+        // Check if it is a symlink
+        let meta = fs::symlink_metadata(&exported_link)?;
+        if !meta.file_type().is_symlink() {
+            println!(
+                "Bug reproduced: Exported item is not a symlink (is_file={})",
+                meta.is_file()
+            );
+            panic!("Exported item is not a symlink");
+        }
+
+        // Verify target
+        let target = fs::read_link(&exported_link)?;
+        assert_eq!(target.to_str().unwrap(), symlink_target);
+
+        // Cleanup
+        let _ = fs::remove_dir_all(temp_dir);
+
+        Ok(())
+    }
 }
