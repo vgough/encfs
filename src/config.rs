@@ -169,7 +169,7 @@ impl EncfsConfig {
         Self::load_v5(&content_bytes)
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         // Basic sanity checks to avoid negative sizes turning into huge `u64` via casts.
         if self.plain_data {
             return Err(anyhow::anyhow!(
@@ -624,5 +624,88 @@ mod tests {
         let _ = fs::remove_file(saved_path);
 
         Ok(())
+    }
+    fn create_test_config() -> EncfsConfig {
+        EncfsConfig {
+            config_type: ConfigType::V6,
+            creator: "test".to_string(),
+            version: 20100713,
+            cipher_iface: Interface {
+                name: "ssl/aes".to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            },
+            name_iface: Interface::default(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![],
+            kdf_iterations: 1,
+            desired_kdf_duration: 0,
+            plain_data: false,
+            block_mac_bytes: 0,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+        }
+    }
+
+    #[test]
+    fn test_validate_invalid_key_size() {
+        let mut config = create_test_config();
+        config.key_size = 190; // Not multiple of 8
+
+        assert!(config.validate().is_err());
+
+        config.key_size = 0;
+        assert!(config.validate().is_err());
+
+        config.key_size = -8;
+        assert!(config.validate().is_err());
+
+        config.key_size = 192;
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_invalid_block_size() {
+        let mut config = create_test_config();
+        config.block_size = 0;
+        assert!(config.validate().is_err());
+
+        config.block_size = -1024;
+        assert!(config.validate().is_err());
+
+        config.block_size = 1024;
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_block_size_too_small_for_mac() {
+        let mut config = create_test_config();
+        config.block_size = 8;
+        config.block_mac_bytes = 8;
+        // block_size (8) <= block_mac_bytes (8) is invalid
+        assert!(config.validate().is_err()); // "Invalid block header sizes"
+
+        config.block_size = 9;
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_unsupported_flags() {
+        let mut config = create_test_config();
+        config.plain_data = true;
+        assert!(config.validate().is_err());
+
+        config.plain_data = false;
+        config.block_mac_rand_bytes = 4;
+        assert!(config.validate().is_err());
+
+        config.block_mac_rand_bytes = 0;
+        assert!(config.validate().is_ok());
     }
 }

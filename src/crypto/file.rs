@@ -472,21 +472,54 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
+    #[derive(Clone)]
     struct MockFile {
-        #[allow(dead_code)]
-        data: Vec<u8>,
+        data: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl MockFile {
+        fn new(initial_data: Vec<u8>) -> Self {
+            Self {
+                data: Arc::new(Mutex::new(initial_data)),
+            }
+        }
+
+        fn get_data(&self) -> Vec<u8> {
+            self.data.lock().unwrap().clone()
+        }
     }
 
     impl ReadAt for MockFile {
         fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+            let data = self.data.lock().unwrap();
             let offset = offset as usize;
-            if offset >= self.data.len() {
+            if offset >= data.len() {
                 return Ok(0);
             }
-            let len = std::cmp::min(buf.len(), self.data.len() - offset);
-            buf[..len].copy_from_slice(&self.data[offset..offset + len]);
+            let len = std::cmp::min(buf.len(), data.len() - offset);
+            buf[..len].copy_from_slice(&data[offset..offset + len]);
             Ok(len)
+        }
+    }
+
+    impl WriteAt for MockFile {
+        fn write_at(&self, buf: &[u8], offset: u64) -> io::Result<usize> {
+            let mut data = self.data.lock().unwrap();
+            let offset = offset as usize;
+            let end = offset + buf.len();
+            if end > data.len() {
+                data.resize(end, 0);
+            }
+            data[offset..end].copy_from_slice(buf);
+            Ok(buf.len())
+        }
+    }
+
+    impl FileLen for MockFile {
+        fn file_len(&self) -> io::Result<u64> {
+            Ok(self.data.lock().unwrap().len() as u64)
         }
     }
 
@@ -550,5 +583,266 @@ mod tests {
             ),
             0
         );
+    }
+
+    #[test]
+    fn test_calculate_physical_size() {
+        let header_size = 8;
+        let block_size = 64;
+
+        // No MAC
+        assert_eq!(
+            FileEncoder::<MockFile>::calculate_physical_size(100, 8, 100, 0),
+            108
+        );
+        assert_eq!(
+            FileEncoder::<MockFile>::calculate_physical_size(0, 8, 100, 0),
+            8
+        );
+
+        // With MAC (8 bytes)
+        let block_mac_bytes = 8;
+        // data_block_size = 56
+
+        // 0 bytes -> just header
+        assert_eq!(
+            FileEncoder::<MockFile>::calculate_physical_size(
+                0,
+                header_size,
+                block_size,
+                block_mac_bytes
+            ),
+            8
+        );
+
+        // 56 bytes (1 full block) -> header + 64
+        assert_eq!(
+            FileEncoder::<MockFile>::calculate_physical_size(
+                56,
+                header_size,
+                block_size,
+                block_mac_bytes
+            ),
+            72
+        );
+
+        // 57 bytes (1 full + 1 partial) -> header + 64 + (8 MAC + 1 byte) = 72 + 9 = 81
+        assert_eq!(
+            FileEncoder::<MockFile>::calculate_physical_size(
+                57,
+                header_size,
+                block_size,
+                block_mac_bytes
+            ),
+            81
+        );
+    }
+
+    fn create_cipher() -> SslCipher {
+        // Use a simple cipher for testing
+        let iface = crate::config::Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        // 128-bit key
+        SslCipher::new(&iface, 128).expect("Failed to create cipher")
+    }
+
+    #[test]
+    fn test_read_write_roundtrip_no_mac() {
+        let mut cipher = create_cipher();
+        // Setup key
+        let key = vec![0u8; 16];
+        let iv = vec![0u8; 16]; // IV length depends on cipher, AES usually 16?
+                                // SslCipher handles IV length internally, we just pass slice.
+                                // Actually SslCipher wrapper expects key/IV set via set_key
+        cipher.set_key(&key, &iv);
+
+        let file_iv = 123456789;
+        let header_size = 8;
+        let block_size = 64;
+        let block_mac_bytes = 0;
+
+        let mock_file = MockFile::new(vec![0u8; header_size as usize]); // Start with just header space
+
+        let encoder = FileEncoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+
+        let data = b"Hello, World! This is a test of the EncFS file encryption system.";
+        let written = encoder.write_at(data, 0).expect("Write failed");
+        assert_eq!(written, data.len());
+
+        // Verify physical size
+        // Length 65. Block size 64.
+        // 1 full block (64) + 1 partial block (1)
+        // Physical size: 8 + 64 + 1 = 73
+        assert_eq!(mock_file.get_data().len(), 73);
+
+        let decoder = FileDecoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+
+        let mut buf = vec![0u8; data.len()];
+        let read = decoder.read_at(&mut buf, 0).expect("Read failed");
+        assert_eq!(read, data.len());
+        assert_eq!(&buf, data);
+    }
+
+    #[test]
+    fn test_read_write_roundtrip_with_mac() {
+        let mut cipher = create_cipher();
+        let key = vec![0u8; 16]; // AES-128 needs 16 bytes
+                                 // But let's provide enough bytes.
+        let iv = vec![0u8; 32];
+        cipher.set_key(&key, &iv);
+
+        let file_iv = 987654321;
+        let header_size = 8;
+        let block_size = 64;
+        let block_mac_bytes = 8; // Enable MAC
+
+        let mock_file = MockFile::new(vec![0u8; header_size as usize]);
+
+        let encoder = FileEncoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+
+        // Data: "A" * 100.
+        // data_block_size = 64 - 8 = 56.
+        // 100 bytes = 1 full block (56) + 1 partial block (44).
+        let data = vec![b'A'; 100];
+        encoder.write_at(&data, 0).expect("Write failed");
+
+        // Verify physical size
+        // Header: 8
+        // Block 0: 64 (8 MAC + 56 Data)
+        // Block 1: 8 MAC + 44 Data = 52
+        // Total: 8 + 64 + 52 = 124
+        assert_eq!(mock_file.get_data().len(), 124);
+
+        let decoder = FileDecoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+
+        let mut buf = vec![0u8; 100];
+        let read = decoder.read_at(&mut buf, 0).expect("Read failed");
+        assert_eq!(read, 100);
+        assert_eq!(buf, data);
+    }
+
+    #[test]
+    fn test_mac_verification_failure() {
+        let mut cipher = create_cipher();
+        let key = vec![0u8; 16];
+        let iv = vec![0u8; 32];
+        cipher.set_key(&key, &iv);
+
+        let file_iv = 11111;
+        let header_size = 8;
+        let block_size = 64;
+        let block_mac_bytes = 8;
+
+        let mock_file = MockFile::new(vec![0u8; header_size as usize]);
+        let encoder = FileEncoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+        let data = b"Sensitive Data";
+        encoder.write_at(data, 0).expect("Write failed");
+
+        // Tamper with the data (flip a bit in the encrypted content)
+        // Header is 8 bytes. MAC is 8 bytes. Data follows.
+        // Let's modify byte at offset 8 + 8 = 16 (first byte of encrypted data)
+        {
+            let mut file_data = mock_file.data.lock().unwrap();
+            file_data[16] ^= 0x01;
+        }
+
+        let decoder = FileDecoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+        let mut buf = vec![0u8; data.len()];
+        let err = decoder.read_at(&mut buf, 0).expect_err("Should fail MAC");
+        assert!(err.to_string().contains("MAC mismatch"));
+    }
+
+    #[test]
+    fn test_read_modify_write() {
+        let mut cipher = create_cipher();
+        let key = vec![0u8; 16];
+        let iv = vec![0u8; 32];
+        cipher.set_key(&key, &iv);
+
+        let file_iv = 22222;
+        let header_size = 8;
+        let block_size = 64;
+        let block_mac_bytes = 8;
+
+        let mock_file = MockFile::new(vec![0u8; header_size as usize]);
+        let encoder = FileEncoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+
+        // Write initial data: "AAAA..." (56 bytes - full block)
+        let initial_data = vec![b'A'; 56];
+        encoder.write_at(&initial_data, 0).expect("Write init");
+
+        // Modify middle: write "BBB" at offset 10
+        let overwrite = b"BBB";
+        encoder.write_at(overwrite, 10).expect("Write overwrite");
+
+        // Read back
+        let decoder = FileDecoder::new(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+        );
+        let mut buf = vec![0u8; 56];
+        decoder.read_at(&mut buf, 0).expect("Read back");
+
+        let mut expected = initial_data.clone();
+        expected[10..13].copy_from_slice(overwrite);
+
+        assert_eq!(buf, expected);
     }
 }
