@@ -583,27 +583,25 @@ impl FilesystemMT for EncFs {
         let header_size = self.config.header_size();
         let file_iv = if let Some(h) = &handle {
             h.file_iv
-        } else {
-            if header_size > 0 {
-                // Need cipher context (IV). Read header from file and decrypt.
-                let mut header = vec![0u8; header_size as usize];
-                file_ref
-                    .read_exact_at(&mut header, 0)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                // We need external IV (path IV) to decrypt header.
-                let (_, path_iv) = self.encrypt_path(path)?;
+        } else if header_size > 0 {
+            // Need cipher context (IV). Read header from file and decrypt.
+            let mut header = vec![0u8; header_size as usize];
+            file_ref
+                .read_exact_at(&mut header, 0)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            // We need external IV (path IV) to decrypt header.
+            let (_, path_iv) = self.encrypt_path(path)?;
 
-                let external_iv = if self.external_iv_chaining {
-                    path_iv
-                } else {
-                    0
-                };
-                self.cipher
-                    .decrypt_header(&mut header, external_iv)
-                    .map_err(|_| libc::EIO)?
+            let external_iv = if self.external_iv_chaining {
+                path_iv
             } else {
                 0
-            }
+            };
+            self.cipher
+                .decrypt_header(&mut header, external_iv)
+                .map_err(|_| libc::EIO)?
+        } else {
+            0
         };
 
         let encoder = FileEncoder::new(
