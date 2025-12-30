@@ -101,6 +101,9 @@ enum Command {
         /// External password program
         #[arg(long)]
         extpass: Option<String>,
+        /// Fail on first error instead of warning and continuing
+        #[arg(long)]
+        fail_on_error: bool,
     },
 }
 
@@ -138,7 +141,8 @@ fn main() -> Result<()> {
             rootdir,
             destdir,
             extpass,
-        }) => cmd_export(&rootdir, &destdir, extpass),
+            fail_on_error,
+        }) => cmd_export(&rootdir, &destdir, extpass, fail_on_error),
         None => {
             // Default to info command if rootdir is provided
             if let Some(rootdir) = cli.rootdir {
@@ -528,7 +532,14 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
     let entries = std::fs::read_dir(&encrypted_dir_path).context("Failed to read directory")?;
 
     for entry in entries {
-        let entry = entry?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Warning: Failed to read directory entry: {}", e);
+                continue;
+            }
+        };
+
         let file_name = entry.file_name();
         let name_str = match file_name.to_str() {
             Some(s) => s,
@@ -549,29 +560,36 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
         // Try to decrypt the filename
         match cipher.decrypt_filename(name_str, dir_iv) {
             Ok((decrypted_name_bytes, _)) => {
-                let metadata = entry.metadata()?;
+                let process_res = (|| -> Result<()> {
+                    let metadata = entry.metadata()?;
 
-                // Calculate logical size for files
-                let size = if metadata.is_file() {
-                    FileDecoder::<std::fs::File>::calculate_logical_size(
-                        metadata.len(),
-                        config.header_size(),
-                        config.block_size as u64,
-                        config.block_mac_bytes as u64,
-                    )
-                } else {
-                    metadata.len()
-                };
+                    // Calculate logical size for files
+                    let size = if metadata.is_file() {
+                        FileDecoder::<std::fs::File>::calculate_logical_size(
+                            metadata.len(),
+                            config.header_size(),
+                            config.block_size as u64,
+                            config.block_mac_bytes as u64,
+                        )
+                    } else {
+                        metadata.len()
+                    };
 
-                // Format modification time
-                let mtime = metadata.mtime();
-                let datetime: DateTime<Local> = DateTime::from_timestamp(mtime, 0)
-                    .unwrap_or_default()
-                    .into();
-                let time_str = datetime.format("%Y-%m-%d %H:%M:%S");
+                    // Format modification time
+                    let mtime = metadata.mtime();
+                    let datetime: DateTime<Local> = DateTime::from_timestamp(mtime, 0)
+                        .unwrap_or_default()
+                        .into();
+                    let time_str = datetime.format("%Y-%m-%d %H:%M:%S");
 
-                let name_display = String::from_utf8_lossy(&decrypted_name_bytes);
-                println!("{:>11} {} {}", size, time_str, name_display);
+                    let name_display = String::from_utf8_lossy(&decrypted_name_bytes);
+                    println!("{:>11} {} {}", size, time_str, name_display);
+                    Ok(())
+                })();
+
+                if let Err(e) = process_res {
+                    eprintln!("Warning: Error processing {}: {}", name_str, e);
+                }
             }
             Err(_) => {
                 // Skip files we can't decrypt
@@ -721,7 +739,12 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_export(rootdir: &Path, destdir: &Path, extpass: Option<String>) -> Result<()> {
+fn cmd_export(
+    rootdir: &Path,
+    destdir: &Path,
+    extpass: Option<String>,
+    fail_on_error: bool,
+) -> Result<()> {
     let config_path = find_config_file(rootdir)?;
     let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
 
@@ -735,7 +758,12 @@ fn cmd_export(rootdir: &Path, destdir: &Path, extpass: Option<String>) -> Result
 
     // Start recursive export from root
     export_directory(
-        rootdir, destdir, &cipher, &config, 0, // initial IV
+        rootdir,
+        destdir,
+        &cipher,
+        &config,
+        0, // initial IV
+        fail_on_error,
     )?;
 
     Ok(())
@@ -747,6 +775,7 @@ fn export_directory(
     cipher: &SslCipher,
     config: &config::EncfsConfig,
     dir_iv: u64,
+    fail_on_error: bool,
 ) -> Result<()> {
     use encfs::crypto::file::FileDecoder;
     use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
@@ -754,125 +783,184 @@ fn export_directory(
     let entries = std::fs::read_dir(current_encrypted_dir).context("Failed to read directory")?;
 
     for entry in entries {
-        let entry = entry?;
-        let file_name = entry.file_name();
-        let name_str = match file_name.to_str() {
-            Some(s) => s,
-            None => {
-                eprintln!(
-                    "Warning: Skipping file with non-UTF-8 filename: {:?}",
-                    file_name
-                );
-                continue;
-            }
-        };
-
-        // Skip config files
-        if name_str.starts_with(".encfs") {
-            continue;
-        }
-
-        // Try to decrypt the filename
-        let (decrypted_name_bytes, new_iv) = match cipher.decrypt_filename(name_str, dir_iv) {
-            Ok(result) => result,
+        let entry = match entry {
+            Ok(e) => e,
             Err(e) => {
-                eprintln!("Warning: Could not decrypt {}: {}", name_str, e);
+                if fail_on_error {
+                    return Err(anyhow::anyhow!("Failed to read directory entry: {}", e));
+                }
+                eprintln!("Warning: Failed to read directory entry: {}", e);
                 continue;
             }
         };
 
-        // Use symlink_metadata to avoid following symlinks
-        let metadata = std::fs::symlink_metadata(entry.path())?;
-        let dest_path = current_dest_dir.join(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
+        let entry_path = entry.path();
 
-        if metadata.is_dir() {
-            // Create destination directory with same permissions
-            std::fs::create_dir_all(&dest_path)?;
-            std::fs::set_permissions(&dest_path, std::fs::Permissions::from_mode(metadata.mode()))?;
-
-            // Recurse into subdirectory
-            let next_iv = if config.chained_name_iv { new_iv } else { 0 };
-            export_directory(&entry.path(), &dest_path, cipher, config, next_iv)?;
-        } else if metadata.is_symlink() {
-            // Handle symlinks - read and decrypt the link target
-            let link_target = std::fs::read_link(entry.path())?;
-            if let Some(target_str) = link_target.to_str() {
-                // Symlink targets are encrypted as a single filename string using the symlink's
-                // path IV (matching `fs.rs` symlink/readlink).
-                let link_path_iv = if config.chained_name_iv { new_iv } else { 0 };
-                let (decrypted_target_bytes, _) =
-                    cipher.decrypt_filename(target_str, link_path_iv)?;
-
-                #[cfg(unix)]
-                std::os::unix::fs::symlink(
-                    std::ffi::OsStr::from_bytes(&decrypted_target_bytes),
-                    &dest_path,
-                )?;
-            } else {
-                eprintln!(
-                    "Warning: Skipping symlink with non-UTF-8 target: {:?}",
-                    entry.path()
-                );
-            }
-        } else if metadata.is_file() {
-            // Decrypt and copy file content
-            let src_file = std::fs::File::open(entry.path())?;
-
-            let header_size = config.header_size();
-            let file_iv = if header_size > 0 {
-                // Read and decrypt file header
-                let mut header = vec![0u8; header_size as usize];
-                let bytes_read = src_file.read_at(&mut header, 0)?;
-
-                if bytes_read < header.len() {
-                    let name_display = String::from_utf8_lossy(&decrypted_name_bytes);
-                    eprintln!("Warning: File {} has incomplete header", name_display);
-                    continue;
+        // Use a closure to handle per-file errors without aborting the loop
+        let process_res = (|| -> Result<()> {
+            let file_name = entry.file_name();
+            let name_str = match file_name.to_str() {
+                Some(s) => s,
+                None => {
+                    if fail_on_error {
+                        return Err(anyhow::anyhow!("Non-UTF-8 filename: {:?}", file_name));
+                    }
+                    eprintln!(
+                        "Warning: Skipping file with non-UTF-8 filename: {:?}",
+                        file_name
+                    );
+                    return Ok(());
                 }
+            };
 
-                // Calculate path IV for external IV chaining
-                let path_iv = if config.external_iv_chaining && config.chained_name_iv {
-                    new_iv
+            // Skip config files
+            if name_str.starts_with(".encfs") {
+                return Ok(());
+            }
+
+            // Try to decrypt the filename
+            let (decrypted_name_bytes, new_iv) = match cipher.decrypt_filename(name_str, dir_iv) {
+                Ok(result) => result,
+                Err(e) => {
+                    if fail_on_error {
+                        return Err(anyhow::anyhow!("Could not decrypt {}: {}", name_str, e));
+                    }
+                    eprintln!("Warning: Could not decrypt {}: {}", name_str, e);
+                    return Ok(());
+                }
+            };
+
+            // Use symlink_metadata to avoid following symlinks
+            let metadata = std::fs::symlink_metadata(entry.path())?;
+            let dest_path =
+                current_dest_dir.join(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
+
+            if metadata.is_dir() {
+                // Create destination directory with same permissions
+                std::fs::create_dir_all(&dest_path)?;
+                std::fs::set_permissions(
+                    &dest_path,
+                    std::fs::Permissions::from_mode(metadata.mode()),
+                )?;
+
+                // Recurse into subdirectory
+                let next_iv = if config.chained_name_iv { new_iv } else { 0 };
+                export_directory(
+                    &entry.path(),
+                    &dest_path,
+                    cipher,
+                    config,
+                    next_iv,
+                    fail_on_error,
+                )?;
+            } else if metadata.is_symlink() {
+                // Handle symlinks - read and decrypt the link target
+                let link_target = std::fs::read_link(entry.path())?;
+                if let Some(target_str) = link_target.to_str() {
+                    // Symlink targets are encrypted as a single filename string using the symlink's
+                    // path IV (matching `fs.rs` symlink/readlink).
+                    let link_path_iv = if config.chained_name_iv { new_iv } else { 0 };
+                    let (decrypted_target_bytes, _) =
+                        match cipher.decrypt_filename(target_str, link_path_iv) {
+                            Ok(res) => res,
+                            Err(e) => {
+                                if fail_on_error {
+                                    return Err(anyhow::anyhow!(
+                                        "Undecryptable symlink target {:?}: {}",
+                                        entry.path(),
+                                        e
+                                    ));
+                                }
+                                eprintln!(
+                                    "Warning: Skipping symlink with undecryptable target {:?}: {}",
+                                    entry.path(),
+                                    e
+                                );
+                                return Ok(());
+                            }
+                        };
+
+                    #[cfg(unix)]
+                    std::os::unix::fs::symlink(
+                        std::ffi::OsStr::from_bytes(&decrypted_target_bytes),
+                        &dest_path,
+                    )?;
+                } else {
+                    eprintln!(
+                        "Warning: Skipping symlink with non-UTF-8 target: {:?}",
+                        entry.path()
+                    );
+                }
+            } else if metadata.is_file() {
+                // Decrypt and copy file content
+                let src_file = std::fs::File::open(entry.path())?;
+
+                let header_size = config.header_size();
+                let file_iv = if header_size > 0 {
+                    // Read and decrypt file header
+                    let mut header = vec![0u8; header_size as usize];
+                    let bytes_read = src_file.read_at(&mut header, 0)?;
+
+                    if bytes_read < header.len() {
+                        let name_display = String::from_utf8_lossy(&decrypted_name_bytes);
+                        eprintln!("Warning: File {} has incomplete header", name_display);
+                        return Ok(());
+                    }
+
+                    // Calculate path IV for external IV chaining
+                    let path_iv = if config.external_iv_chaining && config.chained_name_iv {
+                        new_iv
+                    } else {
+                        0
+                    };
+
+                    cipher.decrypt_header(&mut header, path_iv)?
                 } else {
                     0
                 };
 
-                cipher.decrypt_header(&mut header, path_iv)?
-            } else {
-                0
-            };
+                // Decrypt content using FileDecoder
+                let decoder = FileDecoder::new(
+                    cipher,
+                    &src_file,
+                    file_iv,
+                    header_size, // header_size
+                    config.block_size as u64,
+                    config.block_mac_bytes as u64,
+                );
 
-            // Decrypt content using FileDecoder
-            let decoder = FileDecoder::new(
-                cipher,
-                &src_file,
-                file_iv,
-                header_size, // header_size
-                config.block_size as u64,
-                config.block_mac_bytes as u64,
-            );
+                let file_size = metadata.len();
+                let logical_size = FileDecoder::<std::fs::File>::calculate_logical_size(
+                    file_size,
+                    header_size,
+                    config.block_size as u64,
+                    config.block_mac_bytes as u64,
+                );
 
-            let file_size = metadata.len();
-            let logical_size = FileDecoder::<std::fs::File>::calculate_logical_size(
-                file_size,
-                header_size,
-                config.block_size as u64,
-                config.block_mac_bytes as u64,
-            );
+                let mut buffer = vec![0u8; logical_size as usize];
+                let bytes_read = decoder.read_at(&mut buffer, 0)?;
+                buffer.truncate(bytes_read);
 
-            let mut buffer = vec![0u8; logical_size as usize];
-            let bytes_read = decoder.read_at(&mut buffer, 0)?;
-            buffer.truncate(bytes_read);
+                // Write decrypted content to destination
+                let mut dest_file = std::fs::File::create(&dest_path)?;
+                std::io::Write::write_all(&mut dest_file, &buffer)?;
 
-            // Write decrypted content to destination
-            let mut dest_file = std::fs::File::create(&dest_path)?;
-            std::io::Write::write_all(&mut dest_file, &buffer)?;
+                // Preserve permissions
+                std::fs::set_permissions(
+                    &dest_path,
+                    std::fs::Permissions::from_mode(metadata.mode()),
+                )?;
+            }
+            Ok(())
+        })();
 
-            // Preserve permissions
-            std::fs::set_permissions(&dest_path, std::fs::Permissions::from_mode(metadata.mode()))?;
+        if let Err(e) = process_res {
+            if fail_on_error {
+                return Err(e);
+            }
+            eprintln!("Warning: Failed to export {:?}: {}", entry_path, e);
         }
     }
-
     Ok(())
 }
 
@@ -1022,7 +1110,14 @@ fn find_undecodable_files(
     let mut dirs_to_recurse = Vec::new();
 
     for entry in entries {
-        let entry = entry?;
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("Warning: Failed to read directory entry: {}", e);
+                continue;
+            }
+        };
+
         let file_name = entry.file_name();
         let name_str = match file_name.to_str() {
             Some(s) => s,
@@ -1053,11 +1148,14 @@ fn find_undecodable_files(
         match cipher.decrypt_filename(name_str, dir_iv) {
             Ok((_, new_iv)) => {
                 // Successfully decoded - check if it's a directory
-                let file_type = entry.file_type()?;
-                if file_type.is_dir() {
-                    // Store both the path and the IV for recursion
-                    let next_iv = if chained_iv { new_iv } else { 0 };
-                    dirs_to_recurse.push((entry.path(), next_iv));
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_dir() {
+                        // Store both the path and the IV for recursion
+                        let next_iv = if chained_iv { new_iv } else { 0 };
+                        dirs_to_recurse.push((entry.path(), next_iv));
+                    }
+                } else {
+                    eprintln!("Warning: Failed to get file type for {:?}", entry.path());
                 }
             }
             Err(_) => {
@@ -1211,7 +1309,7 @@ mod tests {
         fs::write(src_dir.join(&enc_target), "dummy content")?;
 
         // Run export
-        export_directory(&src_dir, &dst_dir, &cipher, &config, 0)?;
+        export_directory(&src_dir, &dst_dir, &cipher, &config, 0, false)?;
 
         // Check destination
         let exported_link = dst_dir.join(symlink_name);
@@ -1302,7 +1400,7 @@ mod tests {
         // Run export
         // This should NOT fail, but should just output a warning (after we fix it)
         // and skip the file.
-        export_directory(&src_dir, &dst_dir, &cipher, &config, 0)?;
+        export_directory(&src_dir, &dst_dir, &cipher, &config, 0, false)?;
 
         // Check destination - should NOT exist
         let exported_link = dst_dir.join(link_name);
@@ -1390,7 +1488,7 @@ mod tests {
         // It will take first 8 bytes as "header", decrypt them (garbage IV),
         // then decrypt the rest (6 bytes) using that garbage IV.
         // The output will be truncated (6 bytes instead of 14) and garbage.
-        export_directory(&src_dir, &dst_dir, &cipher, &config, 0)?;
+        export_directory(&src_dir, &dst_dir, &cipher, &config, 0, false)?;
 
         let exported_path = dst_dir.join(filename);
         if !exported_path.exists() {
@@ -1501,6 +1599,146 @@ mod tests {
             "Should find 1 issue (plaintext file in subdir)"
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_export_symlink_decryption_fail() -> Result<()> {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "encfs_export_decryption_fail_{}",
+            std::process::id()
+        ));
+        let src_dir = temp_dir.join("src");
+        let dst_dir = temp_dir.join("dst");
+        fs::create_dir_all(&src_dir)?;
+        fs::create_dir_all(&dst_dir)?;
+
+        // Setup Cipher
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 192)?;
+        let key = vec![0u8; 24];
+        let iv = vec![0u8; cipher.iv_len()];
+        cipher.set_key(&key, &iv);
+
+        // Setup Config
+        let config = EncfsConfig {
+            config_type: ConfigType::V6,
+            creator: "test".to_string(),
+            version: constants::DEFAULT_CONFIG_VERSION,
+            cipher_iface: iface.clone(),
+            name_iface: iface.clone(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            plain_data: false,
+            block_mac_bytes: 0,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+        };
+
+        // Create a symlink with encrypted name but GARBAGE target
+        // The export function tries to decrypt the target.
+        let link_name = "mylink";
+        let (enc_name, _) = cipher.encrypt_filename(link_name.as_bytes(), 0)?;
+
+        let link_path = src_dir.join(&enc_name);
+        // "INVALID_TARGET" is unlikely to be a valid encrypted string that decrypts successfully
+        symlink("INVALID_TARGET", &link_path)?;
+
+        // Run export
+        // This fails if the bug is present
+        match export_directory(&src_dir, &dst_dir, &cipher, &config, 0, false) {
+            Ok(_) => {}
+            Err(e) => {
+                // Clean up before panicking
+                let _ = fs::remove_dir_all(temp_dir);
+                panic!(
+                    "export_directory failed on undecryptable symlink target: {}",
+                    e
+                );
+            }
+        }
+
+        // Cleanup
+        let _ = fs::remove_dir_all(temp_dir);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_export_fail_on_error() -> Result<()> {
+        let temp_dir =
+            std::env::temp_dir().join(format!("encfs_export_fail_on_error_{}", std::process::id()));
+        let src_dir = temp_dir.join("src");
+        let dst_dir = temp_dir.join("dst");
+        fs::create_dir_all(&src_dir)?;
+        fs::create_dir_all(&dst_dir)?;
+
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 192)?;
+        let key = vec![0u8; 24];
+        let iv = vec![0u8; cipher.iv_len()];
+        cipher.set_key(&key, &iv);
+
+        let config = EncfsConfig {
+            config_type: ConfigType::V6,
+            creator: "test".to_string(),
+            version: constants::DEFAULT_CONFIG_VERSION,
+            cipher_iface: iface.clone(),
+            name_iface: iface.clone(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            plain_data: false,
+            block_mac_bytes: 0,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+        };
+
+        // Create a symlink with encrypted name and GARBAGE target (undecryptable)
+        let link_name = "fail_link";
+        let (enc_name, _) = cipher.encrypt_filename(link_name.as_bytes(), 0)?;
+        symlink("INVALID_TARGET", src_dir.join(&enc_name))?;
+
+        // Run export with fail_on_error = true
+        let result = export_directory(&src_dir, &dst_dir, &cipher, &config, 0, true);
+
+        // Should return Error
+        assert!(
+            result.is_err(),
+            "Export should fail when fail_on_error is true"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("Undecryptable symlink target"),
+            "Unexpected error: {}",
+            err
+        );
+
+        // Cleanup
+        let _ = fs::remove_dir_all(temp_dir);
         Ok(())
     }
 }
