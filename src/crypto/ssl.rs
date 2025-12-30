@@ -471,14 +471,14 @@ impl SslCipher {
         Ok(new_iv)
     }
 
-    pub fn decrypt_filename(&self, encoded_name: &str, iv: u64) -> Result<(String, u64)> {
+    pub fn decrypt_filename(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
         match self.name_encoding {
             NameEncoding::Stream => self.decrypt_filename_stream(encoded_name, iv),
             NameEncoding::Block => self.decrypt_filename_block(encoded_name, iv),
         }
     }
 
-    fn decrypt_filename_stream(&self, encoded_name: &str, iv: u64) -> Result<(String, u64)> {
+    fn decrypt_filename_stream(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
         // 1. Base64 Decode
         let data = Self::filename_base64_decode(encoded_name)?;
 
@@ -508,12 +508,11 @@ impl SslCipher {
             ));
         }
 
-        // 5. Convert to String
-        let name = String::from_utf8(name_data).context("Invalid UTF-8 in filename")?;
-        Ok((name, new_iv))
+        // 5. Return bytes
+        Ok((name_data, new_iv))
     }
 
-    fn decrypt_filename_block(&self, encoded_name: &str, iv: u64) -> Result<(String, u64)> {
+    fn decrypt_filename_block(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
         // 1. Base64 Decode
         let data = Self::filename_base64_decode(encoded_name)?;
 
@@ -536,19 +535,8 @@ impl SslCipher {
         let name_iv = (checksum as u64) ^ iv;
         self.block_decode(&mut block_data, name_iv, &self.key, &self.iv)?;
 
-        // 4. Remove Padding
-        // Padding is the last byte.
-        let padding = *block_data.last().ok_or(anyhow!("Empty block data"))? as usize;
-        if padding > bs || padding == 0 || padding > block_data.len() {
-            return Err(anyhow!("Invalid padding: {}", padding));
-        }
-
-        let final_len = block_data.len() - padding;
-
-        // 5. Verify MAC (over decrypted data INCLUDING padding)
-        // Note: C++ code verifies MAC over the decrypted buffer which contains plaintext + padding.
-        // The buffer passed to MAC_16 starts at offset 2 (after checksum).
-        // So we can just pass `block_data` to `mac_16`.
+        // 4. Verify MAC (over decrypted data INCLUDING padding)
+        // Fix Padding Oracle: Verify MAC *before* checking padding.
 
         let (calculated_mac, new_iv) = self.mac_16(&block_data, iv);
         if calculated_mac != checksum {
@@ -559,30 +547,35 @@ impl SslCipher {
             ));
         }
 
+        // 5. Remove Padding
+        // Padding is the last byte.
+        let padding = *block_data.last().ok_or(anyhow!("Empty block data"))? as usize;
+        if padding > bs || padding == 0 || padding > block_data.len() {
+            return Err(anyhow!("Invalid padding: {}", padding));
+        }
+
+        let final_len = block_data.len() - padding;
         block_data.truncate(final_len);
 
-        let name = String::from_utf8(block_data).context("Invalid UTF-8 in filename")?;
-        Ok((name, new_iv))
+        Ok((block_data, new_iv))
     }
 
-    pub fn encrypt_filename(&self, plaintext_name: &str, iv: u64) -> Result<(String, u64)> {
+    pub fn encrypt_filename(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
         match self.name_encoding {
             NameEncoding::Stream => self.encrypt_filename_stream(plaintext_name, iv),
             NameEncoding::Block => self.encrypt_filename_block(plaintext_name, iv),
         }
     }
 
-    fn encrypt_filename_stream(&self, plaintext_name: &str, iv: u64) -> Result<(String, u64)> {
-        let plaintext_bytes = plaintext_name.as_bytes();
-
+    fn encrypt_filename_stream(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
         // 1. Calculate Checksum
-        let (checksum, new_iv) = self.mac_16(plaintext_bytes, iv);
+        let (checksum, new_iv) = self.mac_16(plaintext_name, iv);
 
         // 2. Construct Buffer
-        let mut data = Vec::with_capacity(2 + plaintext_bytes.len());
+        let mut data = Vec::with_capacity(2 + plaintext_name.len());
         data.push((checksum >> 8) as u8);
         data.push((checksum & 0xff) as u8);
-        data.extend_from_slice(plaintext_bytes);
+        data.extend_from_slice(plaintext_name);
 
         // 3. Encrypt
         // IV for name encryption is checksum ^ directory_iv
@@ -599,12 +592,11 @@ impl SslCipher {
         Ok((encoded, new_iv))
     }
 
-    fn encrypt_filename_block(&self, plaintext_name: &str, iv: u64) -> Result<(String, u64)> {
-        let plaintext_bytes = plaintext_name.as_bytes();
+    fn encrypt_filename_block(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
         let bs = self.block_cipher.block_size();
 
         // 1. Calculate Padding
-        let len = plaintext_bytes.len();
+        let len = plaintext_name.len();
         let padding = bs - (len % bs);
 
         // 2. Construct Buffer
@@ -612,7 +604,7 @@ impl SslCipher {
         let mut data = Vec::with_capacity(2 + len + padding);
         data.push(0); // Placeholder
         data.push(0);
-        data.extend_from_slice(plaintext_bytes);
+        data.extend_from_slice(plaintext_name);
         for _ in 0..padding {
             data.push(padding as u8);
         }

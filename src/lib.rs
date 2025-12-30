@@ -30,7 +30,9 @@ mod tests {
         // Test the known encrypted filename
         let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
         let iv = 0; // Root directory IV is 0
-        let (decrypted, _) = cipher.decrypt_filename(encrypted_name, iv)?;
+        let (decrypted_bytes, _) = cipher.decrypt_filename(encrypted_name, iv)?;
+        let decrypted =
+            String::from_utf8(decrypted_bytes).expect("Decrypted filename should be valid UTF-8");
 
         println!("Decrypted: {} -> {}", encrypted_name, decrypted);
         assert_eq!(

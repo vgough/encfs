@@ -83,9 +83,9 @@ impl EncFs {
             match component {
                 std::path::Component::RootDir => {}
                 std::path::Component::Normal(name) => {
-                    let name_str = name.to_str().ok_or(libc::EILSEQ)?;
+                    let name_bytes = name.as_bytes();
                     let (encrypted_name, new_iv) =
-                        self.cipher.encrypt_filename(name_str, iv).map_err(|e| {
+                        self.cipher.encrypt_filename(name_bytes, iv).map_err(|e| {
                             error!("Encrypt filename failed: {}", e);
                             libc::EIO
                         })?;
@@ -113,12 +113,12 @@ impl EncFs {
                 std::path::Component::RootDir => {}
                 std::path::Component::Normal(name) => {
                     let name_str = name.to_str().ok_or(libc::EILSEQ)?;
-                    let (decrypted_name, new_iv) =
+                    let (decrypted_name_bytes, new_iv) =
                         self.cipher.decrypt_filename(name_str, iv).map_err(|e| {
                             error!("Failed to decrypt filename {}: {}", name_str, e);
                             libc::EIO
                         })?;
-                    decrypted_path.push(decrypted_name);
+                    decrypted_path.push(OsStr::from_bytes(&decrypted_name_bytes));
                     if self.chained_name_iv {
                         iv = new_iv;
                     }
@@ -270,21 +270,32 @@ impl EncFs {
             for entry in entries {
                 let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
                 let fname = entry.file_name();
-                let fname_str = fname.to_str().ok_or(libc::EILSEQ)?;
+                let fname_bytes = fname.as_bytes();
 
-                if fname_str == "." || fname_str == ".." || fname_str.starts_with('.') {
+                if fname_bytes == b"." || fname_bytes == b".." || fname_bytes.starts_with(b".") {
                     continue;
                 }
 
-                let (plain_name, _) = match self.cipher.decrypt_filename(fname_str, source.iv) {
-                    Ok(res) => res,
-                    Err(e) => {
-                        warn!("Skipping undecryptable child {:?}: {}", fname, e);
+                // fname is the ENCRYPTED filename (string usually, but treating as str for legacy reasons mostly)
+                // Encrypted filenames ARE strings (base64 subset), so to_str() is generally safe for THEM.
+                let fname_utf8 = match fname.to_str() {
+                    Some(s) => s,
+                    None => {
+                        error!("Skipping invalid filename in recursive copy: {:?}", fname);
                         continue;
                     }
                 };
 
-                let child_name = OsStr::new(&plain_name);
+                let (plain_name_bytes, _) =
+                    match self.cipher.decrypt_filename(fname_utf8, source.iv) {
+                        Ok(res) => res,
+                        Err(e) => {
+                            warn!("Skipping undecryptable child {:?}: {}", fname, e);
+                            continue;
+                        }
+                    };
+
+                let child_name = OsStr::from_bytes(&plain_name_bytes);
                 let child_source = source.logical.join(child_name);
                 let child_dest = dest.logical.join(child_name);
 
@@ -762,17 +773,19 @@ impl FilesystemMT for EncFs {
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
         let target = fs::read_link(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+        // target on disk is encrypted (base64). So it should be valid string.
         let target_str = target.to_str().ok_or(libc::EILSEQ)?;
 
-        let (plain_target, _) = self
+        let (plain_target_bytes, _) = self
             .cipher
-            .decrypt_filename(target_str, path_iv)
+            .decrypt_filename(target_str, path_iv) // Decrypt takes base64 string
             .map_err(|e| {
                 error!("Failed to decrypt symlink target: {}", e);
                 libc::EIO
             })?;
 
-        Ok(plain_target.into_bytes())
+        Ok(plain_target_bytes)
     }
 
     fn symlink(
@@ -787,10 +800,10 @@ impl FilesystemMT for EncFs {
         let path = parent.join(name);
         let (real_path, path_iv) = self.encrypt_path(&path)?;
 
-        let target_str = target.to_str().ok_or(libc::EILSEQ)?;
+        let target_bytes = target.as_os_str().as_bytes();
         let (enc_target, _) = self
             .cipher
-            .encrypt_filename(target_str, path_iv)
+            .encrypt_filename(target_bytes, path_iv)
             .map_err(|e| {
                 error!("Failed to encrypt symlink target: {}", e);
                 libc::EIO
@@ -798,10 +811,26 @@ impl FilesystemMT for EncFs {
 
         let enc_target_path = Path::new(&enc_target);
 
-        std::os::unix::fs::symlink(enc_target_path, &real_path)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let c_target = std::ffi::CString::new(enc_target_path.as_os_str().as_bytes())
+            .map_err(|_| libc::EINVAL)?;
+        let c_linkpath =
+            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
-        self.getattr(req, &path, None)
+        let ret = unsafe { libc::symlink(c_target.as_ptr(), c_linkpath.as_ptr()) };
+
+        if ret == 0 {
+            // Need to return lookup of new entry.
+            // But fuse_mt::ResultEntry expects a DirectoryEntry.
+            // We can reuse lookup or construct it.
+            // For simplicity, let's just lookup what we created.
+            // Actually fuse_mt requires we return the entry.
+            // Let's do a lookup.
+            self.getattr(req, &path, None)
+        } else {
+            Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO))
+        }
     }
 
     fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultEntry {
@@ -902,7 +931,7 @@ impl FilesystemMT for EncFs {
                         .metadata()
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
                     result.push(DirectoryEntry {
-                        name: OsStr::new(&decrypted_name).to_os_string(),
+                        name: OsStr::from_bytes(&decrypted_name).to_os_string(),
                         kind: if metadata.is_dir() {
                             FileType::Directory
                         } else if metadata.is_symlink() {

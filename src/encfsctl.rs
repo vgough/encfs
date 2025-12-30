@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use encfs::{config, constants, crypto::ssl::SslCipher};
 use rpassword::prompt_password;
 use std::io::{self, BufRead, Write};
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
@@ -547,7 +548,7 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
 
         // Try to decrypt the filename
         match cipher.decrypt_filename(name_str, dir_iv) {
-            Ok((decrypted_name, _)) => {
+            Ok((decrypted_name_bytes, _)) => {
                 let metadata = entry.metadata()?;
 
                 // Calculate logical size for files
@@ -569,7 +570,8 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
                     .into();
                 let time_str = datetime.format("%Y-%m-%d %H:%M:%S");
 
-                println!("{:>11} {} {}", size, time_str, decrypted_name);
+                let name_display = String::from_utf8_lossy(&decrypted_name_bytes);
+                println!("{:>11} {} {}", size, time_str, name_display);
             }
             Err(_) => {
                 // Skip files we can't decrypt
@@ -771,7 +773,7 @@ fn export_directory(
         }
 
         // Try to decrypt the filename
-        let (decrypted_name, new_iv) = match cipher.decrypt_filename(name_str, dir_iv) {
+        let (decrypted_name_bytes, new_iv) = match cipher.decrypt_filename(name_str, dir_iv) {
             Ok(result) => result,
             Err(e) => {
                 eprintln!("Warning: Could not decrypt {}: {}", name_str, e);
@@ -781,7 +783,7 @@ fn export_directory(
 
         // Use symlink_metadata to avoid following symlinks
         let metadata = std::fs::symlink_metadata(entry.path())?;
-        let dest_path = current_dest_dir.join(&decrypted_name);
+        let dest_path = current_dest_dir.join(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
 
         if metadata.is_dir() {
             // Create destination directory with same permissions
@@ -798,10 +800,14 @@ fn export_directory(
                 // Symlink targets are encrypted as a single filename string using the symlink's
                 // path IV (matching `fs.rs` symlink/readlink).
                 let link_path_iv = if config.chained_name_iv { new_iv } else { 0 };
-                let (decrypted_target, _) = cipher.decrypt_filename(target_str, link_path_iv)?;
+                let (decrypted_target_bytes, _) =
+                    cipher.decrypt_filename(target_str, link_path_iv)?;
 
                 #[cfg(unix)]
-                std::os::unix::fs::symlink(&decrypted_target, &dest_path)?;
+                std::os::unix::fs::symlink(
+                    std::ffi::OsStr::from_bytes(&decrypted_target_bytes),
+                    &dest_path,
+                )?;
             } else {
                 eprintln!(
                     "Warning: Skipping symlink with non-UTF-8 target: {:?}",
@@ -819,7 +825,8 @@ fn export_directory(
                 let bytes_read = src_file.read_at(&mut header, 0)?;
 
                 if bytes_read < header.len() {
-                    eprintln!("Warning: File {} has incomplete header", decrypted_name);
+                    let name_display = String::from_utf8_lossy(&decrypted_name_bytes);
+                    eprintln!("Warning: File {} has incomplete header", name_display);
                     continue;
                 }
 
@@ -883,8 +890,8 @@ fn decode_path_string(cipher: &SslCipher, encoded_path: &str, chained_iv: bool) 
                 let name_str = name
                     .to_str()
                     .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8"))?;
-                let (decrypted_name, new_iv) = cipher.decrypt_filename(name_str, iv)?;
-                out.push(decrypted_name);
+                let (decrypted_name_bytes, new_iv) = cipher.decrypt_filename(name_str, iv)?;
+                out.push(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
                 if chained_iv {
                     iv = new_iv;
                 }
@@ -910,10 +917,8 @@ fn encode_path_string(
             std::path::Component::RootDir => {}
             std::path::Component::CurDir => {}
             std::path::Component::Normal(name) => {
-                let name_str = name
-                    .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8"))?;
-                let (encrypted_name, new_iv) = cipher.encrypt_filename(name_str, iv)?;
+                let name_bytes = name.as_bytes();
+                let (encrypted_name, new_iv) = cipher.encrypt_filename(name_bytes, iv)?;
                 out.push(encrypted_name);
                 if chained_iv {
                     iv = new_iv;
@@ -940,10 +945,8 @@ fn encrypt_path_with_iv(
             std::path::Component::RootDir => {}
             std::path::Component::CurDir => {}
             std::path::Component::Normal(name) => {
-                let name_str = name
-                    .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8"))?;
-                let (encrypted_name, new_iv) = cipher.encrypt_filename(name_str, iv)?;
+                let name_bytes = name.as_bytes();
+                let (encrypted_name, new_iv) = cipher.encrypt_filename(name_bytes, iv)?;
                 encrypted_path.push(encrypted_name);
                 if chained_iv {
                     iv = new_iv;
@@ -1121,8 +1124,8 @@ fn decrypt_path_with_iv(
                 let name_str = name
                     .to_str()
                     .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8"))?;
-                let (decrypted_name, new_iv) = cipher.decrypt_filename(name_str, iv)?;
-                decrypted_path.push(decrypted_name);
+                let (decrypted_name_bytes, new_iv) = cipher.decrypt_filename(name_str, iv)?;
+                decrypted_path.push(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
                 if chained_iv {
                     iv = new_iv;
                 }
@@ -1191,12 +1194,12 @@ mod tests {
         let symlink_target = "target_path";
 
         // Encrypt name
-        let (enc_name, name_iv) = cipher.encrypt_filename(symlink_name, 0)?;
+        let (enc_name, name_iv) = cipher.encrypt_filename(symlink_name.as_bytes(), 0)?;
 
         // Encrypt target string (to be content of symlink)
         // export_directory uses link_path_iv = new_iv (from name decryption) if chained_name_iv
         let link_iv = if config.chained_name_iv { name_iv } else { 0 };
-        let (enc_target, _) = cipher.encrypt_filename(symlink_target, link_iv)?;
+        let (enc_target, _) = cipher.encrypt_filename(symlink_target.as_bytes(), link_iv)?;
 
         // Create the symlink in source
         // The symlink points to 'enc_target'
@@ -1291,7 +1294,7 @@ mod tests {
 
         let link_name = "bad_link";
         // Encrypt name so it's picked up
-        let (enc_link_name, _) = cipher.encrypt_filename(link_name, 0)?;
+        let (enc_link_name, _) = cipher.encrypt_filename(link_name.as_bytes(), 0)?;
 
         let link_path = src_dir.join(&enc_link_name);
         symlink(bad_target, &link_path)?;
@@ -1364,7 +1367,7 @@ mod tests {
         let content = b"Hello V4 World";
 
         // encrypt filename (V4 usually stream encoding, but we reuse cipher setup)
-        let (enc_name, _) = cipher.encrypt_filename(filename, 0)?;
+        let (enc_name, _) = cipher.encrypt_filename(filename.as_bytes(), 0)?;
 
         // Encrypt content WITHOUT header (because unique_iv is false)
         // For V4, typically we just encrypt with file_iv = 0 (if no external chaining)
@@ -1444,12 +1447,12 @@ mod tests {
         let dir_iv = 0;
 
         // 1. Create a broken symlink with encrypted name
-        let (enc_broken_name, _) = cipher.encrypt_filename("broken_link", dir_iv)?;
+        let (enc_broken_name, _) = cipher.encrypt_filename("broken_link".as_bytes(), dir_iv)?;
         let broken_path = temp_dir.join(&enc_broken_name);
         symlink("non_existent_target", &broken_path)?;
 
         // 2. Create a directory with encrypted name
-        let (enc_subdir_name, _sub_iv) = cipher.encrypt_filename("subdir", dir_iv)?;
+        let (enc_subdir_name, _sub_iv) = cipher.encrypt_filename("subdir".as_bytes(), dir_iv)?;
         let subdir_path = temp_dir.join(&enc_subdir_name);
         fs::create_dir_all(&subdir_path)?;
 
@@ -1458,7 +1461,7 @@ mod tests {
         fs::write(subdir_path.join("plaintext_file"), "content")?;
 
         // 4. Create a symlink to the directory (encrypted name)
-        let (enc_link_name, _) = cipher.encrypt_filename("link_to_subdir", dir_iv)?;
+        let (enc_link_name, _) = cipher.encrypt_filename("link_to_subdir".as_bytes(), dir_iv)?;
         let link_path = temp_dir.join(&enc_link_name);
         // Point to the relative name of the subdir
         symlink(&enc_subdir_name, &link_path)?;

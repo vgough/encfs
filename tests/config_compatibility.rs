@@ -345,10 +345,12 @@ fn test_aes_cipher_algorithm() -> anyhow::Result<()> {
 
     // Test filename decryption
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
-    let (decrypted, _) = encfs
+    let (decrypted_bytes, _) = encfs
         .cipher
         .decrypt_filename(encrypted_name, 0)
         .context("Failed to decrypt filename")?;
+    let decrypted =
+        String::from_utf8(decrypted_bytes).expect("Decrypted filename should be valid UTF-8");
 
     assert_eq!(
         decrypted, "DESIGN.md",
@@ -604,10 +606,12 @@ fn test_chained_name_iv_feature() -> anyhow::Result<()> {
     );
 
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
-    let (decrypted, new_iv) = encfs
+    let (decrypted_bytes, new_iv) = encfs
         .cipher
         .decrypt_filename(encrypted_name, 0)
         .context("Failed to decrypt filename")?;
+    let decrypted =
+        String::from_utf8(decrypted_bytes).expect("Decrypted filename should be valid UTF-8");
 
     assert_eq!(decrypted, "DESIGN.md", "Filename should decrypt correctly");
     assert_ne!(new_iv, 0, "New IV should be non-zero with chainedNameIV");
@@ -843,9 +847,11 @@ fn test_block_name_encoding() -> anyhow::Result<()> {
     // Verify filename encryption/decryption works
     let cipher = config.get_cipher("test")?;
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
-    let (decrypted, _) = cipher
+    let (decrypted_bytes, _) = cipher
         .decrypt_filename(encrypted_name, 0)
         .context("Failed to decrypt filename")?;
+    let decrypted =
+        String::from_utf8(decrypted_bytes).expect("Decrypted filename should be valid UTF-8");
 
     assert_eq!(
         decrypted, "DESIGN.md",
@@ -924,10 +930,12 @@ fn test_read_operations_standard_mode() -> anyhow::Result<()> {
 
     // Test 1: Decrypt filename
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
-    let (decrypted, _) = encfs
+    let (decrypted_bytes, _) = encfs
         .cipher
         .decrypt_filename(encrypted_name, 0)
         .context("Failed to decrypt filename")?;
+    let decrypted =
+        String::from_utf8(decrypted_bytes).expect("Decrypted filename should be valid UTF-8");
     assert_eq!(decrypted, "DESIGN.md");
 
     // Test 2: Decrypt path
