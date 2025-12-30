@@ -139,6 +139,8 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
             ));
         }
 
+        let mut block_data = vec![0u8; block_size_usize];
+
         while bytes_remaining > 0 {
             // Calculate which data block we need
             let block_num = current_offset / data_block_size;
@@ -148,7 +150,9 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
 
             // Read full on-disk block (MAC + encrypted data = block_size bytes)
             let read_offset = self.header_size + block_num * self.block_size;
-            let mut block_data = vec![0u8; block_size_usize];
+
+            // Ensure buffer is sized correctly for max possible read
+            block_data.resize(block_size_usize, 0);
 
             match self.file.read_at(&mut block_data, read_offset) {
                 Ok(bytes_read) => {
@@ -363,6 +367,11 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
         let mut total_written = 0;
         let mut current_offset = offset;
 
+        // Reusable scratch buffer.
+        // It will hold: [MAC (optional) | Data]
+        // We ensure it has enough capacity for a full physical block.
+        let mut scratch_buffer = Vec::with_capacity(physical_block_size_usize);
+
         while bytes_remaining > 0 {
             let block_num = current_offset / data_block_size;
             let block_offset = current_offset % data_block_size;
@@ -370,19 +379,19 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                 std::cmp::min(bytes_remaining, data_block_size - block_offset);
 
             let read_offset = self.header_size + block_num * physical_block_size;
-            let mut block_data = vec![0u8; physical_block_size_usize];
+
+            // Prepare scratch buffer
+            scratch_buffer.resize(physical_block_size_usize, 0);
 
             // RMW: Enable read if we are not overwriting the entire data portion of the block
             let is_full_write = block_offset == 0 && bytes_to_write_in_block == data_block_size;
-
-            let mut buffer = if !is_full_write {
-                match self.file.read_at(&mut block_data, read_offset) {
+            if !is_full_write {
+                match self.file.read_at(&mut scratch_buffer, read_offset) {
                     Ok(n) => {
                         if n > 0 {
+                            scratch_buffer.truncate(n);
+
                             // Check if this write will overwrite the entire data we just read.
-                            // We read 'n' bytes. This includes MAC overhead.
-                            // The amount of plaintext data in this block is 'n - mac_len'.
-                            // If we are writing at offset 0, and writing >= that amount, we don't need to decrypt.
                             let current_payload_len = if self.block_mac_bytes > 0 {
                                 n.saturating_sub(mac_len_usize)
                             } else {
@@ -393,80 +402,77 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                                 && (bytes_to_write_in_block as usize) >= current_payload_len
                             {
                                 // Optimization: We are overwriting the entire existing content.
-                                // No need to decrypt the old content.
-                                Vec::new()
+                                // Reset buffer to just reserved MAC space (if any)
+                                scratch_buffer.resize(mac_len_usize, 0);
                             } else {
-                                block_data.truncate(n);
+                                // We need to keep existing data. Decrypt it.
                                 if self
                                     .cipher
                                     .decrypt_block_inplace(
-                                        &mut block_data,
+                                        &mut scratch_buffer,
                                         block_num,
                                         self.file_iv,
                                         physical_block_size,
                                     )
                                     .is_err()
                                 {
-                                    // Decrypt failed. Could be new block/garbage.
-                                    // Treat as empty/zeros to overwrite?
-                                    // If we fail to decrypt, we corrupt the block if we write back garbage + new data?
-                                    // Better to error out.
                                     return Err(io::Error::other("Decrypt failed during RMW"));
                                 }
-                                if self.block_mac_bytes > 0
-                                    && (block_data.len() as u64) >= self.block_mac_bytes
-                                {
-                                    block_data.drain(0..self.block_mac_bytes as usize);
-                                }
-                                block_data
+                                // Data is now [Encrypted MAC | Plaintext Data].
                             }
                         } else {
-                            Vec::new()
+                            // EOF read
+                            scratch_buffer.resize(mac_len_usize, 0);
                         }
                     }
                     Err(e) => return Err(e),
                 }
             } else {
-                Vec::new()
-            };
+                scratch_buffer.resize(mac_len_usize, 0);
+            }
 
-            // Extend buffer to cover the write range
-            let required_len = usize::try_from(block_offset + bytes_to_write_in_block)
-                .map_err(|_| io::Error::other("write range too large"))?;
-            if buffer.len() < required_len {
-                buffer.resize(required_len, 0);
+            // At this point, `scratch_buffer` starts with `mac_len` bytes (either old MAC or zeros),
+            // followed by any existing plaintext data we preserved.
+
+            // Extend buffer if necessary to cover the new write range
+            let required_len = mac_len_usize + (block_offset + bytes_to_write_in_block) as usize;
+            if scratch_buffer.len() < required_len {
+                scratch_buffer.resize(required_len, 0);
             }
 
             // Copy new data
             let src_start = total_written;
             let src_end = src_start + bytes_to_write_in_block as usize;
-            let dst_start = block_offset as usize;
+            let dst_start = mac_len_usize + block_offset as usize;
             let dst_end = dst_start + bytes_to_write_in_block as usize;
 
-            buffer[dst_start..dst_end].copy_from_slice(&buf[src_start..src_end]);
+            scratch_buffer[dst_start..dst_end].copy_from_slice(&buf[src_start..src_end]);
 
-            // Add MAC
+            // Re-calculate and write MAC
             if self.block_mac_bytes > 0 {
-                // EncFS computes MAC_64 over the plaintext data (and optional rand bytes),
-                // without a chained IV, then stores the least-significant bytes first.
-                let mac = self.cipher.mac_64_no_iv(&buffer);
-                let mut new_buf = Vec::with_capacity(mac_len_usize + buffer.len());
+                let data_slice = &scratch_buffer[mac_len_usize..];
+                let mac = self.cipher.mac_64_no_iv(data_slice);
+
+                // Write MAC into the reserved space at the front
                 let mut tmp = mac;
-                for _ in 0..mac_len_usize {
-                    new_buf.push((tmp & 0xff) as u8);
+                for byte in scratch_buffer.iter_mut().take(mac_len_usize) {
+                    *byte = (tmp & 0xff) as u8;
                     tmp >>= 8;
                 }
-                new_buf.extend_from_slice(&buffer);
-                buffer = new_buf;
             }
 
             // Encrypt
             self.cipher
-                .encrypt_block_inplace(&mut buffer, block_num, self.file_iv, physical_block_size)
+                .encrypt_block_inplace(
+                    &mut scratch_buffer,
+                    block_num,
+                    self.file_iv,
+                    physical_block_size,
+                )
                 .map_err(io::Error::other)?;
 
             // Write
-            self.file.write_at(&buffer, read_offset)?;
+            self.file.write_at(&scratch_buffer, read_offset)?;
 
             let written = bytes_to_write_in_block;
             total_written += written as usize;
