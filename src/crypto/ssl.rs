@@ -160,7 +160,7 @@ impl SslCipher {
         self.stream_decode(&mut data, checksum as u64, user_key, user_iv)?;
 
         // 3. Verify Checksum (MAC_32)
-        let calculated_mac = Self::mac_32_with_key(&data, 0, user_key);
+        let calculated_mac = Self::mac_32_with_key(&data, 0, user_key)?;
 
         if calculated_mac != checksum {
             return Err(anyhow!(
@@ -193,7 +193,7 @@ impl SslCipher {
         self.stream_decode(&mut data, checksum as u64, user_key, user_iv)?;
 
         // 3. Verify Checksum (MAC_32) - legacy uses the user_key for HMAC
-        let calculated_mac = Self::mac_32_with_key(&data, 0, user_key);
+        let calculated_mac = Self::mac_32_with_key(&data, 0, user_key)?;
 
         if calculated_mac != checksum {
             return Err(anyhow!(
@@ -218,7 +218,7 @@ impl SslCipher {
         user_iv: &[u8],
     ) -> Result<Vec<u8>> {
         // 1. Calculate Checksum (MAC_32)
-        let checksum = Self::mac_32_with_key(volume_key, 0, user_key);
+        let checksum = Self::mac_32_with_key(volume_key, 0, user_key)?;
 
         // 2. Encrypt using two-pass stream encoding (matching C++ streamEncode)
         let mut data = volume_key.to_vec();
@@ -251,35 +251,26 @@ impl SslCipher {
 
     // ... (stream_decode, calculate_iv, etc.)
 
-    pub fn mac_16(&self, data: &[u8], iv: u64) -> (u16, u64) {
-        let mac64 = self.mac_64(data, iv);
+    pub fn mac_16(&self, data: &[u8], iv: u64) -> Result<(u16, u64)> {
+        let mac64 = self.mac_64(data, iv)?;
         let mac32 = ((mac64 >> 32) as u32) ^ (mac64 as u32);
         let mac16 = ((mac32 >> 16) as u16) ^ (mac32 as u16);
-        (mac16, mac64)
+        Ok((mac16, mac64))
     }
 
-    pub fn mac_64_with_key(data: &[u8], iv: u64, key: &[u8]) -> u64 {
+    pub fn mac_64_with_key(data: &[u8], iv: u64, key: &[u8]) -> Result<u64> {
         if key.is_empty() {
-            return 0;
+            return Ok(0);
         }
 
-        let hmac_key = match openssl::pkey::PKey::hmac(key) {
-            Ok(k) => k,
-            Err(_) => return 0,
-        };
+        let hmac_key = openssl::pkey::PKey::hmac(key)?;
 
-        let mut signer = match openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key) {
-            Ok(s) => s,
-            Err(_) => return 0,
-        };
+        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
 
-        let _ = signer.update(data);
-        let _ = signer.update(&iv.to_le_bytes());
+        signer.update(data)?;
+        signer.update(&iv.to_le_bytes())?;
 
-        let hmac = match signer.sign_to_vec() {
-            Ok(h) => h,
-            Err(_) => return 0,
-        };
+        let hmac = signer.sign_to_vec()?;
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -288,7 +279,7 @@ impl SslCipher {
         }
 
         // C++ constructs u64 Big Endian: value = (value << 8) | h[i]
-        u64::from_be_bytes(h)
+        Ok(u64::from_be_bytes(h))
     }
 
     /// EncFS MAC_64 without chained IV.
@@ -296,27 +287,18 @@ impl SslCipher {
     /// This matches the legacy C++ implementation when `chainedIV == nullptr`:
     /// HMAC-SHA1(key, data), XOR-reduce all but the last digest byte into 8 bytes,
     /// then interpret those 8 bytes as a big-endian `u64`.
-    pub fn mac_64_no_iv_with_key(data: &[u8], key: &[u8]) -> u64 {
+    pub fn mac_64_no_iv_with_key(data: &[u8], key: &[u8]) -> Result<u64> {
         if key.is_empty() {
-            return 0;
+            return Ok(0);
         }
 
-        let hmac_key = match openssl::pkey::PKey::hmac(key) {
-            Ok(k) => k,
-            Err(_) => return 0,
-        };
+        let hmac_key = openssl::pkey::PKey::hmac(key)?;
 
-        let mut signer = match openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key) {
-            Ok(s) => s,
-            Err(_) => return 0,
-        };
+        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
 
-        let _ = signer.update(data);
+        signer.update(data)?;
 
-        let hmac = match signer.sign_to_vec() {
-            Ok(h) => h,
-            Err(_) => return 0,
-        };
+        let hmac = signer.sign_to_vec()?;
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -324,38 +306,28 @@ impl SslCipher {
             h[i % 8] ^= b;
         }
 
-        u64::from_be_bytes(h)
+        Ok(u64::from_be_bytes(h))
     }
 
-    pub fn mac_64_no_iv(&self, data: &[u8]) -> u64 {
+    pub fn mac_64_no_iv(&self, data: &[u8]) -> Result<u64> {
         Self::mac_64_no_iv_with_key(data, &self.key)
     }
 
-    pub fn mac_32_with_key(data: &[u8], _iv: u64, key: &[u8]) -> u32 {
+    pub fn mac_32_with_key(data: &[u8], _iv: u64, key: &[u8]) -> Result<u32> {
         // For key verification, EncFS does NOT include IV in HMAC.
         // So we need a version of mac_64 that doesn't include IV.
 
         if key.is_empty() {
-            return 0;
+            return Ok(0);
         }
 
-        let hmac_key = match openssl::pkey::PKey::hmac(key) {
-            Ok(k) => k,
-            Err(_) => return 0,
-        };
+        let hmac_key = openssl::pkey::PKey::hmac(key)?;
+        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
 
-        let mut signer = match openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key) {
-            Ok(s) => s,
-            Err(_) => return 0,
-        };
-
-        let _ = signer.update(data);
+        signer.update(data)?;
         // NO IV update here for key verification!
 
-        let hmac = match signer.sign_to_vec() {
-            Ok(h) => h,
-            Err(_) => return 0,
-        };
+        let hmac = signer.sign_to_vec()?;
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -365,10 +337,10 @@ impl SslCipher {
 
         // C++ constructs u64 Big Endian: value = (value << 8) | h[i]
         let mac64 = u64::from_be_bytes(h);
-        ((mac64 >> 32) as u32) ^ (mac64 as u32)
+        Ok(((mac64 >> 32) as u32) ^ (mac64 as u32))
     }
 
-    pub fn mac_64(&self, data: &[u8], iv: u64) -> u64 {
+    pub fn mac_64(&self, data: &[u8], iv: u64) -> Result<u64> {
         Self::mac_64_with_key(data, iv, &self.key)
     }
     /// Standard stream decoding for EncFS.
@@ -499,7 +471,7 @@ impl SslCipher {
         self.stream_decode(&mut name_data, name_iv, &self.key, &self.iv)?;
 
         // 4. Verify Checksum
-        let (calculated_mac, new_iv) = self.mac_16(&name_data, iv);
+        let (calculated_mac, new_iv) = self.mac_16(&name_data, iv)?;
         if calculated_mac != checksum {
             return Err(anyhow!(
                 "Checksum mismatch in filename: expected {:04x}, got {:04x}",
@@ -538,7 +510,7 @@ impl SslCipher {
         // 4. Verify MAC (over decrypted data INCLUDING padding)
         // Fix Padding Oracle: Verify MAC *before* checking padding.
 
-        let (calculated_mac, new_iv) = self.mac_16(&block_data, iv);
+        let (calculated_mac, new_iv) = self.mac_16(&block_data, iv)?;
         if calculated_mac != checksum {
             return Err(anyhow!(
                 "Checksum mismatch in filename: expected {:04x}, got {:04x}",
@@ -569,7 +541,7 @@ impl SslCipher {
 
     fn encrypt_filename_stream(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
         // 1. Calculate Checksum
-        let (checksum, new_iv) = self.mac_16(plaintext_name, iv);
+        let (checksum, new_iv) = self.mac_16(plaintext_name, iv)?;
 
         // 2. Construct Buffer
         let mut data = Vec::with_capacity(2 + plaintext_name.len());
@@ -610,7 +582,7 @@ impl SslCipher {
         }
 
         // 3. Calculate MAC (over Plaintext + Padding)
-        let (checksum, new_iv) = self.mac_16(&data[2..], iv);
+        let (checksum, new_iv) = self.mac_16(&data[2..], iv)?;
 
         // Store MAC
         data[0] = (checksum >> 8) as u8;

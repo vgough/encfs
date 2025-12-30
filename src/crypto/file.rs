@@ -187,7 +187,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
 
                         // EncFS stores MAC bytes as the least-significant bytes of the u64,
                         // written in little-endian order (byte 0 = mac & 0xff).
-                        let computed = self.cipher.mac_64_no_iv(data);
+                        let computed = self.cipher.mac_64_no_iv(data).map_err(io::Error::other)?;
                         let mut tmp = computed;
                         let mut fail: u8 = 0;
                         for &stored in stored_mac.iter() {
@@ -451,7 +451,10 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
             // Re-calculate and write MAC
             if self.block_mac_bytes > 0 {
                 let data_slice = &scratch_buffer[mac_len_usize..];
-                let mac = self.cipher.mac_64_no_iv(data_slice);
+                let mac = self
+                    .cipher
+                    .mac_64_no_iv(data_slice)
+                    .map_err(io::Error::other)?;
 
                 // Write MAC into the reserved space at the front
                 let mut tmp = mac;
