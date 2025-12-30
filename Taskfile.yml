@@ -1,0 +1,51 @@
+version: "3"
+
+vars:
+  CARGO: cargo
+  LIVE_TIMEOUT_SECS: '{{default "30" .LIVE_TIMEOUT_SECS}}'
+
+tasks:
+  build:
+    desc: Build debug binaries
+    cmds:
+      - "{{.CARGO}} build"
+
+  build-release:
+    desc: Build release binaries
+    cmds:
+      - "{{.CARGO}} build --release"
+
+  test:
+    desc: Run unit + integration tests (live mount tests remain ignored)
+    cmds:
+      - "{{.CARGO}} test"
+
+  test-live:
+    desc: Run live-mount FUSE integration tests (requires Linux+FUSE); sets ENCFS_LIVE_TESTS=1
+    cmds:
+      - |
+        set -euo pipefail
+        ENCFS_LIVE_TESTS=1 ENCFS_LIVE_MOUNT_TIMEOUT_SECS='{{.LIVE_TIMEOUT_SECS}}' \
+          {{.CARGO}} test --test live_mount -- --ignored --test-threads=1
+
+  fmt:
+    desc: Format Rust code
+    cmds:
+      - "{{.CARGO}} fmt"
+
+  fmt-check:
+    desc: Check formatting (CI-friendly)
+    cmds:
+      - "{{.CARGO}} fmt -- --check"
+
+  clippy:
+    desc: Run clippy (lints)
+    cmds:
+      - "{{.CARGO}} clippy --all-targets --all-features -- -D warnings"
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - "{{.CARGO}} clean"
+
+
