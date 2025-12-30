@@ -30,9 +30,7 @@ pub struct EncfsConfig {
     #[serde(skip, default)]
     pub config_type: ConfigType,
 
-    #[allow(dead_code)]
     pub creator: String,
-    #[allow(dead_code)]
     pub version: i32, // Was sub_version
 
     #[serde(rename = "cipherAlg")]
@@ -54,22 +52,18 @@ pub struct EncfsConfig {
     pub kdf_iterations: i32,
 
     #[serde(rename = "desiredKDFDuration")]
-    #[allow(dead_code)]
     pub desired_kdf_duration: i64,
 
     #[serde(rename = "plainData", default)]
-    #[allow(dead_code)]
     pub plain_data: bool,
 
     #[serde(rename = "blockMACBytes", default)]
     pub block_mac_bytes: i32,
 
     #[serde(rename = "blockMACRandBytes", default)]
-    #[allow(dead_code)]
     pub block_mac_rand_bytes: i32,
 
     #[serde(rename = "uniqueIV", default)]
-    #[allow(dead_code)]
     pub unique_iv: bool,
 
     #[serde(rename = "externalIVChaining", default)]
@@ -79,18 +73,14 @@ pub struct EncfsConfig {
     pub chained_name_iv: bool,
 
     #[serde(rename = "allowHoles", default)]
-    #[allow(dead_code)]
     pub allow_holes: bool,
 }
 
 #[derive(Debug, Deserialize, Default, Clone, PartialEq)]
 pub struct Interface {
     pub name: String,
-    #[allow(dead_code)]
     pub major: i32,
-    #[allow(dead_code)]
     pub minor: i32,
-    #[allow(dead_code)]
     #[serde(skip, default)]
     pub age: i32,
 }

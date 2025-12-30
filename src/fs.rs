@@ -104,7 +104,6 @@ impl EncFs {
     /// Used primarily for testing/verification and potential future features
     /// (e.g. reverse mode or tools), as the FUSE filesystem mostly maps
     /// plaintext requests to encrypted paths via `encrypt_path`.
-    #[allow(dead_code)]
     pub fn decrypt_path(&self, encrypted_path: &Path) -> Result<(PathBuf, u64), libc::c_int> {
         let mut decrypted_path = PathBuf::new();
         let mut iv = 0u64;
