@@ -32,7 +32,27 @@ fn test_virtual_driver_write() {
     let user_iv = vec![2u8; 16];
     cipher.set_key(&user_key, &user_iv);
 
-    let fs = EncFs::new(root.clone(), cipher, 1024, 8, true, false);
+    let config = encfs::config::EncfsConfig {
+        config_type: encfs::config::ConfigType::V6,
+        creator: "test".to_string(),
+        version: 20100713,
+        cipher_iface: iface.clone(),
+        name_iface: encfs::config::Interface::default(),
+        key_size: 192,
+        block_size: 1024,
+        key_data: vec![],
+        salt: vec![],
+        kdf_iterations: 0,
+        desired_kdf_duration: 0,
+        plain_data: false,
+        block_mac_bytes: 8,
+        block_mac_rand_bytes: 0,
+        unique_iv: true,
+        external_iv_chaining: false,
+        chained_name_iv: true,
+        allow_holes: false,
+    };
+    let fs = EncFs::new(root.clone(), cipher, config);
 
     // Create a second cipher instance for verification since SslCipher is not Clone (holds OpenSsl state)
     let verify_cipher = SslCipher::new(&iface, 192).unwrap();

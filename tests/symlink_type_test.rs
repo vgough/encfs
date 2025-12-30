@@ -30,7 +30,8 @@ fn test_symlink_type() {
     let user_iv = vec![2u8; 16];
     cipher.set_key(&user_key, &user_iv);
 
-    let fs = EncFs::new(root.clone(), cipher, 1024, 8, true, false);
+    let config = encfs::config::EncfsConfig::test_default();
+    let fs = EncFs::new(root.clone(), cipher, config);
 
     let req = RequestInfo {
         unique: 1,

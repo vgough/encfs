@@ -132,14 +132,7 @@ fn test_v5_binary_config_format() -> anyhow::Result<()> {
 
     // Verify we can decrypt a file
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_path = PathBuf::from("l-pTrj5dNZqeuAxc59rhlx5h/kETZ,hjEDGRP-75qu02LdBB5");
     let (decrypted_path, _) =
@@ -196,14 +189,7 @@ fn test_v6_xml_config_format_standard() -> anyhow::Result<()> {
 
     // Verify we can decrypt a file
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
     let encrypted_path = PathBuf::from(encrypted_name);
@@ -270,14 +256,7 @@ fn test_v6_xml_config_format_paranoia() -> anyhow::Result<()> {
 
     // Verify we can decrypt a file
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_path = PathBuf::from("U,-Aj0Ha7VZMhbnuv-vx1DZu/oLzPfqHeYSwSUZe7LeCArzcm");
     let (decrypted_path, path_iv) =
@@ -334,14 +313,7 @@ fn test_aes_cipher_algorithm() -> anyhow::Result<()> {
 
     // Verify we can use the cipher
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     // Test filename decryption
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
@@ -389,14 +361,7 @@ fn test_192_bit_key_size() -> anyhow::Result<()> {
 
     // Verify we can derive and use the key
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     // Test that we can decrypt files with 192-bit key
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
@@ -430,14 +395,7 @@ fn test_256_bit_key_size() -> anyhow::Result<()> {
 
     // Verify we can derive and use the key
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     // Test that we can decrypt files with 256-bit key
     let encrypted_path = PathBuf::from("U,-Aj0Ha7VZMhbnuv-vx1DZu/oLzPfqHeYSwSUZe7LeCArzcm");
@@ -475,14 +433,7 @@ fn test_standard_mode() -> anyhow::Result<()> {
 
     // Verify we can read files
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
     let encrypted_path = PathBuf::from(encrypted_name);
@@ -523,14 +474,7 @@ fn test_paranoia_mode() -> anyhow::Result<()> {
 
     // Verify we can read files
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_path = PathBuf::from("U,-Aj0Ha7VZMhbnuv-vx1DZu/oLzPfqHeYSwSUZe7LeCArzcm");
     let hash = read_and_hash_file(&encfs, &config, &encrypted_path, &root)?;
@@ -563,14 +507,7 @@ fn test_unique_iv_feature() -> anyhow::Result<()> {
 
     // Verify we can read files with uniqueIV
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
     let encrypted_path = PathBuf::from(encrypted_name);
@@ -596,14 +533,7 @@ fn test_chained_name_iv_feature() -> anyhow::Result<()> {
 
     // Verify path decryption works with chained IV
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
     let (decrypted_bytes, new_iv) = encfs
@@ -642,14 +572,7 @@ fn test_external_iv_chaining_feature() -> anyhow::Result<()> {
 
     // Verify path IV is used for file header decryption
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_path = PathBuf::from("U,-Aj0Ha7VZMhbnuv-vx1DZu/oLzPfqHeYSwSUZe7LeCArzcm");
     let (_, path_iv) =
@@ -689,14 +612,7 @@ fn test_block_mac_bytes_feature() -> anyhow::Result<()> {
 
     // Verify we can read files with MAC (MAC is stripped during decryption)
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_path = PathBuf::from("U,-Aj0Ha7VZMhbnuv-vx1DZu/oLzPfqHeYSwSUZe7LeCArzcm");
     let hash = read_and_hash_file(&encfs, &config, &encrypted_path, &root)?;
@@ -729,14 +645,7 @@ fn test_1024_byte_block_size() -> anyhow::Result<()> {
 
     // Verify we can read files with 1024-byte blocks
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
     let encrypted_path = PathBuf::from(encrypted_name);
@@ -770,14 +679,7 @@ fn test_pbkdf2_kdf() -> anyhow::Result<()> {
 
     // Verify we can derive keys using PBKDF2
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
     let encrypted_path = PathBuf::from(encrypted_name);
@@ -807,14 +709,7 @@ fn test_legacy_kdf() -> anyhow::Result<()> {
 
     // Verify we can derive keys using legacy KDF
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     let encrypted_path = PathBuf::from("l-pTrj5dNZqeuAxc59rhlx5h/kETZ,hjEDGRP-75qu02LdBB5");
     let _hash = read_and_hash_file(&encfs, &config, &encrypted_path, &root)?;
@@ -919,14 +814,7 @@ fn test_read_operations_standard_mode() -> anyhow::Result<()> {
 
     let config = load_and_verify_config(&config_path, "test")?;
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     // Test 1: Decrypt filename
     let encrypted_name = "MhAO8Ckgt67m1cSrFU9HHiNT";
@@ -996,14 +884,7 @@ fn test_read_operations_paranoia_mode() -> anyhow::Result<()> {
 
     let config = load_and_verify_config(&config_path, "test")?;
     let cipher = config.get_cipher("test")?;
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     // Test 1: Decrypt path with external IV chaining
     let encrypted_path = PathBuf::from("U,-Aj0Ha7VZMhbnuv-vx1DZu/oLzPfqHeYSwSUZe7LeCArzcm");

@@ -27,7 +27,8 @@ fn setup_fs(root: &Path) -> EncFs {
     cipher.set_key(&user_key, &user_iv);
 
     // chained_name_iv=true triggers the bug
-    EncFs::new(root.to_path_buf(), cipher, 1024, 8, true, false)
+    let config = encfs::config::EncfsConfig::test_default();
+    EncFs::new(root.to_path_buf(), cipher, config)
 }
 
 fn req() -> RequestInfo {

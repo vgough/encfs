@@ -46,14 +46,7 @@ fn test_legacy_v5_decode() -> anyhow::Result<()> {
     println!("Cipher initialized");
 
     // Initialize EncFs to use decrypt_path logic
-    let encfs = EncFs::new(
-        root.clone(),
-        cipher,
-        config.block_size as u64,
-        config.block_mac_bytes as u64,
-        config.chained_name_iv,
-        config.external_iv_chaining,
-    );
+    let encfs = EncFs::new(root.clone(), cipher, config.clone());
 
     // Encrypted path in the fixture: l-pTrj5dNZqeuAxc59rhlx5h/kETZ,hjEDGRP-75qu02LdBB5
     // Note: filenames might vary if I copied them wrongly, but previous `ls` confirmed the names.

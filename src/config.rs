@@ -23,7 +23,7 @@ pub struct BoostSerialization {
     pub cfg: EncfsConfig,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EncfsConfig {
     /// Config format type (not serialized, set during load)
@@ -407,6 +407,35 @@ impl EncfsConfig {
     }
     pub fn header_size(&self) -> u64 {
         if self.unique_iv { 8 } else { 0 }
+    }
+
+    /// Creates a default configuration useful for testing
+    pub fn test_default() -> Self {
+        Self {
+            config_type: ConfigType::V6,
+            creator: "test".to_string(),
+            version: crate::constants::DEFAULT_CONFIG_VERSION,
+            cipher_iface: Interface {
+                name: "ssl/aes".to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            },
+            name_iface: Interface::default(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            plain_data: false,
+            block_mac_bytes: 8,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+        }
     }
 }
 

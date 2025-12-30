@@ -43,26 +43,21 @@ pub struct EncFs {
     block_mac_bytes: u64,
     chained_name_iv: bool,
     external_iv_chaining: bool,
+    pub config: crate::config::EncfsConfig,
 }
 
 impl EncFs {
-    pub fn new(
-        root: PathBuf,
-        cipher: SslCipher,
-        block_size: u64,
-        block_mac_bytes: u64,
-        chained_name_iv: bool,
-        external_iv_chaining: bool,
-    ) -> Self {
+    pub fn new(root: PathBuf, cipher: SslCipher, config: crate::config::EncfsConfig) -> Self {
         Self {
             root,
             cipher,
             handles: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
-            block_size,
-            block_mac_bytes,
-            chained_name_iv,
-            external_iv_chaining,
+            block_size: config.block_size as u64,
+            block_mac_bytes: config.block_mac_bytes as u64,
+            chained_name_iv: config.chained_name_iv,
+            external_iv_chaining: config.external_iv_chaining,
+            config,
         }
     }
 
@@ -397,42 +392,60 @@ impl EncFs {
         let metadata = src_f.metadata().ok();
 
         // 2. Read header
-        let mut header = [0u8; 8];
-        src_f
-            .read_exact(&mut header)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let header_size = self.config.header_size();
+        let mut header = vec![0u8; header_size as usize];
+        if header_size > 0 {
+            src_f
+                .read_exact(&mut header)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // 3. Decrypt header
-        let file_iv = self
-            .cipher
-            .decrypt_header(&mut header, src_iv)
-            .map_err(|_| libc::EIO)?;
+            // 3. Decrypt header
+            let file_iv = self
+                .cipher
+                .decrypt_header(&mut header, src_iv)
+                .map_err(|_| libc::EIO)?;
 
-        // 4. Encrypt header with new path IV
-        let new_header = self
-            .cipher
-            .encrypt_header_with_iv(file_iv, dst_iv)
-            .map_err(|_| libc::EIO)?;
+            // 4. Encrypt header with new path IV
+            let new_header = self
+                .cipher
+                .encrypt_header_with_iv(file_iv, dst_iv)
+                .map_err(|_| libc::EIO)?;
 
-        // 5. Create dest
-        let mut dst_f =
-            File::create(real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            // 5. Create dest
+            let mut dst_f =
+                File::create(real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // 6. Write new header
-        dst_f
-            .write_all(&new_header)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            // 6. Write new header
+            dst_f
+                .write_all(&new_header)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // 7. Copy body
-        let mut reader = BufReader::new(src_f);
-        let mut writer = BufWriter::new(dst_f);
+            // 7. Copy body
+            let mut reader = BufReader::new(src_f);
+            let mut writer = BufWriter::new(dst_f);
 
-        std::io::copy(&mut reader, &mut writer)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            std::io::copy(&mut reader, &mut writer)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        writer
-            .flush()
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            writer
+                .flush()
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        } else {
+            // 5. Create dest
+            let dst_f =
+                File::create(real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+            // 7. Copy body (no header to copy/rewrite)
+            let mut reader = BufReader::new(src_f);
+            let mut writer = BufWriter::new(dst_f);
+
+            std::io::copy(&mut reader, &mut writer)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+            writer
+                .flush()
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        }
 
         // 8. Copy permissions
         if let Some(meta) = metadata {
@@ -567,26 +580,30 @@ impl FilesystemMT for EncFs {
         }
 
         // Determine file IV / header size.
-        let header_size = 8u64;
+        let header_size = self.config.header_size();
         let file_iv = if let Some(h) = &handle {
             h.file_iv
         } else {
-            // Need cipher context (IV). Read header from file and decrypt.
-            let mut header = [0u8; 8];
-            file_ref
-                .read_exact_at(&mut header, 0)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            // We need external IV (path IV) to decrypt header.
-            let (_, path_iv) = self.encrypt_path(path)?;
+            if header_size > 0 {
+                // Need cipher context (IV). Read header from file and decrypt.
+                let mut header = vec![0u8; header_size as usize];
+                file_ref
+                    .read_exact_at(&mut header, 0)
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                // We need external IV (path IV) to decrypt header.
+                let (_, path_iv) = self.encrypt_path(path)?;
 
-            let external_iv = if self.external_iv_chaining {
-                path_iv
+                let external_iv = if self.external_iv_chaining {
+                    path_iv
+                } else {
+                    0
+                };
+                self.cipher
+                    .decrypt_header(&mut header, external_iv)
+                    .map_err(|_| libc::EIO)?
             } else {
                 0
-            };
-            self.cipher
-                .decrypt_header(&mut header, external_iv)
-                .map_err(|_| libc::EIO)?
+            }
         };
 
         let encoder = FileEncoder::new(
@@ -860,7 +877,7 @@ impl FilesystemMT for EncFs {
 
         let mut size = metadata.len();
         // Adjust size for header and MAC
-        let header_size = 8;
+        let header_size = self.config.header_size();
         if metadata.is_file() {
             size = FileDecoder::<std::fs::File>::calculate_logical_size(
                 metadata.len(),
@@ -989,7 +1006,7 @@ impl FilesystemMT for EncFs {
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
         let mut file_iv = 0;
-        let header_size = 8;
+        let header_size = self.config.header_size();
         let external_iv = if self.external_iv_chaining {
             path_iv
         } else {
@@ -997,38 +1014,45 @@ impl FilesystemMT for EncFs {
         };
 
         if want_trunc && want_write {
-            // If the file was truncated, we must generate and write a new header.
-            let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-                error!("Failed to generate header: {}", e);
-                libc::EIO
-            })?;
+            // If the file was truncated, we must generate and write a new header (if header_size > 0).
+            if header_size > 0 {
+                let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
+                    error!("Failed to generate header: {}", e);
+                    libc::EIO
+                })?;
 
-            use std::io::Write;
-            // Need to verify if file needs to be mutable or if we can use &file.
-            // File implements Write.
-            // But 'file' is owned here so we can borrow mutably.
-            let mut file_ref = &file;
-            file_ref
-                .write_all(&header)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            file_iv = iv;
+                use std::io::Write;
+                let mut file_ref = &file;
+                file_ref
+                    .write_all(&header)
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                file_iv = iv;
+            } else {
+                // Ensure physical file is truncated to 0 if header_size is 0
+                let file_ref = &file;
+                file_ref
+                    .set_len(0)
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            }
         } else {
-            // Read header
-            let mut header = [0u8; 8];
-            let bytes_read = file
-                .read_at(&mut header, 0)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            // Read header if exists
+            if header_size > 0 {
+                let mut header = vec![0u8; header_size as usize];
+                let bytes_read = file
+                    .read_at(&mut header, 0)
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-            if bytes_read == 8 {
-                // Decrypt header
-                if let Ok(iv) = self.cipher.decrypt_header(&mut header, external_iv) {
-                    file_iv = iv;
-                } else {
-                    warn!("Failed to decrypt file header for {:?}", path);
-                    // Return error? Or continue with 0 IV (garbage)?
-                    // Return error.
-                    return Err(libc::EIO);
+                if bytes_read == header_size as usize {
+                    // Decrypt header
+                    if let Ok(iv) = self.cipher.decrypt_header(&mut header, external_iv) {
+                        file_iv = iv;
+                    } else {
+                        warn!("Failed to decrypt file header for {:?}", path);
+                        return Err(libc::EIO);
+                    }
                 }
+            } else {
+                // No header, file_iv remains 0
             }
         }
 
@@ -1165,28 +1189,33 @@ impl FilesystemMT for EncFs {
             .open(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // Encrypt header
-        let external_iv = if self.external_iv_chaining {
-            path_iv
-        } else {
-            0
-        };
+        // Encrypt and write header if header_size > 0
+        let header_size = self.config.header_size();
+        let mut file_iv = 0;
 
-        let (header, file_iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-            error!("Failed to generate header: {}", e);
-            libc::EIO
-        })?;
+        if header_size > 0 {
+            let external_iv = if self.external_iv_chaining {
+                path_iv
+            } else {
+                0
+            };
 
-        // Write header
-        use std::io::Write;
-        file.write_all(&header)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
+                error!("Failed to generate header: {}", e);
+                libc::EIO
+            })?;
+            file_iv = iv;
+
+            use std::io::Write;
+            file.write_all(&header)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        }
 
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
         let handle = Arc::new(FileHandle {
             file,
             file_iv,
-            header_size: 8,
+            header_size,
         });
 
         self.handles_guard().insert(fh, handle);

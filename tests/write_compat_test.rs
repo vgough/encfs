@@ -43,14 +43,15 @@ fn setup_test_fs(
     let user_iv = vec![2u8; 16];
     cipher.set_key(&user_key, &user_iv);
 
-    let fs = EncFs::new(
-        root.clone(),
-        cipher,
-        block_size,
-        block_mac_bytes,
-        chained_name_iv,
-        external_iv_chaining,
-    );
+    let mut config = encfs::config::EncfsConfig::test_default();
+    config.cipher_iface.major = major;
+    config.key_size = key_size;
+    config.block_size = block_size as i32;
+    config.block_mac_bytes = block_mac_bytes as i32;
+    config.chained_name_iv = chained_name_iv;
+    config.external_iv_chaining = external_iv_chaining;
+
+    let fs = EncFs::new(root.clone(), cipher, config);
 
     // Create verify cipher matches
     let verify_cipher = SslCipher::new(&iface, key_size).unwrap();

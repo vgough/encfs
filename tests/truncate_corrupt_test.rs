@@ -47,7 +47,8 @@ fn test_truncate_corrupts_partial_block() {
     // This happens in FileDecoder/Encoder regardless of IV chaining settings essentially, locally to the block.
 
     // I'll stick to what write_test.rs used: true, false.
-    let fs = EncFs::new(root.clone(), cipher, 1024, 8, true, false);
+    let config = encfs::config::EncfsConfig::test_default();
+    let fs = EncFs::new(root.clone(), cipher, config);
 
     let req = RequestInfo {
         unique: 1,

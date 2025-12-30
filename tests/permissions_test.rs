@@ -25,7 +25,8 @@ fn setup_fs(root: &Path) -> EncFs {
     let user_iv = vec![2u8; 16];
     cipher.set_key(&user_key, &user_iv);
 
-    EncFs::new(root.to_path_buf(), cipher, 1024, 8, true, false)
+    let config = encfs::config::EncfsConfig::test_default();
+    EncFs::new(root.to_path_buf(), cipher, config)
 }
 
 fn req() -> RequestInfo {

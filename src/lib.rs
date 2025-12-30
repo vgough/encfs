@@ -105,14 +105,7 @@ mod tests {
         let cipher = config.get_cipher(password)?;
 
         // Setup EncFs to use decrypt_path
-        let encfs = crate::fs::EncFs::new(
-            root.clone(),
-            cipher,
-            config.block_size as u64,
-            config.block_mac_bytes as u64,
-            config.chained_name_iv,
-            config.external_iv_chaining,
-        );
+        let encfs = crate::fs::EncFs::new(root.clone(), cipher, config.clone());
 
         // Encrypted path components
         // Directory: U,-Aj0Ha7VZMhbnuv-vx1DZu

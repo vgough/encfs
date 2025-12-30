@@ -125,14 +125,7 @@ fn main() -> Result<()> {
                 }
             }
 
-            let fs = EncFs::new(
-                args.root,
-                cipher,
-                config.block_size as u64,
-                config.block_mac_bytes as u64,
-                config.chained_name_iv,
-                config.external_iv_chaining,
-            );
+            let fs = EncFs::new(args.root, cipher, config);
 
             let mut check_opts = vec![];
             if args.public {

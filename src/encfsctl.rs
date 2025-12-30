@@ -937,13 +937,23 @@ fn export_directory(
                     config.block_mac_bytes as u64,
                 );
 
-                let mut buffer = vec![0u8; logical_size as usize];
-                let bytes_read = decoder.read_at(&mut buffer, 0)?;
-                buffer.truncate(bytes_read);
-
-                // Write decrypted content to destination
                 let mut dest_file = std::fs::File::create(&dest_path)?;
-                std::io::Write::write_all(&mut dest_file, &buffer)?;
+
+                let mut buffer = vec![0u8; crate::constants::FILE_BUFFER_SIZE];
+                let mut offset = 0;
+                let mut remaining = logical_size;
+
+                while remaining > 0 {
+                    let to_read = std::cmp::min(remaining, buffer.len() as u64) as usize;
+                    let bytes_read = decoder.read_at(&mut buffer[..to_read], offset)?;
+                    if bytes_read == 0 {
+                        break; // EOF
+                    }
+
+                    std::io::Write::write_all(&mut dest_file, &buffer[..bytes_read])?;
+                    offset += bytes_read as u64;
+                    remaining -= bytes_read as u64;
+                }
 
                 // Preserve permissions
                 std::fs::set_permissions(
