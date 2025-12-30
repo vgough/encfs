@@ -561,7 +561,7 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
         match cipher.decrypt_filename(name_str, dir_iv) {
             Ok((decrypted_name_bytes, _)) => {
                 let process_res = (|| -> Result<()> {
-                    let metadata = entry.metadata()?;
+                    let metadata = std::fs::symlink_metadata(entry.path())?;
 
                     // Calculate logical size for files
                     let size = if metadata.is_file() {
