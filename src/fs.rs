@@ -1,9 +1,11 @@
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use crate::crypto::ssl::SslCipher;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD_NO_PAD;
 use fuse_mt::{
     CallbackResult, CreatedEntry, DirectoryEntry, FileAttr, FileType, FilesystemMT, RequestInfo,
     ResultCreate, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultSlice, ResultStatfs,
-    ResultWrite, Statfs,
+    ResultWrite, Statfs, Xattr,
 };
 use libc;
 use log::{debug, error, warn};
@@ -1281,5 +1283,321 @@ impl FilesystemMT for EncFs {
         newname: &OsStr,
     ) -> ResultEmpty {
         self.rename_internal(req, parent, name, newparent, newname)
+    }
+
+    fn setxattr(
+        &self,
+        _req: RequestInfo,
+        path: &Path,
+        name: &OsStr,
+        value: &[u8],
+        flags: u32,
+        position: u32,
+    ) -> ResultEmpty {
+        debug!(
+            "setxattr: {:?} name={:?} value_len={} flags={} position={}",
+            path,
+            name,
+            value.len(),
+            flags,
+            position
+        );
+
+        let (real_path, path_iv) = self.encrypt_path(path)?;
+
+        let name_bytes = name.as_bytes();
+
+        // Encrypt all attributes
+        // Store them with "user.encfs." prefix on disk
+        // Encrypt the full xattr name
+        let encrypted_name = self
+            .cipher
+            .encrypt_xattr_name(name_bytes, path_iv)
+            .map_err(|e| {
+                error!("Failed to encrypt xattr name: {}", e);
+                libc::EIO
+            })?;
+
+        // Encrypt xattr value
+        let encrypted_value = self
+            .cipher
+            .encrypt_xattr_value(value, path_iv)
+            .map_err(|e| {
+                error!("Failed to encrypt xattr value: {}", e);
+                libc::EIO
+            })?;
+
+        // Store with "user.encfs." prefix + base64-encoded encrypted name
+        // Use base64 encoding for the encrypted name to make it filesystem-safe
+        let encoded_name = STANDARD_NO_PAD.encode(&encrypted_name);
+        let final_name = format!("user.encfs.{}", encoded_name);
+
+        let c_name = std::ffi::CString::new(final_name).map_err(|_| libc::EINVAL)?;
+        let c_path =
+            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+
+        // Set xattr on underlying filesystem
+        let ret = unsafe {
+            libc::lsetxattr(
+                c_path.as_ptr(),
+                c_name.as_ptr(),
+                encrypted_value.as_ptr() as *const libc::c_void,
+                encrypted_value.len(),
+                flags as i32,
+            )
+        };
+
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO))
+        }
+    }
+
+    fn getxattr(
+        &self,
+        _req: RequestInfo,
+        path: &Path,
+        name: &OsStr,
+        size: u32,
+    ) -> Result<Xattr, libc::c_int> {
+        debug!("getxattr: {:?} name={:?} size={}", path, name, size);
+
+        let (real_path, path_iv) = self.encrypt_path(path)?;
+
+        let name_bytes = name.as_bytes();
+
+        // Encrypt all attributes
+        // Look them up with "user.encfs." prefix on disk
+        // Encrypt the full xattr name to find it on disk
+        let encrypted_name = self
+            .cipher
+            .encrypt_xattr_name(name_bytes, path_iv)
+            .map_err(|e| {
+                error!("Failed to encrypt xattr name: {}", e);
+                libc::EIO
+            })?;
+
+        // Encode encrypted name for storage lookup
+        let encoded_name = STANDARD_NO_PAD.encode(&encrypted_name);
+        let lookup_name = format!("user.encfs.{}", encoded_name);
+
+        let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
+        let c_path =
+            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+
+        // Get xattr size first if size is 0
+        let buf_size = if size == 0 {
+            let ret = unsafe {
+                libc::lgetxattr(c_path.as_ptr(), c_name.as_ptr(), std::ptr::null_mut(), 0)
+            };
+            if ret < 0 {
+                return Err(std::io::Error::last_os_error()
+                    .raw_os_error()
+                    .unwrap_or(libc::EIO));
+            }
+            ret as usize
+        } else {
+            size as usize
+        };
+
+        // Read encrypted value
+        let mut encrypted_value = vec![0u8; buf_size];
+        let ret = unsafe {
+            libc::lgetxattr(
+                c_path.as_ptr(),
+                c_name.as_ptr(),
+                encrypted_value.as_mut_ptr() as *mut libc::c_void,
+                buf_size,
+            )
+        };
+
+        if ret < 0 {
+            return Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO));
+        }
+
+        encrypted_value.truncate(ret as usize);
+
+        // Decrypt value
+        let decrypted_value = self
+            .cipher
+            .decrypt_xattr_value(&encrypted_value, path_iv)
+            .map_err(|e| {
+                error!("Failed to decrypt xattr value: {}", e);
+                libc::EIO
+            })?;
+
+        Ok(Xattr::Data(decrypted_value))
+    }
+
+    fn listxattr(&self, _req: RequestInfo, path: &Path, size: u32) -> Result<Xattr, libc::c_int> {
+        debug!("listxattr: {:?} size={}", path, size);
+
+        let (real_path, path_iv) = self.encrypt_path(path)?;
+
+        let c_path =
+            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+
+        // Get list size first if size is 0
+        let buf_size = if size == 0 {
+            let ret = unsafe { libc::llistxattr(c_path.as_ptr(), std::ptr::null_mut(), 0) };
+            if ret < 0 {
+                return Err(std::io::Error::last_os_error()
+                    .raw_os_error()
+                    .unwrap_or(libc::EIO));
+            }
+            ret as usize
+        } else {
+            size as usize
+        };
+
+        // Read xattr names list
+        // llistxattr expects *mut c_char (i8), so we use a Vec<i8>
+        let mut list = vec![0i8; buf_size];
+        let ret = unsafe { libc::llistxattr(c_path.as_ptr(), list.as_mut_ptr(), buf_size) };
+
+        if ret < 0 {
+            return Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO));
+        }
+
+        list.truncate(ret as usize);
+
+        // Process all xattr names in the list
+        // xattr lists are null-separated strings (as i8, convert to u8)
+        let list_u8: Vec<u8> = list.iter().map(|&b| b as u8).collect();
+        let mut decrypted_list = Vec::new();
+        let mut current_name = Vec::new();
+
+        for &byte in &list_u8 {
+            if byte == 0 {
+                // End of current name, process it
+                if !current_name.is_empty() {
+                    let name_str = match std::str::from_utf8(&current_name) {
+                        Ok(s) => s,
+                        Err(_) => {
+                            // Invalid UTF-8, skip
+                            current_name.clear();
+                            continue;
+                        }
+                    };
+
+                    if let Some(encoded_part) = name_str.strip_prefix("user.encfs.") {
+                        // This is an encrypted encfs attribute stored on disk
+                        // Extract the base64-encoded encrypted name
+                        match STANDARD_NO_PAD.decode(encoded_part) {
+                            Ok(encrypted_name_bytes) => {
+                                match self
+                                    .cipher
+                                    .decrypt_xattr_name(&encrypted_name_bytes, path_iv)
+                                {
+                                    Ok(decrypted_name) => {
+                                        // Return the decrypted name without the "user.encfs." prefix
+                                        decrypted_list.extend_from_slice(&decrypted_name);
+                                        decrypted_list.push(0); // null separator
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to decrypt xattr name: {}", e);
+                                        // Skip this name but continue
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                warn!("Failed to decode base64 xattr name: {}", name_str);
+                                // Skip this name but continue
+                            }
+                        }
+                    } else {
+                        // Non-encfs attribute (shouldn't happen if we encrypt all), skip it
+                        // or pass through if there are any legacy unencrypted attributes
+                        warn!("Found non-encfs xattr on disk: {}, skipping", name_str);
+                    }
+                    current_name.clear();
+                }
+            } else {
+                current_name.push(byte);
+            }
+        }
+
+        // Handle last name if list doesn't end with null
+        if !current_name.is_empty() {
+            let name_str = match std::str::from_utf8(&current_name) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(Xattr::Data(decrypted_list));
+                }
+            };
+
+            if let Some(encoded_part) = name_str.strip_prefix("user.encfs.") {
+                match base64::engine::general_purpose::STANDARD_NO_PAD.decode(encoded_part) {
+                    Ok(encrypted_name_bytes) => {
+                        match self
+                            .cipher
+                            .decrypt_xattr_name(&encrypted_name_bytes, path_iv)
+                        {
+                            Ok(decrypted_name) => {
+                                // Return the decrypted name without the "user.encfs." prefix
+                                decrypted_list.extend_from_slice(&decrypted_name);
+                                decrypted_list.push(0);
+                            }
+                            Err(e) => {
+                                warn!("Failed to decrypt xattr name: {}", e);
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        warn!("Failed to decode base64 xattr name: {}", name_str);
+                    }
+                }
+            } else {
+                decrypted_list.extend_from_slice(&current_name);
+                decrypted_list.push(0);
+            }
+        }
+
+        Ok(Xattr::Data(decrypted_list))
+    }
+
+    fn removexattr(&self, _req: RequestInfo, path: &Path, name: &OsStr) -> ResultEmpty {
+        debug!("removexattr: {:?} name={:?}", path, name);
+
+        let (real_path, path_iv) = self.encrypt_path(path)?;
+
+        let name_bytes = name.as_bytes();
+
+        // Encrypt all attributes
+        // Look them up with "user.encfs." prefix on disk
+        // Encrypt the full xattr name
+        let encrypted_name = self
+            .cipher
+            .encrypt_xattr_name(name_bytes, path_iv)
+            .map_err(|e| {
+                error!("Failed to encrypt xattr name: {}", e);
+                libc::EIO
+            })?;
+
+        // Encode encrypted name for storage lookup
+        let encoded_name = STANDARD_NO_PAD.encode(&encrypted_name);
+        let lookup_name = format!("user.encfs.{}", encoded_name);
+
+        let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
+        let c_path =
+            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+
+        // Remove xattr from underlying filesystem
+        let ret = unsafe { libc::lremovexattr(c_path.as_ptr(), c_name.as_ptr()) };
+
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO))
+        }
     }
 }

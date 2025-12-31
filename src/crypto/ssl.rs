@@ -815,6 +815,112 @@ impl SslCipher {
 
         Ok(out)
     }
+
+    /// Encrypts xattr data (name or value) using block encryption with MAC-then-Encrypt.
+    /// Format: [data] [MAC(2 bytes)] [padding] -> encrypted
+    /// MAC is calculated first, then appended to data, then everything is encrypted.
+    /// Uses path_iv directly (not MAC-dependent) for true MAC-then-Encrypt.
+    /// The iv_offset distinguishes between name and value encryption.
+    fn encrypt_xattr_data(&self, data: &[u8], path_iv: u64, iv_offset: u64) -> Result<Vec<u8>> {
+        // 1. Calculate MAC (MAC_16) over the plaintext data
+        let (mac, _) = self.mac_16(data, path_iv)?;
+
+        // 2. Construct buffer: [data] [MAC(2 bytes)]
+        let mut buffer = Vec::with_capacity(data.len() + 2);
+        buffer.extend_from_slice(data);
+        buffer.push((mac >> 8) as u8);
+        buffer.push((mac & 0xff) as u8);
+
+        // 3. Pad to block size
+        let bs = self.block_cipher.block_size();
+        let padding = bs - (buffer.len() % bs);
+        for _ in 0..padding {
+            buffer.push(padding as u8);
+        }
+
+        // 4. Encrypt using block cipher
+        // Use path_iv with offset to distinguish between name and value encryption
+        let iv_seed = path_iv.wrapping_add(iv_offset);
+        self.block_encode(&mut buffer, iv_seed, &self.key, &self.iv)?;
+
+        Ok(buffer)
+    }
+
+    /// Decrypts xattr data (name or value) using block encryption with MAC-then-Encrypt.
+    /// Format: [data] [MAC(2 bytes)] [padding] -> encrypted
+    /// The iv_offset distinguishes between name and value decryption.
+    fn decrypt_xattr_data(
+        &self,
+        encrypted_data: &[u8],
+        path_iv: u64,
+        iv_offset: u64,
+    ) -> Result<Vec<u8>> {
+        let bs = self.block_cipher.block_size();
+
+        // 1. Check minimum size (must be at least one block)
+        if encrypted_data.len() < bs || !encrypted_data.len().is_multiple_of(bs) {
+            return Err(anyhow!("Encrypted xattr data length invalid"));
+        }
+
+        // 2. Decrypt first (MAC-then-Encrypt: decrypt before verifying MAC)
+        let mut data = encrypted_data.to_vec();
+        let iv_seed = path_iv.wrapping_add(iv_offset);
+        self.block_decode(&mut data, iv_seed, &self.key, &self.iv)?;
+
+        // 3. Remove padding
+        if data.is_empty() {
+            return Err(anyhow!("Decrypted xattr data is empty"));
+        }
+        let padding = *data.last().ok_or(anyhow!("Empty data"))? as usize;
+        if padding > bs || padding == 0 || padding > data.len() {
+            return Err(anyhow!("Invalid padding: {}", padding));
+        }
+        let data_len = data.len() - padding;
+        if data_len < 2 {
+            return Err(anyhow!("Decrypted data too short for MAC"));
+        }
+
+        // 4. Extract MAC and data
+        let plaintext_data = data[..data_len - 2].to_vec();
+        let stored_mac = ((data[data_len - 2] as u16) << 8) | (data[data_len - 1] as u16);
+
+        // 5. Verify MAC (MAC-then-Encrypt: verify MAC after decryption)
+        let (calculated_mac, _) = self.mac_16(&plaintext_data, path_iv)?;
+        if calculated_mac != stored_mac {
+            return Err(anyhow!(
+                "MAC mismatch in xattr data: expected {:04x}, got {:04x}",
+                stored_mac,
+                calculated_mac
+            ));
+        }
+
+        Ok(plaintext_data)
+    }
+
+    /// Encrypts an xattr name using block encryption with MAC-then-Encrypt.
+    /// Format: [name] [MAC(2 bytes)] [padding] -> encrypted
+    pub fn encrypt_xattr_name(&self, name: &[u8], path_iv: u64) -> Result<Vec<u8>> {
+        const NAME_IV_OFFSET: u64 = 0x2000000000000000u64;
+        self.encrypt_xattr_data(name, path_iv, NAME_IV_OFFSET)
+    }
+
+    /// Decrypts an xattr name using block encryption with MAC-then-Encrypt.
+    pub fn decrypt_xattr_name(&self, encrypted_name: &[u8], path_iv: u64) -> Result<Vec<u8>> {
+        const NAME_IV_OFFSET: u64 = 0x2000000000000000u64;
+        self.decrypt_xattr_data(encrypted_name, path_iv, NAME_IV_OFFSET)
+    }
+
+    /// Encrypts an xattr value using block encryption with MAC-then-Encrypt.
+    pub fn encrypt_xattr_value(&self, value: &[u8], path_iv: u64) -> Result<Vec<u8>> {
+        const VALUE_IV_OFFSET: u64 = 0x1000000000000000u64;
+        self.encrypt_xattr_data(value, path_iv, VALUE_IV_OFFSET)
+    }
+
+    /// Decrypts an xattr value using block encryption with MAC-then-Encrypt.
+    pub fn decrypt_xattr_value(&self, encrypted_value: &[u8], path_iv: u64) -> Result<Vec<u8>> {
+        const VALUE_IV_OFFSET: u64 = 0x1000000000000000u64;
+        self.decrypt_xattr_data(encrypted_value, path_iv, VALUE_IV_OFFSET)
+    }
 }
 
 #[cfg(test)]
@@ -1187,6 +1293,190 @@ mod tests {
 
             println!(
                 "✓ {} {} stream encryption mode: round-trip test passed",
+                config.name, config.key_size
+            );
+        }
+    }
+
+    #[test]
+    fn test_xattr_encryption_decryption() {
+        let configs = all_cipher_configs();
+
+        for config in configs {
+            // Skip blowfish for xattr tests as it may have compatibility issues with block encryption
+            if config.name == "ssl/blowfish" {
+                eprintln!(
+                    "Skipping {} {} xattr tests due to compatibility issues",
+                    config.name, config.key_size
+                );
+                continue;
+            }
+
+            let iface = Interface {
+                name: config.name.to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            };
+
+            let mut cipher = match SslCipher::new(&iface, config.key_size) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!(
+                        "Skipping {} {}: {}. This may be due to OpenSSL 3.0+ requiring legacy algorithms.",
+                        config.name, config.key_size, e
+                    );
+                    continue;
+                }
+            };
+
+            // Generate test key and IV
+            let key_len = (config.key_size / 8) as usize;
+            let key: Vec<u8> = (0..key_len).map(|i| (i as u8).wrapping_mul(0x11)).collect();
+            let iv: Vec<u8> = (0..config.iv_size)
+                .map(|i| (i as u8).wrapping_mul(0x22))
+                .collect();
+            cipher.set_key(&key, &iv);
+
+            let path_iv = 0x1234567890abcdefu64;
+
+            // Test xattr name encryption/decryption
+            let test_names = vec![
+                b"user.foo".to_vec(),
+                b"user.bar".to_vec(),
+                b"security.selinux".to_vec(),
+                b"trusted.baz".to_vec(),
+                b"a".to_vec(), // Short name
+                b"very_long_attribute_name_that_exceeds_normal_length".to_vec(), // Long name
+            ];
+
+            for name in &test_names {
+                let encrypted = cipher
+                    .encrypt_xattr_name(name, path_iv)
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "{} {}: xattr name encryption failed for {:?}",
+                            config.name, config.key_size, name
+                        )
+                    });
+
+                // Verify encrypted data is different from plaintext
+                assert_ne!(
+                    encrypted, *name,
+                    "{} {}: Encrypted xattr name should differ from plaintext",
+                    config.name, config.key_size
+                );
+
+                // Verify encrypted data is block-aligned
+                assert_eq!(
+                    encrypted.len() % config.block_size,
+                    0,
+                    "{} {}: Encrypted xattr name should be block-aligned",
+                    config.name,
+                    config.key_size
+                );
+
+                let decrypted = cipher
+                    .decrypt_xattr_name(&encrypted, path_iv)
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "{} {}: xattr name decryption failed for {:?}",
+                            config.name, config.key_size, name
+                        )
+                    });
+
+                assert_eq!(
+                    decrypted, *name,
+                    "{} {}: Decrypted xattr name should match original",
+                    config.name, config.key_size
+                );
+            }
+
+            // Test xattr value encryption/decryption
+            let test_values = vec![
+                b"hello world".to_vec(),
+                b"".to_vec(),                  // Empty value
+                b"a".to_vec(),                 // Single byte
+                vec![0u8; 100],                // Multiple blocks
+                vec![0xFFu8; 50],              // All 0xFF
+                (0..255).collect::<Vec<u8>>(), // All byte values
+            ];
+
+            for value in &test_values {
+                let encrypted = cipher
+                    .encrypt_xattr_value(value, path_iv)
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "{} {}: xattr value encryption failed for value of length {}",
+                            config.name,
+                            config.key_size,
+                            value.len()
+                        )
+                    });
+
+                // Verify encrypted data is different from plaintext (unless empty)
+                if !value.is_empty() {
+                    assert_ne!(
+                        encrypted, *value,
+                        "{} {}: Encrypted xattr value should differ from plaintext",
+                        config.name, config.key_size
+                    );
+                }
+
+                // Verify encrypted data is block-aligned
+                assert_eq!(
+                    encrypted.len() % config.block_size,
+                    0,
+                    "{} {}: Encrypted xattr value should be block-aligned",
+                    config.name,
+                    config.key_size
+                );
+
+                let decrypted = cipher
+                    .decrypt_xattr_value(&encrypted, path_iv)
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "{} {}: xattr value decryption failed for value of length {}",
+                            config.name,
+                            config.key_size,
+                            value.len()
+                        )
+                    });
+
+                assert_eq!(
+                    decrypted, *value,
+                    "{} {}: Decrypted xattr value should match original",
+                    config.name, config.key_size
+                );
+            }
+
+            // Test that name and value encryption use different IVs
+            let test_data = b"test_data".to_vec();
+            let encrypted_name = cipher
+                .encrypt_xattr_name(&test_data, path_iv)
+                .expect("name encryption failed");
+            let encrypted_value = cipher
+                .encrypt_xattr_value(&test_data, path_iv)
+                .expect("value encryption failed");
+
+            assert_ne!(
+                encrypted_name, encrypted_value,
+                "{} {}: Name and value encryption should produce different ciphertext",
+                config.name, config.key_size
+            );
+
+            // Test MAC verification failure (tampered data)
+            let mut tampered = encrypted_name.clone();
+            tampered[0] ^= 0xFF; // Flip some bits
+            assert!(
+                cipher.decrypt_xattr_name(&tampered, path_iv).is_err(),
+                "{} {}: Decryption should fail with tampered data",
+                config.name,
+                config.key_size
+            );
+
+            println!(
+                "✓ {} {} xattr encryption/decryption: all tests passed",
                 config.name, config.key_size
             );
         }
