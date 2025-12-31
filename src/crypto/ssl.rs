@@ -822,6 +822,44 @@ mod tests {
     use super::*;
     use crate::config::Interface;
 
+    /// Shared cipher configuration for all encryption mode tests
+    struct CipherTestConfig {
+        name: &'static str,
+        key_size: i32,
+        block_size: usize, // Block size in bytes
+        iv_size: usize,    // IV size in bytes
+    }
+
+    /// Returns all supported cipher configurations for testing
+    fn all_cipher_configs() -> Vec<CipherTestConfig> {
+        vec![
+            CipherTestConfig {
+                name: "ssl/aes",
+                key_size: 128,
+                block_size: 16, // AES block size
+                iv_size: 16,
+            },
+            CipherTestConfig {
+                name: "ssl/aes",
+                key_size: 192,
+                block_size: 16,
+                iv_size: 16,
+            },
+            CipherTestConfig {
+                name: "ssl/aes",
+                key_size: 256,
+                block_size: 16,
+                iv_size: 16,
+            },
+            CipherTestConfig {
+                name: "ssl/blowfish",
+                key_size: 160,
+                block_size: 8, // Blowfish block size
+                iv_size: 8,
+            },
+        ]
+    }
+
     #[test]
     fn test_legacy_iv() {
         // Mock interface with version 2 (legacy)
@@ -849,5 +887,308 @@ mod tests {
 
         assert_eq!(iv[0], ((var1 >> 24) & 0xff) as u8); // 0x06
         assert_eq!(iv[1], ((var2 >> 16) & 0xff) as u8); // 0x2F
+    }
+
+    #[test]
+    fn test_all_block_encryption_modes() {
+        // Test all supported block encryption modes (CBC mode)
+        // Block ciphers require data to be a multiple of the block size
+
+        let configs = all_cipher_configs();
+
+        for config in configs {
+            let iface = Interface {
+                name: config.name.to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            };
+
+            let mut cipher = match SslCipher::new(&iface, config.key_size) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!(
+                        "Skipping {} {}: {}. This may be due to OpenSSL 3.0+ requiring legacy algorithms.",
+                        config.name, config.key_size, e
+                    );
+                    continue;
+                }
+            };
+
+            // Generate test key and IV
+            let key_len = (config.key_size / 8) as usize;
+            let key: Vec<u8> = (0..key_len).map(|i| (i as u8).wrapping_mul(0x11)).collect();
+            let iv: Vec<u8> = (0..config.iv_size)
+                .map(|i| (i as u8).wrapping_mul(0x22))
+                .collect();
+            cipher.set_key(&key, &iv);
+
+            // Test with single block
+            let mut single_block = vec![0u8; config.block_size];
+            for (i, item) in single_block.iter_mut().enumerate() {
+                *item = (i as u8).wrapping_mul(0x33);
+            }
+            let original_single = single_block.clone();
+            let iv64 = 0x1234567890abcdef;
+
+            match cipher.block_encode(&mut single_block, iv64, &key, &iv) {
+                Ok(_) => {
+                    assert_ne!(
+                        single_block, original_single,
+                        "{} {}: Encrypted single block should differ from plaintext",
+                        config.name, config.key_size
+                    );
+
+                    match cipher.block_decode(&mut single_block, iv64, &key, &iv) {
+                        Ok(_) => {
+                            assert_eq!(
+                                single_block, original_single,
+                                "{} {}: Decrypted single block should match original",
+                                config.name, config.key_size
+                            );
+                        }
+                        Err(e) => {
+                            panic!(
+                                "{} {}: Block decryption failed: {}",
+                                config.name, config.key_size, e
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Skipping {} {} block test: {}. OpenSSL 3.0+ may require legacy algorithms.",
+                        config.name, config.key_size, e
+                    );
+                    continue;
+                }
+            }
+
+            // Test with multiple blocks (3 blocks)
+            let multi_block_size = config.block_size * 3;
+            let mut multi_block = vec![0u8; multi_block_size];
+            for (i, item) in multi_block.iter_mut().enumerate() {
+                *item = (i as u8).wrapping_mul(0x44);
+            }
+            let original_multi = multi_block.clone();
+
+            cipher
+                .block_encode(&mut multi_block, iv64, &key, &iv)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} {}: Multi-block encryption failed",
+                        config.name, config.key_size
+                    )
+                });
+            assert_ne!(
+                multi_block, original_multi,
+                "{} {}: Encrypted multi-block should differ from plaintext",
+                config.name, config.key_size
+            );
+
+            cipher
+                .block_decode(&mut multi_block, iv64, &key, &iv)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} {}: Multi-block decryption failed",
+                        config.name, config.key_size
+                    )
+                });
+            assert_eq!(
+                multi_block, original_multi,
+                "{} {}: Decrypted multi-block should match original",
+                config.name, config.key_size
+            );
+
+            println!(
+                "✓ {} {} block encryption mode: round-trip test passed",
+                config.name, config.key_size
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_stream_encryption_modes() {
+        // Test all supported stream encryption modes (CFB mode)
+        // Stream ciphers can handle data of any size
+
+        let configs = all_cipher_configs();
+
+        for config in configs {
+            let iface = Interface {
+                name: config.name.to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            };
+
+            let mut cipher = match SslCipher::new(&iface, config.key_size) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!(
+                        "Skipping {} {}: {}. This may be due to OpenSSL 3.0+ requiring legacy algorithms.",
+                        config.name, config.key_size, e
+                    );
+                    continue;
+                }
+            };
+
+            // Generate test key and IV
+            let key_len = (config.key_size / 8) as usize;
+            let key: Vec<u8> = (0..key_len).map(|i| (i as u8).wrapping_mul(0x55)).collect();
+            let iv: Vec<u8> = (0..config.iv_size)
+                .map(|i| (i as u8).wrapping_mul(0x66))
+                .collect();
+            cipher.set_key(&key, &iv);
+
+            let iv64 = 0xabcdef1234567890;
+
+            // Test with small data (less than block size)
+            let mut small_data = b"Hello!".to_vec();
+            let original_small = small_data.clone();
+
+            match cipher.stream_encode(&mut small_data, iv64, &key, &iv) {
+                Ok(_) => {
+                    assert_ne!(
+                        small_data, original_small,
+                        "{} {}: Encrypted small data should differ from plaintext",
+                        config.name, config.key_size
+                    );
+
+                    match cipher.stream_decode(&mut small_data, iv64, &key, &iv) {
+                        Ok(_) => {
+                            assert_eq!(
+                                small_data, original_small,
+                                "{} {}: Decrypted small data should match original",
+                                config.name, config.key_size
+                            );
+                        }
+                        Err(e) => {
+                            panic!(
+                                "{} {}: Stream decryption failed for small data: {}",
+                                config.name, config.key_size, e
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Skipping {} {} stream test: {}. OpenSSL 3.0+ may require legacy algorithms.",
+                        config.name, config.key_size, e
+                    );
+                    continue;
+                }
+            }
+
+            // Test with medium data (multiple blocks)
+            let medium_data_size = config.block_size * 3;
+            let mut medium_data = vec![0u8; medium_data_size];
+            for (i, item) in medium_data.iter_mut().enumerate() {
+                *item = (i as u8).wrapping_mul(0x77);
+            }
+            let original_medium = medium_data.clone();
+
+            cipher
+                .stream_encode(&mut medium_data, iv64, &key, &iv)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} {}: Medium data stream encryption failed",
+                        config.name, config.key_size
+                    )
+                });
+            assert_ne!(
+                medium_data, original_medium,
+                "{} {}: Encrypted medium data should differ from plaintext",
+                config.name, config.key_size
+            );
+
+            cipher
+                .stream_decode(&mut medium_data, iv64, &key, &iv)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} {}: Medium data stream decryption failed",
+                        config.name, config.key_size
+                    )
+                });
+            assert_eq!(
+                medium_data, original_medium,
+                "{} {}: Decrypted medium data should match original",
+                config.name, config.key_size
+            );
+
+            // Test with large data (many blocks)
+            let large_data_size = config.block_size * 16;
+            let mut large_data = vec![0u8; large_data_size];
+            for (i, item) in large_data.iter_mut().enumerate() {
+                *item = (i as u8).wrapping_mul(0x88);
+            }
+            let original_large = large_data.clone();
+
+            cipher
+                .stream_encode(&mut large_data, iv64, &key, &iv)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} {}: Large data stream encryption failed",
+                        config.name, config.key_size
+                    )
+                });
+            assert_ne!(
+                large_data, original_large,
+                "{} {}: Encrypted large data should differ from plaintext",
+                config.name, config.key_size
+            );
+
+            cipher
+                .stream_decode(&mut large_data, iv64, &key, &iv)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} {}: Large data stream decryption failed",
+                        config.name, config.key_size
+                    )
+                });
+            assert_eq!(
+                large_data, original_large,
+                "{} {}: Decrypted large data should match original",
+                config.name, config.key_size
+            );
+
+            // Test with odd-sized data (not aligned to block boundary)
+            let odd_data = b"This is a test message with odd length!".to_vec();
+            let mut odd_data_enc = odd_data.clone();
+            let original_odd = odd_data.clone();
+
+            cipher
+                .stream_encode(&mut odd_data_enc, iv64, &key, &iv)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} {}: Odd-sized data stream encryption failed",
+                        config.name, config.key_size
+                    )
+                });
+            assert_ne!(
+                odd_data_enc, original_odd,
+                "{} {}: Encrypted odd-sized data should differ from plaintext",
+                config.name, config.key_size
+            );
+
+            cipher
+                .stream_decode(&mut odd_data_enc, iv64, &key, &iv)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "{} {}: Odd-sized data stream decryption failed",
+                        config.name, config.key_size
+                    )
+                });
+            assert_eq!(
+                odd_data_enc, original_odd,
+                "{} {}: Decrypted odd-sized data should match original",
+                config.name, config.key_size
+            );
+
+            println!(
+                "✓ {} {} stream encryption mode: round-trip test passed",
+                config.name, config.key_size
+            );
+        }
     }
 }
