@@ -2,39 +2,36 @@ _version: 2
 main.mounting:
   en: Mounting {root} at {mount_point}
   fr: Montage de {root} à {mount_point}
+  de: "{root} wird auf {mount_point} gemountet"
 main.using_legacy_config:
   en: Using legacy .encfs5 config file
   fr: Utilisation du fichier de configuration .encfs5 hérité
+  de: Verwendung der alten .encfs5-Konfigurationsdatei
 main.no_config_file_found:
   en: No config file found. Looked for .encfs6.xml and .encfs5 in {root}
   fr: Aucun fichier de configuration trouvé. Recherché .encfs6.xml et .encfs5 dans {root}
+  de: Keine Konfigurationsdatei gefunden. Suche nach .encfs6.xml und .encfs5 in {root}
 main.no_config_file_found_short:
   en: No config file found
   fr: Aucun fichier de configuration trouvé
-main.failed_to_load_config:
-  en: Failed to load config
-  fr: Échec du chargement de la configuration
-main.failed_to_run_extpass:
-  en: Failed to run extpass program
-  fr: Échec de l'exécution du programme extpass
-main.extpass_program_failed:
-  en: extpass program failed
-  fr: Le programme extpass a échoué
-main.password_prompt:
-  en: "EncFS Password:"
-  fr: "Mot de passe EncFS :"
+  de: Keine Konfigurationsdatei gefunden
 main.failed_to_read_password:
   en: Failed to read password
   fr: Échec de la lecture du mot de passe
+  de: Fehler beim Lesen des Passworts
 main.successfully_decrypted:
   en: Successfully decrypted volume key!
   fr: Clé de volume déchiffrée avec succès !
+  de: Volumen-Schlüssel erfolgreich entschlüsselt!
 main.daemonized_successfully:
   en: Daemonized successfully
   fr: Démonisation réussie
+  de: Volumen erfolgreich gemountet
 main.failed_to_daemonize:
   en: "Failed to daemonize: {error}"
   fr: "Échec de la démonisation : {error}"
+  de: "Fehler beim Daemonisieren: {error}"
 main.failed_to_decrypt_key:
   en: "Failed to decrypt volume key: {error}"
   fr: "Échec du déchiffrement de la clé de volume : {error}"
+  de: "Fehler beim Entschlüsseln des Volumen-Schlüssels: {error}"

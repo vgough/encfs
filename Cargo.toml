@@ -27,3 +27,4 @@ path = "src/encfsctl.rs"
 
 [package.metadata.i18n]
 default-locale = "en"
+available-locales = ["en", "fr", "de"]
