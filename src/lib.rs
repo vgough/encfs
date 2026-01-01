@@ -4,6 +4,8 @@ pub mod constants;
 pub mod crypto;
 pub mod fs;
 
+rust_i18n::i18n!("locales", fallback = "en");
+
 #[cfg(test)]
 mod tests {
     use openssl::hash::{Hasher, MessageDigest};

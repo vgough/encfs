@@ -4,8 +4,11 @@ use daemonize::Daemonize;
 use log::{error, info};
 use std::ffi::OsStr;
 use std::path::PathBuf;
+use rust_i18n::t;
 
 use encfs::{config, fs::EncFs};
+
+rust_i18n::i18n!("locales", fallback = "en");
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -63,11 +66,7 @@ fn main() -> Result<()> {
     }
     builder.init();
 
-    info!(
-        "Mounting {} at {}",
-        args.root.display(),
-        args.mount_point.display()
-    );
+    info!("{}", t!("main.mounting", root=args.root.display(), mount_point=args.mount_point.display()));
 
     // Try to find config file - check for .encfs6.xml first, then legacy .encfs5
     let config_path = args.root.join(".encfs6.xml");
@@ -76,17 +75,14 @@ fn main() -> Result<()> {
     let config_path = if config_path.exists() {
         config_path
     } else if legacy_config_path.exists() {
-        info!("Using legacy .encfs5 config file");
+        info!("{}", t!("main.using_legacy_config"));
         legacy_config_path
     } else {
-        error!(
-            "No config file found. Looked for .encfs6.xml and .encfs5 in {}",
-            args.root.display()
-        );
-        return Err(anyhow::anyhow!("No config file found"));
+        error!("{}", t!("main.no_config_file_found", root=args.root.display()));
+        return Err(anyhow::anyhow!("{}", t!("main.no_config_file_found_short")));
     };
 
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config")?;
+    let config = config::EncfsConfig::load(&config_path).context(t!("main.failed_to_load_config"))?;
 
     let password = if let Some(prog) = args.extpass {
         use std::process::Command;
@@ -95,9 +91,9 @@ fn main() -> Result<()> {
             .arg(&prog)
             .env("RootDir", &args.root)
             .output()
-            .context("Failed to run extpass program")?;
+            .context(t!("main.failed_to_run_extpass"))?;
         if !output.status.success() {
-            return Err(anyhow::anyhow!("extpass program failed"));
+            return Err(anyhow::anyhow!("{}", t!("main.extpass_program_failed")));
         }
         String::from_utf8(output.stdout)?.trim_end().to_string()
     } else if args.stdinpass {
@@ -106,21 +102,22 @@ fn main() -> Result<()> {
         std::io::stdin().read_to_string(&mut pw)?;
         pw.trim_end().to_string()
     } else {
-        rpassword::prompt_password("EncFS Password: ").context("Failed to read password")?
+        rpassword::prompt_password(&t!("main.password_prompt")).context(t!("main.failed_to_read_password"))?
     };
 
     match config.get_cipher(&password) {
         Ok(cipher) => {
-            info!("Successfully decrypted volume key!");
+            info!("{}", t!("main.successfully_decrypted"));
 
             // Daemonize unless foreground mode is requested
             if !foreground {
                 let daemonize = Daemonize::new();
                 match daemonize.start() {
-                    Ok(_) => info!("Daemonized successfully"),
+                    Ok(_) => info!("{}", t!("main.daemonized_successfully")),
                     Err(e) => {
-                        error!("Failed to daemonize: {}", e);
-                        return Err(anyhow::anyhow!("Failed to daemonize: {}", e));
+                        let error_msg = t!("main.failed_to_daemonize", error=e);
+                        error!("{}", error_msg);
+                        return Err(anyhow::anyhow!("{}", error_msg));
                     }
                 }
             }
@@ -152,7 +149,7 @@ fn main() -> Result<()> {
             )?;
         }
         Err(e) => {
-            error!("Failed to decrypt volume key: {}", e);
+            error!("{}", t!("main.failed_to_decrypt_key", error=e));
 
             return Err(e);
         }
