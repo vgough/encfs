@@ -22,6 +22,12 @@ Dependencies:
     * FUSE library (libfuse or OSXFUSE on macOS)
     * OpenSSL development libraries
 
+Optional modifications:
+    * To disable i18n support (maybe because gettext is not available), run: cargo build --no-default-features
+    * To customize the eventual installation directory for language catalogues,
+      set the environment variable `ENCFS_LOCALE_DIR` in the execution
+      environment of cargo.
+
 ## Building the Legacy C++ Implementation
 
 The original C++ implementation has been moved to the `legacy/` directory.

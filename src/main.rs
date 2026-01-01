@@ -5,7 +5,7 @@ use log::{error, info};
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-use encfs::{config, fs::EncFs};
+use encfs::{config, fs::EncFs, i18n, i18n_format};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -50,6 +50,8 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    i18n::init();
+
     let args = Args::parse();
 
     let verbose = args.verbose || args.debug;
@@ -64,9 +66,12 @@ fn main() -> Result<()> {
     builder.init();
 
     info!(
-        "Mounting {} at {}",
-        args.root.display(),
-        args.mount_point.display()
+        "{}",
+        i18n_format!(
+            "Mounting {} at {}",
+            args.root.display(),
+            args.mount_point.display()
+        )
     );
 
     // Try to find config file - check for .encfs6.xml first, then legacy .encfs5
@@ -76,17 +81,21 @@ fn main() -> Result<()> {
     let config_path = if config_path.exists() {
         config_path
     } else if legacy_config_path.exists() {
-        info!("Using legacy .encfs5 config file");
+        info!("{}", i18n_format!("Using legacy .encfs5 config file"));
         legacy_config_path
     } else {
         error!(
-            "No config file found. Looked for .encfs6.xml and .encfs5 in {}",
-            args.root.display()
+            "{}",
+            i18n_format!(
+                "No config file found. Looked for .encfs6.xml and .encfs5 in {}",
+                args.root.display()
+            )
         );
-        return Err(anyhow::anyhow!("No config file found"));
+        return Err(anyhow::anyhow!(i18n_format!("No config file found")));
     };
 
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(i18n_format!("Failed to load config"))?;
 
     let password = if let Some(prog) = args.extpass {
         use std::process::Command;
@@ -106,12 +115,12 @@ fn main() -> Result<()> {
         std::io::stdin().read_to_string(&mut pw)?;
         pw.trim_end().to_string()
     } else {
-        rpassword::prompt_password("EncFS Password: ").context("Failed to read password")?
+        rpassword::prompt_password(i18n_format!("EncFS Password: ")).context(i18n_format!("Failed to read password"))?
     };
 
     match config.get_cipher(&password) {
         Ok(cipher) => {
-            info!("Successfully decrypted volume key!");
+            info!("{}", i18n_format!("Successfully decrypted volume key!"));
 
             // Daemonize unless foreground mode is requested
             if !foreground {
@@ -152,7 +161,7 @@ fn main() -> Result<()> {
             )?;
         }
         Err(e) => {
-            error!("Failed to decrypt volume key: {}", e);
+            error!("{}", i18n_format!("Failed to decrypt volume key: {}", &e));
 
             return Err(e);
         }

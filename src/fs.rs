@@ -1,5 +1,6 @@
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use crate::crypto::ssl::SslCipher;
+use crate::i18n_format;
 use fuse_mt::{
     CallbackResult, CreatedEntry, DirectoryEntry, FileAttr, FileType, FilesystemMT, RequestInfo,
     ResultCreate, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultSlice, ResultStatfs,
@@ -81,7 +82,7 @@ impl EncFs {
                     let name_bytes = name.as_bytes();
                     let (encrypted_name, new_iv) =
                         self.cipher.encrypt_filename(name_bytes, iv).map_err(|e| {
-                            error!("Encrypt filename failed: {}", e);
+                            error!("{}", i18n_format!("Encrypt filename failed: {}", e)); //.unwrap()); //  formatx!(gettext("Encrypt filename failed: {}"), e).unwrap());
                             libc::EIO
                         })?;
                     encrypted_path.push(encrypted_name);
@@ -109,7 +110,10 @@ impl EncFs {
                     let name_str = name.to_str().ok_or(libc::EILSEQ)?;
                     let (decrypted_name_bytes, new_iv) =
                         self.cipher.decrypt_filename(name_str, iv).map_err(|e| {
-                            error!("Failed to decrypt filename {}: {}", name_str, e);
+                            error!(
+                                "{}",
+                                i18n_format!("Failed to decrypt filename {}: {}", name_str, e)
+                            );
                             libc::EIO
                         })?;
                     decrypted_path.push(OsStr::from_bytes(&decrypted_name_bytes));
@@ -956,7 +960,10 @@ impl FilesystemMT for EncFs {
                     });
                 }
                 Err(e) => {
-                    warn!("Failed to decrypt filename {}: {}", name_str, e);
+                    warn!(
+                        "{}",
+                        i18n_format!("Failed to decrypt filename {}: {}", name_str, e)
+                    );
                 }
             }
         }

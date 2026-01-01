@@ -4,6 +4,35 @@ pub mod constants;
 pub mod crypto;
 pub mod fs;
 
+#[cfg(feature = "gettext")]
+///
+/// Helper class to handle i18n-specific helper functions, or dummies wrappers to disable
+/// that functionality if no gettext is to be used.
+///
+pub mod i18n {
+    use gettextrs::{bindtextdomain, setlocale, textdomain, LocaleCategory};
+    pub fn init() {
+        setlocale(LocaleCategory::LcAll, "");
+        let locale_dir = concat!(env!("OUT_DIR"), "/po");
+        // actually make it customizable at build time
+        let locale_dir = option_env!("ENCFS_LOCALE_DIR").unwrap_or(locale_dir);
+
+        bindtextdomain("encfs", locale_dir).unwrap();
+        textdomain("encfs").unwrap();
+    }
+}
+
+#[cfg(not(feature = "gettext"))]
+pub mod i18n {
+    pub fn init() {}
+}
+
+#[cfg(feature = "gettext")]
+pub use i18n_format::{i18n_format, i18n_nformat};
+
+#[cfg(not(feature = "gettext"))]
+pub use i18n_format::no_gettext::{i18n_format, i18n_nformat};
+
 #[cfg(test)]
 mod tests {
     use openssl::hash::{Hasher, MessageDigest};

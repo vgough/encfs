@@ -2,6 +2,8 @@ use crate::crypto::ssl::SslCipher;
 use std::io;
 use std::os::unix::fs::FileExt;
 
+use crate::i18n_format;
+
 pub trait ReadAt {
     fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize>;
 }
@@ -168,9 +170,10 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
                         self.file_iv,
                         self.block_size, // Full block size for crypto
                     ) {
-                        return Err(io::Error::other(format!(
+                        return Err(io::Error::other(i18n_format!(
                             "Failed to decrypt block {}: {}",
-                            block_num, e
+                            block_num,
+                            e
                         )));
                     }
 
@@ -416,7 +419,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                                     )
                                     .is_err()
                                 {
-                                    return Err(io::Error::other("Decrypt failed during RMW"));
+                                    return Err(io::Error::other(i18n_format!("Decrypt failed during RMW")));
                                 }
                                 // Data is now [Encrypted MAC | Plaintext Data].
                             }
