@@ -51,7 +51,6 @@ nice-to-have features like internationalization of messages.
 
 Some of the issues with the EncFS model would require a new design to resolve,
 which is not currently planned.
-
 ## FAQ
 
 ### What settings should I use for Dropbox?
@@ -61,3 +60,12 @@ been [reports](https://github.com/vgough/encfs/issues/388)
 of a pathological interaction of paranoia mode with Dropbox' rename
 detection. The problem seems to be with `External IV chaining`, which is
 not active in standard mode.
+
+### Internationalization - how to enable?
+
+
+For i18n, the script xpo.sh may be used to update translations from time to
+time. For translation string contribution, see the management service hosted by
+Canonical [Launchpad](https://launchpad.net/encfs). NOTE: frozen versions of
+gettext utilities in Linux distributions may lack Rust langugate support.
+Please upgrade to 0.25 or higher.
