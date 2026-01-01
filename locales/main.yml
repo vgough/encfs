@@ -21,8 +21,8 @@ main.extpass_program_failed:
   en: extpass program failed
   fr: Le programme extpass a échoué
 main.password_prompt:
-  en: EncFS Password
-  fr: Mot de passe EncFS
+  en: "EncFS Password:"
+  fr: "Mot de passe EncFS :"
 main.failed_to_read_password:
   en: Failed to read password
   fr: Échec de la lecture du mot de passe
@@ -33,8 +33,8 @@ main.daemonized_successfully:
   en: Daemonized successfully
   fr: Démonisation réussie
 main.failed_to_daemonize:
-  en: Failed to daemonize: {error}
-  fr: Échec de la démonisation : {error}
+  en: "Failed to daemonize: {error}"
+  fr: "Échec de la démonisation : {error}"
 main.failed_to_decrypt_key:
-  en: Failed to decrypt volume key: {error}
-  fr: Échec du déchiffrement de la clé de volume : {error}
+  en: "Failed to decrypt volume key: {error}"
+  fr: "Échec du déchiffrement de la clé de volume : {error}"
