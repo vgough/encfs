@@ -6,6 +6,29 @@ pub mod fs;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
+/// Initialize the locale from the LANG environment variable.
+///
+/// Reads the LANG environment variable (e.g., "en_US.UTF-8") and sets the
+/// rust-i18n locale accordingly. Strips encoding suffixes and maps POSIX-style
+/// locale names to rust-i18n locale keys.
+pub fn init_locale() {
+    // Read LANG from the environment, e.g. "en_US.UTF-8"
+    if let Ok(lang) = std::env::var("LANG") {
+        // Strip encoding suffix like ".UTF-8"
+        let normalized = lang.split('.').next().unwrap_or("en_US");
+
+        // Map POSIX style to your rust-i18n locale keys if needed
+        let locale = match normalized {
+            "en_US" => "en",
+            "fr_FR" => "fr",
+            "de_DE" => "de",
+            other => other, // fall back to whatever is there
+        };
+
+        rust_i18n::set_locale(locale);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use openssl::hash::{Hasher, MessageDigest};

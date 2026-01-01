@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use daemonize::Daemonize;
 use log::{error, info};
+use rust_i18n::t;
 use std::ffi::OsStr;
 use std::path::PathBuf;
-use rust_i18n::t;
 
 use encfs::{config, fs::EncFs};
 
@@ -53,6 +53,8 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    encfs::init_locale();
+
     let args = Args::parse();
 
     let verbose = args.verbose || args.debug;
@@ -66,7 +68,14 @@ fn main() -> Result<()> {
     }
     builder.init();
 
-    info!("{}", t!("main.mounting", root=args.root.display(), mount_point=args.mount_point.display()));
+    info!(
+        "{}",
+        t!(
+            "main.mounting",
+            root = args.root.display(),
+            mount_point = args.mount_point.display()
+        )
+    );
 
     // Try to find config file - check for .encfs6.xml first, then legacy .encfs5
     let config_path = args.root.join(".encfs6.xml");
@@ -78,11 +87,15 @@ fn main() -> Result<()> {
         info!("{}", t!("main.using_legacy_config"));
         legacy_config_path
     } else {
-        error!("{}", t!("main.no_config_file_found", root=args.root.display()));
+        error!(
+            "{}",
+            t!("main.no_config_file_found", root = args.root.display())
+        );
         return Err(anyhow::anyhow!("{}", t!("main.no_config_file_found_short")));
     };
 
-    let config = config::EncfsConfig::load(&config_path).context(t!("main.failed_to_load_config"))?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("main.failed_to_load_config"))?;
 
     let password = if let Some(prog) = args.extpass {
         use std::process::Command;
@@ -102,7 +115,8 @@ fn main() -> Result<()> {
         std::io::stdin().read_to_string(&mut pw)?;
         pw.trim_end().to_string()
     } else {
-        rpassword::prompt_password(&t!("main.password_prompt")).context(t!("main.failed_to_read_password"))?
+        rpassword::prompt_password(&t!("main.password_prompt"))
+            .context(t!("main.failed_to_read_password"))?
     };
 
     match config.get_cipher(&password) {
@@ -115,7 +129,7 @@ fn main() -> Result<()> {
                 match daemonize.start() {
                     Ok(_) => info!("{}", t!("main.daemonized_successfully")),
                     Err(e) => {
-                        let error_msg = t!("main.failed_to_daemonize", error=e);
+                        let error_msg = t!("main.failed_to_daemonize", error = e);
                         error!("{}", error_msg);
                         return Err(anyhow::anyhow!("{}", error_msg));
                     }
@@ -149,7 +163,7 @@ fn main() -> Result<()> {
             )?;
         }
         Err(e) => {
-            error!("{}", t!("main.failed_to_decrypt_key", error=e));
+            error!("{}", t!("main.failed_to_decrypt_key", error = e));
 
             return Err(e);
         }
