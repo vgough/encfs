@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate rust_i18n;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use encfs::{config, constants, crypto::ssl::SslCipher};
@@ -7,107 +10,243 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
+i18n!("locales", fallback = "en");
+
+// Helper functions that return translated help text
+// These are called at runtime after locale initialization
+fn help_about() -> String {
+    t!("help.encfsctl.about").to_string()
+}
+
+fn help_rootdir() -> String {
+    t!("help.encfsctl.rootdir").to_string()
+}
+
+fn help_info() -> String {
+    t!("help.encfsctl.info").to_string()
+}
+
+fn help_passwd() -> String {
+    t!("help.encfsctl.passwd").to_string()
+}
+
+fn help_showcruft() -> String {
+    t!("help.encfsctl.showcruft").to_string()
+}
+
+fn help_decode() -> String {
+    t!("help.encfsctl.decode").to_string()
+}
+
+fn help_encode() -> String {
+    t!("help.encfsctl.encode").to_string()
+}
+
+fn help_cat() -> String {
+    t!("help.encfsctl.cat").to_string()
+}
+
+fn help_ls() -> String {
+    t!("help.encfsctl.ls").to_string()
+}
+
+fn help_showkey() -> String {
+    t!("help.encfsctl.showkey").to_string()
+}
+
+fn help_autopasswd() -> String {
+    t!("help.encfsctl.autopasswd").to_string()
+}
+
+fn help_export() -> String {
+    t!("help.encfsctl.export").to_string()
+}
+
+fn help_info_rootdir() -> String {
+    t!("help.encfsctl.info_rootdir").to_string()
+}
+
+fn help_passwd_rootdir() -> String {
+    t!("help.encfsctl.passwd_rootdir").to_string()
+}
+
+fn help_showcruft_rootdir() -> String {
+    t!("help.encfsctl.showcruft_rootdir").to_string()
+}
+
+fn help_decode_rootdir() -> String {
+    t!("help.encfsctl.decode_rootdir").to_string()
+}
+
+fn help_decode_names() -> String {
+    t!("help.encfsctl.decode_names").to_string()
+}
+
+fn help_decode_extpass() -> String {
+    t!("help.encfsctl.decode_extpass").to_string()
+}
+
+fn help_encode_rootdir() -> String {
+    t!("help.encfsctl.encode_rootdir").to_string()
+}
+
+fn help_encode_names() -> String {
+    t!("help.encfsctl.encode_names").to_string()
+}
+
+fn help_encode_extpass() -> String {
+    t!("help.encfsctl.encode_extpass").to_string()
+}
+
+fn help_cat_rootdir() -> String {
+    t!("help.encfsctl.cat_rootdir").to_string()
+}
+
+fn help_cat_path() -> String {
+    t!("help.encfsctl.cat_path").to_string()
+}
+
+fn help_cat_extpass() -> String {
+    t!("help.encfsctl.cat_extpass").to_string()
+}
+
+fn help_cat_reverse() -> String {
+    t!("help.encfsctl.cat_reverse").to_string()
+}
+
+fn help_ls_rootdir() -> String {
+    t!("help.encfsctl.ls_rootdir").to_string()
+}
+
+fn help_ls_path() -> String {
+    t!("help.encfsctl.ls_path").to_string()
+}
+
+fn help_ls_extpass() -> String {
+    t!("help.encfsctl.ls_extpass").to_string()
+}
+
+fn help_showkey_rootdir() -> String {
+    t!("help.encfsctl.showkey_rootdir").to_string()
+}
+
+fn help_showkey_extpass() -> String {
+    t!("help.encfsctl.showkey_extpass").to_string()
+}
+
+fn help_autopasswd_rootdir() -> String {
+    t!("help.encfsctl.autopasswd_rootdir").to_string()
+}
+
+fn help_export_rootdir() -> String {
+    t!("help.encfsctl.export_rootdir").to_string()
+}
+
+fn help_export_destdir() -> String {
+    t!("help.encfsctl.export_destdir").to_string()
+}
+
+fn help_export_extpass() -> String {
+    t!("help.encfsctl.export_extpass").to_string()
+}
+
+fn help_export_fail_on_error() -> String {
+    t!("help.encfsctl.export_fail_on_error").to_string()
+}
+
 #[derive(Parser)]
 #[command(name = "encfsctl")]
-#[command(about = "Administrative tool for working with EncFS filesystems")]
+#[command(about = help_about())]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
-    /// Root directory of encrypted filesystem (for default 'info' command)
+    #[arg(help = help_rootdir())]
     rootdir: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
 enum Command {
-    /// Display basic information about the filesystem
+    #[command(about = help_info())]
     Info {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_info_rootdir())]
         rootdir: PathBuf,
     },
-    /// Change password for the encrypted filesystem
+    #[command(about = help_passwd())]
     Passwd {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_passwd_rootdir())]
         rootdir: PathBuf,
     },
-    /// Show undecodable filenames in the volume
+    #[command(about = help_showcruft())]
     Showcruft {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_showcruft_rootdir())]
         rootdir: PathBuf,
     },
-    /// Decode encrypted filenames to plaintext
+    #[command(about = help_decode())]
     Decode {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_decode_rootdir())]
         rootdir: PathBuf,
-        /// Encrypted filenames to decode (if not provided, read from stdin)
+        #[arg(help = help_decode_names())]
         names: Vec<String>,
-        /// External password program
-        #[arg(long)]
+        #[arg(long, help = help_decode_extpass())]
         extpass: Option<String>,
     },
-    /// Encode plaintext filenames to encrypted form
+    #[command(about = help_encode())]
     Encode {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_encode_rootdir())]
         rootdir: PathBuf,
-        /// Plaintext filenames to encode (if not provided, read from stdin)
+        #[arg(help = help_encode_names())]
         names: Vec<String>,
-        /// External password program
-        #[arg(long)]
+        #[arg(long, help = help_encode_extpass())]
         extpass: Option<String>,
     },
-    /// Decode and output file content
+    #[command(about = help_cat())]
     Cat {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_cat_rootdir())]
         rootdir: PathBuf,
-        /// File path (plaintext or encrypted)
+        #[arg(help = help_cat_path())]
         path: String,
-        /// External password program
-        #[arg(long)]
+        #[arg(long, help = help_cat_extpass())]
         extpass: Option<String>,
-        /// Reverse mode: encrypt plaintext instead
-        #[arg(long)]
+        #[arg(long, help = help_cat_reverse())]
         reverse: bool,
     },
-    /// List files in a directory with size and modification time
+    #[command(about = help_ls())]
     Ls {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_ls_rootdir())]
         rootdir: PathBuf,
-        /// Path within the encrypted filesystem (default: root)
-        #[arg(default_value = "/")]
+        #[arg(default_value = "/", help = help_ls_path())]
         path: String,
-        /// External password program
-        #[arg(long)]
+        #[arg(long, help = help_ls_extpass())]
         extpass: Option<String>,
     },
-    /// Show the volume key (encoded with itself)
-    #[command(name = "showKey")]
+    #[command(name = "showKey", about = help_showkey())]
     ShowKey {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_showkey_rootdir())]
         rootdir: PathBuf,
-        /// External password program
-        #[arg(long)]
+        #[arg(long, help = help_showkey_extpass())]
         extpass: Option<String>,
     },
-    /// Change password automatically (read old/new passwords from stdin)
+    #[command(about = help_autopasswd())]
     Autopasswd {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_autopasswd_rootdir())]
         rootdir: PathBuf,
     },
-    /// Export decrypted files to a destination directory
+    #[command(about = help_export())]
     Export {
-        /// Root directory of encrypted filesystem
+        #[arg(help = help_export_rootdir())]
         rootdir: PathBuf,
-        /// Destination directory for decrypted files
+        #[arg(help = help_export_destdir())]
         destdir: PathBuf,
-        /// External password program
-        #[arg(long)]
+        #[arg(long, help = help_export_extpass())]
         extpass: Option<String>,
-        /// Fail on first error instead of warning and continuing
-        #[arg(long)]
+        #[arg(long, help = help_export_fail_on_error())]
         fail_on_error: bool,
     },
 }
 
 fn main() -> Result<()> {
+    encfs::init_locale();
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -148,8 +287,8 @@ fn main() -> Result<()> {
             if let Some(rootdir) = cli.rootdir {
                 cmd_info(&rootdir)
             } else {
-                eprintln!("Error: root directory required");
-                eprintln!("Use 'encfsctl --help' for usage information");
+                eprintln!("{}", t!("ctl.error_root_required"));
+                eprintln!("{}", t!("ctl.use_help"));
                 Ok(())
             }
         }
@@ -160,72 +299,99 @@ fn cmd_info(rootdir: &Path) -> Result<()> {
     use config::ConfigType;
 
     let config_path = find_config_file(rootdir)?;
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     // Display version info based on config type
+    println!();
     match config.config_type {
         ConfigType::V6 => {
             println!(
-                "\nVersion 6 configuration; created by {} (revision {})",
-                config.creator, config.version
+                "{}",
+                t!(
+                    "ctl.version6_config",
+                    creator = config.creator,
+                    version = config.version
+                )
             );
         }
         ConfigType::V5 => {
             println!(
-                "\nVersion 5 configuration; created by {} (revision {})",
-                config.creator, config.version
+                "{}",
+                t!(
+                    "ctl.version5_config",
+                    creator = config.creator,
+                    version = config.version
+                )
             );
         }
         ConfigType::V4 => {
-            println!("\nVersion 4 configuration; created by {}", config.creator);
+            println!("{}", t!("ctl.version4_config", creator = config.creator));
         }
         ConfigType::V3 => {
             // V3 configs are detected but not supported
-            println!("\nVersion 3 configuration (not supported)");
+            println!("{}", t!("ctl.version3_config"));
             return Err(anyhow::anyhow!(
-                "Version 3 configuration files are not supported"
+                "{}",
+                t!("ctl.error_version3_not_supported")
             ));
         }
         ConfigType::Prehistoric => {
-            println!("\nA really old EncFS filesystem was found.");
-            return Err(anyhow::anyhow!("This old EncFS format is not supported"));
+            println!("{}", t!("ctl.prehistoric_config"));
+            return Err(anyhow::anyhow!(
+                "{}",
+                t!("ctl.error_old_format_not_supported"),
+            ));
         }
         ConfigType::None => {
-            return Err(anyhow::anyhow!("Unknown configuration format"));
+            return Err(anyhow::anyhow!("{}", t!("ctl.error_unknown_config_format")));
         }
     }
 
     // Show filesystem info
     println!(
-        " Filesystem cipher: \"{}\" , version {}:{}:0",
-        config.cipher_iface.name, config.cipher_iface.major, config.cipher_iface.minor
+        "{}",
+        t!(
+            "ctl.filesystem_cipher",
+            name = config.cipher_iface.name,
+            major = config.cipher_iface.major,
+            minor = config.cipher_iface.minor
+        )
     );
     println!(
-        " Filename encoding: \"{}\" , version {}:{}:0",
-        config.name_iface.name, config.name_iface.major, config.name_iface.minor
+        "{}",
+        t!(
+            "ctl.filename_encoding",
+            name = config.name_iface.name,
+            major = config.name_iface.major,
+            minor = config.name_iface.minor
+        )
     );
-    println!(" Key Size: {} bits", config.key_size);
-    println!(" Block Size: {} bytes", config.block_size);
+    println!("{}", t!("ctl.key_size", size = config.key_size));
+    println!("{}", t!("ctl.block_size", size = config.block_size));
 
     if config.unique_iv {
-        println!(" Each file contains 8 byte header with unique IV data.");
+        println!("{}", t!("ctl.unique_iv_header"));
     }
 
     if config.chained_name_iv {
-        println!(" Filename encoded using IV chaining mode.");
+        println!("{}", t!("ctl.chained_name_iv"));
     }
 
     if config.external_iv_chaining {
-        println!(" External IV chaining enabled (paranoia mode).");
+        println!("{}", t!("ctl.external_iv_chaining"));
     }
 
     if config.block_mac_bytes > 0 {
-        println!(" Block MAC: {} bytes", config.block_mac_bytes);
+        println!("{}", t!("ctl.block_mac", bytes = config.block_mac_bytes));
     }
 
     if config.kdf_iterations > 0 && !config.salt.is_empty() {
-        println!(" Using PBKDF2, with {} iterations", config.kdf_iterations);
-        println!(" Salt Size: {} bits", config.salt.len() * 8);
+        println!(
+            "{}",
+            t!("ctl.pbkdf2_iterations", iterations = config.kdf_iterations)
+        );
+        println!("{}", t!("ctl.salt_size", bits = config.salt.len() * 8));
     }
 
     Ok(())
@@ -237,14 +403,14 @@ fn cmd_passwd(rootdir: &Path) -> Result<()> {
         config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
 
     // Get current password
-    print!("Enter current Encfs password: ");
+    print!("{}", t!("ctl.enter_current_password"));
     io::stdout().flush()?;
     let current_password = prompt_password("")?;
 
     // Decrypt volume key with current password
     let cipher = config
         .get_cipher(&current_password)
-        .context("Invalid password")?;
+        .context(t!("ctl.error_invalid_password"))?;
 
     // Get volume key from cipher (we need to extract it)
     // Actually, we need to decrypt the key_data again to get the volume key
@@ -273,7 +439,7 @@ fn cmd_passwd(rootdir: &Path) -> Result<()> {
     };
 
     // Get new password
-    print!("Enter new Encfs password: ");
+    print!("{}", t!("ctl.enter_new_password"));
     io::stdout().flush()?;
     let new_password = prompt_password("")?;
 
@@ -282,7 +448,7 @@ fn cmd_passwd(rootdir: &Path) -> Result<()> {
     if config.salt.is_empty() {
         config.salt = vec![0u8; constants::DEFAULT_SALT_SIZE];
     }
-    rand_bytes(&mut config.salt).context("Failed to generate salt")?;
+    rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
 
     // Use a reasonable iteration count (or keep existing if set)
     if config.kdf_iterations == 0 {
@@ -322,9 +488,9 @@ fn cmd_passwd(rootdir: &Path) -> Result<()> {
     // Save config
     config
         .save(&config_path)
-        .context("Failed to save config file")?;
+        .context(t!("ctl.error_failed_to_save_config"))?;
 
-    println!("Volume Key successfully updated.");
+    println!("{}", t!("ctl.volume_key_updated"));
 
     Ok(())
 }
@@ -337,7 +503,8 @@ struct ShowcruftStats {
 
 fn cmd_showcruft(rootdir: &Path) -> Result<()> {
     let config_path = find_config_file(rootdir)?;
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let password = get_password(&config_path, None)?;
     let cipher = config.get_cipher(&password).context("Invalid password")?;
@@ -359,15 +526,22 @@ fn cmd_showcruft(rootdir: &Path) -> Result<()> {
     // Print summary
     println!();
     println!(
-        "Checked {} files and {} directories.",
-        stats.files_checked, stats.dirs_checked
+        "{}",
+        t!(
+            "ctl.checked_files_dirs",
+            files = stats.files_checked,
+            dirs = stats.dirs_checked
+        )
     );
     if stats.issues_found == 0 {
-        println!("No undecodable files found.");
+        println!("{}", t!("ctl.no_undecodable_files"));
     } else if stats.issues_found == 1 {
-        println!("Found 1 undecodable file.");
+        println!("{}", t!("ctl.found_one_undecodable"));
     } else {
-        println!("Found {} undecodable files.", stats.issues_found);
+        println!(
+            "{}",
+            t!("ctl.found_undecodable_files", count = stats.issues_found)
+        );
     }
 
     Ok(())
@@ -375,7 +549,8 @@ fn cmd_showcruft(rootdir: &Path) -> Result<()> {
 
 fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Result<()> {
     let config_path = find_config_file(rootdir)?;
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let password = get_password(&config_path, extpass)?;
     let cipher = config.get_cipher(&password).context("Invalid password")?;
@@ -391,7 +566,10 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
             }
             match decode_path_string(&cipher, encoded_path, config.chained_name_iv) {
                 Ok(decoded) => println!("{}", decoded),
-                Err(e) => eprintln!("Error decoding {}: {}", encoded_path, e),
+                Err(e) => eprintln!(
+                    "{}",
+                    t!("ctl.error_decoding", path = encoded_path, error = e)
+                ),
             }
         }
     } else {
@@ -399,7 +577,7 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
         for name in names {
             match decode_path_string(&cipher, &name, config.chained_name_iv) {
                 Ok(decoded) => println!("{}", decoded),
-                Err(e) => eprintln!("Error decoding {}: {}", name, e),
+                Err(e) => eprintln!("{}", t!("ctl.error_decoding", path = name, error = e)),
             }
         }
     }
@@ -409,7 +587,8 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
 
 fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Result<()> {
     let config_path = find_config_file(rootdir)?;
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let password = get_password(&config_path, extpass)?;
     let cipher = config.get_cipher(&password).context("Invalid password")?;
@@ -425,7 +604,10 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
             }
             match encode_path_string(&cipher, plaintext_path, config.chained_name_iv) {
                 Ok(encoded) => println!("{}", encoded),
-                Err(e) => eprintln!("Error encoding {}: {}", plaintext_path, e),
+                Err(e) => eprintln!(
+                    "{}",
+                    t!("ctl.error_encoding", path = plaintext_path, error = e)
+                ),
             }
         }
     } else {
@@ -433,7 +615,7 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
         for name in names {
             match encode_path_string(&cipher, &name, config.chained_name_iv) {
                 Ok(encoded) => println!("{}", encoded),
-                Err(e) => eprintln!("Error encoding {}: {}", name, e),
+                Err(e) => eprintln!("{}", t!("ctl.error_encoding", path = name, error = e)),
             }
         }
     }
@@ -443,25 +625,31 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
 
 fn cmd_cat(rootdir: &Path, path: &str, extpass: Option<String>, reverse: bool) -> Result<()> {
     let config_path = find_config_file(rootdir)?;
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let password = get_password(&config_path, extpass)?;
     let cipher = config.get_cipher(&password).context("Invalid password")?;
 
     if reverse {
         // Encrypt plaintext and output
-        let mut file = std::fs::File::open(rootdir.join(path)).context("Failed to open file")?;
+        let mut file =
+            std::fs::File::open(rootdir.join(path)).context(t!("ctl.error_failed_to_open_file"))?;
         let mut plaintext = Vec::new();
         std::io::Read::read_to_end(&mut file, &mut plaintext)?;
 
         // For reverse mode, we'd need to implement encryption
         // This is a simplified version - full implementation would need block encryption
-        return Err(anyhow::anyhow!("--reverse mode not yet fully implemented"));
+        return Err(anyhow::anyhow!(
+            "{}",
+            t!("ctl.error_reverse_mode_not_implemented"),
+        ));
     } else {
         // Decrypt and output
         let (file_path, path_iv) =
             resolve_file_path(rootdir, path, &cipher, config.chained_name_iv)?;
-        let file = std::fs::File::open(&file_path).context("Failed to open encrypted file")?;
+        let file = std::fs::File::open(&file_path)
+            .context(t!("ctl.error_failed_to_open_encrypted_file"))?;
 
         // Read header to get file IV
         use std::os::unix::fs::FileExt;
@@ -471,7 +659,7 @@ fn cmd_cat(rootdir: &Path, path: &str, extpass: Option<String>, reverse: bool) -
             let mut header = vec![0u8; header_size as usize];
             let n = file.read_at(&mut header, 0)?;
             if n < header.len() {
-                return Err(anyhow::anyhow!("Encrypted file has incomplete header"));
+                return Err(anyhow::anyhow!("{}", t!("ctl.error_incomplete_header")));
             }
 
             // Use path IV for external IV chaining (paranoia mode)
@@ -519,7 +707,8 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
     use std::os::unix::fs::MetadataExt;
 
     let config_path = find_config_file(rootdir)?;
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let password = get_password(&config_path, extpass)?;
     let cipher = config.get_cipher(&password).context("Invalid password")?;
@@ -529,13 +718,14 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
     let (encrypted_dir_path, dir_iv) =
         encrypt_path_with_iv(rootdir, &plaintext_path, &cipher, config.chained_name_iv)?;
 
-    let entries = std::fs::read_dir(&encrypted_dir_path).context("Failed to read directory")?;
+    let entries =
+        std::fs::read_dir(&encrypted_dir_path).context(t!("ctl.error_failed_to_read_directory"))?;
 
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("Warning: Failed to read directory entry: {}", e);
+                eprintln!("{}", t!("ctl.warning_read_dir_entry", error = e));
                 continue;
             }
         };
@@ -588,7 +778,10 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
                 })();
 
                 if let Err(e) = process_res {
-                    eprintln!("Warning: Error processing {}: {}", name_str, e);
+                    eprintln!(
+                        "{}",
+                        t!("ctl.warning_error_processing", name = name_str, error = e)
+                    );
                 }
             }
             Err(_) => {
@@ -605,7 +798,8 @@ fn cmd_showkey(rootdir: &Path, extpass: Option<String>) -> Result<()> {
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
     let config_path = find_config_file(rootdir)?;
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let password = get_password(&config_path, extpass)?;
 
@@ -656,13 +850,13 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
 
     let current_password = lines
         .next()
-        .ok_or_else(|| anyhow::anyhow!("No current password provided"))?
-        .context("Failed to read current password")?;
+        .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_no_current_password")))?
+        .context(t!("ctl.error_failed_to_read_current_password"))?;
 
     // Verify current password
     let cipher = config
         .get_cipher(&current_password)
-        .context("Invalid password")?;
+        .context(t!("ctl.error_invalid_password"))?;
 
     // Get volume key
     let key_len = (config.key_size / 8) as usize;
@@ -692,15 +886,15 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     // Read new password from stdin (second line)
     let new_password = lines
         .next()
-        .ok_or_else(|| anyhow::anyhow!("No new password provided"))?
-        .context("Failed to read new password")?;
+        .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_no_new_password")))?
+        .context(t!("ctl.error_failed_to_read_new_password"))?;
 
     // Generate new salt
     use openssl::rand::rand_bytes;
     if config.salt.is_empty() {
         config.salt = vec![0u8; constants::DEFAULT_SALT_SIZE];
     }
-    rand_bytes(&mut config.salt).context("Failed to generate salt")?;
+    rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
 
     if config.kdf_iterations == 0 {
         config.kdf_iterations = constants::DEFAULT_KDF_ITERATIONS;
@@ -732,9 +926,9 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     // Save config
     config
         .save(&config_path)
-        .context("Failed to save config file")?;
+        .context(t!("ctl.error_failed_to_save_config"))?;
 
-    println!("Volume Key successfully updated.");
+    println!("{}", t!("ctl.volume_key_updated"));
 
     Ok(())
 }
@@ -746,14 +940,16 @@ fn cmd_export(
     fail_on_error: bool,
 ) -> Result<()> {
     let config_path = find_config_file(rootdir)?;
-    let config = config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let password = get_password(&config_path, extpass)?;
     let cipher = config.get_cipher(&password).context("Invalid password")?;
 
     // Create destination directory if it doesn't exist
     if !destdir.exists() {
-        std::fs::create_dir_all(destdir).context("Failed to create destination directory")?;
+        std::fs::create_dir_all(destdir)
+            .context(t!("ctl.error_failed_to_create_destination_directory"))?;
     }
 
     // Start recursive export from root
@@ -780,16 +976,20 @@ fn export_directory(
     use encfs::crypto::file::FileDecoder;
     use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
 
-    let entries = std::fs::read_dir(current_encrypted_dir).context("Failed to read directory")?;
+    let entries = std::fs::read_dir(current_encrypted_dir)
+        .context(t!("ctl.error_failed_to_read_directory"))?;
 
     for entry in entries {
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
                 if fail_on_error {
-                    return Err(anyhow::anyhow!("Failed to read directory entry: {}", e));
+                    return Err(anyhow::anyhow!(
+                        "{}",
+                        t!("ctl.error_failed_to_read_dir_entry", error = e),
+                    ));
                 }
-                eprintln!("Warning: Failed to read directory entry: {}", e);
+                eprintln!("{}", t!("ctl.warning_read_dir_entry", error = e));
                 continue;
             }
         };
@@ -803,7 +1003,13 @@ fn export_directory(
                 Some(s) => s,
                 None => {
                     if fail_on_error {
-                        return Err(anyhow::anyhow!("Non-UTF-8 filename: {:?}", file_name));
+                        return Err(anyhow::anyhow!(
+                            "{}",
+                            t!(
+                                "ctl.error_non_utf8_filename",
+                                filename = file_name.to_string_lossy()
+                            ),
+                        ));
                     }
                     eprintln!(
                         "Warning: Skipping file with non-UTF-8 filename: {:?}",
@@ -823,9 +1029,15 @@ fn export_directory(
                 Ok(result) => result,
                 Err(e) => {
                     if fail_on_error {
-                        return Err(anyhow::anyhow!("Could not decrypt {}: {}", name_str, e));
+                        return Err(anyhow::anyhow!(
+                            "{}",
+                            t!("ctl.error_could_not_decrypt", name = name_str, error = e),
+                        ));
                     }
-                    eprintln!("Warning: Could not decrypt {}: {}", name_str, e);
+                    eprintln!(
+                        "{}",
+                        t!("ctl.warning_could_not_decrypt", name = name_str, error = e)
+                    );
                     return Ok(());
                 }
             };
@@ -866,9 +1078,12 @@ fn export_directory(
                             Err(e) => {
                                 if fail_on_error {
                                     return Err(anyhow::anyhow!(
-                                        "Undecryptable symlink target {:?}: {}",
-                                        entry.path(),
-                                        e
+                                        "{}",
+                                        t!(
+                                            "ctl.error_undecryptable_symlink_target",
+                                            path = entry.path().display(),
+                                            error = e
+                                        )
                                     ));
                                 }
                                 eprintln!(
@@ -903,7 +1118,10 @@ fn export_directory(
 
                     if bytes_read < header.len() {
                         let name_display = String::from_utf8_lossy(&decrypted_name_bytes);
-                        eprintln!("Warning: File {} has incomplete header", name_display);
+                        eprintln!(
+                            "{}",
+                            t!("ctl.warning_incomplete_header", name = name_display)
+                        );
                         return Ok(());
                     }
 
@@ -968,7 +1186,14 @@ fn export_directory(
             if fail_on_error {
                 return Err(e);
             }
-            eprintln!("Warning: Failed to export {:?}: {}", entry_path, e);
+            eprintln!(
+                "{}",
+                t!(
+                    "ctl.warning_export_failed",
+                    path = entry_path.display(),
+                    error = e
+                )
+            );
         }
     }
     Ok(())
@@ -987,14 +1212,19 @@ fn decode_path_string(cipher: &SslCipher, encoded_path: &str, chained_iv: bool) 
             std::path::Component::Normal(name) => {
                 let name_str = name
                     .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8"))?;
+                    .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_invalid_utf8")))?;
                 let (decrypted_name_bytes, new_iv) = cipher.decrypt_filename(name_str, iv)?;
                 out.push(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
                 if chained_iv {
                     iv = new_iv;
                 }
             }
-            _ => return Err(anyhow::anyhow!("Invalid path component")),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "{}",
+                    t!("ctl.error_invalid_path_component")
+                ));
+            }
         }
     }
 
@@ -1022,7 +1252,12 @@ fn encode_path_string(
                     iv = new_iv;
                 }
             }
-            _ => return Err(anyhow::anyhow!("Invalid path component")),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "{}",
+                    t!("ctl.error_invalid_path_component")
+                ));
+            }
         }
     }
 
@@ -1050,7 +1285,12 @@ fn encrypt_path_with_iv(
                     iv = new_iv;
                 }
             }
-            _ => return Err(anyhow::anyhow!("Invalid path component")),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "{}",
+                    t!("ctl.error_invalid_path_component")
+                ));
+            }
         }
     }
 
@@ -1075,17 +1315,17 @@ fn find_config_file(rootdir: &Path) -> Result<PathBuf> {
         }
     }
 
-    Err(anyhow::anyhow!(
-        "No config file found. Looked for .encfs6.xml, .encfs5, .encfs4, .encfs3 in {}",
-        rootdir.display()
-    ))
+    Err(anyhow::anyhow!(t!(
+        "ctl.error_no_config_file_found",
+        rootdir = rootdir.display()
+    )))
 }
 
 fn get_password(_config_path: &Path, extpass: Option<String>) -> Result<String> {
     if let Some(prog) = extpass {
         get_password_from_program(&prog)
     } else {
-        prompt_password("EncFS Password: ").context("Failed to read password")
+        prompt_password("EncFS Password: ").context(t!("ctl.error_failed_to_read_password"))
     }
 }
 
@@ -1094,14 +1334,17 @@ fn get_password_from_program(prog: &str) -> Result<String> {
         .arg("-c")
         .arg(prog)
         .output()
-        .context("Failed to execute password program")?;
+        .context(t!("ctl.error_failed_to_execute_password_program"))?;
 
     if !output.status.success() {
-        return Err(anyhow::anyhow!("Password program exited with error"));
+        return Err(anyhow::anyhow!(
+            "{}",
+            t!("ctl.error_password_program_exited_with_error"),
+        ));
     }
 
     String::from_utf8(output.stdout)
-        .context("Password program output is not valid UTF-8")
+        .context(t!("ctl.error_password_program_invalid_utf8"))
         .map(|s| s.trim_end().to_string())
 }
 
@@ -1113,7 +1356,8 @@ fn find_undecodable_files(
     dir_iv: u64,
     stats: &mut ShowcruftStats,
 ) -> Result<()> {
-    let entries = std::fs::read_dir(current_dir).context("Failed to read directory")?;
+    let entries =
+        std::fs::read_dir(current_dir).context(t!("ctl.error_failed_to_read_directory"))?;
 
     stats.dirs_checked += 1;
     let mut showed_dir = false;
@@ -1123,7 +1367,7 @@ fn find_undecodable_files(
         let entry = match entry {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("Warning: Failed to read directory entry: {}", e);
+                eprintln!("{}", t!("ctl.warning_read_dir_entry", error = e));
                 continue;
             }
         };
@@ -1138,10 +1382,13 @@ fn find_undecodable_files(
                 stats.files_checked += 1;
                 if !showed_dir {
                     let rel_path = current_dir.strip_prefix(rootdir).unwrap_or(current_dir);
-                    println!("In directory {}: ", rel_path.display());
+                    println!("{}", t!("ctl.in_directory", path = rel_path.display()));
                     showed_dir = true;
                 }
-                println!("{} (non-UTF-8 filename)", entry.path().display());
+                println!(
+                    "{}",
+                    t!("ctl.non_utf8_filename", path = entry.path().display())
+                );
                 stats.issues_found += 1;
                 continue;
             }
@@ -1165,14 +1412,17 @@ fn find_undecodable_files(
                         dirs_to_recurse.push((entry.path(), next_iv));
                     }
                 } else {
-                    eprintln!("Warning: Failed to get file type for {:?}", entry.path());
+                    eprintln!(
+                        "{}",
+                        t!("ctl.warning_file_type", path = entry.path().display())
+                    );
                 }
             }
             Err(_) => {
                 // Failed to decode - this is "cruft"
                 if !showed_dir {
                     let rel_path = current_dir.strip_prefix(rootdir).unwrap_or(current_dir);
-                    println!("In directory {}: ", rel_path.display());
+                    println!("{}", t!("ctl.in_directory", path = rel_path.display()));
                     showed_dir = true;
                 }
                 println!("{}", entry.path().display());
@@ -1213,7 +1463,10 @@ fn resolve_file_path(
         return Ok((encrypted_path, path_iv));
     }
 
-    Err(anyhow::anyhow!("File not found: {}", path))
+    Err(anyhow::anyhow!(
+        "{}",
+        t!("ctl.error_file_not_found", path = path),
+    ))
 }
 
 fn decrypt_path_with_iv(
@@ -1231,14 +1484,19 @@ fn decrypt_path_with_iv(
             std::path::Component::Normal(name) => {
                 let name_str = name
                     .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid UTF-8"))?;
+                    .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_invalid_utf8")))?;
                 let (decrypted_name_bytes, new_iv) = cipher.decrypt_filename(name_str, iv)?;
                 decrypted_path.push(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
                 if chained_iv {
                     iv = new_iv;
                 }
             }
-            _ => return Err(anyhow::anyhow!("Invalid path component")),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "{}",
+                    t!("ctl.error_invalid_path_component")
+                ));
+            }
         }
     }
 

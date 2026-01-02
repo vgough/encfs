@@ -1,0 +1,53 @@
+_version: 2
+main.mounting:
+  en: "Mounting %{root} at %{mount_point}"
+  fr: "Montage de %{root} à %{mount_point}"
+  de: "%{root} wird auf %{mount_point} gemountet"
+main.using_legacy_config:
+  en: "Using legacy .encfs5 config file"
+  fr: "Utilisation du fichier de configuration .encfs5 hérité"
+  de: "Verwendung der alten .encfs5-Konfigurationsdatei"
+main.no_config_file_found:
+  en: "No config file found. Looked for .encfs6.xml and .encfs5 in %{root}"
+  fr: "Aucun fichier de configuration trouvé. Recherché .encfs6.xml et .encfs5 dans %{root}"
+  de: "Keine Konfigurationsdatei gefunden. Suche nach .encfs6.xml und .encfs5 in %{root}"
+main.no_config_file_found_short:
+  en: "No config file found"
+  fr: "Aucun fichier de configuration trouvé"
+  de: "Keine Konfigurationsdatei gefunden"
+main.failed_to_read_password:
+  en: "Failed to read password"
+  fr: "Échec de la lecture du mot de passe"
+  de: "Fehler beim Lesen des Passworts"
+main.successfully_decrypted:
+  en: "Successfully decrypted volume key!"
+  fr: "Clé de volume déchiffrée avec succès!"
+  de: "Volumen-Schlüssel erfolgreich entschlüsselt!"
+main.daemonized_successfully:
+  en: "Daemonized successfully"
+  fr: "Démonisation réussie"
+  de: "Erfolgreich als Daemon gestartet."
+main.failed_to_daemonize:
+  en: "Failed to daemonize: %{error}"
+  fr: "Échec de la démonisation : %{error}"
+  de: "Fehler beim Daemonisieren: %{error}"
+main.failed_to_decrypt_key:
+  en: "Failed to decrypt volume key: %{error}"
+  fr: "Échec du déchiffrement de la clé de volume : %{error}"
+  de: "Fehler beim Entschlüsseln des Volumen-Schlüssels: %{error}"
+main.extpass_program_failed:
+  en: "Password program exited with error"
+  fr: "Le programme de mot de passe est sorti avec une erreur"
+  de: "Das Passwortprogramm ist mit einem Fehler beendet"
+main.failed_to_load_config:
+  en: "Failed to load config file"
+  fr: "Échec du chargement du fichier de configuration"
+  de: "Fehler beim Laden der Konfigurationsdatei"
+main.failed_to_run_extpass:
+  en: "Failed to run password program"
+  fr: "Échec de l'exécution du programme de mot de passe"
+  de: "Fehler beim Ausführen des Passwortprogramms"
+main.password_prompt:
+  en: "EncFS Password:"
+  fr: "Mot de passe EncFS:"
+  de: "EncFS-Passwort:"
