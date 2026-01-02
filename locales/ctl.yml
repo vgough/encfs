@@ -187,3 +187,67 @@ ctl.error_failed_to_create_destination_directory:
   en: "Failed to create destination directory"
   fr: "Échec de la création du répertoire de destination"
   de: "Fehler beim Erstellen des Zielverzeichnisses"
+ctl.error_version3_not_supported:
+  en: "Version 3 configuration files are not supported"
+  fr: "Les fichiers de configuration version 3 ne sont pas pris en charge"
+  de: "Version-3-Konfigurationsdateien werden nicht unterstützt"
+ctl.error_old_format_not_supported:
+  en: "This old EncFS format is not supported"
+  fr: "Cet ancien format EncFS n'est pas pris en charge"
+  de: "Dieses alte EncFS-Format wird nicht unterstützt"
+ctl.error_unknown_config_format:
+  en: "Unknown configuration format"
+  fr: "Format de configuration inconnu"
+  de: "Unbekanntes Konfigurationsformat"
+ctl.error_reverse_mode_not_implemented:
+  en: "--reverse mode not yet fully implemented"
+  fr: "Le mode --reverse n'est pas encore entièrement implémenté"
+  de: "--reverse-Modus noch nicht vollständig implementiert"
+ctl.error_incomplete_header:
+  en: "Encrypted file has incomplete header"
+  fr: "Le fichier chiffré a un en-tête incomplet"
+  de: "Verschlüsselte Datei hat unvollständigen Header"
+ctl.error_no_current_password:
+  en: "No current password provided"
+  fr: "Aucun mot de passe actuel fourni"
+  de: "Kein aktuelles Passwort angegeben"
+ctl.error_no_new_password:
+  en: "No new password provided"
+  fr: "Aucun nouveau mot de passe fourni"
+  de: "Kein neues Passwort angegeben"
+ctl.error_failed_to_read_dir_entry:
+  en: "Failed to read directory entry: %{error}"
+  fr: "Échec de la lecture de l'entrée du répertoire : %{error}"
+  de: "Fehler beim Lesen des Verzeichniseintrags: %{error}"
+ctl.error_non_utf8_filename:
+  en: "Non-UTF-8 filename: %{filename}"
+  fr: "Nom de fichier non UTF-8 : %{filename}"
+  de: "Nicht-UTF-8-Dateiname: %{filename}"
+ctl.error_could_not_decrypt:
+  en: "Could not decrypt %{name}: %{error}"
+  fr: "Impossible de déchiffrer %{name} : %{error}"
+  de: "%{name} konnte nicht entschlüsselt werden: %{error}"
+ctl.error_undecryptable_symlink_target:
+  en: "Undecryptable symlink target %{path}: %{error}"
+  fr: "Cible de lien symbolique indéchiffrable %{path} : %{error}"
+  de: "Nicht entschlüsselbares Symlink-Ziel %{path}: %{error}"
+ctl.error_invalid_utf8:
+  en: "Invalid UTF-8"
+  fr: "UTF-8 invalide"
+  de: "Ungültiges UTF-8"
+ctl.error_invalid_path_component:
+  en: "Invalid path component"
+  fr: "Composant de chemin invalide"
+  de: "Ungültiger Pfadkomponente"
+ctl.error_no_config_file_found:
+  en: "No config file found. Looked for .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
+  fr: "Aucun fichier de configuration trouvé. Recherché .encfs6.xml, .encfs5, .encfs4, .encfs3 dans %{rootdir}"
+  de: "Keine Konfigurationsdatei gefunden. Suche nach .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
+ctl.error_password_program_exited_with_error:
+  en: "Password program exited with error"
+  fr: "Le programme de mot de passe s'est terminé avec une erreur"
+  de: "Passwortprogramm mit Fehler beendet"
+ctl.error_file_not_found:
+  en: "File not found: %{path}"
+  fr: "Fichier introuvable : %{path}"
+  de: "Datei nicht gefunden: %{path}"

@@ -10,45 +10,82 @@ use encfs::{config, fs::EncFs};
 
 rust_i18n::i18n!("locales", fallback = "en");
 
+// Helper functions for translated help text
+fn help_main_about() -> String {
+    t!("help.encfs.about").to_string()
+}
+
+fn help_main_foreground() -> String {
+    t!("help.encfs.foreground").to_string()
+}
+
+fn help_main_verbose() -> String {
+    t!("help.encfs.verbose").to_string()
+}
+
+fn help_main_debug() -> String {
+    t!("help.encfs.debug").to_string()
+}
+
+fn help_main_single_thread() -> String {
+    t!("help.encfs.single_thread").to_string()
+}
+
+fn help_main_public() -> String {
+    t!("help.encfs.public").to_string()
+}
+
+fn help_main_extpass() -> String {
+    t!("help.encfs.extpass").to_string()
+}
+
+fn help_main_stdinpass() -> String {
+    t!("help.encfs.stdinpass").to_string()
+}
+
+fn help_main_read_only() -> String {
+    t!("help.encfs.read_only").to_string()
+}
+
+fn help_main_root() -> String {
+    t!("help.encfs.root").to_string()
+}
+
+fn help_main_mount_point() -> String {
+    t!("help.encfs.mount_point").to_string()
+}
+
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = help_main_about(), long_about = None)]
 struct Args {
-    /// Run in foreground
-    #[arg(short, long)]
+    #[arg(short, long, help = help_main_foreground())]
     foreground: bool,
 
-    /// Verbose logging
-    #[arg(short, long)]
+    #[arg(short, long, help = help_main_verbose())]
     verbose: bool,
 
-    /// Enable debug mode (implies -v and -f)
-    #[arg(short)]
+    #[arg(short, help = help_main_debug())]
     debug: bool,
 
-    /// Single threaded mode
-    #[arg(short = 's')]
+    #[arg(short = 's', help = help_main_single_thread())]
     single_thread: bool,
 
-    /// Make mountpoint public (allow_other)
-    #[arg(long)]
+    #[arg(long, help = help_main_public())]
     public: bool,
 
-    /// External password program
-    #[arg(long)]
+    #[arg(long, help = help_main_extpass())]
     extpass: Option<String>,
 
-    /// Read password from stdin
-    #[arg(short = 'S', long = "stdinpass")]
+    #[arg(short = 'S', long = "stdinpass", help = help_main_stdinpass())]
     stdinpass: bool,
 
-    /// Mount read-only
-    #[arg(short = 'r', long)]
+    #[arg(short = 'r', long, help = help_main_read_only())]
     read_only: bool,
 
-    /// Root directory of encrypted volume
+    #[arg(help = help_main_root())]
     root: PathBuf,
 
-    /// Mount point
+    #[arg(help = help_main_mount_point())]
     mount_point: PathBuf,
 }
 
