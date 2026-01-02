@@ -170,6 +170,7 @@ fn cmd_info(rootdir: &Path) -> Result<()> {
     let config = config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     // Display version info based on config type
+    println!();
     match config.config_type {
         ConfigType::V6 => {
             println!(
