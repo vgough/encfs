@@ -26,7 +26,7 @@ main.successfully_decrypted:
 main.daemonized_successfully:
   en: "Daemonized successfully"
   fr: "Démonisation réussie"
-  de: "Volumen erfolgreich gemountet"
+  de: "Erfolgreich als Daemon gestartet."
 main.failed_to_daemonize:
   en: "Failed to daemonize: %{error}"
   fr: "Échec de la démonisation : %{error}"
