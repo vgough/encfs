@@ -80,10 +80,6 @@ help.encfsctl.ls:
   en: "List files in a directory with size and modification time"
   fr: "Lister les fichiers d'un répertoire avec la taille et l'heure de modification"
   de: "Dateien in einem Verzeichnis mit Größe und Änderungszeit auflisten"
-help.encfsctl.showkey:
-  en: "Show the volume key (encoded with itself)"
-  fr: "Afficher la clé de volume (encodée avec elle-même)"
-  de: "Volumen-Schlüssel anzeigen (mit sich selbst kodiert)"
 help.encfsctl.autopasswd:
   en: "Change password automatically (read old/new passwords from stdin)"
   fr: "Changer le mot de passe automatiquement (lire les anciens/nouveaux mots de passe depuis stdin)"
@@ -100,6 +96,10 @@ help.encfsctl.passwd_rootdir:
   en: "Root directory of encrypted filesystem"
   fr: "Répertoire racine du système de fichiers chiffré"
   de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.passwd_upgrade:
+  en: "Upgrade config to latest version and switch to Argon2id KDF"
+  fr: "Mettre à jour la configuration vers la dernière version et passer à Argon2id KDF"
+  de: "Konfiguration auf die neueste Version aktualisieren und auf Argon2id KDF umstellen"
 help.encfsctl.showcruft_rootdir:
   en: "Root directory of encrypted filesystem"
   fr: "Répertoire racine du système de fichiers chiffré"
@@ -153,14 +153,6 @@ help.encfsctl.ls_path:
   fr: "Chemin dans le système de fichiers chiffré (par défaut : racine)"
   de: "Pfad im verschlüsselten Dateisystem (Standard: Stammverzeichnis)"
 help.encfsctl.ls_extpass:
-  en: "External password program"
-  fr: "Programme de mot de passe externe"
-  de: "Externes Passwortprogramm"
-help.encfsctl.showkey_rootdir:
-  en: "Root directory of encrypted filesystem"
-  fr: "Répertoire racine du système de fichiers chiffré"
-  de: "Stammverzeichnis des verschlüsselten Dateisystems"
-help.encfsctl.showkey_extpass:
   en: "External password program"
   fr: "Programme de mot de passe externe"
   de: "Externes Passwortprogramm"

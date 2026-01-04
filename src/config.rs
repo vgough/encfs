@@ -18,6 +18,14 @@ pub enum ConfigType {
     V6,          // .encfs6.xml - XML format
 }
 
+/// Key derivation function algorithm
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KdfAlgorithm {
+    #[default]
+    Pbkdf2, // PBKDF2-HMAC-SHA1 (legacy default)
+    Argon2id, // Argon2id (recommended for new configs)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct BoostSerialization {
     pub cfg: EncfsConfig,
@@ -53,6 +61,22 @@ pub struct EncfsConfig {
 
     #[serde(rename = "desiredKDFDuration")]
     pub desired_kdf_duration: i64,
+
+    /// Key derivation function algorithm (defaults to PBKDF2 for backward compatibility)
+    #[serde(rename = "kdfAlgorithm", default, with = "kdf_algorithm_serde")]
+    pub kdf_algorithm: KdfAlgorithm,
+
+    /// Argon2 memory cost in KiB (only used when kdf_algorithm is Argon2id)
+    #[serde(rename = "argon2MemoryCost", default)]
+    pub argon2_memory_cost: Option<u32>,
+
+    /// Argon2 time cost (iterations, only used when kdf_algorithm is Argon2id)
+    #[serde(rename = "argon2TimeCost", default)]
+    pub argon2_time_cost: Option<u32>,
+
+    /// Argon2 parallelism (threads, only used when kdf_algorithm is Argon2id)
+    #[serde(rename = "argon2Parallelism", default)]
+    pub argon2_parallelism: Option<u32>,
 
     #[serde(rename = "plainData", default)]
     pub plain_data: bool,
@@ -112,6 +136,26 @@ mod base64_serde {
         // Remove newlines and whitespace if present
         let s = s.replace(['\n', '\r', ' ', '\t'], "");
         BASE64.decode(s).map_err(serde::de::Error::custom)
+    }
+}
+
+mod kdf_algorithm_serde {
+    use super::KdfAlgorithm;
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<KdfAlgorithm, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = Option::<String>::deserialize(deserializer)?;
+        match s.as_deref() {
+            None | Some("pbkdf2") => Ok(KdfAlgorithm::Pbkdf2),
+            Some("argon2id") => Ok(KdfAlgorithm::Argon2id),
+            Some(other) => Err(serde::de::Error::custom(format!(
+                "Unknown KDF algorithm: {}",
+                other
+            ))),
+        }
     }
 }
 
@@ -215,6 +259,42 @@ impl EncfsConfig {
                 self.kdf_iterations
             ));
         }
+
+        // Validate Argon2 parameters if using Argon2id
+        if self.kdf_algorithm == KdfAlgorithm::Argon2id {
+            if self.argon2_memory_cost.is_none()
+                || self.argon2_time_cost.is_none()
+                || self.argon2_parallelism.is_none()
+            {
+                return Err(anyhow::anyhow!(
+                    "Argon2id algorithm requires argon2MemoryCost, argon2TimeCost, and argon2Parallelism to be set"
+                ));
+            }
+
+            let memory_cost = self.argon2_memory_cost.unwrap();
+            let time_cost = self.argon2_time_cost.unwrap();
+            let parallelism = self.argon2_parallelism.unwrap();
+
+            if memory_cost < 8 {
+                return Err(anyhow::anyhow!(
+                    "Invalid argon2MemoryCost {} (must be at least 8 KiB)",
+                    memory_cost
+                ));
+            }
+            if time_cost < 1 {
+                return Err(anyhow::anyhow!(
+                    "Invalid argon2TimeCost {} (must be at least 1)",
+                    time_cost
+                ));
+            }
+            if parallelism < 1 {
+                return Err(anyhow::anyhow!(
+                    "Invalid argon2Parallelism {} (must be at least 1)",
+                    parallelism
+                ));
+            }
+        }
+
         Ok(())
     }
 
@@ -265,6 +345,10 @@ impl EncfsConfig {
             salt: vec![],      // V4 didn't have salt
             kdf_iterations: 0, // V4 didn't have PBKDF2 iterations
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2, // V4 uses legacy KDF
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes: 0,
             block_mac_rand_bytes: 0,
@@ -353,6 +437,10 @@ impl EncfsConfig {
             salt: vec![],      // V5 didn't have salt
             kdf_iterations: 0, // V5 didn't have PBKDF2 iterations
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2, // V5 uses legacy KDF
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes,
             block_mac_rand_bytes,
@@ -376,10 +464,35 @@ impl EncfsConfig {
         let iv_len = cipher.iv_len();
         let user_key_len = key_len + iv_len;
 
-        let user_key_blob = if self.kdf_iterations > 0 {
-            SslCipher::derive_key(password, &self.salt, self.kdf_iterations, user_key_len)?
-        } else {
-            SslCipher::derive_key_legacy(password, key_len, iv_len)?
+        // Derive user key based on configured KDF algorithm
+        let user_key_blob = match self.kdf_algorithm {
+            KdfAlgorithm::Pbkdf2 => {
+                if self.kdf_iterations > 0 {
+                    SslCipher::derive_key(password, &self.salt, self.kdf_iterations, user_key_len)?
+                } else {
+                    SslCipher::derive_key_legacy(password, key_len, iv_len)?
+                }
+            }
+            KdfAlgorithm::Argon2id => {
+                let memory_cost = self
+                    .argon2_memory_cost
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_MEMORY_COST);
+                let time_cost = self
+                    .argon2_time_cost
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_TIME_COST);
+                let parallelism = self
+                    .argon2_parallelism
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_PARALLELISM);
+
+                SslCipher::derive_key_argon2id(
+                    password,
+                    &self.salt,
+                    memory_cost,
+                    time_cost,
+                    parallelism,
+                    user_key_len,
+                )?
+            }
         };
 
         // Split user_key_blob into key and IV
@@ -387,11 +500,12 @@ impl EncfsConfig {
         let user_iv = &user_key_blob[key_len..];
 
         // Decrypt volume key
-        let volume_key_blob = if self.kdf_iterations > 0 {
-            cipher.decrypt_key(&self.key_data, user_key, user_iv)?
-        } else {
-            cipher.decrypt_key_legacy(&self.key_data, user_key, user_iv)?
-        };
+        let volume_key_blob =
+            if self.kdf_iterations > 0 || self.kdf_algorithm == KdfAlgorithm::Argon2id {
+                cipher.decrypt_key(&self.key_data, user_key, user_iv)?
+            } else {
+                cipher.decrypt_key_legacy(&self.key_data, user_key, user_iv)?
+            };
 
         if volume_key_blob.len() < key_len + iv_len {
             return Err(anyhow::anyhow!("Decrypted key blob too short"));
@@ -428,6 +542,10 @@ impl EncfsConfig {
             salt: vec![],
             kdf_iterations: 0,
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2,
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes: 8,
             block_mac_rand_bytes: 0,
@@ -573,10 +691,33 @@ mod xml_ser {
 
         #[serde(rename = "desiredKDFDuration")]
         desired_kdf_duration: i64,
+
+        #[serde(rename = "kdfAlgorithm", skip_serializing_if = "Option::is_none")]
+        kdf_algorithm: Option<&'static str>,
+
+        #[serde(rename = "argon2MemoryCost", skip_serializing_if = "Option::is_none")]
+        argon2_memory_cost: Option<u32>,
+
+        #[serde(rename = "argon2TimeCost", skip_serializing_if = "Option::is_none")]
+        argon2_time_cost: Option<u32>,
+
+        #[serde(rename = "argon2Parallelism", skip_serializing_if = "Option::is_none")]
+        argon2_parallelism: Option<u32>,
     }
 
     impl<'a> EncfsConfigXml<'a> {
         fn from_config(config: &'a EncfsConfig) -> Self {
+            let (kdf_algorithm, argon2_memory_cost, argon2_time_cost, argon2_parallelism) =
+                match config.kdf_algorithm {
+                    KdfAlgorithm::Pbkdf2 => (None, None, None, None),
+                    KdfAlgorithm::Argon2id => (
+                        Some("argon2id"),
+                        config.argon2_memory_cost,
+                        config.argon2_time_cost,
+                        config.argon2_parallelism,
+                    ),
+                };
+
             Self {
                 class_id: "0",
                 tracking_level: "0",
@@ -602,6 +743,10 @@ mod xml_ser {
                 salt_data: Base64Xml { data: &config.salt },
                 kdf_iterations: config.kdf_iterations,
                 desired_kdf_duration: config.desired_kdf_duration,
+                kdf_algorithm,
+                argon2_memory_cost,
+                argon2_time_cost,
+                argon2_parallelism,
             }
         }
     }
@@ -721,6 +866,10 @@ mod tests {
             salt: vec![],
             kdf_iterations: 1,
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2,
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes: 0,
             block_mac_rand_bytes: 0,
@@ -785,5 +934,124 @@ mod tests {
 
         config.block_mac_rand_bytes = 0;
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_argon2_config_validation() {
+        let mut config = create_test_config();
+        config.kdf_algorithm = KdfAlgorithm::Argon2id;
+
+        // Missing Argon2 parameters should fail
+        assert!(config.validate().is_err());
+
+        // Add valid parameters
+        config.argon2_memory_cost = Some(crate::constants::DEFAULT_ARGON2_MEMORY_COST);
+        config.argon2_time_cost = Some(crate::constants::DEFAULT_ARGON2_TIME_COST);
+        config.argon2_parallelism = Some(crate::constants::DEFAULT_ARGON2_PARALLELISM);
+        assert!(config.validate().is_ok());
+
+        // Invalid memory cost (too small)
+        config.argon2_memory_cost = Some(4);
+        assert!(config.validate().is_err());
+        config.argon2_memory_cost = Some(crate::constants::DEFAULT_ARGON2_MEMORY_COST);
+
+        // Invalid time cost
+        config.argon2_time_cost = Some(0);
+        assert!(config.validate().is_err());
+        config.argon2_time_cost = Some(crate::constants::DEFAULT_ARGON2_TIME_COST);
+
+        // Invalid parallelism
+        config.argon2_parallelism = Some(0);
+        assert!(config.validate().is_err());
+        config.argon2_parallelism = Some(crate::constants::DEFAULT_ARGON2_PARALLELISM);
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_argon2_config_roundtrip() -> Result<()> {
+        use crate::crypto::ssl::SslCipher;
+        use std::fs;
+
+        // Create an Argon2id config
+        let mut config = create_test_config();
+        config.kdf_algorithm = KdfAlgorithm::Argon2id;
+        config.argon2_memory_cost = Some(32768); // 32 MiB
+        config.argon2_time_cost = Some(2);
+        config.argon2_parallelism = Some(2);
+        config.salt = vec![
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+        ];
+
+        // Generate encrypted volume key
+        let password = "test_password";
+        let key_len = (config.key_size / 8) as usize;
+        let cipher = SslCipher::new(&config.cipher_iface, config.key_size)?;
+        let iv_len = cipher.iv_len();
+        let user_key_len = key_len + iv_len;
+
+        let user_key_blob = SslCipher::derive_key_argon2id(
+            password,
+            &config.salt,
+            config.argon2_memory_cost.unwrap(),
+            config.argon2_time_cost.unwrap(),
+            config.argon2_parallelism.unwrap(),
+            user_key_len,
+        )?;
+
+        let user_key = &user_key_blob[..key_len];
+        let user_iv = &user_key_blob[key_len..];
+
+        // Create a fake volume key
+        let volume_key = vec![0u8; key_len];
+        let volume_iv = vec![1u8; iv_len];
+        let mut volume_blob = Vec::with_capacity(key_len + iv_len);
+        volume_blob.extend_from_slice(&volume_key);
+        volume_blob.extend_from_slice(&volume_iv);
+
+        let encrypted_key = cipher.encrypt_key(&volume_blob, user_key, user_iv)?;
+        config.key_data = encrypted_key;
+
+        // Save config
+        let dir = std::env::temp_dir();
+        let config_path = dir.join(format!("encfs_argon2_test_{}.xml", std::process::id()));
+        config.save(&config_path)?;
+
+        // Load config
+        let loaded_config = EncfsConfig::load(&config_path)?;
+
+        // Verify fields
+        assert_eq!(loaded_config.kdf_algorithm, KdfAlgorithm::Argon2id);
+        assert_eq!(loaded_config.argon2_memory_cost, Some(32768));
+        assert_eq!(loaded_config.argon2_time_cost, Some(2));
+        assert_eq!(loaded_config.argon2_parallelism, Some(2));
+
+        // Verify we can decrypt with the loaded config (cipher creation should succeed)
+        let _cipher2 = loaded_config.get_cipher(password)?;
+
+        // Cleanup
+        let _ = fs::remove_file(config_path);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pbkdf2_config_backward_compatibility() -> Result<()> {
+        // Load existing PBKDF2 config (should default to PBKDF2 algorithm)
+        let fixture_path = Path::new("tests/fixtures/encfs6-std.xml");
+        if !fixture_path.exists() {
+            // Skip test if fixture not available
+            return Ok(());
+        }
+
+        let config = EncfsConfig::load(fixture_path)?;
+
+        // Should default to PBKDF2
+        assert_eq!(config.kdf_algorithm, KdfAlgorithm::Pbkdf2);
+        assert_eq!(config.argon2_memory_cost, None);
+        assert_eq!(config.argon2_time_cost, None);
+        assert_eq!(config.argon2_parallelism, None);
+
+        Ok(())
     }
 }

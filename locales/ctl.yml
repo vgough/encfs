@@ -67,6 +67,26 @@ ctl.salt_size:
   en: " Salt Size: %{bits} bits"
   fr: " Taille du sel : %{bits} bits"
   de: " Salt-Größe: %{bits} Bits"
+ctl.kdf_algorithm_pbkdf2:
+  en: " Key Derivation Function: PBKDF2-HMAC-SHA1"
+  fr: " Fonction de dérivation de clé : PBKDF2-HMAC-SHA1"
+  de: " Schlüsselableitungsfunktion: PBKDF2-HMAC-SHA1"
+ctl.kdf_algorithm_argon2id:
+  en: " Key Derivation Function: Argon2id"
+  fr: " Fonction de dérivation de clé : Argon2id"
+  de: " Schlüsselableitungsfunktion: Argon2id"
+ctl.argon2_memory_cost:
+  en: "  Argon2 memory: %{kib} KiB"
+  fr: "  Mémoire Argon2 : %{kib} Kio"
+  de: "  Argon2-Speicher: %{kib} KiB"
+ctl.argon2_time_cost:
+  en: "  Argon2 iterations: %{iterations}"
+  fr: "  Itérations Argon2 : %{iterations}"
+  de: "  Argon2-Iterationen: %{iterations}"
+ctl.argon2_parallelism:
+  en: "  Argon2 parallelism: %{threads} threads"
+  fr: "  Parallélisme Argon2 : %{threads} threads"
+  de: "  Argon2-Parallelität: %{threads} Threads"
 ctl.enter_current_password:
   en: "Enter current Encfs password: "
   fr: "Entrez le mot de passe Encfs actuel : "
@@ -79,6 +99,18 @@ ctl.volume_key_updated:
   en: "Volume Key successfully updated."
   fr: "Clé de volume mise à jour avec succès."
   de: "Volumen-Schlüssel erfolgreich aktualisiert."
+ctl.upgrading_to_argon2:
+  en: "Upgrading config to Argon2id KDF..."
+  fr: "Mise à jour de la configuration vers Argon2id KDF..."
+  de: "Aktualisierung der Konfiguration auf Argon2id KDF..."
+ctl.calibrating_argon2:
+  en: "Calibrating Argon2 parameters for optimal security..."
+  fr: "Calibrage des paramètres Argon2 pour une sécurité optimale..."
+  de: "Kalibrierung der Argon2-Parameter für optimale Sicherheit..."
+ctl.argon2_calibrated:
+  en: "Argon2 time cost calibrated to %{iterations} iterations (≥1 second)"
+  fr: "Coût temporel Argon2 calibré à %{iterations} itérations (≥1 seconde)"
+  de: "Argon2-Zeitkosten auf %{iterations} Iterationen kalibriert (≥1 Sekunde)"
 ctl.checked_files_dirs:
   en: "Checked %{files} files and %{dirs} directories."
   fr: "%{files} fichiers et %{dirs} répertoires vérifiés."

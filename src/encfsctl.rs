@@ -50,10 +50,6 @@ fn help_ls() -> String {
     t!("help.encfsctl.ls").to_string()
 }
 
-fn help_showkey() -> String {
-    t!("help.encfsctl.showkey").to_string()
-}
-
 fn help_autopasswd() -> String {
     t!("help.encfsctl.autopasswd").to_string()
 }
@@ -68,6 +64,10 @@ fn help_info_rootdir() -> String {
 
 fn help_passwd_rootdir() -> String {
     t!("help.encfsctl.passwd_rootdir").to_string()
+}
+
+fn help_passwd_upgrade() -> String {
+    t!("help.encfsctl.passwd_upgrade").to_string()
 }
 
 fn help_showcruft_rootdir() -> String {
@@ -126,14 +126,6 @@ fn help_ls_extpass() -> String {
     t!("help.encfsctl.ls_extpass").to_string()
 }
 
-fn help_showkey_rootdir() -> String {
-    t!("help.encfsctl.showkey_rootdir").to_string()
-}
-
-fn help_showkey_extpass() -> String {
-    t!("help.encfsctl.showkey_extpass").to_string()
-}
-
 fn help_autopasswd_rootdir() -> String {
     t!("help.encfsctl.autopasswd_rootdir").to_string()
 }
@@ -175,6 +167,8 @@ enum Command {
     Passwd {
         #[arg(help = help_passwd_rootdir())]
         rootdir: PathBuf,
+        #[arg(long, help = help_passwd_upgrade())]
+        upgrade: bool,
     },
     #[command(about = help_showcruft())]
     Showcruft {
@@ -219,13 +213,6 @@ enum Command {
         #[arg(long, help = help_ls_extpass())]
         extpass: Option<String>,
     },
-    #[command(name = "showKey", about = help_showkey())]
-    ShowKey {
-        #[arg(help = help_showkey_rootdir())]
-        rootdir: PathBuf,
-        #[arg(long, help = help_showkey_extpass())]
-        extpass: Option<String>,
-    },
     #[command(about = help_autopasswd())]
     Autopasswd {
         #[arg(help = help_autopasswd_rootdir())]
@@ -251,7 +238,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Some(Command::Info { rootdir }) => cmd_info(&rootdir),
-        Some(Command::Passwd { rootdir }) => cmd_passwd(&rootdir),
+        Some(Command::Passwd { rootdir, upgrade }) => cmd_passwd(&rootdir, upgrade),
         Some(Command::Showcruft { rootdir }) => cmd_showcruft(&rootdir),
         Some(Command::Decode {
             rootdir,
@@ -274,7 +261,6 @@ fn main() -> Result<()> {
             path,
             extpass,
         }) => cmd_ls(&rootdir, &path, extpass),
-        Some(Command::ShowKey { rootdir, extpass }) => cmd_showkey(&rootdir, extpass),
         Some(Command::Autopasswd { rootdir }) => cmd_autopasswd(&rootdir),
         Some(Command::Export {
             rootdir,
@@ -386,18 +372,78 @@ fn cmd_info(rootdir: &Path) -> Result<()> {
         println!("{}", t!("ctl.block_mac", bytes = config.block_mac_bytes));
     }
 
-    if config.kdf_iterations > 0 && !config.salt.is_empty() {
-        println!(
-            "{}",
-            t!("ctl.pbkdf2_iterations", iterations = config.kdf_iterations)
-        );
-        println!("{}", t!("ctl.salt_size", bits = config.salt.len() * 8));
+    // Show KDF information
+    use config::KdfAlgorithm;
+    match config.kdf_algorithm {
+        KdfAlgorithm::Pbkdf2 => {
+            println!("{}", t!("ctl.kdf_algorithm_pbkdf2"));
+            if config.kdf_iterations > 0 && !config.salt.is_empty() {
+                println!(
+                    "{}",
+                    t!("ctl.pbkdf2_iterations", iterations = config.kdf_iterations)
+                );
+                println!("{}", t!("ctl.salt_size", bits = config.salt.len() * 8));
+            }
+        }
+        KdfAlgorithm::Argon2id => {
+            println!("{}", t!("ctl.kdf_algorithm_argon2id"));
+            if let (Some(mem), Some(time), Some(par)) = (
+                config.argon2_memory_cost,
+                config.argon2_time_cost,
+                config.argon2_parallelism,
+            ) {
+                println!("{}", t!("ctl.argon2_memory_cost", kib = mem));
+                println!("{}", t!("ctl.argon2_time_cost", iterations = time));
+                println!("{}", t!("ctl.argon2_parallelism", threads = par));
+            }
+            if !config.salt.is_empty() {
+                println!("{}", t!("ctl.salt_size", bits = config.salt.len() * 8));
+            }
+        }
     }
 
     Ok(())
 }
 
-fn cmd_passwd(rootdir: &Path) -> Result<()> {
+/// Calibrate Argon2 time_cost parameter to ensure at least 1 second of computation time
+fn calibrate_argon2_time_cost(
+    password: &str,
+    salt: &[u8],
+    memory_cost: u32,
+    initial_time_cost: u32,
+    parallelism: u32,
+    key_len: usize,
+) -> Result<u32> {
+    use std::time::Instant;
+
+    let target_duration_ms = 1000; // 1 second
+    let time_cost = initial_time_cost;
+
+    // Measure time for initial time_cost
+    let start = Instant::now();
+    SslCipher::derive_key_argon2id(password, salt, memory_cost, time_cost, parallelism, key_len)?;
+    let elapsed_ms = start.elapsed().as_millis();
+
+    // If it's already >= 1 second, we're good
+    if elapsed_ms >= target_duration_ms {
+        return Ok(time_cost);
+    }
+
+    // Calculate how many iterations we need to reach target
+    // elapsed_ms / time_cost = ms_per_iteration
+    // target_duration_ms / ms_per_iteration = needed_time_cost
+    let ms_per_iteration = elapsed_ms as f64 / time_cost as f64;
+    let needed_time_cost = (target_duration_ms as f64 / ms_per_iteration).ceil() as u32;
+
+    // Use at least initial_time_cost + 1 to ensure we increase
+    let calibrated_time_cost = needed_time_cost.max(time_cost + 1);
+
+    Ok(calibrated_time_cost)
+}
+
+fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
+    use config::KdfAlgorithm;
+
     let config_path = find_config_file(rootdir)?;
     let mut config =
         config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
@@ -418,25 +464,50 @@ fn cmd_passwd(rootdir: &Path) -> Result<()> {
     let iv_len = cipher.iv_len();
     let user_key_len = key_len + iv_len;
 
-    let user_key_blob = if config.kdf_iterations > 0 {
-        SslCipher::derive_key(
-            &current_password,
-            &config.salt,
-            config.kdf_iterations,
-            user_key_len,
-        )?
-    } else {
-        SslCipher::derive_key_legacy(&current_password, key_len, iv_len)?
+    let user_key_blob = match config.kdf_algorithm {
+        KdfAlgorithm::Pbkdf2 => {
+            if config.kdf_iterations > 0 {
+                SslCipher::derive_key(
+                    &current_password,
+                    &config.salt,
+                    config.kdf_iterations,
+                    user_key_len,
+                )?
+            } else {
+                SslCipher::derive_key_legacy(&current_password, key_len, iv_len)?
+            }
+        }
+        KdfAlgorithm::Argon2id => {
+            let memory_cost = config
+                .argon2_memory_cost
+                .unwrap_or(constants::DEFAULT_ARGON2_MEMORY_COST);
+            let time_cost = config
+                .argon2_time_cost
+                .unwrap_or(constants::DEFAULT_ARGON2_TIME_COST);
+            let parallelism = config
+                .argon2_parallelism
+                .unwrap_or(constants::DEFAULT_ARGON2_PARALLELISM);
+
+            SslCipher::derive_key_argon2id(
+                &current_password,
+                &config.salt,
+                memory_cost,
+                time_cost,
+                parallelism,
+                user_key_len,
+            )?
+        }
     };
 
     let user_key = &user_key_blob[..key_len];
     let user_iv = &user_key_blob[key_len..];
 
-    let volume_key_blob = if config.kdf_iterations > 0 {
-        cipher.decrypt_key(&config.key_data, user_key, user_iv)?
-    } else {
-        cipher.decrypt_key_legacy(&config.key_data, user_key, user_iv)?
-    };
+    let volume_key_blob =
+        if config.kdf_iterations > 0 || config.kdf_algorithm == KdfAlgorithm::Argon2id {
+            cipher.decrypt_key(&config.key_data, user_key, user_iv)?
+        } else {
+            cipher.decrypt_key_legacy(&config.key_data, user_key, user_iv)?
+        };
 
     // Get new password
     print!("{}", t!("ctl.enter_new_password"));
@@ -450,38 +521,87 @@ fn cmd_passwd(rootdir: &Path) -> Result<()> {
     }
     rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
 
-    // Use a reasonable iteration count (or keep existing if set)
-    if config.kdf_iterations == 0 {
-        // For new passwords, use a default iteration count
-        // In practice, EncFS would calculate this based on desired duration
-        config.kdf_iterations = constants::DEFAULT_KDF_ITERATIONS; // Default reasonable value
+    // Handle upgrade to Argon2id if requested
+    if upgrade {
+        println!("{}", t!("ctl.upgrading_to_argon2"));
+        config.kdf_algorithm = KdfAlgorithm::Argon2id;
+        config.argon2_memory_cost = Some(constants::DEFAULT_ARGON2_MEMORY_COST);
+        config.argon2_time_cost = Some(constants::DEFAULT_ARGON2_TIME_COST);
+        config.argon2_parallelism = Some(constants::DEFAULT_ARGON2_PARALLELISM);
+        config.kdf_iterations = 0;
+
+        // Update config version to latest
+        if config.config_type == config::ConfigType::V6 {
+            config.version = constants::DEFAULT_CONFIG_VERSION;
+        }
+    } else {
+        // Keep existing KDF or upgrade to PBKDF2 if legacy
+        if config.kdf_algorithm == KdfAlgorithm::Pbkdf2 && config.kdf_iterations == 0 {
+            // For new passwords with legacy config, use PBKDF2 with default iterations
+            config.kdf_iterations = constants::DEFAULT_KDF_ITERATIONS;
+        }
+    }
+
+    // Calibrate Argon2 parameters if using Argon2id (whether upgraded or existing)
+    if config.kdf_algorithm == KdfAlgorithm::Argon2id {
+        println!("{}", t!("ctl.calibrating_argon2"));
+        let current_time_cost = config.argon2_time_cost.unwrap();
+        let calibrated_time_cost = calibrate_argon2_time_cost(
+            &new_password,
+            &config.salt,
+            config.argon2_memory_cost.unwrap(),
+            current_time_cost,
+            config.argon2_parallelism.unwrap(),
+            user_key_len,
+        )?;
+
+        if calibrated_time_cost > current_time_cost {
+            config.argon2_time_cost = Some(calibrated_time_cost);
+            println!(
+                "{}",
+                t!("ctl.argon2_calibrated", iterations = calibrated_time_cost)
+            );
+        }
     }
 
     // Create new cipher for encryption
     let new_cipher = SslCipher::new(&config.cipher_iface, config.key_size)?;
 
-    // Derive new user key
-    let new_user_key_blob = if config.kdf_iterations > 0 {
-        SslCipher::derive_key(
-            &new_password,
-            &config.salt,
-            config.kdf_iterations,
-            user_key_len,
-        )?
-    } else {
-        SslCipher::derive_key_legacy(&new_password, key_len, iv_len)?
+    // Derive new user key based on configured (possibly upgraded) KDF
+    let new_user_key_blob = match config.kdf_algorithm {
+        KdfAlgorithm::Pbkdf2 => {
+            if config.kdf_iterations > 0 {
+                SslCipher::derive_key(
+                    &new_password,
+                    &config.salt,
+                    config.kdf_iterations,
+                    user_key_len,
+                )?
+            } else {
+                SslCipher::derive_key_legacy(&new_password, key_len, iv_len)?
+            }
+        }
+        KdfAlgorithm::Argon2id => {
+            let memory_cost = config.argon2_memory_cost.unwrap();
+            let time_cost = config.argon2_time_cost.unwrap();
+            let parallelism = config.argon2_parallelism.unwrap();
+
+            SslCipher::derive_key_argon2id(
+                &new_password,
+                &config.salt,
+                memory_cost,
+                time_cost,
+                parallelism,
+                user_key_len,
+            )?
+        }
     };
 
     let new_user_key = &new_user_key_blob[..key_len];
     let new_user_iv = &new_user_key_blob[key_len..];
 
     // Encrypt volume key with new user key
-    let encrypted_key = if config.kdf_iterations > 0 {
-        new_cipher.encrypt_key(&volume_key_blob, new_user_key, new_user_iv)?
-    } else {
-        // For legacy, we'd need encrypt_key_legacy, but for now use regular encrypt_key
-        new_cipher.encrypt_key(&volume_key_blob, new_user_key, new_user_iv)?
-    };
+    let encrypted_key = new_cipher.encrypt_key(&volume_key_blob, new_user_key, new_user_iv)?;
 
     config.key_data = encrypted_key;
 
@@ -790,51 +910,6 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
             }
         }
     }
-
-    Ok(())
-}
-
-fn cmd_showkey(rootdir: &Path, extpass: Option<String>) -> Result<()> {
-    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-
-    let config_path = find_config_file(rootdir)?;
-    let config =
-        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
-
-    let password = get_password(&config_path, extpass)?;
-
-    // We need to get the raw volume key blob
-    let key_len = (config.key_size / 8) as usize;
-    let cipher = SslCipher::new(&config.cipher_iface, config.key_size)?;
-    let iv_len = cipher.iv_len();
-    let user_key_len = key_len + iv_len;
-
-    let user_key_blob = if config.kdf_iterations > 0 {
-        SslCipher::derive_key(&password, &config.salt, config.kdf_iterations, user_key_len)?
-    } else {
-        SslCipher::derive_key_legacy(&password, key_len, iv_len)?
-    };
-
-    let user_key = &user_key_blob[..key_len];
-    let user_iv = &user_key_blob[key_len..];
-
-    let volume_key_blob = if config.kdf_iterations > 0 {
-        cipher.decrypt_key(&config.key_data, user_key, user_iv)?
-    } else {
-        cipher.decrypt_key_legacy(&config.key_data, user_key, user_iv)?
-    };
-
-    // Encode the volume key with itself (same as C++ encodeAsString)
-    // This uses stream_encode with the volume key as both key and data
-    let volume_key = &volume_key_blob[..key_len];
-    let volume_iv = &volume_key_blob[key_len..key_len + iv_len];
-
-    let mut encoded_key = volume_key_blob.clone();
-    cipher.stream_encode(&mut encoded_key, 0, volume_key, volume_iv)?;
-
-    // Output as base64
-    let b64_key = BASE64.encode(&encoded_key);
-    println!("{}", b64_key);
 
     Ok(())
 }
@@ -1506,7 +1581,7 @@ fn decrypt_path_with_iv(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use encfs::config::{ConfigType, EncfsConfig, Interface};
+    use encfs::config::{ConfigType, EncfsConfig, Interface, KdfAlgorithm};
     use encfs::crypto::ssl::SslCipher;
     use std::fs;
     use std::os::unix::fs::symlink;
@@ -1546,6 +1621,10 @@ mod tests {
             salt: vec![],
             kdf_iterations: 0,
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2,
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes: 0,
             block_mac_rand_bytes: 0,
@@ -1644,6 +1723,10 @@ mod tests {
             salt: vec![],
             kdf_iterations: 0,
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2,
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes: 0,
             block_mac_rand_bytes: 0,
@@ -1719,6 +1802,10 @@ mod tests {
             salt: vec![],
             kdf_iterations: 0,
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2,
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes: 0,
             block_mac_rand_bytes: 0,
@@ -1906,6 +1993,10 @@ mod tests {
             salt: vec![],
             kdf_iterations: 0,
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2,
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes: 0,
             block_mac_rand_bytes: 0,
@@ -1976,6 +2067,10 @@ mod tests {
             salt: vec![],
             kdf_iterations: 0,
             desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Pbkdf2,
+            argon2_memory_cost: None,
+            argon2_time_cost: None,
+            argon2_parallelism: None,
             plain_data: false,
             block_mac_bytes: 0,
             block_mac_rand_bytes: 0,

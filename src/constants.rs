@@ -4,8 +4,17 @@ pub const DEFAULT_SALT_SIZE: usize = 20;
 /// Default number of PBKDF2 iterations
 pub const DEFAULT_KDF_ITERATIONS: i32 = 100_000;
 
+/// Default Argon2 memory cost in KiB (2 GiB)
+pub const DEFAULT_ARGON2_MEMORY_COST: u32 = 2 * 1024;
+
+/// Default Argon2 time cost (iterations)
+pub const DEFAULT_ARGON2_TIME_COST: u32 = 3;
+
+/// Default Argon2 parallelism (threads)
+pub const DEFAULT_ARGON2_PARALLELISM: u32 = 4;
+
 /// Default configuration version for new configs
-pub const DEFAULT_CONFIG_VERSION: i32 = 20100713;
+pub const DEFAULT_CONFIG_VERSION: i32 = 20260101;
 
 /// Buffer size for file operations (128 KB)
 pub const FILE_BUFFER_SIZE: usize = 128 * 1024;
