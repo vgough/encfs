@@ -4,11 +4,11 @@ pub const DEFAULT_SALT_SIZE: usize = 20;
 /// Default number of PBKDF2 iterations
 pub const DEFAULT_KDF_ITERATIONS: i32 = 100_000;
 
-/// Default Argon2 memory cost in KiB (2 GiB)
-pub const DEFAULT_ARGON2_MEMORY_COST: u32 = 2 * 1024;
+/// Default Argon2 memory cost in KiB (32 MiB)
+pub const DEFAULT_ARGON2_MEMORY_COST: u32 = 32 * 1024;
 
 /// Default Argon2 time cost (iterations)
-pub const DEFAULT_ARGON2_TIME_COST: u32 = 3;
+pub const DEFAULT_ARGON2_TIME_COST: u32 = 2;
 
 /// Default Argon2 parallelism (threads)
 pub const DEFAULT_ARGON2_PARALLELISM: u32 = 4;

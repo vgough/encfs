@@ -1400,7 +1400,7 @@ fn get_password(_config_path: &Path, extpass: Option<String>) -> Result<String> 
     if let Some(prog) = extpass {
         get_password_from_program(&prog)
     } else {
-        prompt_password("EncFS Password: ").context(t!("ctl.error_failed_to_read_password"))
+        prompt_password(&t!("ctl.password_prompt")).context(t!("ctl.error_failed_to_read_password"))
     }
 }
 

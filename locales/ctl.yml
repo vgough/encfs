@@ -207,6 +207,10 @@ ctl.error_failed_to_read_password:
   en: "Failed to read password"
   fr: "Échec de la lecture du mot de passe"
   de: "Fehler beim Lesen des Passworts"
+ctl.password_prompt:
+  en: "EncFS Password: "
+  fr: "Mot de passe EncFS: "
+  de: "EncFS-Passwort: "
 ctl.error_failed_to_execute_password_program:
   en: "Failed to execute password program"
   fr: "Échec de l'exécution du programme de mot de passe"
