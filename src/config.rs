@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-
 use log::debug;
+use rust_i18n::t;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -172,8 +172,8 @@ impl EncfsConfig {
         // Check for V3 (not supported)
         if filename == ".encfs3" {
             return Err(anyhow::anyhow!(
-                "Version 3 configuration files are not supported. \
-                 This is a very old EncFS format."
+                "{}",
+                t!("lib.error_version3_not_supported")
             ));
         }
 

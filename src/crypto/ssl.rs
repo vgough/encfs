@@ -5,6 +5,7 @@ use openssl::hash::MessageDigest;
 use openssl::pkcs5::pbkdf2_hmac;
 use openssl::rand::rand_bytes;
 use openssl::symm::{Cipher as OpenSslCipher, Crypter, Mode};
+use rust_i18n::t;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NameEncoding {
@@ -40,7 +41,16 @@ impl SslCipher {
                 OpenSslCipher::aes_256_cbc(),
             ),
             ("ssl/blowfish", _) => (OpenSslCipher::bf_cfb64(), OpenSslCipher::bf_cbc()),
-            _ => return Err(anyhow!("Unsupported cipher: {} {}", iface.name, key_size)),
+            _ => {
+                return Err(anyhow!(
+                    "{}",
+                    t!(
+                        "lib.error_unsupported_cipher",
+                        name = iface.name,
+                        key_size = key_size
+                    )
+                ));
+            }
         };
 
         Ok(Self {
