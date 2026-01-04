@@ -7,6 +7,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+argon2 = "0.5"
 base64 = "0.22.1"
 daemonize = "0.5"
 chrono = "0.4"

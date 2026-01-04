@@ -1,0 +1,14 @@
+_version: 2
+lib.error_end_of_buffer:
+  en: "End of buffer"
+  fr: "Fin du tampon"
+  de: "Ende des Puffers"
+lib.error_version3_not_supported:
+  en: "Version 3 configuration files are not supported. This is a very old EncFS format."
+  fr: "Les fichiers de configuration version 3 ne sont pas pris en charge. Il s'agit d'un très ancien format EncFS."
+  de: "Version-3-Konfigurationsdateien werden nicht unterstützt. Dies ist ein sehr altes EncFS-Format."
+lib.error_unsupported_cipher:
+  en: "Unsupported cipher: %{name} %{key_size}"
+  fr: "Chiffrement non pris en charge : %{name} %{key_size}"
+  de: "Nicht unterstützte Verschlüsselung: %{name} %{key_size}"
+

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use rust_i18n::t;
 use std::collections::HashMap;
 
 /// A configuration variable holder for the legacy EncFS binary config format.
@@ -29,7 +30,7 @@ impl ConfigVar {
         let mut value = 0;
 
         if self.offset >= self.buffer.len() {
-            return Err(anyhow::anyhow!("End of buffer"));
+            return Err(anyhow::anyhow!("{}", t!("lib.error_end_of_buffer")));
         }
 
         loop {
