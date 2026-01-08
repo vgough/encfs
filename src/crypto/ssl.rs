@@ -1,9 +1,11 @@
 use crate::config::Interface;
 use anyhow::{Context, Result, anyhow};
+use argon2::{Algorithm, Argon2, Params, Version};
 use openssl::hash::MessageDigest;
 use openssl::pkcs5::pbkdf2_hmac;
 use openssl::rand::rand_bytes;
 use openssl::symm::{Cipher as OpenSslCipher, Crypter, Mode};
+use rust_i18n::t;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NameEncoding {
@@ -39,7 +41,16 @@ impl SslCipher {
                 OpenSslCipher::aes_256_cbc(),
             ),
             ("ssl/blowfish", _) => (OpenSslCipher::bf_cfb64(), OpenSslCipher::bf_cbc()),
-            _ => return Err(anyhow!("Unsupported cipher: {} {}", iface.name, key_size)),
+            _ => {
+                return Err(anyhow!(
+                    "{}",
+                    t!(
+                        "lib.error_unsupported_cipher",
+                        name = iface.name,
+                        key_size = key_size
+                    )
+                ));
+            }
         };
 
         Ok(Self {
@@ -112,6 +123,28 @@ impl SslCipher {
         }
 
         Ok(out)
+    }
+
+    /// Derives the User Key from the password using Argon2id.
+    pub fn derive_key_argon2id(
+        password: &str,
+        salt: &[u8],
+        memory_cost: u32,
+        time_cost: u32,
+        parallelism: u32,
+        key_len: usize,
+    ) -> Result<Vec<u8>> {
+        let params = Params::new(memory_cost, time_cost, parallelism, Some(key_len))
+            .map_err(|e| anyhow!("Failed to create Argon2 parameters: {}", e))?;
+
+        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+
+        let mut key = vec![0u8; key_len];
+        argon2
+            .hash_password_into(password.as_bytes(), salt, &mut key)
+            .map_err(|e| anyhow!("Argon2 key derivation failed: {}", e))?;
+
+        Ok(key)
     }
 
     fn flip_bytes(buf: &mut [u8]) {
@@ -927,6 +960,9 @@ impl SslCipher {
 mod tests {
     use super::*;
     use crate::config::Interface;
+    use crate::constants::{
+        DEFAULT_ARGON2_MEMORY_COST, DEFAULT_ARGON2_PARALLELISM, DEFAULT_ARGON2_TIME_COST,
+    };
 
     /// Shared cipher configuration for all encryption mode tests
     struct CipherTestConfig {
@@ -1478,6 +1514,163 @@ mod tests {
             println!(
                 "✓ {} {} xattr encryption/decryption: all tests passed",
                 config.name, config.key_size
+            );
+        }
+    }
+
+    #[test]
+    fn test_argon2id_key_derivation() {
+        // Test basic Argon2id key derivation
+        let password = "test_password";
+        let salt = b"test_salt_123456";
+        let key_len = 32;
+
+        let key1 = SslCipher::derive_key_argon2id(
+            password,
+            salt,
+            DEFAULT_ARGON2_MEMORY_COST,
+            DEFAULT_ARGON2_TIME_COST,
+            DEFAULT_ARGON2_PARALLELISM,
+            key_len,
+        )
+        .expect("Argon2id derivation failed");
+
+        assert_eq!(
+            key1.len(),
+            key_len,
+            "Key length should match requested length"
+        );
+
+        // Derive with same parameters - should get same key
+        let key2 = SslCipher::derive_key_argon2id(
+            password,
+            salt,
+            DEFAULT_ARGON2_MEMORY_COST,
+            DEFAULT_ARGON2_TIME_COST,
+            DEFAULT_ARGON2_PARALLELISM,
+            key_len,
+        )
+        .expect("Argon2id derivation failed");
+
+        assert_eq!(key1, key2, "Same inputs should produce same key");
+
+        // Different password should produce different key
+        let key3 = SslCipher::derive_key_argon2id(
+            "different_password",
+            salt,
+            DEFAULT_ARGON2_MEMORY_COST,
+            DEFAULT_ARGON2_TIME_COST,
+            DEFAULT_ARGON2_PARALLELISM,
+            key_len,
+        )
+        .expect("Argon2id derivation failed");
+
+        assert_ne!(
+            key1, key3,
+            "Different password should produce different key"
+        );
+
+        // Different salt should produce different key
+        let key4 = SslCipher::derive_key_argon2id(
+            password,
+            b"different_salt__",
+            DEFAULT_ARGON2_MEMORY_COST,
+            DEFAULT_ARGON2_TIME_COST,
+            DEFAULT_ARGON2_PARALLELISM,
+            key_len,
+        )
+        .expect("Argon2id derivation failed");
+
+        assert_ne!(key1, key4, "Different salt should produce different key");
+    }
+
+    #[test]
+    fn test_argon2id_different_parameters() {
+        let password = "test_password";
+        let salt = b"test_salt_123456";
+        let key_len = 32;
+
+        // Base key with default parameters
+        let key1 = SslCipher::derive_key_argon2id(
+            password,
+            salt,
+            DEFAULT_ARGON2_MEMORY_COST,
+            DEFAULT_ARGON2_TIME_COST,
+            DEFAULT_ARGON2_PARALLELISM,
+            key_len,
+        )
+        .expect("Argon2id derivation failed");
+
+        // Different memory cost
+        let key2 = SslCipher::derive_key_argon2id(
+            password,
+            salt,
+            DEFAULT_ARGON2_MEMORY_COST * 2,
+            DEFAULT_ARGON2_TIME_COST,
+            DEFAULT_ARGON2_PARALLELISM,
+            key_len,
+        )
+        .expect("Argon2id derivation failed");
+
+        assert_ne!(
+            key1, key2,
+            "Different memory cost should produce different key"
+        );
+
+        // Different time cost
+        let key3 = SslCipher::derive_key_argon2id(
+            password,
+            salt,
+            DEFAULT_ARGON2_MEMORY_COST,
+            DEFAULT_ARGON2_TIME_COST + 1,
+            DEFAULT_ARGON2_PARALLELISM,
+            key_len,
+        )
+        .expect("Argon2id derivation failed");
+
+        assert_ne!(
+            key1, key3,
+            "Different time cost should produce different key"
+        );
+
+        // Different parallelism
+        let key4 = SslCipher::derive_key_argon2id(
+            password,
+            salt,
+            DEFAULT_ARGON2_MEMORY_COST,
+            DEFAULT_ARGON2_TIME_COST,
+            DEFAULT_ARGON2_PARALLELISM * 2,
+            key_len,
+        )
+        .expect("Argon2id derivation failed");
+
+        assert_ne!(
+            key1, key4,
+            "Different parallelism should produce different key"
+        );
+    }
+
+    #[test]
+    fn test_argon2id_various_key_lengths() {
+        let password = "test_password";
+        let salt = b"test_salt_123456";
+
+        // Test various key lengths
+        for key_len in [16, 24, 32, 48, 64] {
+            let key = SslCipher::derive_key_argon2id(
+                password,
+                salt,
+                DEFAULT_ARGON2_MEMORY_COST,
+                DEFAULT_ARGON2_TIME_COST,
+                DEFAULT_ARGON2_PARALLELISM,
+                key_len,
+            )
+            .expect("Argon2id derivation failed");
+
+            assert_eq!(
+                key.len(),
+                key_len,
+                "Key length should match requested length"
             );
         }
     }
