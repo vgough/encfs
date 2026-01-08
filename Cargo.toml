@@ -7,6 +7,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+argon2 = "0.5"
 base64 = "0.22.1"
 daemonize = "0.5"
 chrono = "0.4"
@@ -19,7 +20,12 @@ openssl = "0.10.75"
 quick-xml = { version = "0.38.4", features = ["serialize"] }
 rpassword = "7.4.0"
 serde = { version = "1.0.228", features = ["derive"] }
+rust-i18n = "3"
 
 [[bin]]
 name = "encfsctl"
 path = "src/encfsctl.rs"
+
+[package.metadata.i18n]
+default-locale = "en"
+available-locales = ["en", "fr", "de"]

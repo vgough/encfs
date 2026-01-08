@@ -1,0 +1,178 @@
+_version: 2
+help.encfs.about:
+  en: "EncFS - Encrypted Filesystem"
+  fr: "EncFS - Système de fichiers chiffré"
+  de: "EncFS - Verschlüsseltes Dateisystem"
+help.encfs.foreground:
+  en: "Run in foreground"
+  fr: "Exécuter au premier plan"
+  de: "Im Vordergrund ausführen"
+help.encfs.verbose:
+  en: "Verbose logging"
+  fr: "Journalisation verbeuse"
+  de: "Ausführliche Protokollierung"
+help.encfs.debug:
+  en: "Enable debug mode (implies -v and -f)"
+  fr: "Activer le mode débogage (implique -v et -f)"
+  de: "Debug-Modus aktivieren (impliziert -v und -f)"
+help.encfs.single_thread:
+  en: "Single threaded mode"
+  fr: "Mode mono-thread"
+  de: "Einzelthread-Modus"
+help.encfs.public:
+  en: "Make mountpoint public (allow_other)"
+  fr: "Rendre le point de montage public (allow_other)"
+  de: "Mountpoint öffentlich machen (allow_other)"
+help.encfs.extpass:
+  en: "External password program"
+  fr: "Programme de mot de passe externe"
+  de: "Externes Passwortprogramm"
+help.encfs.stdinpass:
+  en: "Read password from stdin"
+  fr: "Lire le mot de passe depuis stdin"
+  de: "Passwort von stdin lesen"
+help.encfs.read_only:
+  en: "Mount read-only"
+  fr: "Monter en lecture seule"
+  de: "Schreibgeschützt mounten"
+help.encfs.root:
+  en: "Root directory of encrypted volume"
+  fr: "Répertoire racine du volume chiffré"
+  de: "Stammverzeichnis des verschlüsselten Volumens"
+help.encfs.mount_point:
+  en: "Mount point"
+  fr: "Point de montage"
+  de: "Mountpoint"
+
+help.encfsctl.about:
+  en: "Administrative tool for working with EncFS filesystems"
+  fr: "Outil administratif pour travailler avec les systèmes de fichiers EncFS"
+  de: "Verwaltungstool für EncFS-Dateisysteme"
+help.encfsctl.rootdir:
+  en: "Root directory of encrypted filesystem (for default 'info' command)"
+  fr: "Répertoire racine du système de fichiers chiffré (pour la commande 'info' par défaut)"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems (für den Standardbefehl 'info')"
+help.encfsctl.info:
+  en: "Display basic information about the filesystem"
+  fr: "Afficher les informations de base sur le système de fichiers"
+  de: "Grundlegende Informationen zum Dateisystem anzeigen"
+help.encfsctl.passwd:
+  en: "Change password for the encrypted filesystem"
+  fr: "Changer le mot de passe du système de fichiers chiffré"
+  de: "Passwort für das verschlüsselte Dateisystem ändern"
+help.encfsctl.showcruft:
+  en: "Show undecodable filenames in the volume"
+  fr: "Afficher les noms de fichiers indéchiffrables dans le volume"
+  de: "Nicht dekodierbare Dateinamen im Volume anzeigen"
+help.encfsctl.decode:
+  en: "Decode encrypted filenames to plaintext"
+  fr: "Décoder les noms de fichiers chiffrés en texte clair"
+  de: "Verschlüsselte Dateinamen in Klartext dekodieren"
+help.encfsctl.encode:
+  en: "Encode plaintext filenames to encrypted form"
+  fr: "Encoder les noms de fichiers en texte clair sous forme chiffrée"
+  de: "Klartext-Dateinamen in verschlüsselte Form kodieren"
+help.encfsctl.cat:
+  en: "Decode and output file content"
+  fr: "Décoder et afficher le contenu du fichier"
+  de: "Dateiinhalt dekodieren und ausgeben"
+help.encfsctl.ls:
+  en: "List files in a directory with size and modification time"
+  fr: "Lister les fichiers d'un répertoire avec la taille et l'heure de modification"
+  de: "Dateien in einem Verzeichnis mit Größe und Änderungszeit auflisten"
+help.encfsctl.autopasswd:
+  en: "Change password automatically (read old/new passwords from stdin)"
+  fr: "Changer le mot de passe automatiquement (lire les anciens/nouveaux mots de passe depuis stdin)"
+  de: "Passwort automatisch ändern (alte/neue Passwörter von stdin lesen)"
+help.encfsctl.export:
+  en: "Export decrypted files to a destination directory"
+  fr: "Exporter les fichiers déchiffrés vers un répertoire de destination"
+  de: "Entschlüsselte Dateien in ein Zielverzeichnis exportieren"
+help.encfsctl.info_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.passwd_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.passwd_upgrade:
+  en: "Upgrade config to latest version and switch to Argon2id KDF"
+  fr: "Mettre à jour la configuration vers la dernière version et passer à Argon2id KDF"
+  de: "Konfiguration auf die neueste Version aktualisieren und auf Argon2id KDF umstellen"
+help.encfsctl.showcruft_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.decode_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.decode_names:
+  en: "Encrypted filenames to decode (if not provided, read from stdin)"
+  fr: "Noms de fichiers chiffrés à décoder (si non fourni, lire depuis stdin)"
+  de: "Zu dekodierende verschlüsselte Dateinamen (wenn nicht angegeben, von stdin lesen)"
+help.encfsctl.decode_extpass:
+  en: "External password program"
+  fr: "Programme de mot de passe externe"
+  de: "Externes Passwortprogramm"
+help.encfsctl.encode_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.encode_names:
+  en: "Plaintext filenames to encode (if not provided, read from stdin)"
+  fr: "Noms de fichiers en texte clair à encoder (si non fourni, lire depuis stdin)"
+  de: "Zu kodierende Klartext-Dateinamen (wenn nicht angegeben, von stdin lesen)"
+help.encfsctl.encode_extpass:
+  en: "External password program"
+  fr: "Programme de mot de passe externe"
+  de: "Externes Passwortprogramm"
+help.encfsctl.cat_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.cat_path:
+  en: "File path (plaintext or encrypted)"
+  fr: "Chemin du fichier (texte clair ou chiffré)"
+  de: "Dateipfad (Klartext oder verschlüsselt)"
+help.encfsctl.cat_extpass:
+  en: "External password program"
+  fr: "Programme de mot de passe externe"
+  de: "Externes Passwortprogramm"
+help.encfsctl.cat_reverse:
+  en: "Reverse mode: encrypt plaintext instead"
+  fr: "Mode inverse : chiffrer le texte clair à la place"
+  de: "Umkehrmodus: Klartext stattdessen verschlüsseln"
+help.encfsctl.ls_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.ls_path:
+  en: "Path within the encrypted filesystem (default: root)"
+  fr: "Chemin dans le système de fichiers chiffré (par défaut : racine)"
+  de: "Pfad im verschlüsselten Dateisystem (Standard: Stammverzeichnis)"
+help.encfsctl.ls_extpass:
+  en: "External password program"
+  fr: "Programme de mot de passe externe"
+  de: "Externes Passwortprogramm"
+help.encfsctl.autopasswd_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.export_rootdir:
+  en: "Root directory of encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.export_destdir:
+  en: "Destination directory for decrypted files"
+  fr: "Répertoire de destination pour les fichiers déchiffrés"
+  de: "Zielverzeichnis für entschlüsselte Dateien"
+help.encfsctl.export_extpass:
+  en: "External password program"
+  fr: "Programme de mot de passe externe"
+  de: "Externes Passwortprogramm"
+help.encfsctl.export_fail_on_error:
+  en: "Fail on first error instead of warning and continuing"
+  fr: "Échouer à la première erreur au lieu d'avertir et de continuer"
+  de: "Bei erstem Fehler abbrechen statt zu warnen und fortzufahren"

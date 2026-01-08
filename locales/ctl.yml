@@ -1,0 +1,289 @@
+_version: 2
+ctl.error_root_required:
+  en: "Error: root directory required"
+  fr: "Erreur : répertoire racine requis"
+  de: "Fehler: Stammverzeichnis erforderlich"
+ctl.use_help:
+  en: "Use 'encfsctl --help' for usage information"
+  fr: "Utilisez 'encfsctl --help' pour les informations d'utilisation"
+  de: "Verwenden Sie 'encfsctl --help' für Nutzungsinformationen"
+ctl.version6_config:
+  en: "Version 6 configuration; created by %{creator} (revision %{version})"
+  fr: "Configuration version 6 ; créée par %{creator} (révision %{version})"
+  de: "Version-6-Konfiguration; erstellt von %{creator} (Revision %{version})"
+ctl.version5_config:
+  en: "Version 5 configuration; created by %{creator} (revision %{version})"
+  fr: "Configuration version 5 ; créée par %{creator} (révision %{version})"
+  de: "Version-5-Konfiguration; erstellt von %{creator} (Revision %{version})"
+ctl.version4_config:
+  en: "Version 4 configuration; created by %{creator}"
+  fr: "Configuration version 4 ; créée par %{creator}"
+  de: "Version-4-Konfiguration; erstellt von %{creator}"
+ctl.version3_config:
+  en: "Version 3 configuration (not supported)"
+  fr: "Configuration version 3 (non prise en charge)"
+  de: "Version-3-Konfiguration (nicht unterstützt)"
+ctl.prehistoric_config:
+  en: "A really old EncFS filesystem was found."
+  fr: "Un système de fichiers EncFS très ancien a été trouvé."
+  de: "Ein sehr altes EncFS-Dateisystem wurde gefunden."
+ctl.filesystem_cipher:
+  en: " Filesystem cipher: \"%{name}\" , version %{major}:%{minor}:0"
+  fr: " Chiffrement du système de fichiers : \"%{name}\" , version %{major}:%{minor}:0"
+  de: " Dateisystem-Verschlüsselung: \"%{name}\" , Version %{major}:%{minor}:0"
+ctl.filename_encoding:
+  en: " Filename encoding: \"%{name}\" , version %{major}:%{minor}:0"
+  fr: " Encodage des noms de fichiers : \"%{name}\" , version %{major}:%{minor}:0"
+  de: " Dateinamen-Kodierung: \"%{name}\" , Version %{major}:%{minor}:0"
+ctl.key_size:
+  en: " Key Size: %{size} bits"
+  fr: " Taille de la clé : %{size} bits"
+  de: " Schlüsselgröße: %{size} Bits"
+ctl.block_size:
+  en: " Block Size: %{size} bytes"
+  fr: " Taille du bloc : %{size} octets"
+  de: " Blockgröße: %{size} Bytes"
+ctl.unique_iv_header:
+  en: " Each file contains 8 byte header with unique IV data."
+  fr: " Chaque fichier contient un en-tête de 8 octets avec des données IV uniques."
+  de: " Jede Datei enthält einen 8-Byte-Header mit eindeutigen IV-Daten."
+ctl.chained_name_iv:
+  en: " Filename encoded using IV chaining mode."
+  fr: " Nom de fichier encodé en mode chaînage IV."
+  de: " Dateiname mit IV-Verkettungsmodus kodiert."
+ctl.external_iv_chaining:
+  en: " External IV chaining enabled (paranoia mode)."
+  fr: " Chaînage IV externe activé (mode paranoïa)."
+  de: " Externe IV-Verkettung aktiviert (Paranoia-Modus)."
+ctl.block_mac:
+  en: " Block MAC: %{bytes} bytes"
+  fr: " MAC de bloc : %{bytes} octets"
+  de: " Block-MAC: %{bytes} Bytes"
+ctl.pbkdf2_iterations:
+  en: " Using PBKDF2, with %{iterations} iterations"
+  fr: " Utilisation de PBKDF2, avec %{iterations} itérations"
+  de: " Verwendung von PBKDF2 mit %{iterations} Iterationen"
+ctl.salt_size:
+  en: " Salt Size: %{bits} bits"
+  fr: " Taille du sel : %{bits} bits"
+  de: " Salt-Größe: %{bits} Bits"
+ctl.kdf_algorithm_pbkdf2:
+  en: " Key Derivation Function: PBKDF2-HMAC-SHA1"
+  fr: " Fonction de dérivation de clé : PBKDF2-HMAC-SHA1"
+  de: " Schlüsselableitungsfunktion: PBKDF2-HMAC-SHA1"
+ctl.kdf_algorithm_argon2id:
+  en: " Key Derivation Function: Argon2id"
+  fr: " Fonction de dérivation de clé : Argon2id"
+  de: " Schlüsselableitungsfunktion: Argon2id"
+ctl.argon2_memory_cost:
+  en: "  Argon2 memory: %{kib} KiB"
+  fr: "  Mémoire Argon2 : %{kib} Kio"
+  de: "  Argon2-Speicher: %{kib} KiB"
+ctl.argon2_time_cost:
+  en: "  Argon2 iterations: %{iterations}"
+  fr: "  Itérations Argon2 : %{iterations}"
+  de: "  Argon2-Iterationen: %{iterations}"
+ctl.argon2_parallelism:
+  en: "  Argon2 parallelism: %{threads} threads"
+  fr: "  Parallélisme Argon2 : %{threads} threads"
+  de: "  Argon2-Parallelität: %{threads} Threads"
+ctl.enter_current_password:
+  en: "Enter current Encfs password: "
+  fr: "Entrez le mot de passe Encfs actuel : "
+  de: "Aktuelles Encfs-Passwort eingeben: "
+ctl.enter_new_password:
+  en: "Enter new Encfs password: "
+  fr: "Entrez le nouveau mot de passe Encfs : "
+  de: "Neues Encfs-Passwort eingeben: "
+ctl.volume_key_updated:
+  en: "Volume Key successfully updated."
+  fr: "Clé de volume mise à jour avec succès."
+  de: "Volumen-Schlüssel erfolgreich aktualisiert."
+ctl.upgrading_to_argon2:
+  en: "Upgrading config to Argon2id KDF..."
+  fr: "Mise à jour de la configuration vers Argon2id KDF..."
+  de: "Aktualisierung der Konfiguration auf Argon2id KDF..."
+ctl.calibrating_argon2:
+  en: "Calibrating Argon2 parameters for optimal security..."
+  fr: "Calibrage des paramètres Argon2 pour une sécurité optimale..."
+  de: "Kalibrierung der Argon2-Parameter für optimale Sicherheit..."
+ctl.argon2_calibrated:
+  en: "Argon2 time cost calibrated to %{iterations} iterations (≥1 second)"
+  fr: "Coût temporel Argon2 calibré à %{iterations} itérations (≥1 seconde)"
+  de: "Argon2-Zeitkosten auf %{iterations} Iterationen kalibriert (≥1 Sekunde)"
+ctl.checked_files_dirs:
+  en: "Checked %{files} files and %{dirs} directories."
+  fr: "%{files} fichiers et %{dirs} répertoires vérifiés."
+  de: "%{files} Dateien und %{dirs} Verzeichnisse überprüft."
+ctl.no_undecodable_files:
+  en: "No undecodable files found."
+  fr: "Aucun fichier indéchiffrable trouvé."
+  de: "Keine nicht dekodierbaren Dateien gefunden."
+ctl.found_one_undecodable:
+  en: "Found 1 undecodable file."
+  fr: "1 fichier indéchiffrable trouvé."
+  de: "1 nicht dekodierbare Datei gefunden."
+ctl.found_undecodable_files:
+  en: "Found %{count} undecodable files."
+  fr: "%{count} fichiers indéchiffrables trouvés."
+  de: "%{count} nicht dekodierbare Dateien gefunden."
+ctl.error_decoding:
+  en: "Error decoding %{path}: %{error}"
+  fr: "Erreur lors du décodage de %{path} : %{error}"
+  de: "Fehler beim Dekodieren von %{path}: %{error}"
+ctl.error_encoding:
+  en: "Error encoding %{path}: %{error}"
+  fr: "Erreur lors de l'encodage de %{path} : %{error}"
+  de: "Fehler beim Kodieren von %{path}: %{error}"
+ctl.warning_read_dir_entry:
+  en: "Warning: Failed to read directory entry: %{error}"
+  fr: "Avertissement : Échec de la lecture de l'entrée du répertoire : %{error}"
+  de: "Warnung: Fehler beim Lesen des Verzeichniseintrags: %{error}"
+ctl.warning_error_processing:
+  en: "Warning: Error processing %{name}: %{error}"
+  fr: "Avertissement : Erreur lors du traitement de %{name} : %{error}"
+  de: "Warnung: Fehler beim Verarbeiten von %{name}: %{error}"
+ctl.warning_could_not_decrypt:
+  en: "Warning: Could not decrypt %{name}: %{error}"
+  fr: "Avertissement : Impossible de déchiffrer %{name} : %{error}"
+  de: "Warnung: %{name} konnte nicht entschlüsselt werden: %{error}"
+ctl.warning_incomplete_header:
+  en: "Warning: File %{name} has incomplete header"
+  fr: "Avertissement : Le fichier %{name} a un en-tête incomplet"
+  de: "Warnung: Datei %{name} hat unvollständigen Header"
+ctl.warning_export_failed:
+  en: "Warning: Failed to export %{path}: %{error}"
+  fr: "Avertissement : Échec de l'exportation de %{path} : %{error}"
+  de: "Warnung: Export von %{path} fehlgeschlagen: %{error}"
+ctl.warning_file_type:
+  en: "Warning: Failed to get file type for %{path}"
+  fr: "Avertissement : Échec de l'obtention du type de fichier pour %{path}"
+  de: "Warnung: Dateityp für %{path} konnte nicht ermittelt werden"
+ctl.in_directory:
+  en: "In directory %{path}: "
+  fr: "Dans le répertoire %{path} : "
+  de: "Im Verzeichnis %{path}: "
+ctl.non_utf8_filename:
+  en: "%{path} (non-UTF-8 filename)"
+  fr: "%{path} (nom de fichier non UTF-8)"
+  de: "%{path} (Nicht-UTF-8-Dateiname)"
+ctl.error_failed_to_load_config:
+  en: "Failed to load config file"
+  fr: "Échec du chargement du fichier de configuration"
+  de: "Fehler beim Laden der Konfigurationsdatei"
+ctl.error_invalid_password:
+  en: "Invalid password"
+  fr: "Mot de passe invalide"
+  de: "Ungültiges Passwort"
+ctl.error_failed_to_generate_salt:
+  en: "Failed to generate salt"
+  fr: "Échec de la génération du sel"
+  de: "Fehler beim Generieren des Salts"
+ctl.error_failed_to_save_config:
+  en: "Failed to save config file"
+  fr: "Échec de l'enregistrement du fichier de configuration"
+  de: "Fehler beim Speichern der Konfigurationsdatei"
+ctl.error_failed_to_open_file:
+  en: "Failed to open file"
+  fr: "Échec de l'ouverture du fichier"
+  de: "Fehler beim Öffnen der Datei"
+ctl.error_failed_to_open_encrypted_file:
+  en: "Failed to open encrypted file"
+  fr: "Échec de l'ouverture du fichier chiffré"
+  de: "Fehler beim Öffnen der verschlüsselten Datei"
+ctl.error_failed_to_read_directory:
+  en: "Failed to read directory"
+  fr: "Échec de la lecture du répertoire"
+  de: "Fehler beim Lesen des Verzeichnisses"
+ctl.error_failed_to_read_current_password:
+  en: "Failed to read current password"
+  fr: "Échec de la lecture du mot de passe actuel"
+  de: "Fehler beim Lesen des aktuellen Passworts"
+ctl.error_failed_to_read_new_password:
+  en: "Failed to read new password"
+  fr: "Échec de la lecture du nouveau mot de passe"
+  de: "Fehler beim Lesen des neuen Passworts"
+ctl.error_failed_to_read_password:
+  en: "Failed to read password"
+  fr: "Échec de la lecture du mot de passe"
+  de: "Fehler beim Lesen des Passworts"
+ctl.password_prompt:
+  en: "EncFS Password: "
+  fr: "Mot de passe EncFS: "
+  de: "EncFS-Passwort: "
+ctl.error_failed_to_execute_password_program:
+  en: "Failed to execute password program"
+  fr: "Échec de l'exécution du programme de mot de passe"
+  de: "Fehler beim Ausführen des Passwortprogramms"
+ctl.error_password_program_invalid_utf8:
+  en: "Password program output is not valid UTF-8"
+  fr: "La sortie du programme de mot de passe n'est pas un UTF-8 valide"
+  de: "Ausgabe des Passwortprogramms ist kein gültiges UTF-8"
+ctl.error_failed_to_create_destination_directory:
+  en: "Failed to create destination directory"
+  fr: "Échec de la création du répertoire de destination"
+  de: "Fehler beim Erstellen des Zielverzeichnisses"
+ctl.error_version3_not_supported:
+  en: "Version 3 configuration files are not supported"
+  fr: "Les fichiers de configuration version 3 ne sont pas pris en charge"
+  de: "Version-3-Konfigurationsdateien werden nicht unterstützt"
+ctl.error_old_format_not_supported:
+  en: "This old EncFS format is not supported"
+  fr: "Cet ancien format EncFS n'est pas pris en charge"
+  de: "Dieses alte EncFS-Format wird nicht unterstützt"
+ctl.error_unknown_config_format:
+  en: "Unknown configuration format"
+  fr: "Format de configuration inconnu"
+  de: "Unbekanntes Konfigurationsformat"
+ctl.error_reverse_mode_not_implemented:
+  en: "--reverse mode not yet fully implemented"
+  fr: "Le mode --reverse n'est pas encore entièrement implémenté"
+  de: "--reverse-Modus noch nicht vollständig implementiert"
+ctl.error_incomplete_header:
+  en: "Encrypted file has incomplete header"
+  fr: "Le fichier chiffré a un en-tête incomplet"
+  de: "Verschlüsselte Datei hat unvollständigen Header"
+ctl.error_no_current_password:
+  en: "No current password provided"
+  fr: "Aucun mot de passe actuel fourni"
+  de: "Kein aktuelles Passwort angegeben"
+ctl.error_no_new_password:
+  en: "No new password provided"
+  fr: "Aucun nouveau mot de passe fourni"
+  de: "Kein neues Passwort angegeben"
+ctl.error_failed_to_read_dir_entry:
+  en: "Failed to read directory entry: %{error}"
+  fr: "Échec de la lecture de l'entrée du répertoire : %{error}"
+  de: "Fehler beim Lesen des Verzeichniseintrags: %{error}"
+ctl.error_non_utf8_filename:
+  en: "Non-UTF-8 filename: %{filename}"
+  fr: "Nom de fichier non UTF-8 : %{filename}"
+  de: "Nicht-UTF-8-Dateiname: %{filename}"
+ctl.error_could_not_decrypt:
+  en: "Could not decrypt %{name}: %{error}"
+  fr: "Impossible de déchiffrer %{name} : %{error}"
+  de: "%{name} konnte nicht entschlüsselt werden: %{error}"
+ctl.error_undecryptable_symlink_target:
+  en: "Undecryptable symlink target %{path}: %{error}"
+  fr: "Cible de lien symbolique indéchiffrable %{path} : %{error}"
+  de: "Nicht entschlüsselbares Symlink-Ziel %{path}: %{error}"
+ctl.error_invalid_utf8:
+  en: "Invalid UTF-8"
+  fr: "UTF-8 invalide"
+  de: "Ungültiges UTF-8"
+ctl.error_invalid_path_component:
+  en: "Invalid path component"
+  fr: "Composant de chemin invalide"
+  de: "Ungültiger Pfadkomponente"
+ctl.error_no_config_file_found:
+  en: "No config file found. Looked for .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
+  fr: "Aucun fichier de configuration trouvé. Recherché .encfs6.xml, .encfs5, .encfs4, .encfs3 dans %{rootdir}"
+  de: "Keine Konfigurationsdatei gefunden. Suche nach .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
+ctl.error_password_program_exited_with_error:
+  en: "Password program exited with error"
+  fr: "Le programme de mot de passe s'est terminé avec une erreur"
+  de: "Passwortprogramm mit Fehler beendet"
+ctl.error_file_not_found:
+  en: "File not found: %{path}"
+  fr: "Fichier introuvable : %{path}"
+  de: "Datei nicht gefunden: %{path}"
