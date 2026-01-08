@@ -17,12 +17,12 @@ pub fn init_locale() {
         // Strip encoding suffix like ".UTF-8"
         let normalized = lang.split('.').next().unwrap_or("en_US");
 
-        // Map POSIX style to your rust-i18n locale keys if needed
-        let locale = match normalized {
-            "en_US" => "en",
-            "fr_FR" => "fr",
-            "de_DE" => "de",
-            other => other, // fall back to whatever is there
+        // Extract language code: if locale contains "_", use first component
+        // e.g., "en_US" -> "en", "fr_FR" -> "fr"
+        let locale = if normalized.contains('_') {
+            normalized.split('_').next().unwrap_or(normalized)
+        } else {
+            normalized
         };
 
         rust_i18n::set_locale(locale);
