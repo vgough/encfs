@@ -17,15 +17,12 @@ pub fn init_locale() {
         // Strip encoding suffix like ".UTF-8"
         let normalized = lang.split('.').next().unwrap_or("en_US");
 
-        // Extract language code: if locale contains "_", use first component
-        // e.g., "en_US" -> "en", "fr_FR" -> "fr"
-        let locale = if normalized.contains('_') {
-            normalized.split('_').next().unwrap_or(normalized)
-        } else {
-            normalized
-        };
+        // Replace underscores with hyphens (e.g., "de_DE" -> "de-DE")
+        // rust_i18n will automatically fall back from regional variant to base
+        // language (e.g., "de-DE" -> "de") and then to the configured fallback ("en")
+        let locale = normalized.replace('_', "-");
 
-        rust_i18n::set_locale(locale);
+        rust_i18n::set_locale(&locale);
     }
 }
 
