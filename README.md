@@ -27,30 +27,24 @@ For more info, see:
 
 If you're considering setting up a new encrypted filesystem, I'd recommend
 looking into newer alternatives, such as the excellent
-[GoCryptFS](https://github.com/rfjakob/gocryptfs).
+[GoCryptFS](https://github.com/rfjakob/gocryptfs), or else use full-disk
+encryption when possible.
 
 ## Status - Dec 2025
 
 Data has a long lifespan, and people still have data that was encrypted with EncFS.
-I haven't had time or desire to dive into a 23+ year old C++ codebase, and so
-the original code hasn't seen many changes. I've recently begun porting EncFS
-to Rust as a way to learn Rust. The original goal was to port enough to get
-a read-only filesystem working.
-
-Read-only access turned out to be easier than I'd expected, so a stretch goal
-is to implement the write APIs.
+I switched to using full-disk encryption when it became performant enough, and
+haven't worked on the codebase in years. I've recently begun porting EncFS
+to Rust as a way to learn Rust, which turned out to be easier than I'd expected
+with the help of modern-day developer tooling.
 
 The old C++ code can still be found in the `legacy` directory, although that may
-go away soon. Don't expect new features, this is based on an old design which
-was based on what was readily available 
+go away soon. 
 
 EncFS was a mature program, so while the port is already mostly functional 
 in *read-only* mode, I wouldn't trust it yet for modifying data. While the
-functionality is likely to be implemented, the new version doesn't have the
-nice-to-have features like internationalization of messages.
-
-Some of the issues with the EncFS model would require a new design to resolve,
-which is not currently planned.
+core functionality is likely to be implemented, the new version doesn't support
+all the features of the original.
 
 ## FAQ
 
