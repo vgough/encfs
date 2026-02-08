@@ -35,6 +35,10 @@ help.encfs.read_only:
   en: "Mount read-only"
   fr: "Monter en lecture seule"
   de: "Schreibgeschützt mounten"
+help.encfs.no_default_permissions:
+  en: "Disable kernel permission checks (do not use default_permissions)"
+  fr: "Désactiver les vérifications de permissions du noyau (ne pas utiliser default_permissions)"
+  de: "Kernel-Berechtigungsprüfungen deaktivieren (default_permissions nicht verwenden)"
 help.encfs.root:
   en: "Root directory of encrypted volume"
   fr: "Répertoire racine du volume chiffré"

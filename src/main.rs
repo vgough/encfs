@@ -47,6 +47,10 @@ fn help_main_read_only() -> String {
     t!("help.encfs.read_only").to_string()
 }
 
+fn help_main_no_default_permissions() -> String {
+    t!("help.encfs.no_default_permissions").to_string()
+}
+
 fn help_main_root() -> String {
     t!("help.encfs.root").to_string()
 }
@@ -81,6 +85,9 @@ struct Args {
 
     #[arg(short = 'r', long, help = help_main_read_only())]
     read_only: bool,
+
+    #[arg(long, help = help_main_no_default_permissions())]
+    no_default_permissions: bool,
 
     #[arg(help = help_main_root())]
     root: PathBuf,
@@ -182,6 +189,11 @@ fn main() -> Result<()> {
             if args.public {
                 check_opts.push(OsStr::new("-o"));
                 check_opts.push(OsStr::new("allow_other"));
+            }
+
+            if !args.no_default_permissions {
+                check_opts.push(OsStr::new("-o"));
+                check_opts.push(OsStr::new("default_permissions"));
             }
 
             if args.read_only {
