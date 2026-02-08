@@ -284,9 +284,9 @@ ctl.error_invalid_path_component:
   fr: "Composant de chemin invalide"
   de: "Ungültiger Pfadkomponente"
 ctl.error_no_config_file_found:
-  en: "No config file found. Looked for .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
-  fr: "Aucun fichier de configuration trouvé. Recherché .encfs6.xml, .encfs5, .encfs4, .encfs3 dans %{rootdir}"
-  de: "Keine Konfigurationsdatei gefunden. Suche nach .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
+  en: "No config file found. Looked for .encfs7, .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
+  fr: "Aucun fichier de configuration trouvé. Recherché .encfs7, .encfs6.xml, .encfs5, .encfs4, .encfs3 dans %{rootdir}"
+  de: "Keine Konfigurationsdatei gefunden. Suche nach .encfs7, .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
 ctl.error_password_program_exited_with_error:
   en: "Password program exited with error"
   fr: "Le programme de mot de passe s'est terminé avec une erreur"

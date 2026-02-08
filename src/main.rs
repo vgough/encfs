@@ -114,12 +114,15 @@ fn main() -> Result<()> {
         )
     );
 
-    // Try to find config file - check for .encfs6.xml first, then legacy .encfs5
-    let config_path = args.root.join(".encfs6.xml");
+    // Try to find config file - check .encfs7, .encfs6.xml, then legacy .encfs5
+    let v7_config_path = args.root.join(".encfs7");
+    let v6_config_path = args.root.join(".encfs6.xml");
     let legacy_config_path = args.root.join(".encfs5");
 
-    let config_path = if config_path.exists() {
-        config_path
+    let config_path = if v7_config_path.exists() {
+        v7_config_path
+    } else if v6_config_path.exists() {
+        v6_config_path
     } else if legacy_config_path.exists() {
         info!("{}", t!("main.using_legacy_config"));
         legacy_config_path

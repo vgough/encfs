@@ -8,9 +8,9 @@ main.using_legacy_config:
   fr: "Utilisation du fichier de configuration .encfs5 hérité"
   de: "Verwendung der alten .encfs5-Konfigurationsdatei"
 main.no_config_file_found:
-  en: "No config file found. Looked for .encfs6.xml and .encfs5 in %{root}"
-  fr: "Aucun fichier de configuration trouvé. Recherché .encfs6.xml et .encfs5 dans %{root}"
-  de: "Keine Konfigurationsdatei gefunden. Suche nach .encfs6.xml und .encfs5 in %{root}"
+  en: "No config file found. Looked for .encfs7, .encfs6.xml and .encfs5 in %{root}"
+  fr: "Aucun fichier de configuration trouvé. Recherché .encfs7, .encfs6.xml et .encfs5 dans %{root}"
+  de: "Keine Konfigurationsdatei gefunden. Suche nach .encfs7, .encfs6.xml und .encfs5 in %{root}"
 main.no_config_file_found_short:
   en: "No config file found"
   fr: "Aucun fichier de configuration trouvé"
