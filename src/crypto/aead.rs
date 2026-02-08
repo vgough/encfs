@@ -3,7 +3,7 @@
 
 use anyhow::{Context, Result};
 use openssl::rand::rand_bytes;
-use openssl::symm::{decrypt_aead, encrypt_aead, Cipher};
+use openssl::symm::{Cipher, decrypt_aead, encrypt_aead};
 
 /// Nonce length for AES-GCM (96 bits recommended).
 pub const GCM_NONCE_LEN: usize = 12;
@@ -23,8 +23,8 @@ pub fn encrypt(key: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
 
     let cipher = Cipher::aes_256_gcm();
     let mut tag = [0u8; GCM_TAG_LEN];
-    let ciphertext =
-        encrypt_aead(cipher, key, Some(&nonce), aad, plaintext, &mut tag).context("AEAD encrypt")?;
+    let ciphertext = encrypt_aead(cipher, key, Some(&nonce), aad, plaintext, &mut tag)
+        .context("AEAD encrypt")?;
 
     let mut out = Vec::with_capacity(GCM_NONCE_LEN + ciphertext.len() + GCM_TAG_LEN);
     out.extend_from_slice(&nonce);
@@ -50,9 +50,8 @@ pub fn decrypt(key: &[u8], aad: &[u8], encrypted: &[u8]) -> Result<Vec<u8>> {
     let (ciphertext, tag) = rest.split_at(rest.len() - GCM_TAG_LEN);
 
     let cipher = Cipher::aes_256_gcm();
-    decrypt_aead(cipher, key, Some(nonce), aad, ciphertext, tag).context(
-        "AEAD decrypt failed (wrong password or tampered config)",
-    )
+    decrypt_aead(cipher, key, Some(nonce), aad, ciphertext, tag)
+        .context("AEAD decrypt failed (wrong password or tampered config)")
 }
 
 #[cfg(test)]

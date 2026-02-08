@@ -814,8 +814,7 @@ impl EncfsConfig {
             aead::AEAD_KEY_LEN,
         )?;
 
-        let encrypted_key =
-            aead::encrypt(user_key.as_slice(), &config_hash, volume_key_blob)?;
+        let encrypted_key = aead::encrypt(user_key.as_slice(), &config_hash, volume_key_blob)?;
 
         self.key_data = encrypted_key;
         self.config_hash = Some(config_hash);
@@ -839,8 +838,12 @@ impl EncfsConfig {
         let buf = proto.encode_to_vec();
         let file = File::create(path).context("Failed to create config file")?;
         let mut writer = std::io::BufWriter::new(file);
-        writer.write_all(V7_MAGIC).context("Failed to write V7 magic")?;
-        writer.write_all(&buf).context("Failed to write V7 config")?;
+        writer
+            .write_all(V7_MAGIC)
+            .context("Failed to write V7 magic")?;
+        writer
+            .write_all(&buf)
+            .context("Failed to write V7 config")?;
         Ok(())
     }
 
@@ -878,7 +881,8 @@ impl EncfsConfig {
             external_iv_chaining: self.external_iv_chaining,
         });
 
-        let argon2 = (self.argon2_memory_cost.is_some() && self.argon2_time_cost.is_some()
+        let argon2 = (self.argon2_memory_cost.is_some()
+            && self.argon2_time_cost.is_some()
             && self.argon2_parallelism.is_some())
         .then(|| Argon2Kdf {
             salt: self.salt.clone(),
@@ -1427,7 +1431,10 @@ mod tests {
     #[test]
     fn test_v7_config_tampered_fails() -> Result<()> {
         let dir = std::env::temp_dir();
-        let config_path = dir.join(format!("encfs_v7_tamper_test_{}.encfs7", std::process::id()));
+        let config_path = dir.join(format!(
+            "encfs_v7_tamper_test_{}.encfs7",
+            std::process::id()
+        ));
 
         let mut config = EncfsConfig {
             config_type: ConfigType::V7,

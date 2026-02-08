@@ -56,14 +56,23 @@ fn test_mknod_fifo_getattr_returns_named_pipe() {
     let mode = S_IFIFO | 0o755;
 
     // Create FIFO via mknod
-    fs.mknod(r, &parent, name, mode, 0).expect("mknod FIFO failed");
+    fs.mknod(r, &parent, name, mode, 0)
+        .expect("mknod FIFO failed");
 
     let path = parent.join("myfifo");
 
     // getattr should return NamedPipe (FIFO) type
     let (ttl, attr) = fs.getattr(r, &path, None).expect("getattr failed");
-    assert_eq!(attr.kind, FileType::NamedPipe, "getattr should report NamedPipe for FIFO");
-    assert_eq!(attr.perm & 0o777, 0o755, "FIFO permission bits should be 0755");
+    assert_eq!(
+        attr.kind,
+        FileType::NamedPipe,
+        "getattr should report NamedPipe for FIFO"
+    );
+    assert_eq!(
+        attr.perm & 0o777,
+        0o755,
+        "FIFO permission bits should be 0755"
+    );
     let _ = ttl;
 
     // Backend should contain an encrypted FIFO
@@ -95,7 +104,8 @@ fn test_mknod_fifo_readdir_reports_named_pipe() {
     let r = req();
 
     let parent = PathBuf::from("");
-    fs.mknod(r, &parent, OsStr::new("pipe"), S_IFIFO | 0o600, 0).expect("mknod FIFO failed");
+    fs.mknod(r, &parent, OsStr::new("pipe"), S_IFIFO | 0o600, 0)
+        .expect("mknod FIFO failed");
 
     let dir_path = PathBuf::from("");
     let entries = fs.readdir(r, &dir_path, 0).expect("readdir failed");

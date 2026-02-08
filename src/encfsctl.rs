@@ -296,10 +296,7 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
 
     if raw {
         if config.config_type != ConfigType::V7 {
-            return Err(anyhow::anyhow!(
-                "{}",
-                t!("ctl.error_raw_only_v7")
-            ));
+            return Err(anyhow::anyhow!("{}", t!("ctl.error_raw_only_v7")));
         }
         let proto = config::EncfsConfig::load_v7_proto(&config_path)
             .context(t!("ctl.error_failed_to_load_config"))?;
@@ -545,9 +542,15 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
         let v7_user_key = SslCipher::derive_key_argon2id(
             &current_password,
             &config.salt,
-            config.argon2_memory_cost.unwrap_or(constants::DEFAULT_ARGON2_MEMORY_COST),
-            config.argon2_time_cost.unwrap_or(constants::DEFAULT_ARGON2_TIME_COST),
-            config.argon2_parallelism.unwrap_or(constants::DEFAULT_ARGON2_PARALLELISM),
+            config
+                .argon2_memory_cost
+                .unwrap_or(constants::DEFAULT_ARGON2_MEMORY_COST),
+            config
+                .argon2_time_cost
+                .unwrap_or(constants::DEFAULT_ARGON2_TIME_COST),
+            config
+                .argon2_parallelism
+                .unwrap_or(constants::DEFAULT_ARGON2_PARALLELISM),
             aead::AEAD_KEY_LEN,
         )?;
         aead::decrypt(v7_user_key.as_slice(), aad, &config.key_data)?
@@ -681,15 +684,13 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     println!("{}", t!("ctl.volume_key_updated"));
 
     if upgrading_to_v7 {
-        let backup_path = PathBuf::from(config_path.as_os_str().to_string_lossy().to_string() + ".bak");
+        let backup_path =
+            PathBuf::from(config_path.as_os_str().to_string_lossy().to_string() + ".bak");
         std::fs::rename(&config_path, &backup_path)
             .context("Failed to rename old config to .bak")?;
         println!(
             "{}",
-            t!(
-                "ctl.v7_config_backup",
-                path = backup_path.display()
-            )
+            t!("ctl.v7_config_backup", path = backup_path.display())
         );
     }
 
@@ -1024,9 +1025,15 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
         SslCipher::derive_key_argon2id(
             &current_password,
             &config.salt,
-            config.argon2_memory_cost.unwrap_or(constants::DEFAULT_ARGON2_MEMORY_COST),
-            config.argon2_time_cost.unwrap_or(constants::DEFAULT_ARGON2_TIME_COST),
-            config.argon2_parallelism.unwrap_or(constants::DEFAULT_ARGON2_PARALLELISM),
+            config
+                .argon2_memory_cost
+                .unwrap_or(constants::DEFAULT_ARGON2_MEMORY_COST),
+            config
+                .argon2_time_cost
+                .unwrap_or(constants::DEFAULT_ARGON2_TIME_COST),
+            config
+                .argon2_parallelism
+                .unwrap_or(constants::DEFAULT_ARGON2_PARALLELISM),
             aead::AEAD_KEY_LEN,
         )?
     } else if config.kdf_iterations > 0 {
@@ -1493,7 +1500,10 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
     }
     // validate(): blockMACBytes in 0..=8
     if config.block_mac_bytes < 0 || config.block_mac_bytes > 8 {
-        anyhow::bail!("V7 upgrade requires blockMACBytes in 0..=8 (got {})", config.block_mac_bytes);
+        anyhow::bail!(
+            "V7 upgrade requires blockMACBytes in 0..=8 (got {})",
+            config.block_mac_bytes
+        );
     }
     // validate(): blockMACRandBytes must be 0 (not supported yet)
     if config.block_mac_rand_bytes != 0 {
@@ -1579,7 +1589,10 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
         out.push_str(&format!("  key_size: {}\n", c.key_size));
         out.push_str(&format!("  block_size: {}\n", c.block_size));
         out.push_str(&format!("  block_mac_bytes: {}\n", c.block_mac_bytes));
-        out.push_str(&format!("  block_mac_rand_bytes: {}\n", c.block_mac_rand_bytes));
+        out.push_str(&format!(
+            "  block_mac_rand_bytes: {}\n",
+            c.block_mac_rand_bytes
+        ));
         out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
         out.push_str("}\n");
     }
@@ -1593,7 +1606,10 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
         out.push_str("name_encoding {\n");
         out.push_str(&format!("  mode: {}\n", mode));
         out.push_str(&format!("  chained_name_iv: {}\n", n.chained_name_iv));
-        out.push_str(&format!("  external_iv_chaining: {}\n", n.external_iv_chaining));
+        out.push_str(&format!(
+            "  external_iv_chaining: {}\n",
+            n.external_iv_chaining
+        ));
         out.push_str("}\n");
     }
 

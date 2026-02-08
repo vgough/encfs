@@ -656,8 +656,14 @@ fn live_utime_simplified_cases() -> Result<()> {
     let at = 1_700_000_100i64;
     let mt = 1_700_000_200i64;
     let ts = [
-        libc::timespec { tv_sec: at, tv_nsec: 0 },
-        libc::timespec { tv_sec: mt, tv_nsec: 0 },
+        libc::timespec {
+            tv_sec: at,
+            tv_nsec: 0,
+        },
+        libc::timespec {
+            tv_sec: mt,
+            tv_nsec: 0,
+        },
     ];
 
     // Case 1: Create file at root, utime, then stat — file exists (like pjd-fstest after successful create)
@@ -665,9 +671,18 @@ fn live_utime_simplified_cases() -> Result<()> {
     fs::write(&p1, b"x")?;
     let c1 = CString::new(p1.as_os_str().as_encoded_bytes())?;
     let rc = unsafe { libc::utimensat(libc::AT_FDCWD, c1.as_ptr(), ts.as_ptr(), 0) };
-    assert_eq!(rc, 0, "utimensat on existing file: {:?}", std::io::Error::last_os_error());
+    assert_eq!(
+        rc,
+        0,
+        "utimensat on existing file: {:?}",
+        std::io::Error::last_os_error()
+    );
     let m1 = fs::metadata(&p1)?;
-    let mt_secs = m1.modified()?.duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs() as i64;
+    let mt_secs = m1
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_secs() as i64;
     assert_eq!(mt_secs, mt, "mtime after utimensat");
 
     // Case 2: pjd-fstest-style path — dir then file (n0/n1)
@@ -677,9 +692,18 @@ fn live_utime_simplified_cases() -> Result<()> {
     fs::write(&n1, b"y")?;
     let c2 = CString::new(n1.as_os_str().as_encoded_bytes())?;
     let rc2 = unsafe { libc::utimensat(libc::AT_FDCWD, c2.as_ptr(), ts.as_ptr(), 0) };
-    assert_eq!(rc2, 0, "utimensat on subdir file: {:?}", std::io::Error::last_os_error());
+    assert_eq!(
+        rc2,
+        0,
+        "utimensat on subdir file: {:?}",
+        std::io::Error::last_os_error()
+    );
     let m2 = fs::metadata(&n1)?;
-    let mt2 = m2.modified()?.duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs() as i64;
+    let mt2 = m2
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_secs() as i64;
     assert_eq!(mt2, mt, "mtime after utimensat (subdir file)");
 
     // Case 3: utime on non-existent path — should fail (ENOENT or EACCES depending on impl)

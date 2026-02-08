@@ -511,7 +511,7 @@ impl EncFs {
             now.duration_since(t).unwrap_or(Duration::MAX) < Duration::from_millis(10)
                 || t.duration_since(now).unwrap_or(Duration::MAX) < Duration::from_millis(10)
         };
-        let setting_to_current = atime.map_or(true, near_now) && mtime.map_or(true, near_now);
+        let setting_to_current = atime.is_none_or(near_now) && mtime.is_none_or(near_now);
         if setting_to_current {
             let has_write = (req.uid == file_uid && (mode & 0o200) != 0)
                 || (req.gid == file_gid && (mode & 0o020) != 0)
@@ -526,14 +526,20 @@ impl EncFs {
 
     /// Sets ownership to req.uid/req.gid if different from current process.
     /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
-    fn set_ownership_fd(&self, fd: std::os::unix::io::RawFd, req: &RequestInfo) -> Result<(), libc::c_int> {
+    fn set_ownership_fd(
+        &self,
+        fd: std::os::unix::io::RawFd,
+        req: &RequestInfo,
+    ) -> Result<(), libc::c_int> {
         let uid = unsafe { libc::getuid() };
         let gid = unsafe { libc::getgid() };
         if req.uid == uid && req.gid == gid {
             return Ok(());
         }
         if unsafe { libc::fchown(fd, req.uid as libc::uid_t, req.gid as libc::gid_t) } == -1 {
-            let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO);
+            let errno = std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO);
             if errno != libc::EPERM {
                 return Err(errno);
             }
@@ -550,10 +556,17 @@ impl EncFs {
             return Ok(());
         }
         let c_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-        if unsafe { libc::chown(c_path.as_ptr(), req.uid as libc::uid_t, req.gid as libc::gid_t) }
-            == -1
+        if unsafe {
+            libc::chown(
+                c_path.as_ptr(),
+                req.uid as libc::uid_t,
+                req.gid as libc::gid_t,
+            )
+        } == -1
         {
-            let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO);
+            let errno = std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO);
             if errno != libc::EPERM {
                 return Err(errno);
             }
@@ -646,12 +659,14 @@ impl FilesystemMT for EncFs {
     /// uid/gid to apply standard Unix permission checks. Root (uid 0) is always allowed.
     /// Only the primary gid is considered (no supplementary groups).
     fn access(&self, req: RequestInfo, path: &Path, mask: u32) -> ResultEmpty {
-        debug!("access: {:?} mask={:#o} uid={} gid={}", path, mask, req.uid, req.gid);
+        debug!(
+            "access: {:?} mask={:#o} uid={} gid={}",
+            path, mask, req.uid, req.gid
+        );
 
         let (real_path, _) = self.encrypt_path(path)?;
-        let metadata = fs::symlink_metadata(&real_path).map_err(|e| {
-            e.raw_os_error().unwrap_or(libc::EIO)
-        })?;
+        let metadata =
+            fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
         // F_OK (0): existence only
         if mask == 0 {
@@ -876,9 +891,7 @@ impl FilesystemMT for EncFs {
         // Get file metadata for permission check (owner/group/mode).
         let metadata = if let Some(fh) = fh {
             let handles = self.handles_guard();
-            handles
-                .get(&fh)
-                .and_then(|h| h.file.metadata().ok())
+            handles.get(&fh).and_then(|h| h.file.metadata().ok())
         } else {
             let (real_path, _) = self.encrypt_path(path)?;
             fs::symlink_metadata(real_path).ok()
@@ -887,27 +900,9 @@ impl FilesystemMT for EncFs {
         let setting_times = atime.is_some() || mtime.is_some();
         if setting_times && req.uid != 0 {
             let meta = metadata.as_ref().ok_or(libc::EACCES)?;
-            if let Err(e) = self.utimens_permission_check(
-                &req,
-                meta.uid(),
-                meta.gid(),
-                meta.mode() as u32,
-                atime,
-                mtime,
-            ) {
-                return Err(e);
-            }
+            self.utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)?
         } else if let Some(ref meta) = metadata {
-            if let Err(e) = self.utimens_permission_check(
-                &req,
-                meta.uid(),
-                meta.gid(),
-                meta.mode() as u32,
-                atime,
-                mtime,
-            ) {
-                return Err(e);
-            }
+            self.utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)?;
         }
         // If metadata failed and we're root or not setting times, proceed and let utimensat/futimens return the error.
 
@@ -1463,15 +1458,14 @@ impl FilesystemMT for EncFs {
         debug!("mknod: {:?} mode={:o} rdev={}", path, mode, rdev);
         let (real_path, _) = self.encrypt_path(&path)?;
 
-        let c_path =
-            CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
-        let mode_bits = mode & libc::S_IFMT as u32;
-        let res = if mode_bits == libc::S_IFIFO as u32 {
+        let mode_bits = mode & libc::S_IFMT;
+        let res = if mode_bits == libc::S_IFIFO {
             unsafe { libc::mkfifo(c_path.as_ptr(), mode) }
-        } else if mode_bits == libc::S_IFCHR as u32 || mode_bits == libc::S_IFBLK as u32 {
+        } else if mode_bits == libc::S_IFCHR || mode_bits == libc::S_IFBLK {
             unsafe { libc::mknod(c_path.as_ptr(), mode, rdev as libc::dev_t) }
-        } else if mode_bits == libc::S_IFREG as u32 {
+        } else if mode_bits == libc::S_IFREG {
             use std::os::unix::fs::OpenOptionsExt;
             match fs::OpenOptions::new()
                 .write(true)
