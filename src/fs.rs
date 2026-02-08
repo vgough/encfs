@@ -10,11 +10,12 @@ use fuse_mt::{
 use libc;
 use log::{debug, error, warn};
 use std::collections::HashMap;
-use std::ffi::OsStr;
+use std::ffi::{CString, OsStr};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileExt, MetadataExt};
+use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt};
+use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -458,6 +459,109 @@ impl EncFs {
     }
 }
 
+/// Map std::fs::Metadata file type to FUSE FileType (for getattr/readdir).
+fn metadata_to_file_type(metadata: &std::fs::Metadata) -> FileType {
+    if metadata.is_dir() {
+        FileType::Directory
+    } else if metadata.is_symlink() {
+        FileType::Symlink
+    } else {
+        let ft = metadata.file_type();
+        if ft.is_fifo() {
+            FileType::NamedPipe
+        } else if ft.is_char_device() {
+            FileType::CharDevice
+        } else if ft.is_block_device() {
+            FileType::BlockDevice
+        } else if ft.is_socket() {
+            FileType::Socket
+        } else {
+            FileType::RegularFile
+        }
+    }
+}
+
+impl EncFs {
+    /// POSIX utime permission check: owner and root may always set; others may set to
+    /// current time only if they have write access; setting explicit time requires owner or root.
+    fn utimens_permission_check(
+        &self,
+        req: &RequestInfo,
+        file_uid: u32,
+        file_gid: u32,
+        mode: u32,
+        atime: Option<SystemTime>,
+        mtime: Option<SystemTime>,
+    ) -> Result<(), libc::c_int> {
+        if req.uid == 0 {
+            return Ok(());
+        }
+        if req.uid == file_uid {
+            return Ok(());
+        }
+        let setting_atime = atime.is_some();
+        let setting_mtime = mtime.is_some();
+        if !setting_atime && !setting_mtime {
+            return Ok(());
+        }
+        let now = SystemTime::now();
+        // FUSE passes UTIME_NOW as SystemTime::now() at callback time; explicit times (e.g.
+        // utime $now $now) can be tens of ms in the past. Use 10ms to distinguish.
+        let near_now = |t: SystemTime| {
+            now.duration_since(t).unwrap_or(Duration::MAX) < Duration::from_millis(10)
+                || t.duration_since(now).unwrap_or(Duration::MAX) < Duration::from_millis(10)
+        };
+        let setting_to_current = atime.map_or(true, near_now) && mtime.map_or(true, near_now);
+        if setting_to_current {
+            let has_write = (req.uid == file_uid && (mode & 0o200) != 0)
+                || (req.gid == file_gid && (mode & 0o020) != 0)
+                || (mode & 0o002) != 0;
+            if has_write {
+                return Ok(());
+            }
+            return Err(libc::EACCES);
+        }
+        Err(libc::EPERM)
+    }
+
+    /// Sets ownership to req.uid/req.gid if different from current process.
+    /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
+    fn set_ownership_fd(&self, fd: std::os::unix::io::RawFd, req: &RequestInfo) -> Result<(), libc::c_int> {
+        let uid = unsafe { libc::getuid() };
+        let gid = unsafe { libc::getgid() };
+        if req.uid == uid && req.gid == gid {
+            return Ok(());
+        }
+        if unsafe { libc::fchown(fd, req.uid as libc::uid_t, req.gid as libc::gid_t) } == -1 {
+            let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO);
+            if errno != libc::EPERM {
+                return Err(errno);
+            }
+        }
+        Ok(())
+    }
+
+    /// Sets ownership to req.uid/req.gid if different from current process.
+    /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
+    fn set_ownership_path(&self, path: &Path, req: &RequestInfo) -> Result<(), libc::c_int> {
+        let uid = unsafe { libc::getuid() };
+        let gid = unsafe { libc::getgid() };
+        if req.uid == uid && req.gid == gid {
+            return Ok(());
+        }
+        let c_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        if unsafe { libc::chown(c_path.as_ptr(), req.uid as libc::uid_t, req.gid as libc::gid_t) }
+            == -1
+        {
+            let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::EIO);
+            if errno != libc::EPERM {
+                return Err(errno);
+            }
+        }
+        Ok(())
+    }
+}
+
 impl FilesystemMT for EncFs {
     fn init(&self, _req: RequestInfo) -> Result<(), libc::c_int> {
         debug!("init");
@@ -761,13 +865,51 @@ impl FilesystemMT for EncFs {
 
     fn utimens(
         &self,
-        _req: RequestInfo,
+        req: RequestInfo,
         path: &Path,
         fh: Option<u64>,
         atime: Option<std::time::SystemTime>,
         mtime: Option<std::time::SystemTime>,
     ) -> ResultEmpty {
         debug!("utimens: {:?} atime={:?} mtime={:?}", path, atime, mtime);
+
+        // Get file metadata for permission check (owner/group/mode).
+        let metadata = if let Some(fh) = fh {
+            let handles = self.handles_guard();
+            handles
+                .get(&fh)
+                .and_then(|h| h.file.metadata().ok())
+        } else {
+            let (real_path, _) = self.encrypt_path(path)?;
+            fs::symlink_metadata(real_path).ok()
+        };
+
+        let setting_times = atime.is_some() || mtime.is_some();
+        if setting_times && req.uid != 0 {
+            let meta = metadata.as_ref().ok_or(libc::EACCES)?;
+            if let Err(e) = self.utimens_permission_check(
+                &req,
+                meta.uid(),
+                meta.gid(),
+                meta.mode() as u32,
+                atime,
+                mtime,
+            ) {
+                return Err(e);
+            }
+        } else if let Some(ref meta) = metadata {
+            if let Err(e) = self.utimens_permission_check(
+                &req,
+                meta.uid(),
+                meta.gid(),
+                meta.mode() as u32,
+                atime,
+                mtime,
+            ) {
+                return Err(e);
+            }
+        }
+        // If metadata failed and we're root or not setting times, proceed and let utimensat/futimens return the error.
 
         let to_timespec = |t: Option<std::time::SystemTime>| -> libc::timespec {
             match t {
@@ -939,13 +1081,7 @@ impl FilesystemMT for EncFs {
             mtime: SystemTime::UNIX_EPOCH + Duration::from_secs(metadata.mtime() as u64),
             ctime: SystemTime::UNIX_EPOCH + Duration::from_secs(metadata.ctime() as u64),
             crtime: SystemTime::UNIX_EPOCH,
-            kind: if metadata.is_dir() {
-                FileType::Directory
-            } else if metadata.is_symlink() {
-                FileType::Symlink
-            } else {
-                FileType::RegularFile
-            },
+            kind: metadata_to_file_type(&metadata),
             perm: metadata.mode() as u16,
             nlink: metadata.nlink() as u32,
             uid: metadata.uid(),
@@ -993,13 +1129,7 @@ impl FilesystemMT for EncFs {
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
                     result.push(DirectoryEntry {
                         name: OsStr::from_bytes(&decrypted_name).to_os_string(),
-                        kind: if metadata.is_dir() {
-                            FileType::Directory
-                        } else if metadata.is_symlink() {
-                            FileType::Symlink
-                        } else {
-                            FileType::RegularFile
-                        },
+                        kind: metadata_to_file_type(&metadata),
                     });
                 }
                 Err(e) => {
@@ -1261,6 +1391,8 @@ impl FilesystemMT for EncFs {
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         }
 
+        self.set_ownership_fd(file.as_raw_fd(), &req)?;
+
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
         let handle = Arc::new(FileHandle {
             file,
@@ -1311,8 +1443,61 @@ impl FilesystemMT for EncFs {
         use std::os::unix::fs::DirBuilderExt;
         std::fs::DirBuilder::new()
             .mode(mode)
-            .create(real_path)
+            .create(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+        self.set_ownership_path(&real_path, &req)?;
+
+        self.getattr(req, &path, None)
+    }
+
+    fn mknod(
+        &self,
+        req: RequestInfo,
+        parent: &Path,
+        name: &OsStr,
+        mode: u32,
+        rdev: u32,
+    ) -> ResultEntry {
+        let path = parent.join(name);
+        debug!("mknod: {:?} mode={:o} rdev={}", path, mode, rdev);
+        let (real_path, _) = self.encrypt_path(&path)?;
+
+        let c_path =
+            CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+
+        let mode_bits = mode & libc::S_IFMT as u32;
+        let res = if mode_bits == libc::S_IFIFO as u32 {
+            unsafe { libc::mkfifo(c_path.as_ptr(), mode) }
+        } else if mode_bits == libc::S_IFCHR as u32 || mode_bits == libc::S_IFBLK as u32 {
+            unsafe { libc::mknod(c_path.as_ptr(), mode, rdev as libc::dev_t) }
+        } else if mode_bits == libc::S_IFREG as u32 {
+            use std::os::unix::fs::OpenOptionsExt;
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(mode)
+                .open(&real_path)
+            {
+                Ok(f) => {
+                    drop(f);
+                    0
+                }
+                Err(e) => {
+                    return Err(e.raw_os_error().unwrap_or(libc::EIO));
+                }
+            }
+        } else {
+            return Err(libc::EINVAL);
+        };
+
+        if res == -1 {
+            return Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO));
+        }
+
+        self.set_ownership_path(&real_path, &req)?;
 
         self.getattr(req, &path, None)
     }

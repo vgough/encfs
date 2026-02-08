@@ -635,3 +635,69 @@ fn live_backing_invalid_filename_is_ignored_in_readdir() -> Result<()> {
 
     Ok(())
 }
+
+/// Simplified utime test cases to verify pjd-fstest utime failure theory.
+/// Theory: create may fail in pjd-fstest setup, so file never exists; then utime returns
+/// EACCES (EncFS when metadata is None) and stat returns ENOENT.
+/// These cases verify: (1) create+utime+stat works when file exists,
+/// (2) subdir path (n0/n1 style) works, (3) utime on missing path fails as expected.
+#[test]
+#[ignore]
+fn live_utime_simplified_cases() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let mp = &mount.mount_point;
+
+    // Fixed times for reproducibility
+    let at = 1_700_000_100i64;
+    let mt = 1_700_000_200i64;
+    let ts = [
+        libc::timespec { tv_sec: at, tv_nsec: 0 },
+        libc::timespec { tv_sec: mt, tv_nsec: 0 },
+    ];
+
+    // Case 1: Create file at root, utime, then stat — file exists (like pjd-fstest after successful create)
+    let p1 = mp.join("utime_f1");
+    fs::write(&p1, b"x")?;
+    let c1 = CString::new(p1.as_os_str().as_encoded_bytes())?;
+    let rc = unsafe { libc::utimensat(libc::AT_FDCWD, c1.as_ptr(), ts.as_ptr(), 0) };
+    assert_eq!(rc, 0, "utimensat on existing file: {:?}", std::io::Error::last_os_error());
+    let m1 = fs::metadata(&p1)?;
+    let mt_secs = m1.modified()?.duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs() as i64;
+    assert_eq!(mt_secs, mt, "mtime after utimensat");
+
+    // Case 2: pjd-fstest-style path — dir then file (n0/n1)
+    let n0 = mp.join("utime_n0");
+    let n1 = n0.join("utime_n1");
+    fs::create_dir_all(&n0)?;
+    fs::write(&n1, b"y")?;
+    let c2 = CString::new(n1.as_os_str().as_encoded_bytes())?;
+    let rc2 = unsafe { libc::utimensat(libc::AT_FDCWD, c2.as_ptr(), ts.as_ptr(), 0) };
+    assert_eq!(rc2, 0, "utimensat on subdir file: {:?}", std::io::Error::last_os_error());
+    let m2 = fs::metadata(&n1)?;
+    let mt2 = m2.modified()?.duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs() as i64;
+    assert_eq!(mt2, mt, "mtime after utimensat (subdir file)");
+
+    // Case 3: utime on non-existent path — should fail (ENOENT or EACCES depending on impl)
+    let missing = mp.join("utime_missing");
+    let c3 = CString::new(missing.as_os_str().as_encoded_bytes())?;
+    let rc3 = unsafe { libc::utimensat(libc::AT_FDCWD, c3.as_ptr(), ts.as_ptr(), 0) };
+    assert!(rc3 != 0, "utimensat on missing path should fail");
+    let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+    assert!(
+        errno == libc::ENOENT || errno == libc::EACCES,
+        "expected ENOENT or EACCES for missing path, got errno {}",
+        errno
+    );
+
+    // Case 4: stat on non-existent path — must be ENOENT
+    let stat_res = fs::metadata(&missing);
+    assert!(stat_res.is_err());
+    assert_eq!(stat_res.unwrap_err().raw_os_error(), Some(libc::ENOENT));
+
+    Ok(())
+}
