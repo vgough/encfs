@@ -536,6 +536,51 @@ impl FilesystemMT for EncFs {
         }
     }
 
+    /// Check if the requesting process has the requested access to the path.
+    ///
+    /// Uses the file's stored uid, gid, and mode from the backend and the request's
+    /// uid/gid to apply standard Unix permission checks. Root (uid 0) is always allowed.
+    /// Only the primary gid is considered (no supplementary groups).
+    fn access(&self, req: RequestInfo, path: &Path, mask: u32) -> ResultEmpty {
+        debug!("access: {:?} mask={:#o} uid={} gid={}", path, mask, req.uid, req.gid);
+
+        let (real_path, _) = self.encrypt_path(path)?;
+        let metadata = fs::symlink_metadata(&real_path).map_err(|e| {
+            e.raw_os_error().unwrap_or(libc::EIO)
+        })?;
+
+        // F_OK (0): existence only
+        if mask == 0 {
+            return Ok(());
+        }
+
+        // Superuser bypasses permission checks
+        if req.uid == 0 {
+            return Ok(());
+        }
+
+        let mode = metadata.mode() as u32;
+        let file_uid = metadata.uid();
+        let file_gid = metadata.gid();
+
+        // Pick the applicable mode triplet: owner (7-5), group (4-2), other (1-0)
+        let effective = if req.uid == file_uid {
+            (mode >> 6) & 0o7
+        } else if req.gid == file_gid {
+            (mode >> 3) & 0o7
+        } else {
+            mode & 0o7
+        };
+
+        // Map R_OK=4, W_OK=2, X_OK=1 to mode bits: read=4, write=2, execute=1
+        let need = mask & 0o7;
+        if (effective & need) == need {
+            Ok(())
+        } else {
+            Err(libc::EACCES)
+        }
+    }
+
     fn truncate(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
         debug!("truncate: {:?} size={}", path, size);
 
@@ -1178,6 +1223,11 @@ impl FilesystemMT for EncFs {
         );
         let path = parent.join(name);
         let (real_path, path_iv) = self.encrypt_path(&path)?;
+
+        // O_EXCL: fail if file already exists (POSIX open(2)).
+        if (flags as i32 & libc::O_EXCL) != 0 && real_path.exists() {
+            return Err(libc::EEXIST);
+        }
 
         use std::os::unix::fs::OpenOptionsExt;
         let mut file = fs::OpenOptions::new()
