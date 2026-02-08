@@ -92,6 +92,10 @@ help.encfsctl.info_rootdir:
   en: "Root directory of encrypted filesystem"
   fr: "Répertoire racine du système de fichiers chiffré"
   de: "Stammverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.info_raw:
+  en: "Decode V7 config and print as raw text (V7 only)"
+  fr: "Décoder la config V7 et afficher en texte brut (V7 uniquement)"
+  de: "V7-Konfiguration dekodieren und als Rohtext ausgeben (nur V7)"
 help.encfsctl.passwd_rootdir:
   en: "Root directory of encrypted filesystem"
   fr: "Répertoire racine du système de fichiers chiffré"

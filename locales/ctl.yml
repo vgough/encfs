@@ -103,6 +103,10 @@ ctl.upgrading_to_argon2:
   en: "Upgrading config to Argon2id KDF..."
   fr: "Mise à jour de la configuration vers Argon2id KDF..."
   de: "Aktualisierung der Konfiguration auf Argon2id KDF..."
+ctl.v7_config_backup:
+  en: "Previous config backed up to %{path}; you may remove it when no longer needed."
+  fr: "Ancienne configuration sauvegardée dans %{path} ; vous pouvez la supprimer lorsque inutile."
+  de: "Vorherige Konfiguration gesichert unter %{path}; Sie können sie bei Bedarf entfernen."
 ctl.calibrating_argon2:
   en: "Calibrating Argon2 parameters for optimal security..."
   fr: "Calibrage des paramètres Argon2 pour une sécurité optimale..."
@@ -235,6 +239,10 @@ ctl.error_unknown_config_format:
   en: "Unknown configuration format"
   fr: "Format de configuration inconnu"
   de: "Unbekanntes Konfigurationsformat"
+ctl.error_raw_only_v7:
+  en: "--raw is only supported for V7 (EncFS7) config"
+  fr: "--raw n'est pris en charge que pour la config V7 (EncFS7)"
+  de: "--raw wird nur für die V7- (EncFS7-) Konfiguration unterstützt"
 ctl.error_reverse_mode_not_implemented:
   en: "--reverse mode not yet fully implemented"
   fr: "Le mode --reverse n'est pas encore entièrement implémenté"

@@ -5,6 +5,10 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[build-dependencies]
+prost-build = "0.13"
+protoc-bin-vendored = "2.15"
+
 [dependencies]
 anyhow = "1.0.100"
 argon2 = "0.5"
@@ -21,6 +25,8 @@ quick-xml = { version = "0.38.4", features = ["serialize"] }
 rpassword = "7.4.0"
 serde = { version = "1.0.228", features = ["derive"] }
 rust-i18n = "3"
+prost = "0.13"
+sha2 = "0.10"
 
 [[bin]]
 name = "encfsctl"

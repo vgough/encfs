@@ -16,6 +16,7 @@ pub enum ConfigType {
     V4,          // .encfs4 - legacy binary format
     V5,          // .encfs5 - binary format
     V6,          // .encfs6.xml - XML format
+    V7,          // .encfs7 / .encfs7.pb - protobuf format with AEAD key wrap
 }
 
 /// Key derivation function algorithm
@@ -25,6 +26,9 @@ pub enum KdfAlgorithm {
     Pbkdf2, // PBKDF2-HMAC-SHA1 (legacy default)
     Argon2id, // Argon2id (recommended for new configs)
 }
+
+/// V7 protobuf file magic header ("ENCFS7\\0").
+const V7_MAGIC: &[u8; 7] = b"ENCFS7\0";
 
 #[derive(Debug, Deserialize)]
 pub struct BoostSerialization {
@@ -98,6 +102,10 @@ pub struct EncfsConfig {
 
     #[serde(rename = "allowHoles", default)]
     pub allow_holes: bool,
+
+    /// Config hash for V7 AEAD AAD (set on load, not serialized).
+    #[serde(skip, default)]
+    pub config_hash: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize, Default, Clone, PartialEq)]
@@ -166,6 +174,11 @@ impl EncfsConfig {
         file.read_to_end(&mut content_bytes)
             .context("Failed to read config file")?;
 
+        // Check for V7 magic header regardless of filename
+        if content_bytes.starts_with(V7_MAGIC) {
+            return Self::load_v7(&content_bytes);
+        }
+
         // Determine config type from filename
         let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
@@ -175,6 +188,14 @@ impl EncfsConfig {
                 "{}",
                 t!("lib.error_version3_not_supported")
             ));
+        }
+
+        // Check for V7 protobuf format (.encfs7, *.encfs7, or *.encfs7.pb)
+        if filename == ".encfs7"
+            || filename.ends_with(".encfs7.pb")
+            || filename.ends_with(".encfs7")
+        {
+            return Self::load_v7(&content_bytes);
         }
 
         // Try load as XML first (current format - V6)
@@ -356,6 +377,7 @@ impl EncfsConfig {
             external_iv_chaining: false,
             chained_name_iv: false,
             allow_holes: false,
+            config_hash: None,
         };
         cfg.validate()?;
         Ok(cfg)
@@ -448,6 +470,130 @@ impl EncfsConfig {
             external_iv_chaining,
             chained_name_iv,
             allow_holes: false,
+            config_hash: None,
+        };
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
+    /// Decode V7 protobuf bytes (with optional magic header) into raw Config.
+    /// Used by load_v7 and by encfsctl info --raw.
+    pub fn decode_v7_proto(data: &[u8]) -> Result<crate::config_proto::Config> {
+        use crate::config_proto::Config;
+        use prost::Message;
+
+        let proto_bytes = if data.starts_with(V7_MAGIC) {
+            &data[V7_MAGIC.len()..]
+        } else {
+            data
+        };
+        Config::decode(proto_bytes).context("Failed to decode V7 config")
+    }
+
+    /// Load raw V7 protobuf from a path (for encfsctl info --raw).
+    pub fn load_v7_proto(path: &Path) -> Result<crate::config_proto::Config> {
+        let data = std::fs::read(path).context("Failed to read config file")?;
+        Self::decode_v7_proto(&data)
+    }
+
+    /// Load V7 protobuf format (.encfs7 or *.encfs7.pb)
+    fn load_v7(data: &[u8]) -> Result<Self> {
+        let proto = Self::decode_v7_proto(data)?;
+
+        let argon2 = proto
+            .argon2
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config requires Argon2 KDF"))?;
+        let cipher = proto
+            .cipher
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config requires cipher"))?;
+        let name_encoding = proto
+            .name_encoding
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config requires name_encoding"))?;
+
+        let computed_hash = Self::v7_config_hash_from_proto(&proto);
+        if !proto.config_hash.is_empty() && proto.config_hash != computed_hash {
+            anyhow::bail!("V7 config hash mismatch (tampered or corrupted)");
+        }
+        let config_hash = if proto.config_hash.is_empty() {
+            computed_hash
+        } else {
+            proto.config_hash.clone()
+        };
+
+        let key_data = proto.encrypted_key;
+
+        // BlockCipherAlgorithm::Aes = 1, Blowfish = 2
+        let cipher_iface = match cipher.algorithm {
+            1 => Interface {
+                name: "ssl/aes".to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            },
+            2 => Interface {
+                name: "ssl/blowfish".to_string(),
+                major: 0,
+                minor: 0,
+                age: 0,
+            },
+            _ => anyhow::bail!("V7: unsupported block cipher algorithm"),
+        };
+
+        // NameEncodingMode::Stream = 1, Block = 2
+        let name_iface = match name_encoding.mode {
+            1 => Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 0,
+                age: 0,
+            },
+            2 => Interface {
+                name: "nameio/block".to_string(),
+                major: 4,
+                minor: 0,
+                age: 0,
+            },
+            _ => Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 0,
+                age: 0,
+            },
+        };
+
+        let allow_holes = proto
+            .feature_flags
+            .as_ref()
+            .map(|f| f.allow_holes)
+            .unwrap_or(false);
+
+        let cfg = EncfsConfig {
+            config_type: ConfigType::V7,
+            creator: "encfs-rust".to_string(),
+            version: crate::constants::DEFAULT_CONFIG_VERSION,
+            cipher_iface,
+            name_iface,
+            key_size: cipher.key_size,
+            block_size: cipher.block_size,
+            key_data,
+            salt: argon2.salt.clone(),
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Argon2id,
+            argon2_memory_cost: Some(argon2.memory_cost_kib),
+            argon2_time_cost: Some(argon2.time_cost),
+            argon2_parallelism: Some(argon2.parallelism),
+            plain_data: false,
+            block_mac_bytes: cipher.block_mac_bytes,
+            block_mac_rand_bytes: cipher.block_mac_rand_bytes,
+            unique_iv: cipher.unique_iv,
+            external_iv_chaining: name_encoding.external_iv_chaining,
+            chained_name_iv: name_encoding.chained_name_iv,
+            allow_holes,
+            config_hash: Some(config_hash),
         };
         cfg.validate()?;
         Ok(cfg)
@@ -463,6 +609,35 @@ impl EncfsConfig {
             .map_err(|_| anyhow::anyhow!("Unsupported key size {}", self.key_size))?;
         let iv_len = cipher.iv_len();
         let user_key_len = key_len + iv_len;
+
+        // V7: AEAD decrypt with config hash as AAD
+        if self.config_type == ConfigType::V7 {
+            let aad = self
+                .config_hash
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash"))?;
+            let user_key = SslCipher::derive_key_argon2id(
+                password,
+                &self.salt,
+                self.argon2_memory_cost
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_MEMORY_COST),
+                self.argon2_time_cost
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_TIME_COST),
+                self.argon2_parallelism
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_PARALLELISM),
+                crate::crypto::aead::AEAD_KEY_LEN,
+            )?;
+            let volume_key_blob =
+                crate::crypto::aead::decrypt(user_key.as_slice(), aad, &self.key_data)?;
+            if volume_key_blob.len() < key_len + iv_len {
+                return Err(anyhow::anyhow!("Decrypted key blob too short"));
+            }
+            let volume_key = &volume_key_blob[..key_len];
+            let volume_iv = &volume_key_blob[key_len..key_len + iv_len];
+            cipher.set_key(volume_key, volume_iv);
+            cipher.set_name_encoding(&self.name_iface);
+            return Ok(cipher);
+        }
 
         // Derive user key based on configured KDF algorithm
         let user_key_blob = match self.kdf_algorithm {
@@ -553,22 +728,27 @@ impl EncfsConfig {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            config_hash: None,
         }
     }
 }
 
 impl EncfsConfig {
     /// Saves the configuration to a file.
-    /// Supports both XML (V6) and binary (V5) formats based on file extension.
+    /// Supports XML (V6) and protobuf (V7) based on config type or file extension.
     pub fn save(&self, path: &Path) -> Result<()> {
-        if self.config_type == ConfigType::V6
-            && path.extension().and_then(|s| s.to_str()) == Some("xml")
-        {
+        let ext = path.extension().and_then(|s| s.to_str());
+        let is_v7_path = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s == ".encfs7" || s.ends_with(".encfs7.pb") || s.ends_with(".encfs7"))
+            .unwrap_or(false);
+
+        if self.config_type == ConfigType::V7 || is_v7_path {
+            self.save_v7(path)
+        } else if self.config_type == ConfigType::V6 && ext == Some("xml") {
             self.save_xml(path)
         } else {
-            // For V5 or other binary formats, we don't support saving yet.
-            // We return an error rather than silently saving to a different file (e.g. .encfs6.xml)
-            // which would break tools expecting the config at the provided path.
             Err(anyhow::anyhow!(
                 "Binary config format (V5) save not yet implemented"
             ))
@@ -601,6 +781,136 @@ impl EncfsConfig {
         writer.write_all(b"\n")?;
 
         Ok(())
+    }
+
+    /// Encrypts the volume key with AEAD and sets key_data and config_hash for V7.
+    /// Call this before save() when creating a new V7 config or changing the password.
+    pub fn set_v7_key(&mut self, password: &str, volume_key_blob: &[u8]) -> Result<()> {
+        use crate::crypto::aead;
+        use crate::crypto::ssl::SslCipher;
+
+        if self.config_type != ConfigType::V7 {
+            anyhow::bail!("set_v7_key only applies to V7 config");
+        }
+        let memory_cost = self
+            .argon2_memory_cost
+            .ok_or_else(|| anyhow::anyhow!("V7 requires Argon2 params"))?;
+        let time_cost = self
+            .argon2_time_cost
+            .ok_or_else(|| anyhow::anyhow!("V7 requires Argon2 params"))?;
+        let parallelism = self
+            .argon2_parallelism
+            .ok_or_else(|| anyhow::anyhow!("V7 requires Argon2 params"))?;
+
+        let proto = self.encfs_config_to_proto_v7();
+        let config_hash = Self::v7_config_hash_from_proto(&proto);
+
+        let user_key = SslCipher::derive_key_argon2id(
+            password,
+            &self.salt,
+            memory_cost,
+            time_cost,
+            parallelism,
+            aead::AEAD_KEY_LEN,
+        )?;
+
+        let encrypted_key =
+            aead::encrypt(user_key.as_slice(), &config_hash, volume_key_blob)?;
+
+        self.key_data = encrypted_key;
+        self.config_hash = Some(config_hash);
+        Ok(())
+    }
+
+    /// Saves the configuration as V7 protobuf (AEAD-wrapped key already in key_data).
+    fn save_v7(&self, path: &Path) -> Result<()> {
+        use prost::Message;
+
+        let mut proto = self.encfs_config_to_proto_v7();
+        let expected_hash = Self::v7_config_hash_from_proto(&proto);
+        let stored_hash = self
+            .config_hash
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash; call set_v7_key"))?;
+        if stored_hash.as_slice() != expected_hash.as_slice() {
+            anyhow::bail!("V7 config hash mismatch; call set_v7_key before saving");
+        }
+        proto.config_hash = expected_hash;
+        let buf = proto.encode_to_vec();
+        let file = File::create(path).context("Failed to create config file")?;
+        let mut writer = std::io::BufWriter::new(file);
+        writer.write_all(V7_MAGIC).context("Failed to write V7 magic")?;
+        writer.write_all(&buf).context("Failed to write V7 config")?;
+        Ok(())
+    }
+
+    /// Builds V7 protobuf Config from EncfsConfig (key_data is used as encrypted_key).
+    fn encfs_config_to_proto_v7(&self) -> crate::config_proto::Config {
+        use crate::config_proto::{
+            Argon2Kdf, BasicBlockCipher, BlockCipherAlgorithm, Config, FeatureFlags, NameEncoding,
+            NameEncodingMode,
+        };
+
+        let algorithm = match self.cipher_iface.name.as_str() {
+            "ssl/aes" => BlockCipherAlgorithm::Aes as i32,
+            "ssl/blowfish" => BlockCipherAlgorithm::Blowfish as i32,
+            _ => BlockCipherAlgorithm::Aes as i32,
+        };
+
+        let cipher = Some(BasicBlockCipher {
+            algorithm,
+            key_size: self.key_size,
+            block_size: self.block_size,
+            block_mac_bytes: self.block_mac_bytes,
+            block_mac_rand_bytes: self.block_mac_rand_bytes,
+            unique_iv: self.unique_iv,
+        });
+
+        let mode = if self.name_iface.name == "nameio/block" {
+            NameEncodingMode::Block as i32
+        } else {
+            NameEncodingMode::Stream as i32
+        };
+
+        let name_encoding = Some(NameEncoding {
+            mode,
+            chained_name_iv: self.chained_name_iv,
+            external_iv_chaining: self.external_iv_chaining,
+        });
+
+        let argon2 = (self.argon2_memory_cost.is_some() && self.argon2_time_cost.is_some()
+            && self.argon2_parallelism.is_some())
+        .then(|| Argon2Kdf {
+            salt: self.salt.clone(),
+            memory_cost_kib: self.argon2_memory_cost.unwrap_or(0),
+            time_cost: self.argon2_time_cost.unwrap_or(0),
+            parallelism: self.argon2_parallelism.unwrap_or(0),
+        });
+
+        let feature_flags = Some(FeatureFlags {
+            allow_holes: self.allow_holes,
+        });
+
+        Config {
+            encrypted_key: self.key_data.clone(),
+            argon2,
+            cipher,
+            name_encoding,
+            feature_flags,
+            config_hash: self.config_hash.clone().unwrap_or_default(),
+        }
+    }
+
+    /// Computes the V7 config hash (SHA-256 of protobuf with encrypted_key and config_hash cleared).
+    fn v7_config_hash_from_proto(proto: &crate::config_proto::Config) -> Vec<u8> {
+        use prost::Message;
+        use sha2::{Digest, Sha256};
+
+        let mut proto_for_hash = proto.clone();
+        proto_for_hash.encrypted_key = Vec::new();
+        proto_for_hash.config_hash = Vec::new();
+        let config_bytes = proto_for_hash.encode_to_vec();
+        Sha256::digest(&config_bytes).to_vec()
     }
 }
 
@@ -877,6 +1187,7 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            config_hash: None,
         }
     }
 
@@ -1052,6 +1363,128 @@ mod tests {
         assert_eq!(config.argon2_time_cost, None);
         assert_eq!(config.argon2_parallelism, None);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_v7_config_roundtrip() -> Result<()> {
+        let dir = std::env::temp_dir();
+        let config_path = dir.join(format!("encfs_v7_test_{}.encfs7", std::process::id()));
+
+        // Build a V7 config (minimal Argon2 for test speed)
+        let mut config = EncfsConfig {
+            config_type: ConfigType::V7,
+            creator: "encfs-rust-test".to_string(),
+            version: crate::constants::DEFAULT_CONFIG_VERSION,
+            cipher_iface: Interface {
+                name: "ssl/aes".to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            },
+            name_iface: Interface::default(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![0u8; 16],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Argon2id,
+            argon2_memory_cost: Some(256),
+            argon2_time_cost: Some(1),
+            argon2_parallelism: Some(1),
+            plain_data: false,
+            block_mac_bytes: 8,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+            config_hash: None,
+        };
+        openssl::rand::rand_bytes(&mut config.salt).context("rand")?;
+
+        // Volume key blob: key (24) + iv (16) for AES-192
+        let key_len = (config.key_size / 8) as usize;
+        let iv_len = 16;
+        let mut volume_key_blob = vec![0u8; key_len + iv_len];
+        openssl::rand::rand_bytes(&mut volume_key_blob).context("rand")?;
+
+        let password = "test_password";
+        config.set_v7_key(password, &volume_key_blob)?;
+        config.save(&config_path)?;
+
+        let loaded = EncfsConfig::load(&config_path)?;
+        assert_eq!(loaded.config_type, ConfigType::V7);
+        let cipher = loaded.get_cipher(password)?;
+        // Cipher should be usable (key set)
+        assert_eq!(cipher.iv_len(), iv_len);
+
+        let _ = std::fs::remove_file(config_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_v7_config_tampered_fails() -> Result<()> {
+        let dir = std::env::temp_dir();
+        let config_path = dir.join(format!("encfs_v7_tamper_test_{}.encfs7", std::process::id()));
+
+        let mut config = EncfsConfig {
+            config_type: ConfigType::V7,
+            creator: "test".to_string(),
+            version: crate::constants::DEFAULT_CONFIG_VERSION,
+            cipher_iface: Interface {
+                name: "ssl/aes".to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            },
+            name_iface: Interface::default(),
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![0u8; 16],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Argon2id,
+            argon2_memory_cost: Some(256),
+            argon2_time_cost: Some(1),
+            argon2_parallelism: Some(1),
+            plain_data: false,
+            block_mac_bytes: 8,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+            config_hash: None,
+        };
+        openssl::rand::rand_bytes(&mut config.salt).context("rand")?;
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob)?;
+        config.save(&config_path)?;
+
+        // Tamper: flip a byte in the file. This may corrupt protobuf (load fails) or change
+        // the config hash (get_cipher AEAD verification fails). Either outcome is acceptable.
+        let mut bytes = std::fs::read(&config_path)?;
+        let idx = bytes.len().saturating_sub(10);
+        bytes[idx] = bytes[idx].wrapping_add(1);
+        std::fs::write(&config_path, &bytes)?;
+
+        match EncfsConfig::load(&config_path) {
+            Ok(loaded) => {
+                let res = loaded.get_cipher("pass");
+                assert!(
+                    res.is_err(),
+                    "get_cipher should fail on tampered config (AEAD verification)"
+                );
+            }
+            Err(_) => {
+                // Tampering corrupted protobuf; load failed. Tampering detected.
+            }
+        }
+
+        let _ = std::fs::remove_file(config_path);
         Ok(())
     }
 }

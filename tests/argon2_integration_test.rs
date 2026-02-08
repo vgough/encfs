@@ -81,6 +81,7 @@ fn test_argon2id_config_creation_and_loading() -> Result<()> {
         external_iv_chaining: false,
         chained_name_iv: true,
         allow_holes: true,
+        config_hash: None,
     };
 
     // Save config to temp file

@@ -55,6 +55,7 @@ fn test_virtual_driver_write() {
         external_iv_chaining: false,
         chained_name_iv: true,
         allow_holes: false,
+        config_hash: None,
     };
     let fs = EncFs::new(root.clone(), cipher, config);
 

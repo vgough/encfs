@@ -75,6 +75,7 @@ fn test_upgrade_pbkdf2_to_argon2() -> Result<()> {
         external_iv_chaining: false,
         chained_name_iv: true,
         allow_holes: true,
+        config_hash: None,
     };
 
     // Verify original config uses PBKDF2

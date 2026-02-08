@@ -62,6 +62,10 @@ fn help_info_rootdir() -> String {
     t!("help.encfsctl.info_rootdir").to_string()
 }
 
+fn help_info_raw() -> String {
+    t!("help.encfsctl.info_raw").to_string()
+}
+
 fn help_passwd_rootdir() -> String {
     t!("help.encfsctl.passwd_rootdir").to_string()
 }
@@ -162,6 +166,8 @@ enum Command {
     Info {
         #[arg(help = help_info_rootdir())]
         rootdir: PathBuf,
+        #[arg(long, help = help_info_raw())]
+        raw: bool,
     },
     #[command(about = help_passwd())]
     Passwd {
@@ -237,7 +243,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Info { rootdir }) => cmd_info(&rootdir),
+        Some(Command::Info { rootdir, raw }) => cmd_info(&rootdir, raw),
         Some(Command::Passwd { rootdir, upgrade }) => cmd_passwd(&rootdir, upgrade),
         Some(Command::Showcruft { rootdir }) => cmd_showcruft(&rootdir),
         Some(Command::Decode {
@@ -271,7 +277,7 @@ fn main() -> Result<()> {
         None => {
             // Default to info command if rootdir is provided
             if let Some(rootdir) = cli.rootdir {
-                cmd_info(&rootdir)
+                cmd_info(&rootdir, false)
             } else {
                 eprintln!("{}", t!("ctl.error_root_required"));
                 eprintln!("{}", t!("ctl.use_help"));
@@ -281,12 +287,25 @@ fn main() -> Result<()> {
     }
 }
 
-fn cmd_info(rootdir: &Path) -> Result<()> {
+fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     use config::ConfigType;
 
     let config_path = find_config_file(rootdir)?;
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
+
+    if raw {
+        if config.config_type != ConfigType::V7 {
+            return Err(anyhow::anyhow!(
+                "{}",
+                t!("ctl.error_raw_only_v7")
+            ));
+        }
+        let proto = config::EncfsConfig::load_v7_proto(&config_path)
+            .context(t!("ctl.error_failed_to_load_config"))?;
+        println!("{}", format_v7_config_raw(&proto));
+        return Ok(());
+    }
 
     // Display version info based on config type
     println!();
@@ -313,6 +332,17 @@ fn cmd_info(rootdir: &Path) -> Result<()> {
         }
         ConfigType::V4 => {
             println!("{}", t!("ctl.version4_config", creator = config.creator));
+        }
+        ConfigType::V7 => {
+            println!(
+                "{}",
+                t!(
+                    "ctl.version6_config",
+                    creator = config.creator,
+                    version = config.version
+                )
+            );
+            println!("  (V7 protobuf format with AEAD key wrap)");
         }
         ConfigType::V3 => {
             // V3 configs are detected but not supported
@@ -447,6 +477,10 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     let config_path = find_config_file(rootdir)?;
     let mut config =
         config::EncfsConfig::load(&config_path).context("Failed to load config file")?;
+    let upgrading_to_v7 = upgrade && config.config_type != config::ConfigType::V7;
+    if upgrading_to_v7 {
+        ensure_v7_compatible(&config)?;
+    }
 
     // Get current password
     print!("{}", t!("ctl.enter_current_password"));
@@ -502,12 +536,26 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     let user_key = &user_key_blob[..key_len];
     let user_iv = &user_key_blob[key_len..];
 
-    let volume_key_blob =
-        if config.kdf_iterations > 0 || config.kdf_algorithm == KdfAlgorithm::Argon2id {
-            cipher.decrypt_key(&config.key_data, user_key, user_iv)?
-        } else {
-            cipher.decrypt_key_legacy(&config.key_data, user_key, user_iv)?
-        };
+    let volume_key_blob = if config.config_type == config::ConfigType::V7 {
+        use encfs::crypto::aead;
+        let aad = config
+            .config_hash
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash"))?;
+        let v7_user_key = SslCipher::derive_key_argon2id(
+            &current_password,
+            &config.salt,
+            config.argon2_memory_cost.unwrap_or(constants::DEFAULT_ARGON2_MEMORY_COST),
+            config.argon2_time_cost.unwrap_or(constants::DEFAULT_ARGON2_TIME_COST),
+            config.argon2_parallelism.unwrap_or(constants::DEFAULT_ARGON2_PARALLELISM),
+            aead::AEAD_KEY_LEN,
+        )?;
+        aead::decrypt(v7_user_key.as_slice(), aad, &config.key_data)?
+    } else if config.kdf_iterations > 0 || config.kdf_algorithm == KdfAlgorithm::Argon2id {
+        cipher.decrypt_key(&config.key_data, user_key, user_iv)?
+    } else {
+        cipher.decrypt_key_legacy(&config.key_data, user_key, user_iv)?
+    };
 
     // Get new password
     print!("{}", t!("ctl.enter_new_password"));
@@ -521,7 +569,7 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     }
     rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
 
-    // Handle upgrade to Argon2id if requested
+    // Handle upgrade to Argon2id if requested (or to V7)
     if upgrade {
         println!("{}", t!("ctl.upgrading_to_argon2"));
         config.kdf_algorithm = KdfAlgorithm::Argon2id;
@@ -534,6 +582,12 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
         if config.config_type == config::ConfigType::V6 {
             config.version = constants::DEFAULT_CONFIG_VERSION;
         }
+        if upgrading_to_v7 {
+            config.config_type = config::ConfigType::V7;
+            config.config_hash = None;
+            // Update config version to latest for new format
+            config.version = constants::DEFAULT_CONFIG_VERSION;
+        }
     } else {
         // Keep existing KDF or upgrade to PBKDF2 if legacy
         if config.kdf_algorithm == KdfAlgorithm::Pbkdf2 && config.kdf_iterations == 0 {
@@ -541,6 +595,13 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
             config.kdf_iterations = constants::DEFAULT_KDF_ITERATIONS;
         }
     }
+
+    // For V7 we use 32-byte AEAD key for key wrap
+    let user_key_len_for_kdf = if config.config_type == config::ConfigType::V7 {
+        encfs::crypto::aead::AEAD_KEY_LEN
+    } else {
+        user_key_len
+    };
 
     // Calibrate Argon2 parameters if using Argon2id (whether upgraded or existing)
     if config.kdf_algorithm == KdfAlgorithm::Argon2id {
@@ -552,7 +613,7 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
             config.argon2_memory_cost.unwrap(),
             current_time_cost,
             config.argon2_parallelism.unwrap(),
-            user_key_len,
+            user_key_len_for_kdf,
         )?;
 
         if calibrated_time_cost > current_time_cost {
@@ -564,53 +625,73 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
         }
     }
 
-    // Create new cipher for encryption
-    let new_cipher = SslCipher::new(&config.cipher_iface, config.key_size)?;
+    // Encrypt volume key and save
+    if config.config_type == config::ConfigType::V7 {
+        config
+            .set_v7_key(&new_password, &volume_key_blob)
+            .context("Failed to set V7 key")?;
+    } else {
+        let new_cipher = SslCipher::new(&config.cipher_iface, config.key_size)?;
+        let new_user_key_blob = match config.kdf_algorithm {
+            KdfAlgorithm::Pbkdf2 => {
+                if config.kdf_iterations > 0 {
+                    SslCipher::derive_key(
+                        &new_password,
+                        &config.salt,
+                        config.kdf_iterations,
+                        user_key_len,
+                    )?
+                } else {
+                    SslCipher::derive_key_legacy(&new_password, key_len, iv_len)?
+                }
+            }
+            KdfAlgorithm::Argon2id => {
+                let memory_cost = config.argon2_memory_cost.unwrap();
+                let time_cost = config.argon2_time_cost.unwrap();
+                let parallelism = config.argon2_parallelism.unwrap();
 
-    // Derive new user key based on configured (possibly upgraded) KDF
-    let new_user_key_blob = match config.kdf_algorithm {
-        KdfAlgorithm::Pbkdf2 => {
-            if config.kdf_iterations > 0 {
-                SslCipher::derive_key(
+                SslCipher::derive_key_argon2id(
                     &new_password,
                     &config.salt,
-                    config.kdf_iterations,
+                    memory_cost,
+                    time_cost,
+                    parallelism,
                     user_key_len,
                 )?
-            } else {
-                SslCipher::derive_key_legacy(&new_password, key_len, iv_len)?
             }
-        }
-        KdfAlgorithm::Argon2id => {
-            let memory_cost = config.argon2_memory_cost.unwrap();
-            let time_cost = config.argon2_time_cost.unwrap();
-            let parallelism = config.argon2_parallelism.unwrap();
+        };
 
-            SslCipher::derive_key_argon2id(
-                &new_password,
-                &config.salt,
-                memory_cost,
-                time_cost,
-                parallelism,
-                user_key_len,
-            )?
-        }
+        let new_user_key = &new_user_key_blob[..key_len];
+        let new_user_iv = &new_user_key_blob[key_len..];
+
+        let encrypted_key = new_cipher.encrypt_key(&volume_key_blob, new_user_key, new_user_iv)?;
+        config.key_data = encrypted_key;
+    }
+
+    // Save config (upgrade to V7 writes .encfs7)
+    let save_path = if upgrading_to_v7 {
+        rootdir.join(".encfs7")
+    } else {
+        config_path.clone()
     };
 
-    let new_user_key = &new_user_key_blob[..key_len];
-    let new_user_iv = &new_user_key_blob[key_len..];
-
-    // Encrypt volume key with new user key
-    let encrypted_key = new_cipher.encrypt_key(&volume_key_blob, new_user_key, new_user_iv)?;
-
-    config.key_data = encrypted_key;
-
-    // Save config
     config
-        .save(&config_path)
+        .save(&save_path)
         .context(t!("ctl.error_failed_to_save_config"))?;
-
     println!("{}", t!("ctl.volume_key_updated"));
+
+    if upgrading_to_v7 {
+        let backup_path = PathBuf::from(config_path.as_os_str().to_string_lossy().to_string() + ".bak");
+        std::fs::rename(&config_path, &backup_path)
+            .context("Failed to rename old config to .bak")?;
+        println!(
+            "{}",
+            t!(
+                "ctl.v7_config_backup",
+                path = backup_path.display()
+            )
+        );
+    }
 
     Ok(())
 }
@@ -938,7 +1019,17 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     let iv_len = cipher.iv_len();
     let user_key_len = key_len + iv_len;
 
-    let user_key_blob = if config.kdf_iterations > 0 {
+    let user_key_blob = if config.config_type == config::ConfigType::V7 {
+        use encfs::crypto::aead;
+        SslCipher::derive_key_argon2id(
+            &current_password,
+            &config.salt,
+            config.argon2_memory_cost.unwrap_or(constants::DEFAULT_ARGON2_MEMORY_COST),
+            config.argon2_time_cost.unwrap_or(constants::DEFAULT_ARGON2_TIME_COST),
+            config.argon2_parallelism.unwrap_or(constants::DEFAULT_ARGON2_PARALLELISM),
+            aead::AEAD_KEY_LEN,
+        )?
+    } else if config.kdf_iterations > 0 {
         SslCipher::derive_key(
             &current_password,
             &config.salt,
@@ -949,13 +1040,21 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
         SslCipher::derive_key_legacy(&current_password, key_len, iv_len)?
     };
 
-    let user_key = &user_key_blob[..key_len];
-    let user_iv = &user_key_blob[key_len..];
-
-    let volume_key_blob = if config.kdf_iterations > 0 {
-        cipher.decrypt_key(&config.key_data, user_key, user_iv)?
+    let volume_key_blob = if config.config_type == config::ConfigType::V7 {
+        use encfs::crypto::aead;
+        let aad = config
+            .config_hash
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash"))?;
+        aead::decrypt(user_key_blob.as_slice(), aad, &config.key_data)?
     } else {
-        cipher.decrypt_key_legacy(&config.key_data, user_key, user_iv)?
+        let user_key = &user_key_blob[..key_len];
+        let user_iv = &user_key_blob[key_len..];
+        if config.kdf_iterations > 0 {
+            cipher.decrypt_key(&config.key_data, user_key, user_iv)?
+        } else {
+            cipher.decrypt_key_legacy(&config.key_data, user_key, user_iv)?
+        }
     };
 
     // Read new password from stdin (second line)
@@ -971,32 +1070,33 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     }
     rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
 
-    if config.kdf_iterations == 0 {
+    if config.kdf_iterations == 0 && config.config_type != config::ConfigType::V7 {
         config.kdf_iterations = constants::DEFAULT_KDF_ITERATIONS;
     }
 
-    // Create new cipher for encryption
-    let new_cipher = SslCipher::new(&config.cipher_iface, config.key_size)?;
-
-    // Derive new user key
-    let new_user_key_blob = if config.kdf_iterations > 0 {
-        SslCipher::derive_key(
-            &new_password,
-            &config.salt,
-            config.kdf_iterations,
-            user_key_len,
-        )?
+    if config.config_type == config::ConfigType::V7 {
+        config
+            .set_v7_key(&new_password, &volume_key_blob)
+            .context("Failed to set V7 key")?;
     } else {
-        SslCipher::derive_key_legacy(&new_password, key_len, iv_len)?
-    };
+        let new_cipher = SslCipher::new(&config.cipher_iface, config.key_size)?;
+        let new_user_key_blob = if config.kdf_iterations > 0 {
+            SslCipher::derive_key(
+                &new_password,
+                &config.salt,
+                config.kdf_iterations,
+                user_key_len,
+            )?
+        } else {
+            SslCipher::derive_key_legacy(&new_password, key_len, iv_len)?
+        };
 
-    let new_user_key = &new_user_key_blob[..key_len];
-    let new_user_iv = &new_user_key_blob[key_len..];
+        let new_user_key = &new_user_key_blob[..key_len];
+        let new_user_iv = &new_user_key_blob[key_len..];
 
-    // Encrypt volume key with new user key
-    let encrypted_key = new_cipher.encrypt_key(&volume_key_blob, new_user_key, new_user_iv)?;
-
-    config.key_data = encrypted_key;
+        let encrypted_key = new_cipher.encrypt_key(&volume_key_blob, new_user_key, new_user_iv)?;
+        config.key_data = encrypted_key;
+    }
 
     // Save config
     config
@@ -1372,11 +1472,148 @@ fn encrypt_path_with_iv(
     Ok((rootdir.join(encrypted_path), iv))
 }
 
+/// Checks that the config can be represented as V7 and will pass validate() when loaded.
+/// Must match requirements enforced by config::EncfsConfig::validate() and load_v7().
+fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
+    // validate(): plainData not supported
+    if config.plain_data {
+        anyhow::bail!("V7 upgrade requires plainData=0");
+    }
+    // validate(): uniqueIV=0 not supported except for V4
+    if !config.unique_iv {
+        anyhow::bail!("V7 upgrade requires uniqueIV=1 (not supported by this implementation)");
+    }
+    // validate(): keySize
+    if config.key_size <= 0 || config.key_size % 8 != 0 {
+        anyhow::bail!("V7 upgrade requires keySize positive multiple of 8");
+    }
+    // validate(): blockSize
+    if config.block_size <= 0 {
+        anyhow::bail!("V7 upgrade requires blockSize positive");
+    }
+    // validate(): blockMACBytes in 0..=8
+    if config.block_mac_bytes < 0 || config.block_mac_bytes > 8 {
+        anyhow::bail!("V7 upgrade requires blockMACBytes in 0..=8 (got {})", config.block_mac_bytes);
+    }
+    // validate(): blockMACRandBytes must be 0 (not supported yet)
+    if config.block_mac_rand_bytes != 0 {
+        anyhow::bail!(
+            "V7 upgrade requires blockMACRandBytes=0 (got {}, not supported yet)",
+            config.block_mac_rand_bytes
+        );
+    }
+    // validate(): block header sizes relationship
+    if config.block_mac_bytes + config.block_mac_rand_bytes >= config.block_size {
+        anyhow::bail!(
+            "V7 upgrade requires blockSize ({}) > blockMACBytes ({}) + blockMACRandBytes ({})",
+            config.block_size,
+            config.block_mac_bytes,
+            config.block_mac_rand_bytes
+        );
+    }
+    // load_v7(): only these cipher algorithms are mapped from proto
+    if config.cipher_iface.name != "ssl/aes" && config.cipher_iface.name != "ssl/blowfish" {
+        anyhow::bail!(
+            "V7 upgrade supports only ssl/aes or ssl/blowfish cipher (got {})",
+            config.cipher_iface.name
+        );
+    }
+    // load_v7(): only Stream and Block name encoding are mapped
+    if config.name_iface.name != "nameio/stream" && config.name_iface.name != "nameio/block" {
+        anyhow::bail!(
+            "V7 upgrade supports only nameio/stream or nameio/block (got {})",
+            config.name_iface.name
+        );
+    }
+    Ok(())
+}
+
 // Helper functions
+
+/// Format decoded V7 protobuf Config as human-readable raw text.
+fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
+    use encfs::config_proto::{BlockCipherAlgorithm, NameEncodingMode};
+
+    fn bytes_hex(b: &[u8], max_display: usize) -> String {
+        if b.is_empty() {
+            return "[]".to_string();
+        }
+        let hex_str: String = b
+            .iter()
+            .take(max_display)
+            .map(|x| format!("{:02x}", x))
+            .collect::<Vec<_>>()
+            .join(" ");
+        if b.len() > max_display {
+            format!("{} ... ({} bytes total)", hex_str, b.len())
+        } else {
+            format!("{} ({} bytes)", hex_str, b.len())
+        }
+    }
+
+    let mut out = String::new();
+
+    out.push_str("encrypted_key: ");
+    out.push_str(&bytes_hex(&proto.encrypted_key, 64));
+    out.push('\n');
+
+    if let Some(ref a) = proto.argon2 {
+        out.push_str("argon2 {\n");
+        out.push_str("  salt: ");
+        out.push_str(&bytes_hex(&a.salt, 32));
+        out.push('\n');
+        out.push_str(&format!("  memory_cost_kib: {}\n", a.memory_cost_kib));
+        out.push_str(&format!("  time_cost: {}\n", a.time_cost));
+        out.push_str(&format!("  parallelism: {}\n", a.parallelism));
+        out.push_str("}\n");
+    }
+
+    if let Some(ref c) = proto.cipher {
+        let alg = match BlockCipherAlgorithm::try_from(c.algorithm) {
+            Ok(BlockCipherAlgorithm::Aes) => "AES",
+            Ok(BlockCipherAlgorithm::Blowfish) => "BLOWFISH",
+            _ => "BLOCK_CIPHER_ALGORITHM_UNSPECIFIED",
+        };
+        out.push_str("cipher {\n");
+        out.push_str(&format!("  algorithm: {}\n", alg));
+        out.push_str(&format!("  key_size: {}\n", c.key_size));
+        out.push_str(&format!("  block_size: {}\n", c.block_size));
+        out.push_str(&format!("  block_mac_bytes: {}\n", c.block_mac_bytes));
+        out.push_str(&format!("  block_mac_rand_bytes: {}\n", c.block_mac_rand_bytes));
+        out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
+        out.push_str("}\n");
+    }
+
+    if let Some(ref n) = proto.name_encoding {
+        let mode = match NameEncodingMode::try_from(n.mode) {
+            Ok(NameEncodingMode::Stream) => "STREAM",
+            Ok(NameEncodingMode::Block) => "BLOCK",
+            _ => "NAME_ENCODING_MODE_UNSPECIFIED",
+        };
+        out.push_str("name_encoding {\n");
+        out.push_str(&format!("  mode: {}\n", mode));
+        out.push_str(&format!("  chained_name_iv: {}\n", n.chained_name_iv));
+        out.push_str(&format!("  external_iv_chaining: {}\n", n.external_iv_chaining));
+        out.push_str("}\n");
+    }
+
+    if let Some(ref f) = proto.feature_flags {
+        out.push_str("feature_flags {\n");
+        out.push_str(&format!("  allow_holes: {}\n", f.allow_holes));
+        out.push_str("}\n");
+    }
+
+    out.push_str("config_hash: ");
+    out.push_str(&bytes_hex(&proto.config_hash, 64));
+    out.push('\n');
+
+    out
+}
 
 fn find_config_file(rootdir: &Path) -> Result<PathBuf> {
     // Try config files in order from newest to oldest format
     let config_files = [
+        ".encfs7",     // V7 - protobuf with AEAD key wrap
         ".encfs6.xml", // V6 - current XML format
         ".encfs5",     // V5 - binary format
         ".encfs4",     // V4 - older binary format
@@ -1632,6 +1869,7 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            config_hash: None,
         };
 
         // Prepare symlink
@@ -1734,6 +1972,7 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            config_hash: None,
         };
 
         // Create a symlink with non-UTF8 target
@@ -1813,6 +2052,7 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: false, // V4 usually false
             allow_holes: false,
+            config_hash: None,
         };
 
         // Create a plain file
@@ -2004,6 +2244,7 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            config_hash: None,
         };
 
         // Create a symlink with encrypted name but GARBAGE target
@@ -2078,6 +2319,7 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            config_hash: None,
         };
 
         // Create a symlink with encrypted name and GARBAGE target (undecryptable)

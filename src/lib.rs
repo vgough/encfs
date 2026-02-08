@@ -1,4 +1,5 @@
 pub mod config;
+pub mod config_proto;
 pub mod config_binary;
 pub mod constants;
 pub mod crypto;

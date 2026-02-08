@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package encfs.v7;
+
+// V7 EncFS configuration (protocol buffer format).
+// Top-level message: encrypted key, Argon2 KDF params, cipher, name encoding, feature flags.
+
+message Config {
+  // AEAD-wrapped volume key: nonce (12) || ciphertext || tag (16). AAD = SHA-256(rest of config).
+  bytes encrypted_key = 1;
+
+  // Argon2 KDF parameters and salt (required for V7).
+  Argon2Kdf argon2 = 2;
+
+  // Block cipher and block-level options.
+  BasicBlockCipher cipher = 3;
+
+  // Filename encoding and name IV options.
+  NameEncoding name_encoding = 4;
+
+  // Remaining behavior flags (e.g. allow_holes).
+  FeatureFlags feature_flags = 5;
+
+  // Hash of the config (with encrypted_key and config_hash cleared), used as AEAD AAD.
+  bytes config_hash = 6;
+}
+
+message Argon2Kdf {
+  bytes salt = 1;
+  uint32 memory_cost_kib = 2;  // Argon2 memory cost in KiB
+  uint32 time_cost = 3;         // iterations
+  uint32 parallelism = 4;
+}
+
+enum BlockCipherAlgorithm {
+  BLOCK_CIPHER_ALGORITHM_UNSPECIFIED = 0;
+  AES = 1;
+  BLOWFISH = 2;
+}
+
+message BasicBlockCipher {
+  BlockCipherAlgorithm algorithm = 1;
+  int32 key_size = 2;              // e.g. 128, 192, 256 for AES
+  int32 block_size = 3;
+  int32 block_mac_bytes = 4;
+  int32 block_mac_rand_bytes = 5;   // must be 0 for current implementation
+  bool unique_iv = 6;
+}
+
+enum NameEncodingMode {
+  NAME_ENCODING_MODE_UNSPECIFIED = 0;
+  STREAM = 1;
+  BLOCK = 2;
+}
+
+message NameEncoding {
+  NameEncodingMode mode = 1;
+  bool chained_name_iv = 2;
+  bool external_iv_chaining = 3;
+}
+
+message FeatureFlags {
+  bool allow_holes = 1;
+}
