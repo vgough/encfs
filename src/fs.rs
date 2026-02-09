@@ -678,7 +678,7 @@ impl FilesystemMT for EncFs {
             return Ok(());
         }
 
-        let mode = metadata.mode() as u32;
+        let mode = metadata.mode();
         let file_uid = metadata.uid();
         let file_gid = metadata.gid();
 
