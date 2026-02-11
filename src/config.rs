@@ -168,6 +168,46 @@ mod kdf_algorithm_serde {
 }
 
 impl EncfsConfig {
+    /// Returns a new V7 config with standard settings (AES-192, stream naming, Argon2id).
+    /// Caller must set random salt and call set_v7_key before save.
+    pub fn standard_v7() -> Self {
+        Self {
+            config_type: ConfigType::V7,
+            creator: "encfs-rust".to_string(),
+            version: crate::constants::DEFAULT_CONFIG_VERSION,
+            cipher_iface: Interface {
+                name: "ssl/aes".to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            },
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 0,
+                age: 0,
+            },
+            key_size: 192,
+            block_size: 1024,
+            key_data: vec![],
+            salt: vec![0u8; crate::constants::DEFAULT_SALT_SIZE],
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Argon2id,
+            argon2_memory_cost: Some(crate::constants::DEFAULT_ARGON2_MEMORY_COST),
+            argon2_time_cost: Some(crate::constants::DEFAULT_ARGON2_TIME_COST),
+            argon2_parallelism: Some(crate::constants::DEFAULT_ARGON2_PARALLELISM),
+            plain_data: false,
+            block_mac_bytes: 8,
+            block_mac_rand_bytes: 0,
+            unique_iv: true,
+            external_iv_chaining: false,
+            chained_name_iv: true,
+            allow_holes: false,
+            config_hash: None,
+        }
+    }
+
     pub fn load(path: &Path) -> Result<Self> {
         let mut file = File::open(path).context("Failed to open config file")?;
         let mut content_bytes = Vec::new();

@@ -295,3 +295,23 @@ ctl.error_file_not_found:
   en: "File not found: %{path}"
   fr: "Fichier introuvable : %{path}"
   de: "Datei nicht gefunden: %{path}"
+ctl.error_failed_to_create_directory:
+  en: "Failed to create directory: %{path}"
+  fr: "Échec de la création du répertoire : %{path}"
+  de: "Verzeichnis konnte nicht erstellt werden: %{path}"
+ctl.error_not_a_directory:
+  en: "Not a directory: %{path}"
+  fr: "N'est pas un répertoire : %{path}"
+  de: "Kein Verzeichnis: %{path}"
+ctl.error_config_already_exists:
+  en: "A config file already exists at %{path}"
+  fr: "Un fichier de configuration existe déjà dans %{path}"
+  de: "Eine Konfigurationsdatei existiert bereits unter %{path}"
+ctl.new_enter_password:
+  en: "Enter password for new EncFS filesystem: "
+  fr: "Entrez le mot de passe pour le nouveau système de fichiers EncFS : "
+  de: "Passwort für das neue EncFS-Dateisystem eingeben: "
+ctl.new_config_created:
+  en: "Created new EncFS V7 config at %{path}"
+  fr: "Nouvelle configuration EncFS V7 créée dans %{path}"
+  de: "Neue EncFS-V7-Konfiguration unter %{path} erstellt"

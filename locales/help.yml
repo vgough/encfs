@@ -184,3 +184,11 @@ help.encfsctl.export_fail_on_error:
   en: "Fail on first error instead of warning and continuing"
   fr: "Échouer à la première erreur au lieu d'avertir et de continuer"
   de: "Bei erstem Fehler abbrechen statt zu warnen und fortzufahren"
+help.encfsctl.new:
+  en: "Create a new EncFS filesystem (V7 config) in the given directory"
+  fr: "Créer un nouveau système de fichiers EncFS (config V7) dans le répertoire donné"
+  de: "Neues EncFS-Dateisystem (V7-Konfiguration) im angegebenen Verzeichnis erstellen"
+help.encfsctl.new_rootdir:
+  en: "Directory in which to create the new encrypted filesystem config"
+  fr: "Répertoire dans lequel créer la configuration du nouveau système de fichiers chiffré"
+  de: "Verzeichnis, in dem die neue Konfiguration des verschlüsselten Dateisystems erstellt wird"

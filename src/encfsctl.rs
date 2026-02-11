@@ -150,6 +150,14 @@ fn help_export_fail_on_error() -> String {
     t!("help.encfsctl.export_fail_on_error").to_string()
 }
 
+fn help_new() -> String {
+    t!("help.encfsctl.new").to_string()
+}
+
+fn help_new_rootdir() -> String {
+    t!("help.encfsctl.new_rootdir").to_string()
+}
+
 #[derive(Parser)]
 #[command(name = "encfsctl")]
 #[command(about = help_about())]
@@ -235,6 +243,11 @@ enum Command {
         #[arg(long, help = help_export_fail_on_error())]
         fail_on_error: bool,
     },
+    #[command(about = help_new())]
+    New {
+        #[arg(help = help_new_rootdir())]
+        rootdir: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -274,6 +287,7 @@ fn main() -> Result<()> {
             extpass,
             fail_on_error,
         }) => cmd_export(&rootdir, &destdir, extpass, fail_on_error),
+        Some(Command::New { rootdir }) => cmd_new(&rootdir),
         None => {
             // Default to info command if rootdir is provided
             if let Some(rootdir) = cli.rootdir {
@@ -1111,6 +1125,61 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
         .context(t!("ctl.error_failed_to_save_config"))?;
 
     println!("{}", t!("ctl.volume_key_updated"));
+
+    Ok(())
+}
+
+fn cmd_new(rootdir: &Path) -> Result<()> {
+    use openssl::rand::rand_bytes;
+
+    // Create directory if it doesn't exist
+    if !rootdir.exists() {
+        std::fs::create_dir_all(rootdir)
+            .context(t!("ctl.error_failed_to_create_directory", path = rootdir.display()))?;
+    }
+    if !rootdir.is_dir() {
+        return Err(anyhow::anyhow!(
+            "{}",
+            t!(
+                "ctl.error_not_a_directory",
+                path = rootdir.display()
+            )
+        ));
+    }
+
+    let v7_path = rootdir.join(".encfs7");
+    let v6_path = rootdir.join(".encfs6.xml");
+    if v7_path.exists() {
+        return Err(anyhow::anyhow!(
+            "{}",
+            t!("ctl.error_config_already_exists", path = v7_path.display())
+        ));
+    }
+    if v6_path.exists() {
+        return Err(anyhow::anyhow!(
+            "{}",
+            t!("ctl.error_config_already_exists", path = v6_path.display())
+        ));
+    }
+
+    let mut config = config::EncfsConfig::standard_v7();
+    rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
+
+    let key_len = (config.key_size / 8) as usize;
+    let iv_len = 16;
+    let mut volume_key_blob = vec![0u8; key_len + iv_len];
+    rand_bytes(&mut volume_key_blob).context(t!("ctl.error_failed_to_generate_salt"))?;
+
+    print!("{}", t!("ctl.new_enter_password"));
+    io::stdout().flush()?;
+    let password = prompt_password("")?;
+
+    config
+        .set_v7_key(&password, &volume_key_blob)
+        .context(t!("ctl.error_failed_to_save_config"))?;
+    config.save(&v7_path)?;
+
+    println!("{}", t!("ctl.new_config_created", path = v7_path.display()));
 
     Ok(())
 }
