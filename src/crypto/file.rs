@@ -198,15 +198,13 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
                             fail |= expected ^ stored;
                             tmp >>= 8;
                         }
-                        if fail != 0 {
-                            if !self.ignore_mac_mismatch {
-                                return Err(io::Error::other(format!(
-                                    "MAC mismatch in block {}",
-                                    block_num
-                                )));
-                            }
-                            // Continue with potentially corrupted data
+                        if fail != 0 && !self.ignore_mac_mismatch {
+                            return Err(io::Error::other(format!(
+                                "MAC mismatch in block {}",
+                                block_num
+                            )));
                         }
+                        // Continue with potentially corrupted data when ignore_mac_mismatch
                         data
                     } else {
                         &block_data
