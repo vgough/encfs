@@ -243,10 +243,6 @@ ctl.error_raw_only_v7:
   en: "--raw is only supported for V7 (EncFS7) config"
   fr: "--raw n'est pris en charge que pour la config V7 (EncFS7)"
   de: "--raw wird nur für die V7- (EncFS7-) Konfiguration unterstützt"
-ctl.error_reverse_mode_not_implemented:
-  en: "--reverse mode not yet fully implemented"
-  fr: "Le mode --reverse n'est pas encore entièrement implémenté"
-  de: "--reverse-Modus noch nicht vollständig implementiert"
 ctl.error_incomplete_header:
   en: "Encrypted file has incomplete header"
   fr: "Le fichier chiffré a un en-tête incomplet"
@@ -287,6 +283,18 @@ ctl.error_no_config_file_found:
   en: "No config file found. Looked for .encfs7, .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
   fr: "Aucun fichier de configuration trouvé. Recherché .encfs7, .encfs6.xml, .encfs5, .encfs4, .encfs3 dans %{rootdir}"
   de: "Keine Konfigurationsdatei gefunden. Suche nach .encfs7, .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
+ctl.error_no_config_in_parent_dirs:
+  en: "No EncFS config found in parent directories of %{path}"
+  fr: "Aucune configuration EncFS trouvée dans les répertoires parents de %{path}"
+  de: "Keine EncFS-Konfiguration in den übergeordneten Verzeichnissen von %{path} gefunden"
+ctl.error_failed_to_resolve_path:
+  en: "Failed to resolve path: %{path}"
+  fr: "Échec de la résolution du chemin : %{path}"
+  de: "Pfad konnte nicht aufgelöst werden: %{path}"
+ctl.error_file_not_in_encfs_root:
+  en: "File %{path} is not under the EncFS root directory"
+  fr: "Le fichier %{path} n'est pas sous le répertoire racine EncFS"
+  de: "Datei %{path} liegt nicht unter dem EncFS-Stammverzeichnis"
 ctl.error_password_program_exited_with_error:
   en: "Password program exited with error"
   fr: "Le programme de mot de passe s'est terminé avec une erreur"

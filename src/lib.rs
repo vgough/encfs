@@ -86,6 +86,7 @@ mod tests {
             8, // header_size
             config.block_size as u64,
             config.block_mac_bytes as u64,
+            false,
         );
 
         let mut decrypted_content = vec![0u8; content_size as usize];
@@ -169,6 +170,7 @@ mod tests {
             8,
             config.block_size as u64,
             config.block_mac_bytes as u64,
+            false,
         );
 
         let mut decrypted_content = vec![0u8; content_size as usize];

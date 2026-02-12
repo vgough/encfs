@@ -46,6 +46,7 @@ pub struct FileDecoder<'a, F: ReadAt> {
     header_size: u64,
     block_size: u64,      // On-disk block size from config (e.g., 1024)
     block_mac_bytes: u64, // MAC bytes per block (e.g., 8)
+    ignore_mac_mismatch: bool,
 }
 
 impl<'a, F: ReadAt> FileDecoder<'a, F> {
@@ -56,6 +57,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
         header_size: u64,
         block_size: u64,
         block_mac_bytes: u64,
+        ignore_mac_mismatch: bool,
     ) -> Self {
         Self {
             cipher,
@@ -64,6 +66,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
             header_size,
             block_size,
             block_mac_bytes,
+            ignore_mac_mismatch,
         }
     }
 
@@ -196,10 +199,13 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
                             tmp >>= 8;
                         }
                         if fail != 0 {
-                            return Err(io::Error::other(format!(
-                                "MAC mismatch in block {}",
-                                block_num
-                            )));
+                            if !self.ignore_mac_mismatch {
+                                return Err(io::Error::other(format!(
+                                    "MAC mismatch in block {}",
+                                    block_num
+                                )));
+                            }
+                            // Continue with potentially corrupted data
                         }
                         data
                     } else {
@@ -711,6 +717,7 @@ mod tests {
             header_size,
             block_size,
             block_mac_bytes,
+            false,
         );
 
         let mut buf = vec![0u8; data.len()];
@@ -763,6 +770,7 @@ mod tests {
             header_size,
             block_size,
             block_mac_bytes,
+            false,
         );
 
         let mut buf = vec![0u8; 100];
@@ -810,6 +818,7 @@ mod tests {
             header_size,
             block_size,
             block_mac_bytes,
+            false,
         );
         let mut buf = vec![0u8; data.len()];
         let err = decoder.read_at(&mut buf, 0).expect_err("Should fail MAC");
@@ -854,6 +863,7 @@ mod tests {
             header_size,
             block_size,
             block_mac_bytes,
+            false,
         );
         let mut buf = vec![0u8; 56];
         decoder.read_at(&mut buf, 0).expect("Read back");
@@ -907,6 +917,7 @@ mod tests {
             header_size,
             block_size,
             block_mac_bytes,
+            false,
         );
 
         // Read back the "End"

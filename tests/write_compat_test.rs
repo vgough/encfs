@@ -101,7 +101,15 @@ fn test_write_legacy_v2() {
     FileExt::read_at(&file, &mut header, 0).unwrap();
 
     let file_iv = verify_cipher.decrypt_header(&mut header, 0).unwrap();
-    let decoder = FileDecoder::new(&verify_cipher, &file, file_iv, 8, 1024, block_mac_bytes);
+    let decoder = FileDecoder::new(
+        &verify_cipher,
+        &file,
+        file_iv,
+        8,
+        1024,
+        block_mac_bytes,
+        false,
+    );
     let mut read_data = vec![0u8; data.len()];
     decoder.read_at(&mut read_data, 0).unwrap();
     assert_eq!(read_data, data);
@@ -152,7 +160,15 @@ fn test_write_paranoia() {
     let (_, name_iv) = verify_cipher.decrypt_filename(filename, 0).unwrap();
 
     let file_iv = verify_cipher.decrypt_header(&mut header, name_iv).unwrap();
-    let decoder = FileDecoder::new(&verify_cipher, &file, file_iv, 8, 1024, block_mac_bytes);
+    let decoder = FileDecoder::new(
+        &verify_cipher,
+        &file,
+        file_iv,
+        8,
+        1024,
+        block_mac_bytes,
+        false,
+    );
     let mut read_data = vec![0u8; data.len()];
     decoder.read_at(&mut read_data, 0).unwrap();
     assert_eq!(read_data, data);

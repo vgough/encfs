@@ -136,6 +136,10 @@ help.encfsctl.encode_extpass:
   en: "External password program"
   fr: "Programme de mot de passe externe"
   de: "Externes Passwortprogramm"
+help.encfsctl.cat_args:
+  en: "With one argument: path to encrypted file (config found in parent dirs). With two arguments: rootdir and relative file path"
+  fr: "Avec un argument : chemin du fichier chiffré (config trouvée dans les répertoires parents). Avec deux arguments : rootdir et chemin du fichier"
+  de: "Mit einem Argument: Pfad zur verschlüsselten Datei (Konfiguration in übergeordneten Verzeichnissen gesucht). Mit zwei Argumenten: Stammverzeichnis und Dateipfad"
 help.encfsctl.cat_rootdir:
   en: "Root directory of encrypted filesystem"
   fr: "Répertoire racine du système de fichiers chiffré"
@@ -148,10 +152,10 @@ help.encfsctl.cat_extpass:
   en: "External password program"
   fr: "Programme de mot de passe externe"
   de: "Externes Passwortprogramm"
-help.encfsctl.cat_reverse:
-  en: "Reverse mode: encrypt plaintext instead"
-  fr: "Mode inverse : chiffrer le texte clair à la place"
-  de: "Umkehrmodus: Klartext stattdessen verschlüsseln"
+help.encfsctl.cat_ignore_mac:
+  en: "Ignore MAC mismatch errors (output may be corrupted)"
+  fr: "Ignorer les erreurs de non-correspondance MAC (la sortie peut être corrompue)"
+  de: "MAC-Fehlermeldungen ignorieren (Ausgabe kann beschädigt sein)"
 help.encfsctl.ls_rootdir:
   en: "Root directory of encrypted filesystem"
   fr: "Répertoire racine du système de fichiers chiffré"

@@ -116,6 +116,7 @@ fn test_truncate_corrupts_partial_block() {
         8,    // header_size
         1024, // block_size
         8,    // block_mac_bytes
+        false,
     );
 
     let mut read_data = vec![0u8; target_size as usize];

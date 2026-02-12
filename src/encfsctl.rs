@@ -102,20 +102,16 @@ fn help_encode_extpass() -> String {
     t!("help.encfsctl.encode_extpass").to_string()
 }
 
-fn help_cat_rootdir() -> String {
-    t!("help.encfsctl.cat_rootdir").to_string()
-}
-
-fn help_cat_path() -> String {
-    t!("help.encfsctl.cat_path").to_string()
+fn help_cat_args() -> String {
+    t!("help.encfsctl.cat_args").to_string()
 }
 
 fn help_cat_extpass() -> String {
     t!("help.encfsctl.cat_extpass").to_string()
 }
 
-fn help_cat_reverse() -> String {
-    t!("help.encfsctl.cat_reverse").to_string()
+fn help_cat_ignore_mac() -> String {
+    t!("help.encfsctl.cat_ignore_mac").to_string()
 }
 
 fn help_ls_rootdir() -> String {
@@ -209,14 +205,12 @@ enum Command {
     },
     #[command(about = help_cat())]
     Cat {
-        #[arg(help = help_cat_rootdir())]
-        rootdir: PathBuf,
-        #[arg(help = help_cat_path())]
-        path: String,
+        #[arg(num_args = 1..=2, value_names = ["ROOTDIR_OR_FILE", "PATH"], help = help_cat_args())]
+        args: Vec<String>,
         #[arg(long, help = help_cat_extpass())]
         extpass: Option<String>,
-        #[arg(long, help = help_cat_reverse())]
-        reverse: bool,
+        #[arg(long, help = help_cat_ignore_mac())]
+        ignore_mac: bool,
     },
     #[command(about = help_ls())]
     Ls {
@@ -270,11 +264,10 @@ fn main() -> Result<()> {
             extpass,
         }) => cmd_encode(&rootdir, names, extpass),
         Some(Command::Cat {
-            rootdir,
-            path,
+            args,
             extpass,
-            reverse,
-        }) => cmd_cat(&rootdir, &path, extpass, reverse),
+            ignore_mac,
+        }) => cmd_cat(&args, extpass, ignore_mac),
         Some(Command::Ls {
             rootdir,
             path,
@@ -839,79 +832,77 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
     Ok(())
 }
 
-fn cmd_cat(rootdir: &Path, path: &str, extpass: Option<String>, reverse: bool) -> Result<()> {
-    let config_path = find_config_file(rootdir)?;
+fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result<()> {
+    let (rootdir, path) = if args.len() == 1 {
+        // Single arg: path is the encrypted file, find config in parent directories
+        let file_path = PathBuf::from(&args[0]);
+        let (rootdir, path) = find_rootdir_and_relative_path(&file_path)?;
+        (rootdir, path)
+    } else {
+        // Two args: rootdir and path (existing behavior)
+        (
+            PathBuf::from(&args[0]),
+            args[1].clone(),
+        )
+    };
+
+    let config_path = find_config_file(&rootdir)?;
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let password = get_password(&config_path, extpass)?;
     let cipher = config.get_cipher(&password).context("Invalid password")?;
 
-    if reverse {
-        // Encrypt plaintext and output
-        let mut file =
-            std::fs::File::open(rootdir.join(path)).context(t!("ctl.error_failed_to_open_file"))?;
-        let mut plaintext = Vec::new();
-        std::io::Read::read_to_end(&mut file, &mut plaintext)?;
+    let (file_path, path_iv) =
+        resolve_file_path(&rootdir, &path, &cipher, config.chained_name_iv)?;
+    let file = std::fs::File::open(&file_path)
+        .context(t!("ctl.error_failed_to_open_encrypted_file"))?;
 
-        // For reverse mode, we'd need to implement encryption
-        // This is a simplified version - full implementation would need block encryption
-        return Err(anyhow::anyhow!(
-            "{}",
-            t!("ctl.error_reverse_mode_not_implemented"),
-        ));
-    } else {
-        // Decrypt and output
-        let (file_path, path_iv) =
-            resolve_file_path(rootdir, path, &cipher, config.chained_name_iv)?;
-        let file = std::fs::File::open(&file_path)
-            .context(t!("ctl.error_failed_to_open_encrypted_file"))?;
+    // Read header to get file IV
+    use std::os::unix::fs::FileExt;
 
-        // Read header to get file IV
-        use std::os::unix::fs::FileExt;
+    let header_size = config.header_size();
+    let file_iv = if header_size > 0 {
+        let mut header = vec![0u8; header_size as usize];
+        let n = file.read_at(&mut header, 0)?;
+        if n < header.len() {
+            return Err(anyhow::anyhow!("{}", t!("ctl.error_incomplete_header")));
+        }
 
-        let header_size = config.header_size();
-        let file_iv = if header_size > 0 {
-            let mut header = vec![0u8; header_size as usize];
-            let n = file.read_at(&mut header, 0)?;
-            if n < header.len() {
-                return Err(anyhow::anyhow!("{}", t!("ctl.error_incomplete_header")));
-            }
-
-            // Use path IV for external IV chaining (paranoia mode)
-            let external_iv = if config.external_iv_chaining {
-                path_iv
-            } else {
-                0
-            };
-            cipher.decrypt_header(&mut header, external_iv)?
+        // Use path IV for external IV chaining (paranoia mode)
+        let external_iv = if config.external_iv_chaining {
+            path_iv
         } else {
             0
         };
+        cipher.decrypt_header(&mut header, external_iv)?
+    } else {
+        0
+    };
 
-        // Use FileDecoder to decrypt content
-        use encfs::crypto::file::FileDecoder;
-        let decoder = FileDecoder::new(
-            &cipher,
-            &file,
-            file_iv,
-            header_size, // header_size
-            config.block_size as u64,
-            config.block_mac_bytes as u64,
-        );
+    // Use FileDecoder to decrypt content
+    use encfs::crypto::file::FileDecoder;
+    let decoder = FileDecoder::new(
+        &cipher,
+        &file,
+        file_iv,
+        header_size,
+        config.block_size as u64,
+        config.block_mac_bytes as u64,
+        ignore_mac,
+    );
 
-        // Stream to stdout to avoid allocating the full file in memory.
-        let mut out = io::stdout().lock();
-        let mut offset = 0u64;
-        let mut buf = vec![0u8; constants::FILE_BUFFER_SIZE];
-        loop {
-            let bytes_read = decoder.read_at(&mut buf, offset)?;
-            if bytes_read == 0 {
-                break;
-            }
-            out.write_all(&buf[..bytes_read])?;
-            offset += bytes_read as u64;
+    // Stream to stdout to avoid allocating the full file in memory.
+    let mut out = io::stdout().lock();
+    let mut offset = 0u64;
+    let mut buf = vec![0u8; constants::FILE_BUFFER_SIZE];
+    loop {
+        let bytes_read = decoder.read_at(&mut buf, offset)?;
+        if bytes_read == 0 {
+            break;
         }
+        out.write_all(&buf[..bytes_read])?;
+        offset += bytes_read as u64;
     }
 
     Ok(())
@@ -1396,6 +1387,7 @@ fn export_directory(
                     header_size, // header_size
                     config.block_size as u64,
                     config.block_mac_bytes as u64,
+                    false,
                 );
 
                 let file_size = metadata.len();
@@ -1716,6 +1708,60 @@ fn find_config_file(rootdir: &Path) -> Result<PathBuf> {
         "ctl.error_no_config_file_found",
         rootdir = rootdir.display()
     )))
+}
+
+/// Find EncFS config in parent directories of the given path.
+/// Returns (rootdir, relative_path) where rootdir contains the config
+/// and relative_path is the path from rootdir to the file.
+fn find_rootdir_and_relative_path(file_path: &Path) -> Result<(PathBuf, String)> {
+    let start_dir = if file_path.is_file() {
+        file_path.parent().unwrap_or_else(|| Path::new("."))
+    } else {
+        file_path
+    };
+
+    let mut current = if start_dir.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        start_dir.to_path_buf()
+    };
+
+    loop {
+        match find_config_file(&current) {
+            Ok(_) => {
+                // Found config - current is the rootdir
+                let file_path_canon = file_path
+                    .canonicalize()
+                    .context(t!("ctl.error_failed_to_resolve_path", path = file_path.display()))?;
+                let rootdir_canon = current
+                    .canonicalize()
+                    .context(t!("ctl.error_failed_to_resolve_path", path = current.display()))?;
+                let relative = file_path_canon.strip_prefix(&rootdir_canon).map_err(|_| {
+                    anyhow::anyhow!(
+                        "{}",
+                        t!("ctl.error_file_not_in_encfs_root", path = file_path.display())
+                    )
+                })?;
+                let path_str = relative
+                    .components()
+                    .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                return Ok((rootdir_canon, path_str));
+            }
+            Err(_) => {
+                current = current
+                    .parent()
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "{}",
+                            t!("ctl.error_no_config_in_parent_dirs", path = file_path.display())
+                        )
+                    })?
+                    .to_path_buf();
+            }
+        }
+    }
 }
 
 fn get_password(_config_path: &Path, extpass: Option<String>) -> Result<String> {

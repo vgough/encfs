@@ -820,6 +820,7 @@ impl FilesystemMT for EncFs {
                     header_size,
                     self.block_size,
                     self.block_mac_bytes,
+                    false,
                 );
 
                 let mut buf = vec![0u8; data_block_size as usize];
@@ -1264,6 +1265,7 @@ impl FilesystemMT for EncFs {
             handle.header_size,
             self.block_size,
             self.block_mac_bytes,
+            false,
         );
 
         const MAX_READ_SIZE: u32 = 1024 * 1024;

@@ -81,6 +81,7 @@ fn read_and_hash_file(
         8, // header_size
         config.block_size as u64,
         config.block_mac_bytes as u64,
+        false,
     );
 
     let mut decrypted_content = vec![0u8; content_size as usize];
@@ -850,6 +851,7 @@ fn test_read_operations_standard_mode() -> anyhow::Result<()> {
         8,
         config.block_size as u64,
         config.block_mac_bytes as u64,
+        false,
     );
 
     // Read first 100 bytes
@@ -911,6 +913,7 @@ fn test_read_operations_paranoia_mode() -> anyhow::Result<()> {
         8,
         config.block_size as u64,
         config.block_mac_bytes as u64,
+        false,
     );
 
     // Read first 100 bytes
