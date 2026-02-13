@@ -907,6 +907,9 @@ impl FilesystemMT for EncFs {
         }
         // If metadata failed and we're root or not setting times, proceed and let utimensat/futimens return the error.
 
+        // Map Option<SystemTime> to kernel timespec. None means UTIME_OMIT (leave timestamp
+        // unchanged). Some(t) is either an explicit time or UTIME_NOW (fuse_mt converts UTIME_NOW
+        // to Some(SystemTime::now()) before calling us).
         let to_timespec = |t: Option<std::time::SystemTime>| -> libc::timespec {
             match t {
                 Some(ts) => {

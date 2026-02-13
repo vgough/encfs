@@ -579,6 +579,79 @@ fn live_chmod_utimens_statfs() -> Result<()> {
     Ok(())
 }
 
+/// Verifies that encfs handles special time values UTIME_NOW and UTIME_OMIT in utimensat.
+#[test]
+#[ignore]
+fn live_utimens_utime_now_and_omit() -> Result<()> {
+    use std::time::UNIX_EPOCH;
+
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let p = mount.mount_point.join("utimens_special.txt");
+    fs::write(&p, b"utimens test")?;
+
+    // Set atime/mtime to known values.
+    let at = 1_700_000_000i64;
+    let mt = 1_700_000_123i64;
+    let ts_initial = [
+        libc::timespec { tv_sec: at, tv_nsec: 0 },
+        libc::timespec { tv_sec: mt, tv_nsec: 0 },
+    ];
+    let c_path = CString::new(p.as_os_str().as_encoded_bytes())?;
+    let rc = unsafe { libc::utimensat(libc::AT_FDCWD, c_path.as_ptr(), ts_initial.as_ptr(), 0) };
+    assert_eq!(rc, 0, "utimensat (initial) failed: {:?}", std::io::Error::last_os_error());
+
+    let before = std::time::SystemTime::now();
+    // UTIME_OMIT for atime (leave unchanged), UTIME_NOW for mtime (set to current time).
+    let ts_special = [
+        libc::timespec {
+            tv_sec: 0,
+            tv_nsec: libc::UTIME_OMIT,
+        },
+        libc::timespec {
+            tv_sec: 0,
+            tv_nsec: libc::UTIME_NOW,
+        },
+    ];
+    let rc = unsafe { libc::utimensat(libc::AT_FDCWD, c_path.as_ptr(), ts_special.as_ptr(), 0) };
+    assert_eq!(
+        rc,
+        0,
+        "utimensat UTIME_OMIT/UTIME_NOW failed: {:?}",
+        std::io::Error::last_os_error()
+    );
+    let after = std::time::SystemTime::now();
+
+    let meta = fs::metadata(&p)?;
+    let atime_secs = meta.accessed()?
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_secs() as i64;
+    let mtime_secs = meta.modified()?
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_secs() as i64;
+
+    // atime should be unchanged (we used UTIME_OMIT).
+    assert_eq!(atime_secs, at, "atime should be unchanged (UTIME_OMIT)");
+    // mtime should be "now" (UTIME_NOW), i.e. between before and after.
+    let before_secs = before.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    let after_secs = after.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    assert!(
+        mtime_secs >= before_secs - 1 && mtime_secs <= after_secs + 1,
+        "mtime should be current (UTIME_NOW): got {} expected in [{}, {}]",
+        mtime_secs,
+        before_secs,
+        after_secs
+    );
+
+    Ok(())
+}
+
 #[test]
 #[ignore]
 fn live_read_only_mount_is_ero_fs() -> Result<()> {
