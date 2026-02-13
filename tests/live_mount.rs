@@ -2,7 +2,7 @@ mod live;
 
 use anyhow::{Context, Result};
 use encfs::crypto::file::FileEncoder;
-use live::{MountGuard, data_block_size, live_enabled, load_live_config};
+use live::{MountGuard, data_block_size, live_enabled, load_live_config, unique_temp_dir};
 use std::ffi::CString;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -820,6 +820,64 @@ fn live_utime_simplified_cases() -> Result<()> {
     let stat_res = fs::metadata(&missing);
     assert!(stat_res.is_err());
     assert_eq!(stat_res.unwrap_err().raw_os_error(), Some(libc::ENOENT));
+
+    Ok(())
+}
+
+/// Live test: extract a tar archive containing a single file inside the EncFS mount.
+/// Creates a minimal tar (one file), mounts EncFS, extracts using the tar crate
+/// (which uses std::fs create/open/write), and verifies the extracted file.
+/// Exercises the create+write path. Uses `tar` crate instead of system tar to avoid
+/// dependency on GNU tar's exact syscall sequence.
+#[test]
+#[ignore]
+fn live_tar_extract_single_file() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+
+    const TAR_FILENAME: &str = "single.txt";
+    const TAR_CONTENT: &[u8] = b"content for tar extract test\n";
+
+    let td = unique_temp_dir("encfs_tar_test")?;
+    let file_path = td.join(TAR_FILENAME);
+    fs::write(&file_path, TAR_CONTENT)?;
+
+    let archive_path = td.join("archive.tar");
+    {
+        let f = fs::File::create(&archive_path)
+            .context("create archive file")?;
+        let mut ar = tar::Builder::new(f);
+        ar.append_path_with_name(&file_path, TAR_FILENAME)
+            .context("append file to tar")?;
+        ar.finish().context("finish tar")?;
+    }
+
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let mp = &mount.mount_point;
+
+    // Sanity: direct fs::write to same filename must work
+    let direct_path = mp.join(TAR_FILENAME);
+    fs::write(&direct_path, TAR_CONTENT).context("direct fs::write to mount")?;
+    fs::remove_file(&direct_path).context("remove before tar unpack")?;
+
+    // Extract: tar crate uses OpenOptions::create_new() which triggers FUSE create()
+    let f = fs::File::open(&archive_path).context("open archive for extract")?;
+    let mut ar = tar::Archive::new(std::io::BufReader::new(f));
+    ar.unpack(mp).context("unpack tar into EncFS mount")?;
+
+    let extracted = mp.join(TAR_FILENAME);
+    let got = fs::read(&extracted).context("read extracted file")?;
+    assert_eq!(got, TAR_CONTENT, "extracted file content must match");
+
+    let meta = fs::metadata(&extracted)?;
+    assert_eq!(
+        meta.len(),
+        TAR_CONTENT.len() as u64,
+        "extracted file must not be zero size"
+    );
 
     Ok(())
 }

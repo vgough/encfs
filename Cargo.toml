@@ -32,6 +32,9 @@ sha2 = "0.10"
 name = "encfsctl"
 path = "src/encfsctl.rs"
 
+[dev-dependencies]
+tar = "0.4"
+
 [package.metadata.i18n]
 default-locale = "en"
 available-locales = ["en", "fr", "de"]

@@ -80,6 +80,7 @@ impl EncFs {
         for component in path.components() {
             match component {
                 std::path::Component::RootDir => {}
+                std::path::Component::CurDir => {}
                 std::path::Component::Normal(name) => {
                     let name_bytes = name.as_bytes();
                     let (encrypted_name, new_iv) =
@@ -1140,10 +1141,10 @@ impl FilesystemMT for EncFs {
         Ok(result)
     }
 
-    fn opendir(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
+    fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
         debug!("opendir: {:?}", path);
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        Ok((fh, flags))
+        Ok((fh, 0))
     }
 
     fn releasedir(
@@ -1209,8 +1210,32 @@ impl FilesystemMT for EncFs {
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             }
         } else {
-            // Read header if exists
-            if header_size > 0 {
+            // Read header if exists, or initialize empty file (e.g. created via mknod)
+            let physical_size = file
+                .metadata()
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
+                .len();
+
+            if header_size > 0 && physical_size < header_size {
+                // Empty or undersized backing file (e.g. from mknod). Write header so
+                // subsequent writes use correct physical offset and file format.
+                if want_write {
+                    let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
+                        error!("Failed to generate header: {}", e);
+                        libc::EIO
+                    })?;
+
+                    use std::io::Write;
+                    let mut file_ref = &file;
+                    file_ref
+                        .write_all(&header)
+                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                    file_iv = iv;
+                } else {
+                    // Opening for read but file too small to have valid header
+                    return Err(libc::EIO);
+                }
+            } else if header_size > 0 {
                 let mut header = vec![0u8; header_size as usize];
                 let bytes_read = file
                     .read_at(&mut header, 0)
@@ -1225,8 +1250,6 @@ impl FilesystemMT for EncFs {
                         return Err(libc::EIO);
                     }
                 }
-            } else {
-                // No header, file_iv remains 0
             }
         }
 
@@ -1239,7 +1262,7 @@ impl FilesystemMT for EncFs {
 
         self.handles_guard().insert(fh, handle);
 
-        Ok((fh, flags))
+        Ok((fh, 0))
     }
 
     fn read(
@@ -1424,7 +1447,7 @@ impl FilesystemMT for EncFs {
             ttl: Duration::from_secs(1),
             attr,
             fh,
-            flags,
+            flags: 0,
         })
     }
 
@@ -1461,7 +1484,7 @@ impl FilesystemMT for EncFs {
     ) -> ResultEntry {
         let path = parent.join(name);
         debug!("mknod: {:?} mode={:o} rdev={}", path, mode, rdev);
-        let (real_path, _) = self.encrypt_path(&path)?;
+        let (real_path, path_iv) = self.encrypt_path(&path)?;
 
         let c_path = CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
@@ -1471,14 +1494,29 @@ impl FilesystemMT for EncFs {
         } else if mode_bits == libc::S_IFCHR || mode_bits == libc::S_IFBLK {
             unsafe { libc::mknod(c_path.as_ptr(), mode, rdev as libc::dev_t) }
         } else if mode_bits == libc::S_IFREG {
+            use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
+            let header_size = self.config.header_size();
+            let external_iv = if self.external_iv_chaining {
+                path_iv
+            } else {
+                0
+            };
             match fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .mode(mode)
                 .open(&real_path)
             {
-                Ok(f) => {
+                Ok(mut f) => {
+                    if header_size > 0 {
+                        let (header, _iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
+                            error!("Failed to generate header for mknod: {}", e);
+                            libc::EIO
+                        })?;
+                        f.write_all(&header)
+                            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                    }
                     drop(f);
                     0
                 }
