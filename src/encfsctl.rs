@@ -154,6 +154,14 @@ fn help_new_rootdir() -> String {
     t!("help.encfsctl.new_rootdir").to_string()
 }
 
+fn help_new_extpass() -> String {
+    t!("help.encfsctl.new_extpass").to_string()
+}
+
+fn help_new_stdinpass() -> String {
+    t!("help.encfsctl.new_stdinpass").to_string()
+}
+
 #[derive(Parser)]
 #[command(name = "encfsctl")]
 #[command(about = help_about())]
@@ -241,6 +249,10 @@ enum Command {
     New {
         #[arg(help = help_new_rootdir())]
         rootdir: PathBuf,
+        #[arg(long, help = help_new_extpass())]
+        extpass: Option<String>,
+        #[arg(short = 'S', long = "stdinpass", help = help_new_stdinpass())]
+        stdinpass: bool,
     },
 }
 
@@ -280,7 +292,11 @@ fn main() -> Result<()> {
             extpass,
             fail_on_error,
         }) => cmd_export(&rootdir, &destdir, extpass, fail_on_error),
-        Some(Command::New { rootdir }) => cmd_new(&rootdir),
+        Some(Command::New {
+            rootdir,
+            extpass,
+            stdinpass,
+        }) => cmd_new(&rootdir, extpass, stdinpass),
         None => {
             // Default to info command if rootdir is provided
             if let Some(rootdir) = cli.rootdir {
@@ -1120,7 +1136,7 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_new(rootdir: &Path) -> Result<()> {
+fn cmd_new(rootdir: &Path, extpass: Option<String>, stdinpass: bool) -> Result<()> {
     use openssl::rand::rand_bytes;
 
     // Create directory if it doesn't exist
@@ -1161,9 +1177,20 @@ fn cmd_new(rootdir: &Path) -> Result<()> {
     let mut volume_key_blob = vec![0u8; key_len + iv_len];
     rand_bytes(&mut volume_key_blob).context(t!("ctl.error_failed_to_generate_salt"))?;
 
-    print!("{}", t!("ctl.new_enter_password"));
-    io::stdout().flush()?;
-    let password = prompt_password("")?;
+    let password = if let Some(prog) = extpass {
+        get_password_from_program(&prog)?
+    } else if stdinpass {
+        let stdin = io::stdin();
+        let mut lines = stdin.lock().lines();
+        lines
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_no_new_password")))?
+            .context(t!("ctl.error_failed_to_read_new_password"))?
+    } else {
+        print!("{}", t!("ctl.new_enter_password"));
+        io::stdout().flush()?;
+        prompt_password("").context(t!("ctl.error_failed_to_read_password"))?
+    };
 
     config
         .set_v7_key(&password, &volume_key_blob)

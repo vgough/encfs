@@ -378,6 +378,31 @@ fn run_rename_tests(cfg_kind: live::LiveConfigKind) -> Result<()> {
             b"rename payload"
         );
 
+        // Rename to a name that is too long: encrypted form exceeds NAME_MAX (255).
+        // Stream encoding uses 2 + len bytes then base64; block adds padding. 256 chars is enough.
+        let short = root.join("dirA/short.txt");
+        fs::write(&short, b"unchanged").context("write short.txt failed")?;
+        let too_long_name: String = "x".repeat(256);
+        let long_dest = root.join("dirA").join(&too_long_name);
+        let rename_result = fs::rename(&short, &long_dest);
+        assert!(
+            rename_result.is_err(),
+            "rename to too-long name should fail, got Ok(())"
+        );
+        assert!(
+            short.exists(),
+            "original file must still exist after failed rename"
+        );
+        assert!(
+            !long_dest.exists(),
+            "destination with too-long name must not exist"
+        );
+        assert_eq!(
+            fs::read(&short).context("read short.txt after failed rename")?,
+            b"unchanged",
+            "file content must be unchanged after failed rename"
+        );
+
         // Directory rename with children.
         fs::create_dir(root.join("dirOld")).context("mkdir dirOld failed")?;
         fs::create_dir_all(root.join("dirOld/sub")).context("mkdir dirOld/sub failed")?;

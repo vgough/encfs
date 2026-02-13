@@ -196,3 +196,11 @@ help.encfsctl.new_rootdir:
   en: "Directory in which to create the new encrypted filesystem config"
   fr: "Répertoire dans lequel créer la configuration du nouveau système de fichiers chiffré"
   de: "Verzeichnis, in dem die neue Konfiguration des verschlüsselten Dateisystems erstellt wird"
+help.encfsctl.new_extpass:
+  en: "External password program (for non-interactive creation)"
+  fr: "Programme de mot de passe externe (création non interactive)"
+  de: "Externes Passwortprogramm (nicht-interaktive Erstellung)"
+help.encfsctl.new_stdinpass:
+  en: "Read password from stdin (for non-interactive creation)"
+  fr: "Lire le mot de passe depuis stdin (création non interactive)"
+  de: "Passwort von stdin lesen (nicht-interaktive Erstellung)"
