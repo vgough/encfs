@@ -168,7 +168,8 @@ mod kdf_algorithm_serde {
 }
 
 impl EncfsConfig {
-    /// Returns a new V7 config with standard settings (AES-192, stream naming, Argon2id).
+    /// Returns a new V7 config with standard settings (AES-256, stream naming, Argon2id).
+    /// New V7 configs default to AES-GCM-SIV block mode (16-byte tag per block).
     /// Caller must set random salt and call set_v7_key before save.
     pub fn standard_v7() -> Self {
         Self {
@@ -187,7 +188,7 @@ impl EncfsConfig {
                 minor: 0,
                 age: 0,
             },
-            key_size: 192,
+            key_size: 256,
             block_size: 1024,
             key_data: vec![],
             salt: vec![0u8; crate::constants::DEFAULT_SALT_SIZE],
@@ -198,7 +199,7 @@ impl EncfsConfig {
             argon2_time_cost: Some(crate::constants::DEFAULT_ARGON2_TIME_COST),
             argon2_parallelism: Some(crate::constants::DEFAULT_ARGON2_PARALLELISM),
             plain_data: false,
-            block_mac_bytes: 8,
+            block_mac_bytes: crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32,
             block_mac_rand_bytes: 0,
             unique_iv: true,
             external_iv_chaining: false,
@@ -288,10 +289,28 @@ impl EncfsConfig {
                 self.block_size
             ));
         }
-        if self.block_mac_bytes < 0 || self.block_mac_bytes > 8 {
+        let legacy_max = crate::crypto::block::LEGACY_MAX_BLOCK_MAC_BYTES as i32;
+        let gcm_siv_tag = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
+        if self.block_mac_bytes < 0 {
             return Err(anyhow::anyhow!(
-                "Invalid blockMACBytes {} (must be in 0..=8)",
+                "Invalid blockMACBytes {} (must be >= 0)",
                 self.block_mac_bytes
+            ));
+        }
+        if self.config_type == ConfigType::V7 {
+            if self.block_mac_bytes > legacy_max && self.block_mac_bytes != gcm_siv_tag {
+                return Err(anyhow::anyhow!(
+                    "Invalid V7 blockMACBytes {} (must be in 0..={} for legacy mode, or {} for AES-GCM-SIV mode)",
+                    self.block_mac_bytes,
+                    legacy_max,
+                    gcm_siv_tag
+                ));
+            }
+        } else if self.block_mac_bytes > legacy_max {
+            return Err(anyhow::anyhow!(
+                "Invalid blockMACBytes {} (must be in 0..={})",
+                self.block_mac_bytes,
+                legacy_max
             ));
         }
         if self.block_mac_rand_bytes < 0 {
@@ -306,11 +325,34 @@ impl EncfsConfig {
                 self.block_mac_rand_bytes
             ));
         }
-        if self.block_mac_bytes + self.block_mac_rand_bytes >= self.block_size {
+        let block_overhead = match self.block_mode() {
+            crate::crypto::block::BlockMode::Legacy => self.block_mac_bytes,
+            crate::crypto::block::BlockMode::AesGcmSiv => {
+                if self.config_type != ConfigType::V7 {
+                    return Err(anyhow::anyhow!(
+                        "AES-GCM-SIV block mode is only supported in V7 configs"
+                    ));
+                }
+                if self.cipher_iface.name != "ssl/aes" {
+                    return Err(anyhow::anyhow!(
+                        "V7 AES-GCM-SIV block mode requires ssl/aes cipher (got {})",
+                        self.cipher_iface.name
+                    ));
+                }
+                if self.key_size != 128 && self.key_size != 256 {
+                    return Err(anyhow::anyhow!(
+                        "V7 AES-GCM-SIV block mode requires keySize 128 or 256 (got {})",
+                        self.key_size
+                    ));
+                }
+                gcm_siv_tag
+            }
+        };
+        if block_overhead + self.block_mac_rand_bytes >= self.block_size {
             return Err(anyhow::anyhow!(
                 "Invalid block header sizes: blockSize={} blockMACBytes={} blockMACRandBytes={}",
                 self.block_size,
-                self.block_mac_bytes,
+                block_overhead,
                 self.block_mac_rand_bytes
             ));
         }
@@ -565,6 +607,42 @@ impl EncfsConfig {
 
         let key_data = proto.encrypted_key;
 
+        // BlockEncryptionMode::Legacy = 1, AesGcmSiv = 2.
+        // For backward compatibility, unspecified mode falls back to legacy unless
+        // the config already uses the 16-byte AEAD tag size sentinel.
+        let inferred_aead_from_mac = cipher.block_mac_bytes
+            == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
+        let uses_aes_gcm_siv = match cipher.block_mode {
+            0 => inferred_aead_from_mac,
+            1 => false,
+            2 => true,
+            _ => anyhow::bail!("V7: unsupported block encryption mode"),
+        };
+
+        let block_mac_bytes = if uses_aes_gcm_siv {
+            if cipher.block_mac_bytes != 0
+                && cipher.block_mac_bytes
+                    != crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
+            {
+                anyhow::bail!(
+                    "V7 AES-GCM-SIV mode requires blockMACBytes=0 or {} (got {})",
+                    crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES,
+                    cipher.block_mac_bytes
+                );
+            }
+            crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
+        } else {
+            if cipher.block_mode == 1
+                && cipher.block_mac_bytes == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
+            {
+                anyhow::bail!(
+                    "V7 legacy block mode cannot use {}-byte per-block overhead",
+                    crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES
+                );
+            }
+            cipher.block_mac_bytes
+        };
+
         // BlockCipherAlgorithm::Aes = 1, Blowfish = 2
         let cipher_iface = match cipher.algorithm {
             1 => Interface {
@@ -627,7 +705,7 @@ impl EncfsConfig {
             argon2_time_cost: Some(argon2.time_cost),
             argon2_parallelism: Some(argon2.parallelism),
             plain_data: false,
-            block_mac_bytes: cipher.block_mac_bytes,
+            block_mac_bytes,
             block_mac_rand_bytes: cipher.block_mac_rand_bytes,
             unique_iv: cipher.unique_iv,
             external_iv_chaining: name_encoding.external_iv_chaining,
@@ -736,6 +814,16 @@ impl EncfsConfig {
     }
     pub fn header_size(&self) -> u64 {
         if self.unique_iv { 8 } else { 0 }
+    }
+
+    pub fn block_mode(&self) -> crate::crypto::block::BlockMode {
+        let block_mac = u64::try_from(self.block_mac_bytes.max(0)).unwrap_or(0);
+        crate::crypto::block::BlockMode::from_config(self.config_type, block_mac)
+    }
+
+    pub fn block_overhead_bytes(&self) -> u64 {
+        let block_mac = u64::try_from(self.block_mac_bytes.max(0)).unwrap_or(0);
+        self.block_mode().overhead_bytes(block_mac)
     }
 
     /// Creates a default configuration useful for testing
@@ -890,8 +978,8 @@ impl EncfsConfig {
     /// Builds V7 protobuf Config from EncfsConfig (key_data is used as encrypted_key).
     fn encfs_config_to_proto_v7(&self) -> crate::config_proto::Config {
         use crate::config_proto::{
-            Argon2Kdf, BasicBlockCipher, BlockCipherAlgorithm, Config, FeatureFlags, NameEncoding,
-            NameEncodingMode,
+            Argon2Kdf, BasicBlockCipher, BlockCipherAlgorithm, BlockEncryptionMode, Config,
+            FeatureFlags, NameEncoding, NameEncodingMode,
         };
 
         let algorithm = match self.cipher_iface.name.as_str() {
@@ -900,13 +988,24 @@ impl EncfsConfig {
             _ => BlockCipherAlgorithm::Aes as i32,
         };
 
+        let block_mode = match self.block_mode() {
+            crate::crypto::block::BlockMode::Legacy => BlockEncryptionMode::Legacy as i32,
+            crate::crypto::block::BlockMode::AesGcmSiv => BlockEncryptionMode::AesGcmSiv as i32,
+        };
+        let block_mac_bytes = if self.block_mode() == crate::crypto::block::BlockMode::AesGcmSiv {
+            crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
+        } else {
+            self.block_mac_bytes
+        };
+
         let cipher = Some(BasicBlockCipher {
             algorithm,
             key_size: self.key_size,
             block_size: self.block_size,
-            block_mac_bytes: self.block_mac_bytes,
+            block_mac_bytes,
             block_mac_rand_bytes: self.block_mac_rand_bytes,
             unique_iv: self.unique_iv,
+            block_mode,
         });
 
         let mode = if self.name_iface.name == "nameio/block" {
@@ -1463,6 +1562,56 @@ mod tests {
         let cipher = loaded.get_cipher(password)?;
         // Cipher should be usable (key set)
         assert_eq!(cipher.iv_len(), iv_len);
+
+        let _ = std::fs::remove_file(config_path);
+        Ok(())
+    }
+
+    #[test]
+    fn test_standard_v7_defaults_to_aes_gcm_siv_blocks() {
+        let cfg = EncfsConfig::standard_v7();
+        assert_eq!(cfg.config_type, ConfigType::V7);
+        assert_eq!(cfg.key_size, 256);
+        assert_eq!(
+            cfg.block_mode(),
+            crate::crypto::block::BlockMode::AesGcmSiv
+        );
+        assert_eq!(
+            cfg.block_overhead_bytes(),
+            crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES
+        );
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_v7_aes_gcm_siv_roundtrip() -> Result<()> {
+        let dir = std::env::temp_dir();
+        let config_path = dir.join(format!(
+            "encfs_v7_gcm_siv_test_{}.encfs7",
+            std::process::id()
+        ));
+
+        let mut config = EncfsConfig::standard_v7();
+        openssl::rand::rand_bytes(&mut config.salt).context("rand")?;
+        let key_len = (config.key_size / 8) as usize;
+        let iv_len = 16;
+        let mut volume_key_blob = vec![0u8; key_len + iv_len];
+        openssl::rand::rand_bytes(&mut volume_key_blob).context("rand")?;
+
+        let password = "test_password";
+        config.set_v7_key(password, &volume_key_blob)?;
+        config.save(&config_path)?;
+
+        let loaded = EncfsConfig::load(&config_path)?;
+        assert_eq!(
+            loaded.block_mode(),
+            crate::crypto::block::BlockMode::AesGcmSiv
+        );
+        assert_eq!(
+            loaded.block_overhead_bytes(),
+            crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES
+        );
+        let _cipher = loaded.get_cipher(password)?;
 
         let _ = std::fs::remove_file(config_path);
         Ok(())

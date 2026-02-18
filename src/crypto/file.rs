@@ -1,3 +1,4 @@
+use crate::crypto::block::{BlockCodec, BlockLayout, BlockMode};
 use crate::crypto::ssl::SslCipher;
 use std::io;
 use std::os::unix::fs::FileExt;
@@ -36,16 +37,16 @@ impl FileLen for std::fs::File {
 
 /// Decodes encrypted files.
 ///
-/// Handles block-by-block decryption and MAC verification.
-/// EncFS uses a fixed block size (typically 1024 bytes) on disk, which includes
-/// encryption overhead (MAC).
+/// Handles block-by-block decryption and verification for both legacy EncFS
+/// block-MAC format and V7 AES-GCM-SIV block format.
 pub struct FileDecoder<'a, F: ReadAt> {
     cipher: &'a SslCipher,
     file: &'a F,
     file_iv: u64,
     header_size: u64,
-    block_size: u64,      // On-disk block size from config (e.g., 1024)
-    block_mac_bytes: u64, // MAC bytes per block (e.g., 8)
+    block_size: u64, // On-disk block size from config (e.g., 1024)
+    block_mac_bytes: u64,
+    block_mode: BlockMode,
     ignore_mac_mismatch: bool,
 }
 
@@ -59,6 +60,28 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
         block_mac_bytes: u64,
         ignore_mac_mismatch: bool,
     ) -> Self {
+        Self::new_with_mode(
+            cipher,
+            file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::Legacy,
+            ignore_mac_mismatch,
+        )
+    }
+
+    pub fn new_with_mode(
+        cipher: &'a SslCipher,
+        file: &'a F,
+        file_iv: u64,
+        header_size: u64,
+        block_size: u64,
+        block_mac_bytes: u64,
+        block_mode: BlockMode,
+        ignore_mac_mismatch: bool,
+    ) -> Self {
         Self {
             cipher,
             file,
@@ -66,6 +89,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
             header_size,
             block_size,
             block_mac_bytes,
+            block_mode,
             ignore_mac_mismatch,
         }
     }
@@ -82,32 +106,26 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
         block_size: u64,
         block_mac_bytes: u64,
     ) -> u64 {
-        if physical_size < header_size {
-            return 0;
+        Self::calculate_logical_size_with_mode(
+            physical_size,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::Legacy,
+        )
+    }
+
+    pub fn calculate_logical_size_with_mode(
+        physical_size: u64,
+        header_size: u64,
+        block_size: u64,
+        block_mac_bytes: u64,
+        block_mode: BlockMode,
+    ) -> u64 {
+        match BlockLayout::new(block_mode, block_size, block_mac_bytes) {
+            Ok(layout) => layout.logical_size_from_physical(physical_size, header_size),
+            Err(_) => 0,
         }
-
-        let data_size = physical_size - header_size;
-
-        if block_mac_bytes > 0 {
-            // EncFS stores MAC bytes at the start of each on-disk block.
-            // In this implementation, `block_size` is the *on-disk* block size,
-            // and the plaintext payload per full block is `block_size - block_mac_bytes`.
-            if block_size <= block_mac_bytes {
-                return 0;
-            }
-            let physical_block_size = block_size;
-            let data_block_size = block_size - block_mac_bytes;
-
-            let full_blocks = data_size / physical_block_size;
-            let usage_in_full = full_blocks * data_block_size;
-
-            let remainder = data_size % physical_block_size;
-            let usage_in_partial = remainder.saturating_sub(block_mac_bytes);
-
-            return usage_in_full + usage_in_partial;
-        }
-
-        data_size
     }
 
     /// Reads and decrypts data from the encrypted file at the specified logical offset.
@@ -119,28 +137,17 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
     /// 4. Stripping MAC bytes if present
     /// 5. Copying the requested slice of decrypted data to the buffer
     pub fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+        let layout = BlockLayout::new(self.block_mode, self.block_size, self.block_mac_bytes)?;
+        let codec = BlockCodec::new(self.cipher, layout, self.ignore_mac_mismatch);
         let size = buf.len() as u64;
         let mut bytes_remaining = size;
         let mut total_read = 0;
         let mut current_offset = offset;
 
-        // Data block size is the actual user data per block (block_size - MAC overhead)
-        if self.block_size <= self.block_mac_bytes {
-            return Err(io::Error::other(
-                "Invalid config: block_size must be > block_mac_bytes",
-            ));
-        }
-        let data_block_size = self.block_size - self.block_mac_bytes;
+        let data_block_size = layout.data_size_per_block();
 
-        let block_size_usize = usize::try_from(self.block_size)
+        let block_size_usize = usize::try_from(layout.block_size())
             .map_err(|_| io::Error::other("block_size too large"))?;
-        let mac_len_usize = usize::try_from(self.block_mac_bytes)
-            .map_err(|_| io::Error::other("block_mac_bytes too large"))?;
-        if mac_len_usize > 8 {
-            return Err(io::Error::other(
-                "Invalid config: block_mac_bytes must be <= 8",
-            ));
-        }
 
         let mut block_data = vec![0u8; block_size_usize];
 
@@ -152,7 +159,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
                 std::cmp::min(bytes_remaining, data_block_size - block_offset);
 
             // Read full on-disk block (MAC + encrypted data = block_size bytes)
-            let read_offset = self.header_size + block_num * self.block_size;
+            let read_offset = self.header_size + block_num * layout.block_size();
 
             // Ensure buffer is sized correctly for max possible read
             block_data.resize(block_size_usize, 0);
@@ -164,51 +171,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
                     }
                     block_data.truncate(bytes_read);
 
-                    // EncFS decrypts the entire block (MAC + data), then strips MAC
-                    if let Err(e) = self.cipher.decrypt_block_inplace(
-                        &mut block_data,
-                        block_num,
-                        self.file_iv,
-                        self.block_size, // Full block size for crypto
-                    ) {
-                        return Err(io::Error::other(format!(
-                            "Failed to decrypt block {}: {}",
-                            block_num, e
-                        )));
-                    }
-
-                    // AFTER decryption, verify and strip MAC from start.
-                    let plaintext: &[u8] = if self.block_mac_bytes > 0 {
-                        if block_data.len() < mac_len_usize {
-                            return Err(io::Error::other(format!(
-                                "Truncated block {}: missing MAC bytes",
-                                block_num
-                            )));
-                        }
-                        let stored_mac = &block_data[..mac_len_usize];
-                        let data = &block_data[mac_len_usize..];
-
-                        // EncFS stores MAC bytes as the least-significant bytes of the u64,
-                        // written in little-endian order (byte 0 = mac & 0xff).
-                        let computed = self.cipher.mac_64_no_iv(data).map_err(io::Error::other)?;
-                        let mut tmp = computed;
-                        let mut fail: u8 = 0;
-                        for &stored in stored_mac.iter() {
-                            let expected = (tmp & 0xff) as u8;
-                            fail |= expected ^ stored;
-                            tmp >>= 8;
-                        }
-                        if fail != 0 && !self.ignore_mac_mismatch {
-                            return Err(io::Error::other(format!(
-                                "MAC mismatch in block {}",
-                                block_num
-                            )));
-                        }
-                        // Continue with potentially corrupted data when ignore_mac_mismatch
-                        data
-                    } else {
-                        &block_data
-                    };
+                    let plaintext = codec.decrypt_block(block_num, self.file_iv, &mut block_data)?;
 
                     // Copy requested part
                     let start = block_offset as usize;
@@ -244,6 +207,7 @@ pub struct FileEncoder<'a, F: ReadAt + WriteAt + FileLen> {
     header_size: u64,
     block_size: u64,
     block_mac_bytes: u64,
+    block_mode: BlockMode,
 }
 
 impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
@@ -255,6 +219,26 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
         block_size: u64,
         block_mac_bytes: u64,
     ) -> Self {
+        Self::new_with_mode(
+            cipher,
+            file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::Legacy,
+        )
+    }
+
+    pub fn new_with_mode(
+        cipher: &'a SslCipher,
+        file: &'a F,
+        file_iv: u64,
+        header_size: u64,
+        block_size: u64,
+        block_mac_bytes: u64,
+        block_mode: BlockMode,
+    ) -> Self {
         Self {
             cipher,
             file,
@@ -262,6 +246,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
             header_size,
             block_size,
             block_mac_bytes,
+            block_mode,
         }
     }
 
@@ -271,55 +256,45 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
         block_size: u64,
         block_mac_bytes: u64,
     ) -> u64 {
-        if logical_size == 0 {
-            return header_size;
-        }
+        Self::calculate_physical_size_with_mode(
+            logical_size,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::Legacy,
+        )
+    }
 
-        if block_mac_bytes == 0 {
-            return header_size + logical_size;
+    pub fn calculate_physical_size_with_mode(
+        logical_size: u64,
+        header_size: u64,
+        block_size: u64,
+        block_mac_bytes: u64,
+        block_mode: BlockMode,
+    ) -> u64 {
+        match BlockLayout::new(block_mode, block_size, block_mac_bytes) {
+            Ok(layout) => layout.physical_size_from_logical(logical_size, header_size),
+            Err(_) => header_size,
         }
-        if block_size <= block_mac_bytes {
-            return header_size;
-        }
-        let data_block_size = block_size - block_mac_bytes;
-        let full_blocks = logical_size / data_block_size;
-        let remainder = logical_size % data_block_size;
-
-        let mut physical_size = header_size + full_blocks * block_size;
-        if remainder > 0 {
-            physical_size += remainder + block_mac_bytes;
-        }
-        physical_size
     }
 
     pub fn write_at(&self, buf: &[u8], offset: u64) -> io::Result<usize> {
-        if self.block_size <= self.block_mac_bytes {
-            return Err(io::Error::other(
-                "Invalid config: block_size must be > block_mac_bytes",
-            ));
-        }
-        let physical_block_size = self.block_size;
-        let data_block_size = self.block_size - self.block_mac_bytes;
-
+        let layout = BlockLayout::new(self.block_mode, self.block_size, self.block_mac_bytes)?;
+        let data_block_size = layout.data_size_per_block();
+        let physical_block_size = layout.block_size();
         let physical_block_size_usize = usize::try_from(physical_block_size)
             .map_err(|_| io::Error::other("block_size too large"))?;
-        let mac_len_usize = usize::try_from(self.block_mac_bytes)
-            .map_err(|_| io::Error::other("block_mac_bytes too large"))?;
-        if mac_len_usize > 8 {
-            return Err(io::Error::other(
-                "Invalid config: block_mac_bytes must be <= 8",
-            ));
-        }
 
         // Detect and fill gaps to prevent sparse files.
         // Sparse files cause MAC verification failures because reading a block
         // that partially spans a hole returns zeros that weren't properly encrypted.
         let physical_size = self.file.file_len()?;
-        let current_logical_size = FileDecoder::<F>::calculate_logical_size(
+        let current_logical_size = FileDecoder::<F>::calculate_logical_size_with_mode(
             physical_size,
             self.header_size,
             self.block_size,
             self.block_mac_bytes,
+            self.block_mode,
         );
 
         if offset > current_logical_size {
@@ -336,10 +311,10 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                 self.write_at_internal(
                     &zeros[..write_len as usize],
                     gap_offset,
+                    layout,
                     data_block_size,
                     physical_block_size,
                     physical_block_size_usize,
-                    mac_len_usize,
                 )?;
                 remaining_gap -= write_len;
                 gap_offset += write_len;
@@ -350,10 +325,10 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
         self.write_at_internal(
             buf,
             offset,
+            layout,
             data_block_size,
             physical_block_size,
             physical_block_size_usize,
-            mac_len_usize,
         )
     }
 
@@ -361,20 +336,18 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
         &self,
         buf: &[u8],
         offset: u64,
+        layout: BlockLayout,
         data_block_size: u64,
         physical_block_size: u64,
         physical_block_size_usize: usize,
-        mac_len_usize: usize,
     ) -> io::Result<usize> {
+        let codec = BlockCodec::new(self.cipher, layout, false);
         let size = buf.len() as u64;
         let mut bytes_remaining = size;
         let mut total_written = 0;
         let mut current_offset = offset;
 
-        // Reusable scratch buffer.
-        // It will hold: [MAC (optional) | Data]
-        // We ensure it has enough capacity for a full physical block.
-        let mut scratch_buffer = Vec::with_capacity(physical_block_size_usize);
+        let mut on_disk_block = Vec::with_capacity(physical_block_size_usize);
 
         while bytes_remaining > 0 {
             let block_num = current_offset / data_block_size;
@@ -383,103 +356,50 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                 std::cmp::min(bytes_remaining, data_block_size - block_offset);
 
             let read_offset = self.header_size + block_num * physical_block_size;
-
-            // Prepare scratch buffer
-            scratch_buffer.resize(physical_block_size_usize, 0);
+            let mut plaintext_block = Vec::new();
 
             // RMW: Enable read if we are not overwriting the entire data portion of the block
             let is_full_write = block_offset == 0 && bytes_to_write_in_block == data_block_size;
             if !is_full_write {
-                match self.file.read_at(&mut scratch_buffer, read_offset) {
+                on_disk_block.resize(physical_block_size_usize, 0);
+                match self.file.read_at(&mut on_disk_block, read_offset) {
                     Ok(n) => {
                         if n > 0 {
-                            scratch_buffer.truncate(n);
-
-                            // Check if this write will overwrite the entire data we just read.
-                            let current_payload_len = if self.block_mac_bytes > 0 {
-                                n.saturating_sub(mac_len_usize)
-                            } else {
-                                n
-                            };
+                            on_disk_block.truncate(n);
+                            plaintext_block = codec
+                                .decrypt_block(block_num, self.file_iv, &mut on_disk_block)
+                                .map_err(|e| {
+                                    io::Error::other(format!("Decrypt failed during RMW: {}", e))
+                                })?;
 
                             if block_offset == 0
-                                && (bytes_to_write_in_block as usize) >= current_payload_len
+                                && (bytes_to_write_in_block as usize) >= plaintext_block.len()
                             {
-                                // Optimization: We are overwriting the entire existing content.
-                                // Reset buffer to just reserved MAC space (if any)
-                                scratch_buffer.resize(mac_len_usize, 0);
-                            } else {
-                                // We need to keep existing data. Decrypt it.
-                                if self
-                                    .cipher
-                                    .decrypt_block_inplace(
-                                        &mut scratch_buffer,
-                                        block_num,
-                                        self.file_iv,
-                                        physical_block_size,
-                                    )
-                                    .is_err()
-                                {
-                                    return Err(io::Error::other("Decrypt failed during RMW"));
-                                }
-                                // Data is now [Encrypted MAC | Plaintext Data].
+                                plaintext_block.clear();
                             }
-                        } else {
-                            // EOF read
-                            scratch_buffer.resize(mac_len_usize, 0);
                         }
                     }
                     Err(e) => return Err(e),
                 }
-            } else {
-                scratch_buffer.resize(mac_len_usize, 0);
             }
 
-            // At this point, `scratch_buffer` starts with `mac_len` bytes (either old MAC or zeros),
-            // followed by any existing plaintext data we preserved.
-
             // Extend buffer if necessary to cover the new write range
-            let required_len = mac_len_usize + (block_offset + bytes_to_write_in_block) as usize;
-            if scratch_buffer.len() < required_len {
-                scratch_buffer.resize(required_len, 0);
+            let required_len = (block_offset + bytes_to_write_in_block) as usize;
+            if plaintext_block.len() < required_len {
+                plaintext_block.resize(required_len, 0);
             }
 
             // Copy new data
             let src_start = total_written;
             let src_end = src_start + bytes_to_write_in_block as usize;
-            let dst_start = mac_len_usize + block_offset as usize;
+            let dst_start = block_offset as usize;
             let dst_end = dst_start + bytes_to_write_in_block as usize;
 
-            scratch_buffer[dst_start..dst_end].copy_from_slice(&buf[src_start..src_end]);
-
-            // Re-calculate and write MAC
-            if self.block_mac_bytes > 0 {
-                let data_slice = &scratch_buffer[mac_len_usize..];
-                let mac = self
-                    .cipher
-                    .mac_64_no_iv(data_slice)
-                    .map_err(io::Error::other)?;
-
-                // Write MAC into the reserved space at the front
-                let mut tmp = mac;
-                for byte in scratch_buffer.iter_mut().take(mac_len_usize) {
-                    *byte = (tmp & 0xff) as u8;
-                    tmp >>= 8;
-                }
-            }
-
-            // Encrypt
-            self.cipher
-                .encrypt_block_inplace(
-                    &mut scratch_buffer,
-                    block_num,
-                    self.file_iv,
-                    physical_block_size,
-                )
-                .map_err(io::Error::other)?;
+            plaintext_block[dst_start..dst_end].copy_from_slice(&buf[src_start..src_end]);
+            let encrypted_block = codec.encrypt_block(block_num, self.file_iv, &plaintext_block)?;
 
             // Write
-            self.file.write_at(&scratch_buffer, read_offset)?;
+            self.file.write_at(&encrypted_block, read_offset)?;
 
             let written = bytes_to_write_in_block;
             total_written += written as usize;
@@ -821,6 +741,108 @@ mod tests {
         let mut buf = vec![0u8; data.len()];
         let err = decoder.read_at(&mut buf, 0).expect_err("Should fail MAC");
         assert!(err.to_string().contains("MAC mismatch"));
+    }
+
+    #[test]
+    fn test_read_write_roundtrip_with_aes_gcm_siv_mode() {
+        let mut cipher = create_cipher();
+        let key = vec![0u8; 16];
+        let iv = vec![0u8; 16];
+        cipher.set_key(&key, &iv);
+
+        let file_iv = 33333;
+        let header_size = 8;
+        let block_size = 64;
+        let block_mac_bytes = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES;
+
+        let mock_file = MockFile::new(vec![0u8; header_size as usize]);
+        let encoder = FileEncoder::new_with_mode(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::AesGcmSiv,
+        );
+
+        let data = vec![b'Z'; 100];
+        encoder.write_at(&data, 0).expect("Write failed");
+
+        assert_eq!(
+            mock_file.get_data().len() as u64,
+            FileEncoder::<MockFile>::calculate_physical_size_with_mode(
+                data.len() as u64,
+                header_size,
+                block_size,
+                block_mac_bytes,
+                BlockMode::AesGcmSiv
+            )
+        );
+
+        let decoder = FileDecoder::new_with_mode(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::AesGcmSiv,
+            false,
+        );
+
+        let mut buf = vec![0u8; data.len()];
+        let read = decoder.read_at(&mut buf, 0).expect("Read failed");
+        assert_eq!(read, data.len());
+        assert_eq!(buf, data);
+    }
+
+    #[test]
+    fn test_aes_gcm_siv_tag_verification_failure() {
+        let mut cipher = create_cipher();
+        let key = vec![0u8; 16];
+        let iv = vec![0u8; 16];
+        cipher.set_key(&key, &iv);
+
+        let file_iv = 44444;
+        let header_size = 8;
+        let block_size = 64;
+        let block_mac_bytes = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES;
+
+        let mock_file = MockFile::new(vec![0u8; header_size as usize]);
+        let encoder = FileEncoder::new_with_mode(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::AesGcmSiv,
+        );
+        let data = b"Authenticated block payload";
+        encoder.write_at(data, 0).expect("Write failed");
+
+        // Tamper with first tag byte after file header.
+        {
+            let mut file_data = mock_file.data.lock().unwrap();
+            file_data[header_size as usize] ^= 0x01;
+        }
+
+        let decoder = FileDecoder::new_with_mode(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::AesGcmSiv,
+            false,
+        );
+        let mut buf = vec![0u8; data.len()];
+        let err = decoder
+            .read_at(&mut buf, 0)
+            .expect_err("Should fail AEAD verification");
+        assert!(err.to_string().contains("tag verification failed"));
     }
 
     #[test]

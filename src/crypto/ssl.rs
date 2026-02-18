@@ -1,4 +1,6 @@
 use crate::config::Interface;
+use aes_gcm_siv::aead::{AeadInPlace, KeyInit};
+use aes_gcm_siv::{Aes128GcmSiv, Aes256GcmSiv, Nonce, Tag};
 use anyhow::{Context, Result, anyhow};
 use argon2::{Algorithm, Argon2, Params, Version};
 use openssl::hash::MessageDigest;
@@ -779,6 +781,133 @@ impl SslCipher {
             // Partial block - use stream cipher (CFB)
             self.stream_encode(data, iv64, &self.key, &self.iv)
         }
+    }
+
+    fn aes_gcm_siv_nonce(file_iv: u64, block_num: u64) -> [u8; 12] {
+        let mut nonce = [0u8; 12];
+        let file_bytes = file_iv.to_le_bytes();
+        let block_bytes = block_num.to_le_bytes();
+
+        nonce[..8].copy_from_slice(&file_bytes);
+        nonce[8..].copy_from_slice(&block_bytes[..4]);
+
+        // Fold high block bits into the nonce prefix so the full 64-bit block number
+        // contributes to nonce derivation.
+        for i in 0..4 {
+            nonce[i] ^= block_bytes[4 + i];
+        }
+
+        nonce
+    }
+
+    fn aes_gcm_siv_aad(file_iv: u64, block_num: u64) -> [u8; 16] {
+        let mut aad = [0u8; 16];
+        aad[..8].copy_from_slice(&file_iv.to_le_bytes());
+        aad[8..].copy_from_slice(&block_num.to_le_bytes());
+        aad
+    }
+
+    pub fn encrypt_block_aes_gcm_siv_inplace(
+        &self,
+        data: &mut [u8],
+        block_num: u64,
+        file_iv: u64,
+    ) -> Result<[u8; 16]> {
+        if self.iface.name != "ssl/aes" {
+            return Err(anyhow!("AES-GCM-SIV block mode requires ssl/aes cipher"));
+        }
+        if self.key.is_empty() {
+            return Err(anyhow!("Cipher key is not initialized"));
+        }
+
+        let nonce_bytes = Self::aes_gcm_siv_nonce(file_iv, block_num);
+        let nonce = Nonce::from(nonce_bytes);
+        let aad = Self::aes_gcm_siv_aad(file_iv, block_num);
+
+        let tag = match self.key.len() {
+            16 => {
+                let cipher = Aes128GcmSiv::new_from_slice(&self.key)
+                    .map_err(|e| anyhow!("Invalid AES-128-GCM-SIV key: {}", e))?;
+                cipher
+                    .encrypt_in_place_detached(&nonce, &aad, data)
+                    .map_err(|_| anyhow!("AES-GCM-SIV encryption failed for block {}", block_num))?
+            }
+            32 => {
+                let cipher = Aes256GcmSiv::new_from_slice(&self.key)
+                    .map_err(|e| anyhow!("Invalid AES-256-GCM-SIV key: {}", e))?;
+                cipher
+                    .encrypt_in_place_detached(&nonce, &aad, data)
+                    .map_err(|_| anyhow!("AES-GCM-SIV encryption failed for block {}", block_num))?
+            }
+            other => {
+                return Err(anyhow!(
+                    "AES-GCM-SIV block mode requires 128-bit or 256-bit AES key (got {} bytes)",
+                    other
+                ));
+            }
+        };
+
+        let mut tag_bytes = [0u8; 16];
+        tag_bytes.copy_from_slice(&tag);
+        Ok(tag_bytes)
+    }
+
+    pub fn decrypt_block_aes_gcm_siv_inplace(
+        &self,
+        data: &mut [u8],
+        tag: &[u8],
+        block_num: u64,
+        file_iv: u64,
+    ) -> Result<()> {
+        if self.iface.name != "ssl/aes" {
+            return Err(anyhow!("AES-GCM-SIV block mode requires ssl/aes cipher"));
+        }
+        if self.key.is_empty() {
+            return Err(anyhow!("Cipher key is not initialized"));
+        }
+        if tag.len() != 16 {
+            return Err(anyhow!(
+                "Invalid AES-GCM-SIV tag length {} (expected 16)",
+                tag.len()
+            ));
+        }
+
+        let nonce_bytes = Self::aes_gcm_siv_nonce(file_iv, block_num);
+        let nonce = Nonce::from(nonce_bytes);
+        let aad = Self::aes_gcm_siv_aad(file_iv, block_num);
+        let tag_arr: [u8; 16] = tag
+            .try_into()
+            .map_err(|_| anyhow!("Invalid AES-GCM-SIV tag length {}", tag.len()))?;
+        let tag = Tag::from(tag_arr);
+
+        match self.key.len() {
+            16 => {
+                let cipher = Aes128GcmSiv::new_from_slice(&self.key)
+                    .map_err(|e| anyhow!("Invalid AES-128-GCM-SIV key: {}", e))?;
+                cipher
+                    .decrypt_in_place_detached(&nonce, &aad, data, &tag)
+                    .map_err(|_| {
+                        anyhow!("AES-GCM-SIV tag verification failed for block {}", block_num)
+                    })?
+            }
+            32 => {
+                let cipher = Aes256GcmSiv::new_from_slice(&self.key)
+                    .map_err(|e| anyhow!("Invalid AES-256-GCM-SIV key: {}", e))?;
+                cipher
+                    .decrypt_in_place_detached(&nonce, &aad, data, &tag)
+                    .map_err(|_| {
+                        anyhow!("AES-GCM-SIV tag verification failed for block {}", block_num)
+                    })?
+            }
+            other => {
+                return Err(anyhow!(
+                    "AES-GCM-SIV block mode requires 128-bit or 256-bit AES key (got {} bytes)",
+                    other
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     pub fn decrypt_block_inplace(

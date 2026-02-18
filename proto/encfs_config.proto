@@ -38,6 +38,12 @@ enum BlockCipherAlgorithm {
   BLOWFISH = 2;
 }
 
+enum BlockEncryptionMode {
+  BLOCK_ENCRYPTION_MODE_UNSPECIFIED = 0;
+  LEGACY = 1;
+  AES_GCM_SIV = 2;
+}
+
 message BasicBlockCipher {
   BlockCipherAlgorithm algorithm = 1;
   int32 key_size = 2;              // e.g. 128, 192, 256 for AES
@@ -45,6 +51,7 @@ message BasicBlockCipher {
   int32 block_mac_bytes = 4;
   int32 block_mac_rand_bytes = 5;   // must be 0 for current implementation
   bool unique_iv = 6;
+  BlockEncryptionMode block_mode = 7;
 }
 
 enum NameEncodingMode {

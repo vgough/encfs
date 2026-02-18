@@ -421,6 +421,9 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     if config.block_mac_bytes > 0 {
         println!("{}", t!("ctl.block_mac", bytes = config.block_mac_bytes));
     }
+    if config.block_mode() == encfs::crypto::block::BlockMode::AesGcmSiv {
+        println!("  AES-GCM-SIV block mode (per-block authenticated encryption)");
+    }
 
     // Show KDF information
     use config::KdfAlgorithm;
@@ -898,13 +901,14 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
 
     // Use FileDecoder to decrypt content
     use encfs::crypto::file::FileDecoder;
-    let decoder = FileDecoder::new(
+    let decoder = FileDecoder::new_with_mode(
         &cipher,
         &file,
         file_iv,
         header_size,
         config.block_size as u64,
         config.block_mac_bytes as u64,
+        config.block_mode(),
         ignore_mac,
     );
 
@@ -978,11 +982,12 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
 
                     // Calculate logical size for files
                     let size = if metadata.is_file() {
-                        FileDecoder::<std::fs::File>::calculate_logical_size(
+                        FileDecoder::<std::fs::File>::calculate_logical_size_with_mode(
                             metadata.len(),
                             config.header_size(),
                             config.block_size as u64,
                             config.block_mac_bytes as u64,
+                            config.block_mode(),
                         )
                     } else {
                         metadata.len()
@@ -1407,22 +1412,24 @@ fn export_directory(
                 };
 
                 // Decrypt content using FileDecoder
-                let decoder = FileDecoder::new(
+                let decoder = FileDecoder::new_with_mode(
                     cipher,
                     &src_file,
                     file_iv,
                     header_size, // header_size
                     config.block_size as u64,
                     config.block_mac_bytes as u64,
+                    config.block_mode(),
                     false,
                 );
 
                 let file_size = metadata.len();
-                let logical_size = FileDecoder::<std::fs::File>::calculate_logical_size(
+                let logical_size = FileDecoder::<std::fs::File>::calculate_logical_size_with_mode(
                     file_size,
                     header_size,
                     config.block_size as u64,
                     config.block_mac_bytes as u64,
+                    config.block_mode(),
                 );
 
                 let mut dest_file = std::fs::File::create(&dest_path)?;
@@ -1630,7 +1637,7 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
 
 /// Format decoded V7 protobuf Config as human-readable raw text.
 fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
-    use encfs::config_proto::{BlockCipherAlgorithm, NameEncodingMode};
+    use encfs::config_proto::{BlockCipherAlgorithm, BlockEncryptionMode, NameEncodingMode};
 
     fn bytes_hex(b: &[u8], max_display: usize) -> String {
         if b.is_empty() {
@@ -1682,6 +1689,12 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
             c.block_mac_rand_bytes
         ));
         out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
+        let block_mode = match BlockEncryptionMode::try_from(c.block_mode) {
+            Ok(BlockEncryptionMode::Legacy) => "LEGACY",
+            Ok(BlockEncryptionMode::AesGcmSiv) => "AES_GCM_SIV",
+            _ => "BLOCK_ENCRYPTION_MODE_UNSPECIFIED",
+        };
+        out.push_str(&format!("  block_mode: {}\n", block_mode));
         out.push_str("}\n");
     }
 
