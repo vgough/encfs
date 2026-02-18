@@ -586,10 +586,6 @@ impl EncfsConfig {
             .argon2
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("V7 config requires Argon2 KDF"))?;
-        let cipher = proto
-            .cipher
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("V7 config requires cipher"))?;
         let name_encoding = proto
             .name_encoding
             .as_ref()
@@ -606,60 +602,67 @@ impl EncfsConfig {
         };
 
         let key_data = proto.encrypted_key;
+        let (cipher_iface, key_size, block_size, block_mac_bytes, block_mac_rand_bytes, unique_iv) =
+            match (proto.cipher.as_ref(), proto.aes_gcm_siv_cipher.as_ref()) {
+                (Some(_), Some(_)) => {
+                    anyhow::bail!(
+                        "V7 config must set either cipher or aes_gcm_siv_cipher, not both"
+                    );
+                }
+                (None, None) => {
+                    anyhow::bail!("V7 config requires cipher or aes_gcm_siv_cipher");
+                }
+                (Some(cipher), None) => {
+                    // BlockCipherAlgorithm::Aes = 1, Blowfish = 2.
+                    let cipher_iface = match cipher.algorithm {
+                        1 => Interface {
+                            name: "ssl/aes".to_string(),
+                            major: 3,
+                            minor: 0,
+                            age: 0,
+                        },
+                        2 => Interface {
+                            name: "ssl/blowfish".to_string(),
+                            major: 0,
+                            minor: 0,
+                            age: 0,
+                        },
+                        _ => anyhow::bail!("V7: unsupported block cipher algorithm"),
+                    };
 
-        // BlockEncryptionMode::Legacy = 1, AesGcmSiv = 2.
-        // For backward compatibility, unspecified mode falls back to legacy unless
-        // the config already uses the 16-byte AEAD tag size sentinel.
-        let inferred_aead_from_mac =
-            cipher.block_mac_bytes == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
-        let uses_aes_gcm_siv = match cipher.block_mode {
-            0 => inferred_aead_from_mac,
-            1 => false,
-            2 => true,
-            _ => anyhow::bail!("V7: unsupported block encryption mode"),
-        };
+                    // Backward compatibility: older V7 configs could encode AES-GCM-SIV via
+                    // the legacy cipher message using the 16-byte per-block tag sentinel.
+                    let inferred_aead_from_mac = cipher.block_mac_bytes
+                        == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
+                    let block_mac_bytes = if inferred_aead_from_mac {
+                        crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
+                    } else {
+                        cipher.block_mac_bytes
+                    };
 
-        let block_mac_bytes = if uses_aes_gcm_siv {
-            if cipher.block_mac_bytes != 0
-                && cipher.block_mac_bytes
-                    != crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
-            {
-                anyhow::bail!(
-                    "V7 AES-GCM-SIV mode requires blockMACBytes=0 or {} (got {})",
-                    crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES,
-                    cipher.block_mac_bytes
-                );
-            }
-            crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
-        } else {
-            if cipher.block_mode == 1
-                && cipher.block_mac_bytes
-                    == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
-            {
-                anyhow::bail!(
-                    "V7 legacy block mode cannot use {}-byte per-block overhead",
-                    crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES
-                );
-            }
-            cipher.block_mac_bytes
-        };
-
-        // BlockCipherAlgorithm::Aes = 1, Blowfish = 2
-        let cipher_iface = match cipher.algorithm {
-            1 => Interface {
-                name: "ssl/aes".to_string(),
-                major: 3,
-                minor: 0,
-                age: 0,
-            },
-            2 => Interface {
-                name: "ssl/blowfish".to_string(),
-                major: 0,
-                minor: 0,
-                age: 0,
-            },
-            _ => anyhow::bail!("V7: unsupported block cipher algorithm"),
-        };
+                    (
+                        cipher_iface,
+                        cipher.key_size,
+                        cipher.block_size,
+                        block_mac_bytes,
+                        cipher.block_mac_rand_bytes,
+                        cipher.unique_iv,
+                    )
+                }
+                (None, Some(cipher)) => (
+                    Interface {
+                        name: "ssl/aes".to_string(),
+                        major: 3,
+                        minor: 0,
+                        age: 0,
+                    },
+                    cipher.key_size,
+                    cipher.block_size,
+                    crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32,
+                    0,
+                    cipher.unique_iv,
+                ),
+            };
 
         // NameEncodingMode::Stream = 1, Block = 2
         let name_iface = match name_encoding.mode {
@@ -695,8 +698,8 @@ impl EncfsConfig {
             version: crate::constants::DEFAULT_CONFIG_VERSION,
             cipher_iface,
             name_iface,
-            key_size: cipher.key_size,
-            block_size: cipher.block_size,
+            key_size,
+            block_size,
             key_data,
             salt: argon2.salt.clone(),
             kdf_iterations: 0,
@@ -707,8 +710,8 @@ impl EncfsConfig {
             argon2_parallelism: Some(argon2.parallelism),
             plain_data: false,
             block_mac_bytes,
-            block_mac_rand_bytes: cipher.block_mac_rand_bytes,
-            unique_iv: cipher.unique_iv,
+            block_mac_rand_bytes,
+            unique_iv,
             external_iv_chaining: name_encoding.external_iv_chaining,
             chained_name_iv: name_encoding.chained_name_iv,
             allow_holes,
@@ -979,7 +982,7 @@ impl EncfsConfig {
     /// Builds V7 protobuf Config from EncfsConfig (key_data is used as encrypted_key).
     fn encfs_config_to_proto_v7(&self) -> crate::config_proto::Config {
         use crate::config_proto::{
-            Argon2Kdf, BasicBlockCipher, BlockCipherAlgorithm, BlockEncryptionMode, Config,
+            AesGcmSivBlockCipher, Argon2Kdf, BasicBlockCipher, BlockCipherAlgorithm, Config,
             FeatureFlags, NameEncoding, NameEncodingMode,
         };
 
@@ -989,25 +992,27 @@ impl EncfsConfig {
             _ => BlockCipherAlgorithm::Aes as i32,
         };
 
-        let block_mode = match self.block_mode() {
-            crate::crypto::block::BlockMode::Legacy => BlockEncryptionMode::Legacy as i32,
-            crate::crypto::block::BlockMode::AesGcmSiv => BlockEncryptionMode::AesGcmSiv as i32,
+        let (cipher, aes_gcm_siv_cipher) = match self.block_mode() {
+            crate::crypto::block::BlockMode::Legacy => (
+                Some(BasicBlockCipher {
+                    algorithm,
+                    key_size: self.key_size,
+                    block_size: self.block_size,
+                    block_mac_bytes: self.block_mac_bytes,
+                    block_mac_rand_bytes: self.block_mac_rand_bytes,
+                    unique_iv: self.unique_iv,
+                }),
+                None,
+            ),
+            crate::crypto::block::BlockMode::AesGcmSiv => (
+                None,
+                Some(AesGcmSivBlockCipher {
+                    key_size: self.key_size,
+                    block_size: self.block_size,
+                    unique_iv: self.unique_iv,
+                }),
+            ),
         };
-        let block_mac_bytes = if self.block_mode() == crate::crypto::block::BlockMode::AesGcmSiv {
-            crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
-        } else {
-            self.block_mac_bytes
-        };
-
-        let cipher = Some(BasicBlockCipher {
-            algorithm,
-            key_size: self.key_size,
-            block_size: self.block_size,
-            block_mac_bytes,
-            block_mac_rand_bytes: self.block_mac_rand_bytes,
-            unique_iv: self.unique_iv,
-            block_mode,
-        });
 
         let mode = if self.name_iface.name == "nameio/block" {
             NameEncodingMode::Block as i32
@@ -1039,6 +1044,7 @@ impl EncfsConfig {
             encrypted_key: self.key_data.clone(),
             argon2,
             cipher,
+            aes_gcm_siv_cipher,
             name_encoding,
             feature_flags,
             config_hash: self.config_hash.clone().unwrap_or_default(),
@@ -1579,6 +1585,37 @@ mod tests {
             crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES
         );
         assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_v7_aes_gcm_siv_serializes_dedicated_cipher_message() {
+        let cfg = EncfsConfig::standard_v7();
+        let proto = cfg.encfs_config_to_proto_v7();
+
+        assert!(proto.cipher.is_none());
+        let aes_gcm_siv = proto
+            .aes_gcm_siv_cipher
+            .expect("expected aes_gcm_siv_cipher for V7 default");
+        assert_eq!(aes_gcm_siv.key_size, cfg.key_size);
+        assert_eq!(aes_gcm_siv.block_size, cfg.block_size);
+        assert_eq!(aes_gcm_siv.unique_iv, cfg.unique_iv);
+    }
+
+    #[test]
+    fn test_v7_legacy_serializes_legacy_cipher_message() {
+        let mut cfg = EncfsConfig::standard_v7();
+        cfg.block_mac_bytes = 8;
+        cfg.block_mac_rand_bytes = 0;
+
+        let proto = cfg.encfs_config_to_proto_v7();
+        assert!(proto.aes_gcm_siv_cipher.is_none());
+
+        let cipher = proto.cipher.expect("expected legacy cipher message");
+        assert_eq!(cipher.key_size, cfg.key_size);
+        assert_eq!(cipher.block_size, cfg.block_size);
+        assert_eq!(cipher.block_mac_bytes, cfg.block_mac_bytes);
+        assert_eq!(cipher.block_mac_rand_bytes, cfg.block_mac_rand_bytes);
+        assert_eq!(cipher.unique_iv, cfg.unique_iv);
     }
 
     #[test]

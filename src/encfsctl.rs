@@ -1632,7 +1632,7 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
 
 /// Format decoded V7 protobuf Config as human-readable raw text.
 fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
-    use encfs::config_proto::{BlockCipherAlgorithm, BlockEncryptionMode, NameEncodingMode};
+    use encfs::config_proto::{BlockCipherAlgorithm, NameEncodingMode};
 
     fn bytes_hex(b: &[u8], max_display: usize) -> String {
         if b.is_empty() {
@@ -1684,12 +1684,13 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
             c.block_mac_rand_bytes
         ));
         out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
-        let block_mode = match BlockEncryptionMode::try_from(c.block_mode) {
-            Ok(BlockEncryptionMode::Legacy) => "LEGACY",
-            Ok(BlockEncryptionMode::AesGcmSiv) => "AES_GCM_SIV",
-            _ => "BLOCK_ENCRYPTION_MODE_UNSPECIFIED",
-        };
-        out.push_str(&format!("  block_mode: {}\n", block_mode));
+        out.push_str("}\n");
+    }
+    if let Some(ref c) = proto.aes_gcm_siv_cipher {
+        out.push_str("aes_gcm_siv_cipher {\n");
+        out.push_str(&format!("  key_size: {}\n", c.key_size));
+        out.push_str(&format!("  block_size: {}\n", c.block_size));
+        out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
         out.push_str("}\n");
     }
 

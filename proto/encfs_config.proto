@@ -12,7 +12,7 @@ message Config {
   // Argon2 KDF parameters and salt (required for V7).
   Argon2Kdf argon2 = 2;
 
-  // Block cipher and block-level options.
+  // Legacy block cipher and block-level options (V4-V6 compatible behavior).
   BasicBlockCipher cipher = 3;
 
   // Filename encoding and name IV options.
@@ -23,6 +23,9 @@ message Config {
 
   // Hash of the config (with encrypted_key and config_hash cleared), used as AEAD AAD.
   bytes config_hash = 6;
+
+  // AES-GCM-SIV block configuration (V7 authenticated block mode).
+  AesGcmSivBlockCipher aes_gcm_siv_cipher = 7;
 }
 
 message Argon2Kdf {
@@ -38,12 +41,6 @@ enum BlockCipherAlgorithm {
   BLOWFISH = 2;
 }
 
-enum BlockEncryptionMode {
-  BLOCK_ENCRYPTION_MODE_UNSPECIFIED = 0;
-  LEGACY = 1;
-  AES_GCM_SIV = 2;
-}
-
 message BasicBlockCipher {
   BlockCipherAlgorithm algorithm = 1;
   int32 key_size = 2;              // e.g. 128, 192, 256 for AES
@@ -51,7 +48,12 @@ message BasicBlockCipher {
   int32 block_mac_bytes = 4;
   int32 block_mac_rand_bytes = 5;   // must be 0 for current implementation
   bool unique_iv = 6;
-  BlockEncryptionMode block_mode = 7;
+}
+
+message AesGcmSivBlockCipher {
+  int32 key_size = 1;   // AES key size in bits (128 or 256)
+  int32 block_size = 2;
+  bool unique_iv = 3;
 }
 
 enum NameEncodingMode {
