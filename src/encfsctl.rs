@@ -859,10 +859,7 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
         (rootdir, path)
     } else {
         // Two args: rootdir and path (existing behavior)
-        (
-            PathBuf::from(&args[0]),
-            args[1].clone(),
-        )
+        (PathBuf::from(&args[0]), args[1].clone())
     };
 
     let config_path = find_config_file(&rootdir)?;
@@ -872,10 +869,9 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
     let password = get_password(&config_path, extpass)?;
     let cipher = config.get_cipher(&password).context("Invalid password")?;
 
-    let (file_path, path_iv) =
-        resolve_file_path(&rootdir, &path, &cipher, config.chained_name_iv)?;
-    let file = std::fs::File::open(&file_path)
-        .context(t!("ctl.error_failed_to_open_encrypted_file"))?;
+    let (file_path, path_iv) = resolve_file_path(&rootdir, &path, &cipher, config.chained_name_iv)?;
+    let file =
+        std::fs::File::open(&file_path).context(t!("ctl.error_failed_to_open_encrypted_file"))?;
 
     // Read header to get file IV
     use std::os::unix::fs::FileExt;
@@ -1146,16 +1142,15 @@ fn cmd_new(rootdir: &Path, extpass: Option<String>, stdinpass: bool) -> Result<(
 
     // Create directory if it doesn't exist
     if !rootdir.exists() {
-        std::fs::create_dir_all(rootdir)
-            .context(t!("ctl.error_failed_to_create_directory", path = rootdir.display()))?;
+        std::fs::create_dir_all(rootdir).context(t!(
+            "ctl.error_failed_to_create_directory",
+            path = rootdir.display()
+        ))?;
     }
     if !rootdir.is_dir() {
         return Err(anyhow::anyhow!(
             "{}",
-            t!(
-                "ctl.error_not_a_directory",
-                path = rootdir.display()
-            )
+            t!("ctl.error_not_a_directory", path = rootdir.display())
         ));
     }
 
@@ -1770,16 +1765,21 @@ fn find_rootdir_and_relative_path(file_path: &Path) -> Result<(PathBuf, String)>
         match find_config_file(&current) {
             Ok(_) => {
                 // Found config - current is the rootdir
-                let file_path_canon = file_path
-                    .canonicalize()
-                    .context(t!("ctl.error_failed_to_resolve_path", path = file_path.display()))?;
-                let rootdir_canon = current
-                    .canonicalize()
-                    .context(t!("ctl.error_failed_to_resolve_path", path = current.display()))?;
+                let file_path_canon = file_path.canonicalize().context(t!(
+                    "ctl.error_failed_to_resolve_path",
+                    path = file_path.display()
+                ))?;
+                let rootdir_canon = current.canonicalize().context(t!(
+                    "ctl.error_failed_to_resolve_path",
+                    path = current.display()
+                ))?;
                 let relative = file_path_canon.strip_prefix(&rootdir_canon).map_err(|_| {
                     anyhow::anyhow!(
                         "{}",
-                        t!("ctl.error_file_not_in_encfs_root", path = file_path.display())
+                        t!(
+                            "ctl.error_file_not_in_encfs_root",
+                            path = file_path.display()
+                        )
                     )
                 })?;
                 let path_str = relative
@@ -1795,7 +1795,10 @@ fn find_rootdir_and_relative_path(file_path: &Path) -> Result<(PathBuf, String)>
                     .ok_or_else(|| {
                         anyhow::anyhow!(
                             "{}",
-                            t!("ctl.error_no_config_in_parent_dirs", path = file_path.display())
+                            t!(
+                                "ctl.error_no_config_in_parent_dirs",
+                                path = file_path.display()
+                            )
                         )
                     })?
                     .to_path_buf();

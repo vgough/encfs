@@ -610,8 +610,8 @@ impl EncfsConfig {
         // BlockEncryptionMode::Legacy = 1, AesGcmSiv = 2.
         // For backward compatibility, unspecified mode falls back to legacy unless
         // the config already uses the 16-byte AEAD tag size sentinel.
-        let inferred_aead_from_mac = cipher.block_mac_bytes
-            == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
+        let inferred_aead_from_mac =
+            cipher.block_mac_bytes == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
         let uses_aes_gcm_siv = match cipher.block_mode {
             0 => inferred_aead_from_mac,
             1 => false,
@@ -633,7 +633,8 @@ impl EncfsConfig {
             crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
         } else {
             if cipher.block_mode == 1
-                && cipher.block_mac_bytes == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
+                && cipher.block_mac_bytes
+                    == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
             {
                 anyhow::bail!(
                     "V7 legacy block mode cannot use {}-byte per-block overhead",
@@ -1572,10 +1573,7 @@ mod tests {
         let cfg = EncfsConfig::standard_v7();
         assert_eq!(cfg.config_type, ConfigType::V7);
         assert_eq!(cfg.key_size, 256);
-        assert_eq!(
-            cfg.block_mode(),
-            crate::crypto::block::BlockMode::AesGcmSiv
-        );
+        assert_eq!(cfg.block_mode(), crate::crypto::block::BlockMode::AesGcmSiv);
         assert_eq!(
             cfg.block_overhead_bytes(),
             crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES

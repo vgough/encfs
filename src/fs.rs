@@ -1520,10 +1520,11 @@ impl FilesystemMT for EncFs {
             {
                 Ok(mut f) => {
                     if header_size > 0 {
-                        let (header, _iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-                            error!("Failed to generate header for mknod: {}", e);
-                            libc::EIO
-                        })?;
+                        let (header, _iv) =
+                            self.cipher.encrypt_header(external_iv).map_err(|e| {
+                                error!("Failed to generate header for mknod: {}", e);
+                                libc::EIO
+                            })?;
                         f.write_all(&header)
                             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
                     }

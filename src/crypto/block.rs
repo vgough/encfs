@@ -39,7 +39,11 @@ pub struct BlockLayout {
 }
 
 impl BlockLayout {
-    pub fn new(mode: BlockMode, block_size: u64, configured_block_mac_bytes: u64) -> io::Result<Self> {
+    pub fn new(
+        mode: BlockMode,
+        block_size: u64,
+        configured_block_mac_bytes: u64,
+    ) -> io::Result<Self> {
         let overhead_bytes = mode.overhead_bytes(configured_block_mac_bytes);
         if block_size <= overhead_bytes {
             return Err(io::Error::other(format!(
@@ -191,7 +195,9 @@ impl<'a> BlockCodec<'a> {
             tmp >>= 8;
         }
         if fail != 0 && !self.ignore_legacy_mac_mismatch {
-            return Err(io::Error::other(format!("MAC mismatch in block {block_num}")));
+            return Err(io::Error::other(format!(
+                "MAC mismatch in block {block_num}"
+            )));
         }
 
         Ok(plaintext.to_vec())

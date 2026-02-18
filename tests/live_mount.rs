@@ -623,12 +623,23 @@ fn live_utimens_utime_now_and_omit() -> Result<()> {
     let at = 1_700_000_000i64;
     let mt = 1_700_000_123i64;
     let ts_initial = [
-        libc::timespec { tv_sec: at, tv_nsec: 0 },
-        libc::timespec { tv_sec: mt, tv_nsec: 0 },
+        libc::timespec {
+            tv_sec: at,
+            tv_nsec: 0,
+        },
+        libc::timespec {
+            tv_sec: mt,
+            tv_nsec: 0,
+        },
     ];
     let c_path = CString::new(p.as_os_str().as_encoded_bytes())?;
     let rc = unsafe { libc::utimensat(libc::AT_FDCWD, c_path.as_ptr(), ts_initial.as_ptr(), 0) };
-    assert_eq!(rc, 0, "utimensat (initial) failed: {:?}", std::io::Error::last_os_error());
+    assert_eq!(
+        rc,
+        0,
+        "utimensat (initial) failed: {:?}",
+        std::io::Error::last_os_error()
+    );
 
     let before = std::time::SystemTime::now();
     // UTIME_OMIT for atime (leave unchanged), UTIME_NOW for mtime (set to current time).
@@ -652,11 +663,13 @@ fn live_utimens_utime_now_and_omit() -> Result<()> {
     let after = std::time::SystemTime::now();
 
     let meta = fs::metadata(&p)?;
-    let atime_secs = meta.accessed()?
+    let atime_secs = meta
+        .accessed()?
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::from_secs(0))
         .as_secs() as i64;
-    let mtime_secs = meta.modified()?
+    let mtime_secs = meta
+        .modified()?
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::from_secs(0))
         .as_secs() as i64;
@@ -846,8 +859,7 @@ fn live_tar_extract_single_file() -> Result<()> {
 
     let archive_path = td.join("archive.tar");
     {
-        let f = fs::File::create(&archive_path)
-            .context("create archive file")?;
+        let f = fs::File::create(&archive_path).context("create archive file")?;
         let mut ar = tar::Builder::new(f);
         ar.append_path_with_name(&file_path, TAR_FILENAME)
             .context("append file to tar")?;

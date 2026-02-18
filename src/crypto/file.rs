@@ -171,7 +171,8 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
                     }
                     block_data.truncate(bytes_read);
 
-                    let plaintext = codec.decrypt_block(block_num, self.file_iv, &mut block_data)?;
+                    let plaintext =
+                        codec.decrypt_block(block_num, self.file_iv, &mut block_data)?;
 
                     // Copy requested part
                     let start = block_offset as usize;
@@ -365,17 +366,24 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                 match self.file.read_at(&mut on_disk_block, read_offset) {
                     Ok(n) => {
                         if n > 0 {
-                            on_disk_block.truncate(n);
-                            plaintext_block = codec
-                                .decrypt_block(block_num, self.file_iv, &mut on_disk_block)
-                                .map_err(|e| {
-                                    io::Error::other(format!("Decrypt failed during RMW: {}", e))
-                                })?;
-
+                            let existing_payload_len =
+                                n.saturating_sub(layout.overhead_bytes() as usize);
                             if block_offset == 0
-                                && (bytes_to_write_in_block as usize) >= plaintext_block.len()
+                                && (bytes_to_write_in_block as usize) >= existing_payload_len
                             {
+                                // Entire currently stored payload will be overwritten; no need to
+                                // decrypt potentially truncated/corrupt bytes for read-modify-write.
                                 plaintext_block.clear();
+                            } else {
+                                on_disk_block.truncate(n);
+                                plaintext_block = codec
+                                    .decrypt_block(block_num, self.file_iv, &mut on_disk_block)
+                                    .map_err(|e| {
+                                        io::Error::other(format!(
+                                            "Decrypt failed during RMW: {}",
+                                            e
+                                        ))
+                                    })?;
                             }
                         }
                     }

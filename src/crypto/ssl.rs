@@ -887,7 +887,10 @@ impl SslCipher {
                 cipher
                     .decrypt_in_place_detached(&nonce, &aad, data, &tag)
                     .map_err(|_| {
-                        anyhow!("AES-GCM-SIV tag verification failed for block {}", block_num)
+                        anyhow!(
+                            "AES-GCM-SIV tag verification failed for block {}",
+                            block_num
+                        )
                     })?
             }
             32 => {
@@ -896,7 +899,10 @@ impl SslCipher {
                 cipher
                     .decrypt_in_place_detached(&nonce, &aad, data, &tag)
                     .map_err(|_| {
-                        anyhow!("AES-GCM-SIV tag verification failed for block {}", block_num)
+                        anyhow!(
+                            "AES-GCM-SIV tag verification failed for block {}",
+                            block_num
+                        )
                     })?
             }
             other => {
@@ -1020,7 +1026,7 @@ impl SslCipher {
         let bs = self.block_cipher.block_size();
 
         // 1. Check minimum size (must be at least one block)
-        if encrypted_data.len() < bs || !encrypted_data.len().is_multiple_of(bs) {
+        if encrypted_data.len() < bs || encrypted_data.len() % bs != 0 {
             return Err(anyhow!("Encrypted xattr data length invalid"));
         }
 
