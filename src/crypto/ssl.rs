@@ -1026,7 +1026,7 @@ impl SslCipher {
         let bs = self.block_cipher.block_size();
 
         // 1. Check minimum size (must be at least one block)
-        if encrypted_data.len() < bs || encrypted_data.len() % bs != 0 {
+        if encrypted_data.len() < bs || !encrypted_data.len().is_multiple_of(bs) {
             return Err(anyhow!("Encrypted xattr data length invalid"));
         }
 

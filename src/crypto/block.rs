@@ -139,7 +139,7 @@ impl<'a> BlockCodec<'a> {
         &self,
         block_num: u64,
         file_iv: u64,
-        block_data: &mut Vec<u8>,
+        block_data: &mut [u8],
     ) -> io::Result<Vec<u8>> {
         match self.layout.mode() {
             BlockMode::Legacy => self.decrypt_legacy_block(block_num, file_iv, block_data),
@@ -163,7 +163,7 @@ impl<'a> BlockCodec<'a> {
         &self,
         block_num: u64,
         file_iv: u64,
-        block_data: &mut Vec<u8>,
+        block_data: &mut [u8],
     ) -> io::Result<Vec<u8>> {
         self.cipher
             .decrypt_block_inplace(block_data, block_num, file_iv, self.layout.block_size())
@@ -171,7 +171,7 @@ impl<'a> BlockCodec<'a> {
 
         let mac_len = self.layout.overhead_bytes() as usize;
         if mac_len == 0 {
-            return Ok(block_data.clone());
+            return Ok(block_data.to_owned());
         }
 
         if block_data.len() < mac_len {
@@ -207,7 +207,7 @@ impl<'a> BlockCodec<'a> {
         &self,
         block_num: u64,
         file_iv: u64,
-        block_data: &mut Vec<u8>,
+        block_data: &mut [u8],
     ) -> io::Result<Vec<u8>> {
         let tag_len = AES_GCM_SIV_BLOCK_TAG_BYTES as usize;
         if block_data.len() < tag_len {

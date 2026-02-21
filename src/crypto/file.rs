@@ -72,6 +72,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_mode(
         cipher: &'a SslCipher,
         file: &'a F,
