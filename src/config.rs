@@ -988,23 +988,23 @@ impl EncfsConfig {
         };
 
         let cipher = match self.block_mode() {
-            crate::crypto::block::BlockMode::Legacy => {
-                Some(crate::config_proto::config::Cipher::Legacy(BasicBlockCipher {
+            crate::crypto::block::BlockMode::Legacy => Some(
+                crate::config_proto::config::Cipher::Legacy(BasicBlockCipher {
                     algorithm,
                     key_size: self.key_size,
                     block_size: self.block_size,
                     block_mac_bytes: self.block_mac_bytes,
                     block_mac_rand_bytes: self.block_mac_rand_bytes,
                     unique_iv: self.unique_iv,
-                }))
-            }
-            crate::crypto::block::BlockMode::AesGcmSiv => {
-                Some(crate::config_proto::config::Cipher::GcmSiv(AesGcmSivBlockCipher {
+                }),
+            ),
+            crate::crypto::block::BlockMode::AesGcmSiv => Some(
+                crate::config_proto::config::Cipher::GcmSiv(AesGcmSivBlockCipher {
                     key_size: self.key_size,
                     block_size: self.block_size,
                     unique_iv: self.unique_iv,
-                }))
-            }
+                }),
+            ),
         };
 
         let mode = if self.name_iface.name == "nameio/block" {

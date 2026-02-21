@@ -192,7 +192,7 @@ impl SslCipher {
         let mut data = encrypted_key[4..].to_vec();
 
         // 2. Decrypt
-        self.stream_decode(&mut data, checksum as u64, user_key, user_iv)?;
+        self.legacy_stream_decode(&mut data, checksum as u64, user_key, user_iv)?;
 
         // 3. Verify Checksum (MAC_32)
         let calculated_mac = Self::mac_32_with_key(&data, 0, user_key)?;
@@ -225,7 +225,7 @@ impl SslCipher {
         let mut data = encrypted_key[4..].to_vec();
 
         // 2. Decrypt using stream_decode (with shuffle/flip)
-        self.stream_decode(&mut data, checksum as u64, user_key, user_iv)?;
+        self.legacy_stream_decode(&mut data, checksum as u64, user_key, user_iv)?;
 
         // 3. Verify Checksum (MAC_32) - legacy uses the user_key for HMAC
         let calculated_mac = Self::mac_32_with_key(&data, 0, user_key)?;
@@ -383,7 +383,13 @@ impl SslCipher {
     /// EncFS uses a unique "shuffle/flip" algorithm on top of the cipher
     /// to diffuse changes. It performs two passes of encryption/decryption
     /// with different IVs (derived from the block IV).
-    pub fn stream_decode(&self, data: &mut [u8], iv64: u64, key: &[u8], iv: &[u8]) -> Result<()> {
+    pub fn legacy_stream_decode(
+        &self,
+        data: &mut [u8],
+        iv64: u64,
+        key: &[u8],
+        iv: &[u8],
+    ) -> Result<()> {
         // EncFS does TWO passes of decryption:
         // Pass 1: setIVec(iv64 + 1), decrypt, unshuffle, flip
         // Pass 2: setIVec(iv64), decrypt, unshuffle
@@ -503,7 +509,7 @@ impl SslCipher {
         // IV for name decryption is checksum ^ directory_iv
         let name_iv = (checksum as u64) ^ iv;
 
-        self.stream_decode(&mut name_data, name_iv, &self.key, &self.iv)?;
+        self.legacy_stream_decode(&mut name_data, name_iv, &self.key, &self.iv)?;
 
         // 4. Verify Checksum
         let (calculated_mac, new_iv) = self.mac_16(&name_data, iv)?;
@@ -540,7 +546,7 @@ impl SslCipher {
 
         // IV for name decryption is checksum ^ directory_iv
         let name_iv = (checksum as u64) ^ iv;
-        self.block_decode(&mut block_data, name_iv, &self.key, &self.iv)?;
+        self.legacy_block_decode(&mut block_data, name_iv, &self.key, &self.iv)?;
 
         // 4. Verify MAC (over decrypted data INCLUDING padding)
         // Fix Padding Oracle: Verify MAC *before* checking padding.
@@ -731,7 +737,7 @@ impl SslCipher {
         // Decrypt header using stream cipher and external IV
         // Header is 8 bytes.
         // We use self.key and self.iv (which is the volume key/iv).
-        self.stream_decode(header, external_iv, &self.key, &self.iv)?;
+        self.legacy_stream_decode(header, external_iv, &self.key, &self.iv)?;
 
         let mut file_iv = 0u64;
         for &b in header.iter() {
@@ -785,18 +791,8 @@ impl SslCipher {
 
     fn aes_gcm_siv_nonce(file_iv: u64, block_num: u64) -> [u8; 12] {
         let mut nonce = [0u8; 12];
-        let file_bytes = file_iv.to_le_bytes();
-        let block_bytes = block_num.to_le_bytes();
-
-        nonce[..8].copy_from_slice(&file_bytes);
-        nonce[8..].copy_from_slice(&block_bytes[..4]);
-
-        // Fold high block bits into the nonce prefix so the full 64-bit block number
-        // contributes to nonce derivation.
-        for i in 0..4 {
-            nonce[i] ^= block_bytes[4 + i];
-        }
-
+        nonce[..8].copy_from_slice(&(file_iv ^ (block_num >> 32)).to_le_bytes());
+        nonce[8..].copy_from_slice(&(block_num as u32).to_le_bytes());
         nonce
     }
 
@@ -847,9 +843,7 @@ impl SslCipher {
             }
         };
 
-        let mut tag_bytes = [0u8; 16];
-        tag_bytes.copy_from_slice(&tag);
-        Ok(tag_bytes)
+        Ok(tag.into())
     }
 
     pub fn decrypt_block_aes_gcm_siv_inplace(
@@ -875,17 +869,14 @@ impl SslCipher {
         let nonce_bytes = Self::aes_gcm_siv_nonce(file_iv, block_num);
         let nonce = Nonce::from(nonce_bytes);
         let aad = Self::aes_gcm_siv_aad(file_iv, block_num);
-        let tag_arr: [u8; 16] = tag
-            .try_into()
-            .map_err(|_| anyhow!("Invalid AES-GCM-SIV tag length {}", tag.len()))?;
-        let tag = Tag::from(tag_arr);
+        let tag = Tag::from_slice(tag);
 
         match self.key.len() {
             16 => {
                 let cipher = Aes128GcmSiv::new_from_slice(&self.key)
                     .map_err(|e| anyhow!("Invalid AES-128-GCM-SIV key: {}", e))?;
                 cipher
-                    .decrypt_in_place_detached(&nonce, &aad, data, &tag)
+                    .decrypt_in_place_detached(&nonce, &aad, data, tag)
                     .map_err(|_| {
                         anyhow!(
                             "AES-GCM-SIV tag verification failed for block {}",
@@ -897,7 +888,7 @@ impl SslCipher {
                 let cipher = Aes256GcmSiv::new_from_slice(&self.key)
                     .map_err(|e| anyhow!("Invalid AES-256-GCM-SIV key: {}", e))?;
                 cipher
-                    .decrypt_in_place_detached(&nonce, &aad, data, &tag)
+                    .decrypt_in_place_detached(&nonce, &aad, data, tag)
                     .map_err(|_| {
                         anyhow!(
                             "AES-GCM-SIV tag verification failed for block {}",
@@ -916,7 +907,7 @@ impl SslCipher {
         Ok(())
     }
 
-    pub fn decrypt_block_inplace(
+    pub fn legacy_decrypt_block_inplace(
         &self,
         data: &mut [u8],
         block_num: u64,
@@ -927,13 +918,19 @@ impl SslCipher {
 
         if data.len() as u64 == block_size {
             // Full block - use block cipher (CBC)
-            self.block_decode(data, iv64, &self.key, &self.iv)
+            self.legacy_block_decode(data, iv64, &self.key, &self.iv)
         } else {
             // Partial block - use stream cipher (CFB)
-            self.stream_decode(data, iv64, &self.key, &self.iv)
+            self.legacy_stream_decode(data, iv64, &self.key, &self.iv)
         }
     }
-    pub fn block_decode(&self, data: &mut [u8], iv64: u64, key: &[u8], iv: &[u8]) -> Result<()> {
+    pub fn legacy_block_decode(
+        &self,
+        data: &mut [u8],
+        iv64: u64,
+        key: &[u8],
+        iv: &[u8],
+    ) -> Result<()> {
         let ivec = self.calculate_iv(iv64, key, iv)?;
 
         let mut crypter = Crypter::new(self.block_cipher, Mode::Decrypt, key, Some(&ivec))?;
@@ -1033,7 +1030,7 @@ impl SslCipher {
         // 2. Decrypt first (MAC-then-Encrypt: decrypt before verifying MAC)
         let mut data = encrypted_data.to_vec();
         let iv_seed = path_iv.wrapping_add(iv_offset);
-        self.block_decode(&mut data, iv_seed, &self.key, &self.iv)?;
+        self.legacy_block_decode(&mut data, iv_seed, &self.key, &self.iv)?;
 
         // 3. Remove padding
         if data.is_empty() {
@@ -1216,7 +1213,7 @@ mod tests {
                         config.name, config.key_size
                     );
 
-                    match cipher.block_decode(&mut single_block, iv64, &key, &iv) {
+                    match cipher.legacy_block_decode(&mut single_block, iv64, &key, &iv) {
                         Ok(_) => {
                             assert_eq!(
                                 single_block, original_single,
@@ -1264,7 +1261,7 @@ mod tests {
             );
 
             cipher
-                .block_decode(&mut multi_block, iv64, &key, &iv)
+                .legacy_block_decode(&mut multi_block, iv64, &key, &iv)
                 .unwrap_or_else(|_| {
                     panic!(
                         "{} {}: Multi-block decryption failed",
@@ -1332,7 +1329,7 @@ mod tests {
                         config.name, config.key_size
                     );
 
-                    match cipher.stream_decode(&mut small_data, iv64, &key, &iv) {
+                    match cipher.legacy_stream_decode(&mut small_data, iv64, &key, &iv) {
                         Ok(_) => {
                             assert_eq!(
                                 small_data, original_small,
@@ -1380,7 +1377,7 @@ mod tests {
             );
 
             cipher
-                .stream_decode(&mut medium_data, iv64, &key, &iv)
+                .legacy_stream_decode(&mut medium_data, iv64, &key, &iv)
                 .unwrap_or_else(|_| {
                     panic!(
                         "{} {}: Medium data stream decryption failed",
@@ -1416,7 +1413,7 @@ mod tests {
             );
 
             cipher
-                .stream_decode(&mut large_data, iv64, &key, &iv)
+                .legacy_stream_decode(&mut large_data, iv64, &key, &iv)
                 .unwrap_or_else(|_| {
                     panic!(
                         "{} {}: Large data stream decryption failed",
@@ -1449,7 +1446,7 @@ mod tests {
             );
 
             cipher
-                .stream_decode(&mut odd_data_enc, iv64, &key, &iv)
+                .legacy_stream_decode(&mut odd_data_enc, iv64, &key, &iv)
                 .unwrap_or_else(|_| {
                     panic!(
                         "{} {}: Odd-sized data stream decryption failed",

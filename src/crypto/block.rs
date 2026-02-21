@@ -166,7 +166,7 @@ impl<'a> BlockCodec<'a> {
         block_data: &mut [u8],
     ) -> io::Result<Vec<u8>> {
         self.cipher
-            .decrypt_block_inplace(block_data, block_num, file_iv, self.layout.block_size())
+            .legacy_decrypt_block_inplace(block_data, block_num, file_iv, self.layout.block_size())
             .map_err(io::Error::other)?;
 
         let mac_len = self.layout.overhead_bytes() as usize;
@@ -260,15 +260,17 @@ impl<'a> BlockCodec<'a> {
         file_iv: u64,
         plaintext: &[u8],
     ) -> io::Result<Vec<u8>> {
-        let mut ciphertext = plaintext.to_vec();
+        // Allocate the output buffer with space for the tag and the ciphertext.
+        let tag_len = AES_GCM_SIV_BLOCK_TAG_BYTES as usize;
+        let mut out = vec![0u8; tag_len + plaintext.len()];
+        out[tag_len..].copy_from_slice(plaintext);
+
         let tag = self
             .cipher
-            .encrypt_block_aes_gcm_siv_inplace(&mut ciphertext, block_num, file_iv)
+            .encrypt_block_aes_gcm_siv_inplace(&mut out[tag_len..], block_num, file_iv)
             .map_err(io::Error::other)?;
 
-        let mut out = Vec::with_capacity(AES_GCM_SIV_BLOCK_TAG_BYTES as usize + ciphertext.len());
-        out.extend_from_slice(&tag);
-        out.extend_from_slice(&ciphertext);
+        out[..tag_len].copy_from_slice(&tag);
         Ok(out)
     }
 }
