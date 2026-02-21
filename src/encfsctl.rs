@@ -1668,30 +1668,33 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
         out.push_str("}\n");
     }
 
-    if let Some(ref c) = proto.cipher {
-        let alg = match BlockCipherAlgorithm::try_from(c.algorithm) {
-            Ok(BlockCipherAlgorithm::Aes) => "AES",
-            Ok(BlockCipherAlgorithm::Blowfish) => "BLOWFISH",
-            _ => "BLOCK_CIPHER_ALGORITHM_UNSPECIFIED",
-        };
-        out.push_str("cipher {\n");
-        out.push_str(&format!("  algorithm: {}\n", alg));
-        out.push_str(&format!("  key_size: {}\n", c.key_size));
-        out.push_str(&format!("  block_size: {}\n", c.block_size));
-        out.push_str(&format!("  block_mac_bytes: {}\n", c.block_mac_bytes));
-        out.push_str(&format!(
-            "  block_mac_rand_bytes: {}\n",
-            c.block_mac_rand_bytes
-        ));
-        out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
-        out.push_str("}\n");
-    }
-    if let Some(ref c) = proto.aes_gcm_siv_cipher {
-        out.push_str("aes_gcm_siv_cipher {\n");
-        out.push_str(&format!("  key_size: {}\n", c.key_size));
-        out.push_str(&format!("  block_size: {}\n", c.block_size));
-        out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
-        out.push_str("}\n");
+    match proto.cipher {
+        Some(encfs::config_proto::config::Cipher::Legacy(ref c)) => {
+            let alg = match BlockCipherAlgorithm::try_from(c.algorithm) {
+                Ok(BlockCipherAlgorithm::Aes) => "AES",
+                Ok(BlockCipherAlgorithm::Blowfish) => "BLOWFISH",
+                _ => "BLOCK_CIPHER_ALGORITHM_UNSPECIFIED",
+            };
+            out.push_str("cipher {\n");
+            out.push_str(&format!("  algorithm: {}\n", alg));
+            out.push_str(&format!("  key_size: {}\n", c.key_size));
+            out.push_str(&format!("  block_size: {}\n", c.block_size));
+            out.push_str(&format!("  block_mac_bytes: {}\n", c.block_mac_bytes));
+            out.push_str(&format!(
+                "  block_mac_rand_bytes: {}\n",
+                c.block_mac_rand_bytes
+            ));
+            out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
+            out.push_str("}\n");
+        }
+        Some(encfs::config_proto::config::Cipher::GcmSiv(ref c)) => {
+            out.push_str("aes_gcm_siv_cipher {\n");
+            out.push_str(&format!("  key_size: {}\n", c.key_size));
+            out.push_str(&format!("  block_size: {}\n", c.block_size));
+            out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
+            out.push_str("}\n");
+        }
+        None => {}
     }
 
     if let Some(ref n) = proto.name_encoding {

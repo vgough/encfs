@@ -603,16 +603,11 @@ impl EncfsConfig {
 
         let key_data = proto.encrypted_key;
         let (cipher_iface, key_size, block_size, block_mac_bytes, block_mac_rand_bytes, unique_iv) =
-            match (proto.cipher.as_ref(), proto.aes_gcm_siv_cipher.as_ref()) {
-                (Some(_), Some(_)) => {
-                    anyhow::bail!(
-                        "V7 config must set either cipher or aes_gcm_siv_cipher, not both"
-                    );
+            match proto.cipher {
+                None => {
+                    anyhow::bail!("V7 config requires a cipher");
                 }
-                (None, None) => {
-                    anyhow::bail!("V7 config requires cipher or aes_gcm_siv_cipher");
-                }
-                (Some(cipher), None) => {
+                Some(crate::config_proto::config::Cipher::Legacy(ref cipher)) => {
                     // BlockCipherAlgorithm::Aes = 1, Blowfish = 2.
                     let cipher_iface = match cipher.algorithm {
                         1 => Interface {
@@ -649,7 +644,7 @@ impl EncfsConfig {
                         cipher.unique_iv,
                     )
                 }
-                (None, Some(cipher)) => (
+                Some(crate::config_proto::config::Cipher::GcmSiv(ref cipher)) => (
                     Interface {
                         name: "ssl/aes".to_string(),
                         major: 3,
@@ -992,26 +987,24 @@ impl EncfsConfig {
             _ => BlockCipherAlgorithm::Aes as i32,
         };
 
-        let (cipher, aes_gcm_siv_cipher) = match self.block_mode() {
-            crate::crypto::block::BlockMode::Legacy => (
-                Some(BasicBlockCipher {
+        let cipher = match self.block_mode() {
+            crate::crypto::block::BlockMode::Legacy => {
+                Some(crate::config_proto::config::Cipher::Legacy(BasicBlockCipher {
                     algorithm,
                     key_size: self.key_size,
                     block_size: self.block_size,
                     block_mac_bytes: self.block_mac_bytes,
                     block_mac_rand_bytes: self.block_mac_rand_bytes,
                     unique_iv: self.unique_iv,
-                }),
-                None,
-            ),
-            crate::crypto::block::BlockMode::AesGcmSiv => (
-                None,
-                Some(AesGcmSivBlockCipher {
+                }))
+            }
+            crate::crypto::block::BlockMode::AesGcmSiv => {
+                Some(crate::config_proto::config::Cipher::GcmSiv(AesGcmSivBlockCipher {
                     key_size: self.key_size,
                     block_size: self.block_size,
                     unique_iv: self.unique_iv,
-                }),
-            ),
+                }))
+            }
         };
 
         let mode = if self.name_iface.name == "nameio/block" {
@@ -1044,7 +1037,6 @@ impl EncfsConfig {
             encrypted_key: self.key_data.clone(),
             argon2,
             cipher,
-            aes_gcm_siv_cipher,
             name_encoding,
             feature_flags,
             config_hash: self.config_hash.clone().unwrap_or_default(),
@@ -1592,13 +1584,14 @@ mod tests {
         let cfg = EncfsConfig::standard_v7();
         let proto = cfg.encfs_config_to_proto_v7();
 
-        assert!(proto.cipher.is_none());
-        let aes_gcm_siv = proto
-            .aes_gcm_siv_cipher
-            .expect("expected aes_gcm_siv_cipher for V7 default");
-        assert_eq!(aes_gcm_siv.key_size, cfg.key_size);
-        assert_eq!(aes_gcm_siv.block_size, cfg.block_size);
-        assert_eq!(aes_gcm_siv.unique_iv, cfg.unique_iv);
+        match proto.cipher {
+            Some(crate::config_proto::config::Cipher::GcmSiv(ref c)) => {
+                assert_eq!(c.key_size, cfg.key_size);
+                assert_eq!(c.block_size, cfg.block_size);
+                assert_eq!(c.unique_iv, cfg.unique_iv);
+            }
+            other => panic!("expected GcmSiv cipher variant, got {:?}", other),
+        }
     }
 
     #[test]
@@ -1608,14 +1601,17 @@ mod tests {
         cfg.block_mac_rand_bytes = 0;
 
         let proto = cfg.encfs_config_to_proto_v7();
-        assert!(proto.aes_gcm_siv_cipher.is_none());
 
-        let cipher = proto.cipher.expect("expected legacy cipher message");
-        assert_eq!(cipher.key_size, cfg.key_size);
-        assert_eq!(cipher.block_size, cfg.block_size);
-        assert_eq!(cipher.block_mac_bytes, cfg.block_mac_bytes);
-        assert_eq!(cipher.block_mac_rand_bytes, cfg.block_mac_rand_bytes);
-        assert_eq!(cipher.unique_iv, cfg.unique_iv);
+        match proto.cipher {
+            Some(crate::config_proto::config::Cipher::Legacy(ref c)) => {
+                assert_eq!(c.key_size, cfg.key_size);
+                assert_eq!(c.block_size, cfg.block_size);
+                assert_eq!(c.block_mac_bytes, cfg.block_mac_bytes);
+                assert_eq!(c.block_mac_rand_bytes, cfg.block_mac_rand_bytes);
+                assert_eq!(c.unique_iv, cfg.unique_iv);
+            }
+            other => panic!("expected Legacy cipher variant, got {:?}", other),
+        }
     }
 
     #[test]

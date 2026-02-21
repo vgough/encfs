@@ -12,8 +12,13 @@ message Config {
   // Argon2 KDF parameters and salt (required for V7).
   Argon2Kdf argon2 = 2;
 
-  // Legacy block cipher and block-level options (V4-V6 compatible behavior).
-  BasicBlockCipher cipher = 3;
+  oneof cipher {
+    // Legacy block cipher and block-level options (V4-V6 compatible behavior).
+    BasicBlockCipher legacy = 3;
+
+    // AES-GCM-SIV block configuration (V7 authenticated block mode).
+    AesGcmSivBlockCipher gcm_siv = 7;
+  }
 
   // Filename encoding and name IV options.
   NameEncoding name_encoding = 4;
@@ -23,9 +28,6 @@ message Config {
 
   // Hash of the config (with encrypted_key and config_hash cleared), used as AEAD AAD.
   bytes config_hash = 6;
-
-  // AES-GCM-SIV block configuration (V7 authenticated block mode).
-  AesGcmSivBlockCipher aes_gcm_siv_cipher = 7;
 }
 
 message Argon2Kdf {
