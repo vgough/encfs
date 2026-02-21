@@ -103,6 +103,7 @@ fn test_legacy_v5_decode() -> anyhow::Result<()> {
         config.block_size as u64,
         config.block_mac_bytes as u64,
         false,
+        config.allow_holes,
     );
 
     let mut plaintext = vec![0u8; content_len as usize];

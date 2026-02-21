@@ -109,6 +109,7 @@ fn test_write_legacy_v2() {
         1024,
         block_mac_bytes,
         false,
+        false,
     );
     let mut read_data = vec![0u8; data.len()];
     decoder.read_at(&mut read_data, 0).unwrap();
@@ -167,6 +168,7 @@ fn test_write_paranoia() {
         8,
         1024,
         block_mac_bytes,
+        false,
         false,
     );
     let mut read_data = vec![0u8; data.len()];

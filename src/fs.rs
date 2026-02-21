@@ -48,6 +48,7 @@ pub struct EncFs {
     block_mode: BlockMode,
     chained_name_iv: bool,
     external_iv_chaining: bool,
+    allow_holes: bool,
     pub config: crate::config::EncfsConfig,
 }
 
@@ -63,6 +64,7 @@ impl EncFs {
             block_mode: config.block_mode(),
             chained_name_iv: config.chained_name_iv,
             external_iv_chaining: config.external_iv_chaining,
+            allow_holes: config.allow_holes,
             config,
         }
     }
@@ -785,28 +787,40 @@ impl FilesystemMT for EncFs {
             self.block_size,
             self.block_mac_bytes,
             self.block_mode,
+            self.allow_holes,
         );
 
         if size > current_logical_size {
-            // Extension: Write zeros
-            // We can do this in chunks
-            const CHUNK_SIZE: usize = 128 * 1024;
-            let mut remaining = size - current_logical_size;
-            let mut offset = current_logical_size;
-            let zeros = vec![0u8; CHUNK_SIZE];
-
-            while remaining > 0 {
-                let write_len = std::cmp::min(remaining, CHUNK_SIZE as u64);
-                // encoder.write_at handles RMW of partial blocks and creation of new blocks
-                encoder
-                    .write_at(&zeros[..write_len as usize], offset)
+            // Extension: When allow_holes is enabled, we can just extend the file
+            // and let sparse holes be created. Otherwise, write encrypted zeros.
+            if self.allow_holes {
+                let physical_size = FileEncoder::<File>::calculate_physical_size_with_mode(
+                    size,
+                    header_size,
+                    self.block_size,
+                    self.block_mac_bytes,
+                    self.block_mode,
+                );
+                file_ref
+                    .set_len(physical_size)
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                remaining -= write_len;
-                offset += write_len;
+            } else {
+                // Write zeros in chunks
+                const CHUNK_SIZE: usize = 128 * 1024;
+                let mut remaining = size - current_logical_size;
+                let mut offset = current_logical_size;
+                let zeros = vec![0u8; CHUNK_SIZE];
+
+                while remaining > 0 {
+                    let write_len = std::cmp::min(remaining, CHUNK_SIZE as u64);
+                    // encoder.write_at handles RMW of partial blocks and creation of new blocks
+                    encoder
+                        .write_at(&zeros[..write_len as usize], offset)
+                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                    remaining -= write_len;
+                    offset += write_len;
+                }
             }
-            // encoder writes ensure data is on disk.
-            // We don't strictly need set_len unless calculate_physical_size differs?
-            // But write_at will extend the file.
         } else {
             // Shrinking
             // We need to fix the last block.
@@ -827,6 +841,7 @@ impl FilesystemMT for EncFs {
                     self.block_mac_bytes,
                     self.block_mode,
                     false,
+                    self.allow_holes,
                 );
 
                 let mut buf = vec![0u8; data_block_size as usize];
@@ -1328,6 +1343,7 @@ impl FilesystemMT for EncFs {
             self.block_mac_bytes,
             self.block_mode,
             false,
+            self.allow_holes,
         );
 
         const MAX_READ_SIZE: u32 = 1024 * 1024;
@@ -1340,7 +1356,7 @@ impl FilesystemMT for EncFs {
                 callback(Ok(&result_data))
             }
             Err(e) => {
-                error!("Read failed: {}", e);
+                error!("Read failed on {:?}: {}", path, e);
                 let err = e.raw_os_error().unwrap_or(libc::EIO);
                 callback(Err(err))
             }
@@ -1388,6 +1404,7 @@ impl FilesystemMT for EncFs {
             self.block_size,
             self.block_mac_bytes,
             self.block_mode,
+            self.allow_holes,
         );
 
         match encoder.write_at(&data, offset) {

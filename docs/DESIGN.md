@@ -47,6 +47,11 @@ Technology
    is used for encrypting all file names and contents.  This makes it possible
    to change the password without needing to re-encrypt all files.
 
+ - Key derivation: New V7 filesystems use Argon2id as the key derivation function
+   (KDF), which is memory-hard and resistant to GPU/ASIC attacks. Default
+   parameters are 64 MiB memory cost, 3 iterations, and 4 parallel threads.
+   Legacy filesystems use PBKDF2-HMAC-SHA1 with a configurable iteration count.
+
  - EncFS has two encryption modes, which are used in different places:
     - Stream encryption:
 	Used for filenames and partial blocks at the end of files.
@@ -54,11 +59,19 @@ Technology
 	with data order reversal between passes to make data more
 	interdependent.
     - Block encryption:
-	Fixed size filesystem blocks are encrypted using the cipher in CBC
-	mode.  The filesystem block size is a multiple of the cipher block
-	size, and is configurable on filesystem creation and can be up to 4096
-	bytes in size.  Each block has a deterministic initialization vector
-	which allows for simple random access to blocks within a file.
+	Fixed size filesystem blocks are encrypted. Two block modes exist:
+
+	Legacy mode (V4-V6): CBC mode with an optional per-block MAC (up to
+	8 bytes). The block size is configurable and can be up to 4096 bytes.
+
+	V7 default: AES-GCM-SIV (authenticated encryption). Each block has a
+	16-byte authentication tag, providing both confidentiality and integrity.
+	The SIV construction is misuse-resistant and prevents nonce-reuse issues.
+	Block size defaults to 4080 bytes (4096 minus tag). This mode is the
+	default for newly created V7 filesystems.
+
+	Each block has a deterministic initialization vector derived from the
+	file IV and block number, allowing simple random access within a file.
 
  - Filename encryption:
 
@@ -73,9 +86,10 @@ Technology
    see how closely related two files are based on their encrypted names.
 
  - Data blocks are handled in fixed size blocks (64 byte blocks for Encfs
-   versions 0.2 - 0.6, and user specified sizes in newer versions of Encfs,
-   defaulting to 512 byte block).  The block size is set during creation of the
-   filesystem and is constant thereafter.
+   versions 0.2 - 0.6, and user specified sizes in newer versions of Encfs).
+   Legacy configs default to 512 bytes; V7 configs default to 4080 bytes
+   (4096 minus the 16-byte AES-GCM-SIV tag).  The block size is set during
+   creation of the filesystem and is constant thereafter.
    Full filesystem blocks are encrypted in the cipher's block mode as described
    above.  Partial filesystem blocks are encrypted using the cipher's stream
    mode, which involves multiple passes over the data along with data
@@ -85,10 +99,9 @@ Technology
    may affecting several bytes in the deciphered stream.  This makes it hard
    for any change at all to go unnoticed. 
 
-   An additional option is to store Message Authentication Codes with each
-   filesystem block.  This adds about 8 bytes of overhead per block and a
-   large performance penalty, but makes it possible detect any modification
-   within a block.
+   In legacy mode, an additional option is to store Message Authentication
+   Codes with each filesystem block (up to 8 bytes overhead). In V7 AES-GCM-SIV
+   mode, per-block authentication (16-byte tag) is always enabled.
 
    Also during filesystem creation, one can enable per-file initialization
    vectors.  This causes a header with a random initialization vector to be
@@ -107,13 +120,24 @@ Backward Compatibility
    In Encfs versions 0.2 to 0.6, the file was called ".encfs3" - meaning
    version 3 of the Encfs configuration file format (earlier versions 1 and 2
    were prior to the encfs public release).  EncFS 1.0.x used ".encfs4", and
-   the Encfs 1.1.x uses yet another format (".encfs5").  The encfsctl program
-   can be used to show information about a filesystem.
+   Encfs 1.1.x uses ".encfs5".  EncFS 1.9.x adds ".encfs6.xml" (XML)
+   and v2.x adds ".encfs7" / ".encfs7.pb" (protobuf).  The encfsctl program can
+   be used to show information about a filesystem.
   
    Encfs 1.1 can read and write to existing filesystems, but older versions
    will not be able to mount a filesystem created by a newer version, as the
    newer versions use algorithms and/or new options which were not previously
    available.
+
+   V7 configuration format (new default for created filesystems):
+   ---------------------------------------------------------------
+   The V7 format (.encfs7) is protobuf-based and tamper-resistant. The volume
+   key is encrypted with AES-256-GCM (AEAD), using the SHA-256 hash of the rest
+   of the config as additional authenticated data (AAD). Any modification to
+   the config (cipher params, KDF params, feature flags, etc.) invalidates the
+   AAD, causing decryption to fail. The config hash is also stored and checked
+   on load; a hash mismatch indicates tampering or corruption. New V7 filesystems
+   default to Argon2id KDF, AES-GCM-SIV block mode, and AES-256.
 
 Utility
 -------
@@ -127,7 +151,11 @@ Utility
 Dependencies
 ------------
 
-   Encfs uses the OpenSSL toolkit (http://www.openssl.org) by default.
+   Encfs uses the OpenSSL toolkit (http://www.openssl.org) for legacy
+   cryptographic operations and for AEAD key wrapping in V7. The Rust port
+   additionally uses AES-GCM-SIV (aes-gcm-siv crate) for V7 block encryption
+   and Argon2 (argon2 crate) for key derivation in V7 configs.
+
    OpenSSL is not covered by the GPL, and some people are concerned about the
    licenses being incompatible.  Although I believe it should be clear that I
    intended to allow linking encfs with OpenSSL, I will make it more explicit:

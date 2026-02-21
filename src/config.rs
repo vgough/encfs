@@ -204,7 +204,7 @@ impl EncfsConfig {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
-            allow_holes: false,
+            allow_holes: true,
             config_hash: None,
         }
     }

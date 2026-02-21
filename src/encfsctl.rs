@@ -394,6 +394,8 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
             minor = config.cipher_iface.minor
         )
     );
+    println!("  {}", t!("ctl.key_size", size = config.key_size));
+
     println!(
         "{}",
         t!(
@@ -403,9 +405,6 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
             minor = config.name_iface.minor
         )
     );
-    println!("{}", t!("ctl.key_size", size = config.key_size));
-    println!("{}", t!("ctl.block_size", size = config.block_size));
-
     if config.unique_iv {
         println!("{}", t!("ctl.unique_iv_header"));
     }
@@ -418,11 +417,15 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         println!("{}", t!("ctl.external_iv_chaining"));
     }
 
+    if config.block_mode() == encfs::crypto::block::BlockMode::AesGcmSiv {
+        println!("{}", t!("ctl.aes_gcm_siv_mode"));
+    }
+    println!("{}", t!("ctl.block_size", size = config.block_size));
     if config.block_mac_bytes > 0 {
         println!("{}", t!("ctl.block_mac", bytes = config.block_mac_bytes));
     }
-    if config.block_mode() == encfs::crypto::block::BlockMode::AesGcmSiv {
-        println!("{}", t!("ctl.aes_gcm_siv_mode"));
+    if config.allow_holes {
+        println!("{}", t!("ctl.allow_holes"));
     }
 
     // Show KDF information
@@ -906,6 +909,7 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
         config.block_mac_bytes as u64,
         config.block_mode(),
         ignore_mac,
+        config.allow_holes,
     );
 
     // Stream to stdout to avoid allocating the full file in memory.
@@ -1416,6 +1420,7 @@ fn export_directory(
                     config.block_mac_bytes as u64,
                     config.block_mode(),
                     false,
+                    config.allow_holes,
                 );
 
                 let file_size = metadata.len();

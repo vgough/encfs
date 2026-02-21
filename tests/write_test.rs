@@ -115,6 +115,7 @@ fn test_virtual_driver_write() {
         1024, // block_size
         8,    // block_mac_bytes
         false,
+        false,
     );
 
     let mut read_data = vec![0u8; data.len()];
@@ -140,7 +141,7 @@ fn test_virtual_driver_write() {
     // We already verified on-disk content with FileDecoder.
     // We can just skip the second read or use FileDecoder again.
     let file2 = std::fs::File::open(&real_path).unwrap();
-    let decoder2 = FileDecoder::new(&verify_cipher, &file2, file_iv, 8, 1024, 8, false);
+    let decoder2 = FileDecoder::new(&verify_cipher, &file2, file_iv, 8, 1024, 8, false, false);
     let mut read_data2 = vec![0u8; data.len()];
     decoder2.read_at(&mut read_data2, 0).unwrap();
     assert_eq!(read_data2, data);

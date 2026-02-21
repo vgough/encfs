@@ -16,13 +16,13 @@ ctl.version7_config:
   fr: "Configuration version 7 ; créée par %{creator} (révision %{version})"
   de: "Version-7-Konfiguration; erstellt von %{creator} (Revision %{version})"
 ctl.v7_format_info:
-  en: "  (V7 protobuf format, tamper resistant)"
-  fr: "  (Format protobuf V7, résistant aux altérations)"
-  de: "  (V7-Protobuf-Format, manipulationssicher)"
+  en: "(V7 protobuf format, tamper resistant)"
+  fr: "(Format protobuf V7, résistant aux altérations)"
+  de: "(V7-Protobuf-Format, manipulationssicher)"
 ctl.aes_gcm_siv_mode:
-  en: "  AES-GCM-SIV block mode (per-block authenticated encryption)"
-  fr: "  Mode de bloc AES-GCM-SIV (chiffrement authentifié par bloc)"
-  de: "  AES-GCM-SIV Blockmodus (pro Block authentifizierte Verschlüsselung)"
+  en: "AES-GCM-SIV block mode (per-block authenticated encryption)"
+  fr: "Mode de bloc AES-GCM-SIV (chiffrement authentifié par bloc)"
+  de: "AES-GCM-SIV Blockmodus (pro Block authentifizierte Verschlüsselung)"
 ctl.version5_config:
   en: "Version 5 configuration; created by %{creator} (revision %{version})"
   fr: "Configuration version 5 ; créée par %{creator} (révision %{version})"
@@ -71,6 +71,10 @@ ctl.block_mac:
   en: " Block MAC: %{bytes} bytes"
   fr: " MAC de bloc : %{bytes} octets"
   de: " Block-MAC: %{bytes} Bytes"
+ctl.allow_holes:
+  en: " File holes are allowed (sparse file support enabled)."
+  fr: " Les trous dans les fichiers sont autorisés (prise en charge des fichiers épars activée)."
+  de: " Dateilöcher sind erlaubt (Unterstützung für Sparse-Dateien aktiviert)."
 ctl.pbkdf2_iterations:
   en: " Using PBKDF2, with %{iterations} iterations"
   fr: " Utilisation de PBKDF2, avec %{iterations} itérations"

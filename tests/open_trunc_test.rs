@@ -104,7 +104,7 @@ fn test_open_trunc_header_regeneration() {
     // If header was missing/zero, decrypt_header might fail or produce garbage IV.
     // If it produces garbage IV, read will produce garbage.
 
-    let decoder = FileDecoder::new(&verify_cipher, &file, file_iv, 8, 1024, 8, false);
+    let decoder = FileDecoder::new(&verify_cipher, &file, file_iv, 8, 1024, 8, false, false);
 
     let mut read_buf = vec![0u8; new_data.len()];
     decoder.read_at(&mut read_buf, 0).expect("read failed");

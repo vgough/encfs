@@ -120,6 +120,7 @@ pub struct BlockCodec<'a> {
     cipher: &'a SslCipher,
     layout: BlockLayout,
     ignore_legacy_mac_mismatch: bool,
+    allow_holes: bool,
 }
 
 impl<'a> BlockCodec<'a> {
@@ -127,11 +128,13 @@ impl<'a> BlockCodec<'a> {
         cipher: &'a SslCipher,
         layout: BlockLayout,
         ignore_legacy_mac_mismatch: bool,
+        allow_holes: bool,
     ) -> Self {
         Self {
             cipher,
             layout,
             ignore_legacy_mac_mismatch,
+            allow_holes,
         }
     }
 
@@ -141,6 +144,14 @@ impl<'a> BlockCodec<'a> {
         file_iv: u64,
         block_data: &mut [u8],
     ) -> io::Result<Vec<u8>> {
+        if self.allow_holes {
+            // Sparse file hole: an all-zero on-disk block is not valid ciphertext.
+            // Return zeros as plaintext so reads through holes succeed.
+            if block_data.iter().all(|&b| b == 0) {
+                return Ok(vec![0u8; block_data.len()]);
+            }
+        }
+
         match self.layout.mode() {
             BlockMode::Legacy => self.decrypt_legacy_block(block_num, file_iv, block_data),
             BlockMode::AesGcmSiv => self.decrypt_aes_gcm_siv_block(block_num, file_iv, block_data),
