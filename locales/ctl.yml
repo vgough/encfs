@@ -11,6 +11,18 @@ ctl.version6_config:
   en: "Version 6 configuration; created by %{creator} (revision %{version})"
   fr: "Configuration version 6 ; créée par %{creator} (révision %{version})"
   de: "Version-6-Konfiguration; erstellt von %{creator} (Revision %{version})"
+ctl.version7_config:
+  en: "Version 7 configuration; created by %{creator} (revision %{version})"
+  fr: "Configuration version 7 ; créée par %{creator} (révision %{version})"
+  de: "Version-7-Konfiguration; erstellt von %{creator} (Revision %{version})"
+ctl.v7_format_info:
+  en: "  (V7 protobuf format, tamper resistant)"
+  fr: "  (Format protobuf V7, résistant aux altérations)"
+  de: "  (V7-Protobuf-Format, manipulationssicher)"
+ctl.aes_gcm_siv_mode:
+  en: "  AES-GCM-SIV block mode (per-block authenticated encryption)"
+  fr: "  Mode de bloc AES-GCM-SIV (chiffrement authentifié par bloc)"
+  de: "  AES-GCM-SIV Blockmodus (pro Block authentifizierte Verschlüsselung)"
 ctl.version5_config:
   en: "Version 5 configuration; created by %{creator} (revision %{version})"
   fr: "Configuration version 5 ; créée par %{creator} (révision %{version})"

@@ -357,12 +357,12 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
             println!(
                 "{}",
                 t!(
-                    "ctl.version6_config",
+                    "ctl.version7_config",
                     creator = config.creator,
                     version = config.version
                 )
             );
-            println!("  (V7 protobuf format with AEAD key wrap)");
+            println!("{}", t!("ctl.v7_format_info"));
         }
         ConfigType::V3 => {
             // V3 configs are detected but not supported
@@ -422,7 +422,7 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         println!("{}", t!("ctl.block_mac", bytes = config.block_mac_bytes));
     }
     if config.block_mode() == encfs::crypto::block::BlockMode::AesGcmSiv {
-        println!("  AES-GCM-SIV block mode (per-block authenticated encryption)");
+        println!("{}", t!("ctl.aes_gcm_siv_mode"));
     }
 
     // Show KDF information
