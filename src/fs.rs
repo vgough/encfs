@@ -998,6 +998,30 @@ impl FilesystemMT for EncFs {
         Ok(plain_target_bytes)
     }
 
+    fn link(
+        &self,
+        req: RequestInfo,
+        path: &Path,
+        newparent: &Path,
+        newname: &OsStr,
+    ) -> ResultEntry {
+        debug!("link: {:?} -> {:?}/{:?}", path, newparent, newname);
+
+        if self.external_iv_chaining {
+            return Err(libc::EPERM);
+        }
+
+        let new_path = newparent.join(newname);
+        let (real_path, _) = self.encrypt_path(path)?;
+        let (real_new_path, _) = self.encrypt_path(&new_path)?;
+
+        if let Err(e) = std::fs::hard_link(&real_path, &real_new_path) {
+            return Err(e.raw_os_error().unwrap_or(libc::EIO));
+        }
+
+        self.getattr(req, &new_path, None)
+    }
+
     fn symlink(
         &self,
         req: RequestInfo,
@@ -1085,9 +1109,12 @@ impl FilesystemMT for EncFs {
         let attr = FileAttr {
             size,
             blocks: metadata.blocks(),
-            atime: SystemTime::UNIX_EPOCH + Duration::from_secs(metadata.atime() as u64),
-            mtime: SystemTime::UNIX_EPOCH + Duration::from_secs(metadata.mtime() as u64),
-            ctime: SystemTime::UNIX_EPOCH + Duration::from_secs(metadata.ctime() as u64),
+            atime: SystemTime::UNIX_EPOCH
+                + Duration::new(metadata.atime() as u64, metadata.atime_nsec() as u32),
+            mtime: SystemTime::UNIX_EPOCH
+                + Duration::new(metadata.mtime() as u64, metadata.mtime_nsec() as u32),
+            ctime: SystemTime::UNIX_EPOCH
+                + Duration::new(metadata.ctime() as u64, metadata.ctime_nsec() as u32),
             crtime: SystemTime::UNIX_EPOCH,
             kind: metadata_to_file_type(&metadata),
             perm: metadata.mode() as u16,
@@ -1501,7 +1528,10 @@ impl FilesystemMT for EncFs {
         let mode_bits = mode & libc::S_IFMT;
         let res = if mode_bits == libc::S_IFIFO {
             unsafe { libc::mkfifo(c_path.as_ptr(), mode) }
-        } else if mode_bits == libc::S_IFCHR || mode_bits == libc::S_IFBLK {
+        } else if mode_bits == libc::S_IFCHR
+            || mode_bits == libc::S_IFBLK
+            || mode_bits == libc::S_IFSOCK
+        {
             unsafe { libc::mknod(c_path.as_ptr(), mode, rdev as libc::dev_t) }
         } else if mode_bits == libc::S_IFREG {
             use std::io::Write;
