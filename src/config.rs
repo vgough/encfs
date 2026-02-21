@@ -189,7 +189,7 @@ impl EncfsConfig {
                 age: 0,
             },
             key_size: 256,
-            block_size: 1024,
+            block_size: crate::constants::DEFAULT_BLOCK_SIZE,
             key_data: vec![],
             salt: vec![0u8; crate::constants::DEFAULT_SALT_SIZE],
             kdf_iterations: 0,
