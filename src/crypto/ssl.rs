@@ -580,6 +580,22 @@ impl SslCipher {
         }
     }
 
+    pub fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32 {
+        let max_bytes = (max_encoded_len * 6) / 8;
+        if max_bytes <= 2 {
+            return 0; // Too small to hold checksum
+        }
+        match self.name_encoding {
+            NameEncoding::Stream => max_bytes - 2,
+            NameEncoding::Block => {
+                let bs = self.block_cipher.block_size() as u32;
+                let max_bs_multiple = max_bytes - 2;
+                let max_blocks = (max_bs_multiple / bs) * bs;
+                if max_blocks == 0 { 0 } else { max_blocks - 1 }
+            }
+        }
+    }
+
     fn encrypt_filename_stream(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
         // 1. Calculate Checksum
         let (checksum, new_iv) = self.mac_16(plaintext_name, iv)?;

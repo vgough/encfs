@@ -606,7 +606,7 @@ impl FilesystemMT for EncFs {
             files: stat.f_files,
             ffree: stat.f_ffree,
             bsize: stat.f_bsize as u32,
-            namelen: stat.f_namemax as u32,
+            namelen: self.cipher.max_plaintext_name_len(stat.f_namemax as u32),
             frsize: stat.f_frsize as u32,
         })
     }
