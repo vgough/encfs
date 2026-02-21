@@ -534,6 +534,39 @@ mod tests {
             ),
             0
         );
+
+        // --- AES-GCM-SIV Mode ---
+        let siv_mac_bytes = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES; // 16 bytes
+        let siv_mode = BlockMode::AesGcmSiv;
+        // Plaintext per full block = 64 - 16 = 48
+
+        // 1 full block
+        // Physical: 8 (header) + 64 (block) = 72
+        // Logical: 48
+        assert_eq!(
+            FileDecoder::<MockFile>::calculate_logical_size_with_mode(
+                72,
+                header_size,
+                block_size,
+                siv_mac_bytes,
+                siv_mode
+            ),
+            48
+        );
+
+        // 1.5 blocks
+        // Physical: 8 + 64 + (16 MAC + 24 data) = 8 + 64 + 40 = 112
+        // Logical: 48 + 24 = 72
+        assert_eq!(
+            FileDecoder::<MockFile>::calculate_logical_size_with_mode(
+                112,
+                header_size,
+                block_size,
+                siv_mac_bytes,
+                siv_mode
+            ),
+            72
+        );
     }
 
     #[test]
@@ -586,6 +619,35 @@ mod tests {
                 block_mac_bytes
             ),
             81
+        );
+
+        // --- AES-GCM-SIV Mode ---
+        let siv_mac_bytes = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES; // 16 bytes
+        let siv_mode = BlockMode::AesGcmSiv;
+        // data_block_size = 48
+
+        // 48 bytes (1 full block) -> header + 64
+        assert_eq!(
+            FileEncoder::<MockFile>::calculate_physical_size_with_mode(
+                48,
+                header_size,
+                block_size,
+                siv_mac_bytes,
+                siv_mode
+            ),
+            72
+        );
+
+        // 49 bytes (1 full + 1 partial) -> header + 64 + (16 MAC + 1 byte) = 72 + 17 = 89
+        assert_eq!(
+            FileEncoder::<MockFile>::calculate_physical_size_with_mode(
+                49,
+                header_size,
+                block_size,
+                siv_mac_bytes,
+                siv_mode
+            ),
+            89
         );
     }
 
@@ -899,6 +961,57 @@ mod tests {
 
         let mut expected = initial_data.clone();
         expected[10..13].copy_from_slice(overwrite);
+
+        assert_eq!(buf, expected);
+    }
+
+    #[test]
+    fn test_read_modify_write_with_aes_gcm_siv_mode() {
+        let mut cipher = create_cipher();
+        let key = vec![0u8; 16];
+        let iv = vec![0u8; 16];
+        cipher.set_key(&key, &iv);
+
+        let file_iv = 55555;
+        let header_size = 8;
+        let block_size = 64;
+        let block_mac_bytes = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES; // 16
+
+        let mock_file = MockFile::new(vec![0u8; header_size as usize]);
+        let encoder = FileEncoder::new_with_mode(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::AesGcmSiv,
+        );
+
+        // Write initial data: "ABCD..." (48 bytes - exactly one full AES-GCM-SIV plaintext block, 64 - 16)
+        let initial_data = vec![b'A'; 48];
+        encoder.write_at(&initial_data, 0).expect("Write init");
+
+        // Modify middle: write "XYZ" at offset 15, which forces a RMW of the first AES-GCM-SIV block
+        let overwrite = b"XYZ";
+        encoder.write_at(overwrite, 15).expect("Write overwrite");
+
+        // Read back
+        let decoder = FileDecoder::new_with_mode(
+            &cipher,
+            &mock_file,
+            file_iv,
+            header_size,
+            block_size,
+            block_mac_bytes,
+            BlockMode::AesGcmSiv,
+            false,
+        );
+        let mut buf = vec![0u8; 48];
+        decoder.read_at(&mut buf, 0).expect("Read back");
+
+        let mut expected = initial_data.clone();
+        expected[15..18].copy_from_slice(overwrite);
 
         assert_eq!(buf, expected);
     }
