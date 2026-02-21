@@ -43,6 +43,11 @@ tasks:
     cmds:
       - "{{.CARGO}} clippy --all-targets --all-features -- -D warnings"
 
+  coverage:
+    desc: Run coverage tests
+    cmds:
+      - "{{.CARGO}} tarpaulin --out lcov --output-dir coverage"
+
   clean:
     desc: Clean build artifacts
     cmds:
