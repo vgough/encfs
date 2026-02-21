@@ -513,7 +513,6 @@ fn some_fuse_op(&self, path: &Path) -> ResultEntry {
 
 - **README.md**: Project overview and status
 - **DESIGN.md**: Technical overview of EncFS encryption
-- **ISSUES.md**: Analysis of GitHub issues and their relevance to Rust port
 - **INSTALL.md**: Build and installation instructions
 - **Cargo.toml**: Dependencies and metadata
 - **Taskfile.yml**: Available task commands
@@ -539,8 +538,6 @@ task test-live           # Live mount tests
 1. **Live tests fail**: Check `ENCFS_LIVE_TESTS=1` and FUSE module loaded
 2. **Build fails on OpenSSL**: Install libssl-dev
 3. **Build fails on FUSE**: Install libfuse-dev
-4. **Config validation error**: Check config file format and values
-5. **Paranoia mode file decrypt fails**: Use path IV, not 0
 
 ---
 
