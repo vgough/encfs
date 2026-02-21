@@ -8,14 +8,14 @@ This document provides comprehensive information for AI agents working in the En
 
 - **Language**: Rust (Edition 2024)
 - **Primary Goal**: Read/write compatibility with legacy EncFS filesystems
-- **Status**: Alpha (v2.0.0-alpha.1) - functional for read/write but still maturing
-- **Legacy Code**: Original C++ code is in `legacy/` directory (may be removed soon)
+- **Status**: Alpha (v2.0.0-alpha.3) - functional for read/write but still maturing
 
 ### Key Characteristics
 - Encrypts individual files (not block devices)
 - Uses FUSE for filesystem operations
 - Supports multiple config formats (V4, V5, V6)
-- OpenSSL for cryptographic operations
+- OpenSSL for legacy cryptographic operations
+- Modern cryptography (AES-GCM-SIV, Argon2) for new setups
 - Internationalization support
 
 ## Essential Commands
@@ -125,7 +125,6 @@ encfs/
 │   ├── main.yml            # Main binary translations
 │   ├── ctl.yml             # encfsctl translations
 │   └── help.yml            # Help text translations
-├── legacy/                  # Original C++ implementation
 ├── Cargo.toml              # Rust dependencies
 ├── Taskfile.yml            # Task runner config (alternative to make)
 └── .github/workflows/      # CI configuration
@@ -151,18 +150,12 @@ encfs/
    - `ConfigReader`: Reads V4/V5 binary configs
    - `ConfigVar`: Variable-length encoded values
 
-4. **`crypto/ssl.rs`**: OpenSSL cipher operations
-   - `SslCipher`: Main cipher struct
-   - Key derivation (PBKDF2 and legacy)
-   - Filename encryption/decryption
-   - Block and stream encryption
+4. **`crypto/` namespace**: Cryptographic operations
+   - **`ssl.rs`**: OpenSSL cipher wrapper (legacy modes)
+   - **`aead.rs`** / **`block.rs`**: Modern authenticated encryption (AES-GCM-SIV)
+   - **`file.rs`**: File-level encryption, handles block boundaries, MACs, headers
 
-5. **`crypto/file.rs`**: File-level encryption
-   - `FileEncoder`: Encrypts file writes
-   - `FileDecoder`: Decrypts file reads
-   - Handles block boundaries, MACs, headers
-
-6. **`fs.rs`**: FUSE filesystem implementation
+5. **`fs.rs`**: FUSE filesystem implementation
    - `EncFs`: Main filesystem struct
    - Implements `FilesystemMT` trait from `fuse_mt`
    - Path encryption/decryption with IV chaining
@@ -345,17 +338,19 @@ The `EncfsConfig::validate()` method enforces:
 ### Core Dependencies
 - **fuse_mt** (0.6.3): Multi-threaded FUSE bindings
 - **openssl** (0.10.75): Cryptographic operations
-- **clap** (4.5.53): CLI argument parsing
-- **anyhow** (1.0.100): Error handling
+- **clap** (4.5.57): CLI argument parsing
+- **anyhow** (1.0.101): Error handling
 - **serde** (1.0.228): Serialization/deserialization
-- **quick-xml** (0.38.4): XML parsing for V6 configs
+- **quick-xml** (0.39.0): XML parsing for V6 configs
 - **base64** (0.22.1): Base64 encoding for filenames
 - **rust-i18n** (3): Internationalization
 - **log** (0.4.29) + **env_logger** (0.11.8): Logging
 - **rpassword** (7.4.0): Password prompts
 - **daemonize** (0.5): Background daemon support
-- **libc** (0.2.178): POSIX system calls
+- **libc** (0.2.180): POSIX system calls
 - **chrono** (0.4): Date/time handling
+- **argon2** (0.5) / **aes-gcm-siv** (0.11.1) / **sha2** (0.10): Modern cryptography
+- **prost** (0.14.3): Protobuf serialization support
 
 ### System Dependencies
 - **FUSE**: libfuse-dev (Linux), fusefs-libs (FreeBSD), fuse-t (macOS)
@@ -436,8 +431,8 @@ See `ISSUES.md` for detailed analysis. Key issues:
 
 ## Performance Notes
 
-- Block size affects performance (default 1024 bytes)
-- MACs add ~8 bytes overhead per block + performance penalty
+- Block size affects performance (default 4096 bytes for new filesystems)
+- MACs/Tags add overhead per block + performance penalty (~16 bytes for AES-GCM-SIV)
 - Multi-threaded FUSE by default (use `-s` for single-threaded debugging)
 - File buffer size: 128 KB (`FILE_BUFFER_SIZE`)
 - Performance over NFS is known to be poor (upstream issue)
@@ -549,7 +544,7 @@ task test-live           # Live mount tests
 
 ---
 
-**Last Updated**: January 2, 2026
-**EncFS Version**: 2.0.0-alpha.1
+**Last Updated**: February 21, 2026
+**EncFS Version**: 2.0.0-alpha.3
 **Rust Edition**: 2024
 

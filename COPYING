@@ -1,8 +1,0 @@
-Current implementation:
-* EncFS is licensed under the LGPL.
-
-Legacy subdirectory:
-* The code comprising the EncFS library (libencfs) is licensed under the LGPL.
-* The main programs (encfs, encfsctl, etc) are licensed under the GPL.
-
-For details of the licenses, see COPYING.LGPL and COPYING.GPL.

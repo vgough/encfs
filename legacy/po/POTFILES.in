@@ -1,6 +1,0 @@
-# List of source files which contain translatable strings.
-encfs/BlockFileIO.cpp
-encfs/encfsctl.cpp
-encfs/FileUtils.cpp
-encfs/MACFileIO.cpp
-encfs/main.cpp
