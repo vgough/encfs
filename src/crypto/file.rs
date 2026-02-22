@@ -322,7 +322,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                 let bytes_in_block =
                     std::cmp::min(offset - gap_offset, data_block_size - block_offset);
                 self.write_at_internal(
-                    &zeros,
+                    &zeros[..bytes_in_block as usize],
                     gap_offset,
                     layout,
                     data_block_size,
