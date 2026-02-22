@@ -1,3 +1,7 @@
+[workspace]
+members = ["."]
+exclude = ["fuzz"]
+
 [package]
 name = "encfs"
 version = "2.0.0-alpha.3"

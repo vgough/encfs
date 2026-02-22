@@ -48,6 +48,18 @@ tasks:
     cmds:
       - "{{.CARGO}} tarpaulin --out lcov --output-dir coverage"
 
+  fuzz:
+    desc: Run the differential file-operations fuzzer (requires nightly; pass FUZZ_ARGS to add libFuzzer flags)
+    vars:
+      FUZZ_ARGS: '{{default "" .FUZZ_ARGS}}'
+    cmds:
+      - "{{.CARGO}} +nightly fuzz run fuzz_file_ops -- {{.FUZZ_ARGS}}"
+
+  fuzz-build:
+    desc: Build the fuzz target without running it
+    cmds:
+      - "{{.CARGO}} +nightly fuzz build fuzz_file_ops"
+
   clean:
     desc: Clean build artifacts
     cmds:
