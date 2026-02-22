@@ -21,8 +21,7 @@ filesystem.
 
 For more info, see:
 
- - The [encfs manpage](legacy/encfs/encfs.pod) (legacy C++ version)
- - The technical overview in [DESIGN.md](DESIGN.md)
+ - The technical overview in [DESIGN.md](docs/DESIGN.md)
 
 If you're considering setting up a new encrypted filesystem, I'd recommend
 looking into newer alternatives, such as the excellent
@@ -64,8 +63,10 @@ Overall status
 
 ### What settings should I use for Dropbox?
 
-Use **standard mode**. There [have](https://github.com/vgough/encfs/issues/141)
+Disable `External IV chaining`. There [have](https://github.com/vgough/encfs/issues/141)
 been [reports](https://github.com/vgough/encfs/issues/388)
-of a pathological interaction of paranoia mode with Dropbox' rename
-detection. The problem seems to be with `External IV chaining`, which is
-not active in standard mode.
+of a pathological interaction of IV chaining mode with Dropbox' rename
+detection.
+
+IV chaining is on by default, so it must be disabled when creating a new
+filesystem: `encfsctl new --no-chained-iv ...`

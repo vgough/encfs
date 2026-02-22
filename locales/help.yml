@@ -204,3 +204,7 @@ help.encfsctl.new_stdinpass:
   en: "Read password from stdin (for non-interactive creation)"
   fr: "Lire le mot de passe depuis stdin (création non interactive)"
   de: "Passwort von stdin lesen (nicht-interaktive Erstellung)"
+help.encfsctl.new_no_chained_iv:
+  en: "Disable IV chaining for path components (like legacy EncFS V4)"
+  fr: "Désactiver le chaînage IV pour les composants de chemin (comme EncFS V4 legacy)"
+  de: "IV-Verkettung für Pfadkomponenten deaktivieren (wie Legacy EncFS V4)"

@@ -202,7 +202,7 @@ impl EncfsConfig {
             block_mac_bytes: crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32,
             block_mac_rand_bytes: 0,
             unique_iv: true,
-            external_iv_chaining: false,
+            external_iv_chaining: true,
             chained_name_iv: true,
             allow_holes: true,
             config_hash: None,

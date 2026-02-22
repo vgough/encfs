@@ -162,6 +162,10 @@ fn help_new_stdinpass() -> String {
     t!("help.encfsctl.new_stdinpass").to_string()
 }
 
+fn help_new_no_chained_iv() -> String {
+    t!("help.encfsctl.new_no_chained_iv").to_string()
+}
+
 #[derive(Parser)]
 #[command(name = "encfsctl")]
 #[command(about = help_about())]
@@ -253,6 +257,8 @@ enum Command {
         extpass: Option<String>,
         #[arg(short = 'S', long = "stdinpass", help = help_new_stdinpass())]
         stdinpass: bool,
+        #[arg(long, help = help_new_no_chained_iv())]
+        no_chained_iv: bool,
     },
 }
 
@@ -296,7 +302,8 @@ fn main() -> Result<()> {
             rootdir,
             extpass,
             stdinpass,
-        }) => cmd_new(&rootdir, extpass, stdinpass),
+            no_chained_iv,
+        }) => cmd_new(&rootdir, extpass, stdinpass, no_chained_iv),
         None => {
             // Default to info command if rootdir is provided
             if let Some(rootdir) = cli.rootdir {
@@ -1141,7 +1148,12 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn cmd_new(rootdir: &Path, extpass: Option<String>, stdinpass: bool) -> Result<()> {
+fn cmd_new(
+    rootdir: &Path,
+    extpass: Option<String>,
+    stdinpass: bool,
+    no_chained_iv: bool,
+) -> Result<()> {
     use openssl::rand::rand_bytes;
 
     // Create directory if it doesn't exist
@@ -1174,6 +1186,10 @@ fn cmd_new(rootdir: &Path, extpass: Option<String>, stdinpass: bool) -> Result<(
     }
 
     let mut config = config::EncfsConfig::standard_v7();
+    if no_chained_iv {
+        config.chained_name_iv = false;
+        config.external_iv_chaining = false;
+    }
     rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
 
     let key_len = (config.key_size / 8) as usize;
