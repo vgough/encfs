@@ -346,6 +346,115 @@ fn live_truncate_matrix_paranoia() -> Result<()> {
     }
 }
 
+fn run_truncate_extend_write_after_hole(cfg_kind: live::LiveConfigKind) -> Result<()> {
+    let cfg = load_live_config(cfg_kind)?;
+    let dbs = data_block_size(&cfg);
+    let mount = MountGuard::mount(cfg.clone(), false).context("mount failed")?;
+    let root = &mount.mount_point;
+    let p = root.join("hole_file.txt");
+
+    let payload1_len = 100usize;
+    let payload1 = pattern_bytes(payload1_len);
+    fs::write(&p, &payload1).context("initial write")?;
+
+    let extended_size = dbs * 4;
+    libc_truncate(&p, extended_size).context("truncate extend")?;
+    assert_eq!(
+        fs::metadata(&p).context("metadata after extend")?.len(),
+        extended_size
+    );
+
+    // Write a second payload into the region after the hole.
+    let write2_offset = dbs * 3;
+    let payload2 = pattern_bytes(200);
+    {
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .open(&p)
+            .context("open for write2")?;
+        f.seek(SeekFrom::Start(write2_offset))
+            .context("seek for write2")?;
+        f.write_all(&payload2).context("write2")?;
+    }
+
+    let total_size = std::cmp::max(extended_size, write2_offset + payload2.len() as u64);
+    assert_eq!(
+        fs::metadata(&p).context("metadata after write2")?.len(),
+        total_size
+    );
+
+    let all = read_all(&p).context("final read_all")?;
+    assert_eq!(all.len(), total_size as usize, "overall length mismatch");
+
+    assert_eq!(
+        &all[..payload1_len],
+        &payload1[..],
+        "first payload mismatch"
+    );
+
+    let hole_start = payload1_len;
+    let hole_end = write2_offset as usize;
+    assert!(
+        all[hole_start..hole_end].iter().all(|&b| b == 0),
+        "hole region should be all zeros"
+    );
+
+    let p2_start = write2_offset as usize;
+    let p2_end = p2_start + payload2.len();
+    assert_eq!(
+        &all[p2_start..p2_end],
+        &payload2[..],
+        "second payload mismatch"
+    );
+
+    if p2_end < total_size as usize {
+        assert!(
+            all[p2_end..].iter().all(|&b| b == 0),
+            "trailing region after second payload should be zeros"
+        );
+    }
+
+    assert_eq!(
+        ciphertext_single_file_size(&mount.backing_root)?,
+        expected_physical_size(total_size, &cfg),
+        "physical ciphertext size mismatch"
+    );
+
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn live_truncate_extend_write_standard() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    match run_truncate_extend_write_after_hole(live::LiveConfigKind::Standard) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            eprintln!("{:#?}", e);
+            Err(e)
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn live_truncate_extend_write_paranoia() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    match run_truncate_extend_write_after_hole(live::LiveConfigKind::Paranoia) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            eprintln!("{:#?}", e);
+            Err(e)
+        }
+    }
+}
+
 fn run_rename_tests(cfg_kind: live::LiveConfigKind) -> Result<()> {
     let cfg = load_live_config(cfg_kind)?;
     // Use a persistent backing root so we can remount and verify readability (especially paranoia rename).

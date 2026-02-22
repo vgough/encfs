@@ -148,7 +148,10 @@ impl<'a> BlockCodec<'a> {
             // Sparse file hole: an all-zero on-disk block is not valid ciphertext.
             // Return zeros as plaintext so reads through holes succeed.
             if block_data.iter().all(|&b| b == 0) {
-                return Ok(vec![0u8; block_data.len()]);
+                let plaintext_len = block_data
+                    .len()
+                    .saturating_sub(self.layout.overhead_bytes() as usize);
+                return Ok(vec![0u8; plaintext_len]);
             }
         }
 

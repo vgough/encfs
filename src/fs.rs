@@ -553,6 +553,148 @@ impl EncFs {
         Ok(())
     }
 
+    fn physical_size_for_logical(&self, logical_size: u64, header_size: u64) -> u64 {
+        FileEncoder::<File>::calculate_physical_size_with_mode(
+            logical_size,
+            header_size,
+            self.block_size,
+            self.block_mac_bytes,
+            self.block_mode,
+        )
+    }
+
+    fn truncate_expand(
+        &self,
+        file_ref: &File,
+        file_iv: u64,
+        header_size: u64,
+        current_logical_size: u64,
+        new_logical_size: u64,
+        block_layout: BlockLayout,
+    ) -> ResultEmpty {
+        if new_logical_size <= current_logical_size {
+            return Ok(());
+        }
+
+        let encoder = FileEncoder::new_with_mode(
+            &self.cipher,
+            file_ref,
+            file_iv,
+            header_size,
+            self.block_size,
+            self.block_mac_bytes,
+            self.block_mode,
+            self.allow_holes,
+        );
+
+        let data_block_size = block_layout.data_size_per_block();
+        let mut filled_until = current_logical_size;
+        let tail_in_block = current_logical_size % data_block_size;
+        if tail_in_block > 0 {
+            let to_block_end = data_block_size - tail_in_block;
+            let top_up = std::cmp::min(to_block_end, new_logical_size - current_logical_size);
+            if top_up > 0 {
+                let zeros = vec![0u8; top_up as usize];
+                encoder
+                    .write_at(&zeros, current_logical_size)
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                filled_until += top_up;
+            }
+        }
+
+        if filled_until >= new_logical_size {
+            return Ok(());
+        }
+
+        if self.allow_holes {
+            let physical_size = self.physical_size_for_logical(new_logical_size, header_size);
+            file_ref
+                .set_len(physical_size)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            return Ok(());
+        }
+
+        // Holes are not allowed, so write a bunch of zeros.
+        const CHUNK_SIZE: usize = 128 * 1024;
+        let mut remaining = new_logical_size - filled_until;
+        let mut offset = filled_until;
+        let zeros = vec![0u8; CHUNK_SIZE];
+
+        while remaining > 0 {
+            let write_len = std::cmp::min(remaining, CHUNK_SIZE as u64);
+            encoder
+                .write_at(&zeros[..write_len as usize], offset)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            remaining -= write_len;
+            offset += write_len;
+        }
+
+        Ok(())
+    }
+
+    fn truncate_shrink(
+        &self,
+        file_ref: &File,
+        file_iv: u64,
+        header_size: u64,
+        new_logical_size: u64,
+        block_layout: BlockLayout,
+    ) -> ResultEmpty {
+        let physical_size = self.physical_size_for_logical(new_logical_size, header_size);
+        let data_block_size = block_layout.data_size_per_block();
+        let offset_in_block = new_logical_size % data_block_size;
+
+        if offset_in_block == 0 {
+            file_ref
+                .set_len(physical_size)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            return Ok(());
+        }
+
+        let block_start = new_logical_size - offset_in_block;
+        let decoder = FileDecoder::new_with_mode(
+            &self.cipher,
+            file_ref,
+            file_iv,
+            header_size,
+            self.block_size,
+            self.block_mac_bytes,
+            self.block_mode,
+            false,
+            self.allow_holes,
+        );
+
+        let mut buf = vec![0u8; data_block_size as usize];
+        let bytes_read = decoder
+            .read_at(&mut buf, block_start)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        if (bytes_read as u64) < offset_in_block {
+            return Err(libc::EIO);
+        }
+        buf.truncate(offset_in_block as usize);
+
+        // Shrink first so re-encryption writes exactly the target last block.
+        file_ref
+            .set_len(physical_size)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+        let encoder = FileEncoder::new_with_mode(
+            &self.cipher,
+            file_ref,
+            file_iv,
+            header_size,
+            self.block_size,
+            self.block_mac_bytes,
+            self.block_mode,
+            self.allow_holes,
+        );
+        encoder
+            .write_at(&buf, block_start)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+        Ok(())
+    }
+
     /// Sets ownership to req.uid/req.gid if different from current process.
     /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
     fn set_ownership_path(&self, path: &Path, req: &RequestInfo) -> Result<(), libc::c_int> {
@@ -709,8 +851,6 @@ impl FilesystemMT for EncFs {
     fn truncate(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
         debug!("truncate: {:?} size={}", path, size);
 
-        // We need to operate on an open file to support RMW
-        // If we have a handle, use it. Otherwise open one.
         let handle: Option<Arc<FileHandle>> =
             fh.and_then(|fh| self.handles_guard().get(&fh).cloned());
         if fh.is_some() && handle.is_none() {
@@ -736,7 +876,7 @@ impl FilesystemMT for EncFs {
             (None, None) => return Err(libc::EIO),
         };
 
-        // 1. Get current size
+        let header_size = self.config.header_size();
         let metadata = file_ref
             .metadata()
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -744,29 +884,23 @@ impl FilesystemMT for EncFs {
             .map_err(|_| libc::EINVAL)?;
         let current_logical_size = FileDecoder::<File>::calculate_logical_size_with_mode(
             metadata.len(),
-            8, // header size
+            header_size,
             self.block_size,
             self.block_mac_bytes,
             self.block_mode,
         );
-
         if size == current_logical_size {
             return Ok(());
         }
 
-        // Determine file IV / header size.
-        let header_size = self.config.header_size();
         let file_iv = if let Some(h) = &handle {
             h.file_iv
         } else if header_size > 0 {
-            // Need cipher context (IV). Read header from file and decrypt.
             let mut header = vec![0u8; header_size as usize];
             file_ref
                 .read_exact_at(&mut header, 0)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            // We need external IV (path IV) to decrypt header.
             let (_, path_iv) = self.encrypt_path(path)?;
-
             let external_iv = if self.external_iv_chaining {
                 path_iv
             } else {
@@ -779,124 +913,17 @@ impl FilesystemMT for EncFs {
             0
         };
 
-        let encoder = FileEncoder::new_with_mode(
-            &self.cipher,
-            file_ref,
-            file_iv,
-            header_size,
-            self.block_size,
-            self.block_mac_bytes,
-            self.block_mode,
-            self.allow_holes,
-        );
-
         if size > current_logical_size {
-            // Extension: When allow_holes is enabled, we can just extend the file
-            // and let sparse holes be created. Otherwise, write encrypted zeros.
-            if self.allow_holes {
-                let physical_size = FileEncoder::<File>::calculate_physical_size_with_mode(
-                    size,
-                    header_size,
-                    self.block_size,
-                    self.block_mac_bytes,
-                    self.block_mode,
-                );
-                file_ref
-                    .set_len(physical_size)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            } else {
-                // Write zeros in chunks
-                const CHUNK_SIZE: usize = 128 * 1024;
-                let mut remaining = size - current_logical_size;
-                let mut offset = current_logical_size;
-                let zeros = vec![0u8; CHUNK_SIZE];
-
-                while remaining > 0 {
-                    let write_len = std::cmp::min(remaining, CHUNK_SIZE as u64);
-                    // encoder.write_at handles RMW of partial blocks and creation of new blocks
-                    encoder
-                        .write_at(&zeros[..write_len as usize], offset)
-                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    remaining -= write_len;
-                    offset += write_len;
-                }
-            }
-        } else {
-            // Shrinking
-            // We need to fix the last block.
-            let data_block_size = block_layout.data_size_per_block();
-            let block_num = size / data_block_size;
-            let offset_in_block = size % data_block_size;
-
-            // If offset_in_block > 0, we must write the truncated partial block.
-            if offset_in_block > 0 {
-                // Read the plaintext of this block.
-                // We use a decoder for this.
-                let decoder = FileDecoder::new_with_mode(
-                    &self.cipher,
-                    file_ref,
-                    file_iv,
-                    header_size,
-                    self.block_size,
-                    self.block_mac_bytes,
-                    self.block_mode,
-                    false,
-                    self.allow_holes,
-                );
-
-                let mut buf = vec![0u8; data_block_size as usize];
-                // Read at block start
-                let read_start = block_num * data_block_size;
-                let bytes_read = decoder
-                    .read_at(&mut buf, read_start)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-                if (bytes_read as u64) < offset_in_block {
-                    // Should not happen if we are shrinking to 'size' which is < current_size
-                    // and 'size' is inside this block.
-                    // Unless file is corrupt/shorter than expected.
-                    return Err(libc::EIO);
-                }
-
-                // Truncate buffer
-                buf.truncate(offset_in_block as usize);
-
-                // Important: shrink the physical file *before* rewriting the last partial block.
-                //
-                // Otherwise, `FileEncoder::write_at` will decrypt the existing (larger) partial
-                // block and re-encrypt it at the old length, and the subsequent `set_len()`
-                // would truncate the ciphertext mid-stream, corrupting the last block.
-                let physical_size = FileEncoder::<File>::calculate_physical_size_with_mode(
-                    size,
-                    header_size,
-                    self.block_size,
-                    self.block_mac_bytes,
-                    self.block_mode,
-                );
-                file_ref
-                    .set_len(physical_size)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-                // Now write back using encoder with the new (shorter) on-disk size in place.
-                // This will re-encrypt the block at the correct partial length.
-                encoder
-                    .write_at(&buf, read_start)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-                return Ok(());
-            }
-
-            // Now safe to physically truncate
-            let physical_size = FileEncoder::<File>::calculate_physical_size_with_mode(
-                size,
+            self.truncate_expand(
+                file_ref,
+                file_iv,
                 header_size,
-                self.block_size,
-                self.block_mac_bytes,
-                self.block_mode,
-            );
-            file_ref
-                .set_len(physical_size)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                current_logical_size,
+                size,
+                block_layout,
+            )?;
+        } else {
+            self.truncate_shrink(file_ref, file_iv, header_size, size, block_layout)?;
         }
 
         Ok(())

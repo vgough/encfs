@@ -142,3 +142,112 @@ fn test_truncate_corrupts_partial_block() {
     // Cleanup
     fs::remove_dir_all(&tmp).unwrap();
 }
+
+#[test]
+fn test_truncate_extend_then_append_preserves_block0_tag() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let tmp = std::env::temp_dir().join("encfs_truncate_extend_append_test");
+    if tmp.exists() {
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+    fs::create_dir(&tmp).unwrap();
+
+    let root = tmp.clone();
+
+    let iface = Interface {
+        name: "ssl/aes".to_string(),
+        major: 3,
+        minor: 0,
+        age: 0,
+    };
+    let cipher = SslCipher::new(&iface, 192).unwrap();
+    let mut cipher = cipher;
+    let user_key = vec![1u8; 24];
+    let user_iv = vec![2u8; 16];
+    cipher.set_key(&user_key, &user_iv);
+
+    let verify_cipher = SslCipher::new(&iface, 192).unwrap();
+    let mut verify_cipher = verify_cipher;
+    verify_cipher.set_key(&user_key, &user_iv);
+
+    let mut config = encfs::config::EncfsConfig::test_default();
+    config.allow_holes = true;
+    let fs = EncFs::new(root.clone(), cipher, config);
+
+    let req = RequestInfo {
+        unique: 1,
+        pid: 1,
+        gid: 0,
+        uid: 0,
+    };
+
+    let parent = PathBuf::from("");
+    let filename = "truncate_extend_append.bin";
+    let name = OsStr::new(filename);
+    let path = parent.join(filename);
+
+    let create_res = fs
+        .create(req, &parent, name, 0o644, 0)
+        .expect("create failed");
+    let fh = create_res.fh;
+
+    let payload1 = b"hello-partial-block".repeat(5);
+    let written = fs
+        .write(req, &path, fh, 0, payload1.clone(), 0)
+        .expect("initial write failed");
+    assert_eq!(written as usize, payload1.len());
+
+    let data_block_size = 1024u64 - 8u64;
+    let extended_size = data_block_size * 2;
+    fs.truncate(req, &path, Some(fh), extended_size)
+        .expect("truncate extend failed");
+
+    let payload2 = b"-appended-after-extend-";
+    let append_offset = extended_size;
+    let appended = fs
+        .write(req, &path, fh, append_offset, payload2.to_vec(), 0)
+        .expect("append write failed");
+    assert_eq!(appended as usize, payload2.len());
+
+    fs.release(req, &path, fh, 0, 0, true).unwrap();
+
+    let mut entries = fs::read_dir(&tmp).unwrap();
+    let entry = entries.next().unwrap().unwrap();
+    let real_path = entry.path();
+
+    let file = std::fs::File::open(&real_path).unwrap();
+    let mut header = [0u8; 8];
+    FileExt::read_at(&file, &mut header, 0).unwrap();
+    let file_iv = verify_cipher
+        .decrypt_header(&mut header, 0)
+        .expect("decrypt header failed");
+
+    let decoder = FileDecoder::new(
+        &verify_cipher,
+        &file,
+        file_iv,
+        8,
+        1024,
+        8,
+        false,
+        true,
+    );
+
+    let final_size = append_offset as usize + payload2.len();
+    let mut read_data = vec![0u8; final_size];
+    let read_len = decoder
+        .read_at(&mut read_data, 0)
+        .expect("final read after truncate+append failed");
+    assert_eq!(read_len, final_size);
+
+    assert_eq!(&read_data[..payload1.len()], &payload1[..]);
+    assert!(
+        read_data[payload1.len()..append_offset as usize]
+            .iter()
+            .all(|&b| b == 0),
+        "extended hole region should be zeros"
+    );
+    assert_eq!(&read_data[append_offset as usize..], payload2);
+
+    fs::remove_dir_all(&tmp).unwrap();
+}
