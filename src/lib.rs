@@ -79,15 +79,12 @@ mod tests {
         let content_size = encrypted_size - 8; // subtract header size
 
         // Use FileDecoder to read and decrypt
-        let decoder = crate::crypto::file::FileDecoder::new(
+        let decoder = crate::crypto::file::FileDecoder::new_from_config(
             &cipher,
             &file,
             file_iv,
-            8, // header_size
-            config.block_size as u64,
-            config.block_mac_bytes as u64,
+            &config.file_codec_params(),
             false,
-            config.allow_holes,
         );
 
         let mut decrypted_content = vec![0u8; content_size as usize];
@@ -164,15 +161,12 @@ mod tests {
         let metadata = file.metadata()?;
         let content_size = metadata.len() - 8;
 
-        let decoder = crate::crypto::file::FileDecoder::new(
+        let decoder = crate::crypto::file::FileDecoder::new_from_config(
             &encfs.cipher,
             &file,
             file_iv,
-            8,
-            config.block_size as u64,
-            config.block_mac_bytes as u64,
+            &config.file_codec_params(),
             false,
-            config.allow_holes,
         );
 
         let mut decrypted_content = vec![0u8; content_size as usize];

@@ -1,4 +1,4 @@
-use crate::crypto::block::{BlockLayout, BlockMode};
+use crate::crypto::block::BlockLayout;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use crate::crypto::ssl::SslCipher;
 use base64::Engine;
@@ -25,7 +25,6 @@ use std::time::{Duration, SystemTime};
 struct FileHandle {
     file: File,
     file_iv: u64,
-    header_size: u64,
 }
 
 struct PathInfo<'a> {
@@ -43,12 +42,6 @@ pub struct EncFs {
     pub cipher: SslCipher,
     handles: Mutex<HashMap<u64, Arc<FileHandle>>>,
     next_fh: AtomicU64,
-    block_size: u64,
-    block_mac_bytes: u64,
-    block_mode: BlockMode,
-    chained_name_iv: bool,
-    external_iv_chaining: bool,
-    allow_holes: bool,
     pub config: crate::config::EncfsConfig,
 }
 
@@ -59,12 +52,6 @@ impl EncFs {
             cipher,
             handles: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
-            block_size: config.block_size as u64,
-            block_mac_bytes: config.block_mac_bytes as u64,
-            block_mode: config.block_mode(),
-            chained_name_iv: config.chained_name_iv,
-            external_iv_chaining: config.external_iv_chaining,
-            allow_holes: config.allow_holes,
             config,
         }
     }
@@ -94,7 +81,7 @@ impl EncFs {
                             libc::EIO
                         })?;
                     encrypted_path.push(encrypted_name);
-                    if self.chained_name_iv {
+                    if self.config.chained_name_iv {
                         iv = new_iv;
                     }
                 }
@@ -122,7 +109,7 @@ impl EncFs {
                             libc::EIO
                         })?;
                     decrypted_path.push(OsStr::from_bytes(&decrypted_name_bytes));
-                    if self.chained_name_iv {
+                    if self.config.chained_name_iv {
                         iv = new_iv;
                     }
                 }
@@ -153,8 +140,8 @@ impl EncFs {
         let meta = fs::symlink_metadata(&real_source)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        if (meta.is_dir() && (self.chained_name_iv || self.external_iv_chaining))
-            || (meta.is_file() && self.external_iv_chaining)
+        if (meta.is_dir() && (self.config.chained_name_iv || self.config.external_iv_chaining))
+            || (meta.is_file() && self.config.external_iv_chaining)
         {
             let (_, source_iv) = self.encrypt_path(&source)?;
             let (_, dest_iv) = self.encrypt_path(&dest)?;
@@ -195,12 +182,12 @@ impl EncFs {
         // decrypt/encrypt the symlink target changes. A plain `rename` would therefore
         // break `readlink`. Rewrite the symlink target under the destination IV.
         if meta.is_symlink() {
-            if self.external_iv_chaining {
+            if self.config.external_iv_chaining {
                 warn!("Renaming symlinks with external IV chaining is not supported");
                 return Err(libc::ENOSYS);
             }
 
-            if self.chained_name_iv {
+            if self.config.chained_name_iv {
                 let (_, source_iv) = self.encrypt_path(&source)?;
                 let (_, dest_iv) = self.encrypt_path(&dest)?;
 
@@ -322,19 +309,19 @@ impl EncFs {
                     &child_meta,
                 )?;
             }
-        } else if self.external_iv_chaining && meta.is_file() {
+        } else if self.config.external_iv_chaining && meta.is_file() {
             self.copy_file_with_header_rewrite(source.physical, dest.physical, source.iv, dest.iv)?;
         } else if meta.is_symlink() {
             // Handle symlinks during recursive directory copies.
             // When chained_name_iv is enabled, symlink targets are encrypted using
             // the path IV of the symlink. If the symlink's path changes (due to parent
             // directory rename), we need to re-encrypt the target with the new IV.
-            if self.external_iv_chaining {
+            if self.config.external_iv_chaining {
                 // External IV chaining for symlinks is not supported
                 return Err(libc::ENOSYS);
             }
 
-            if self.chained_name_iv {
+            if self.config.chained_name_iv {
                 // Re-encrypt symlink target with the new path IV
                 let target = fs::read_link(source.physical)
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -557,9 +544,9 @@ impl EncFs {
         FileEncoder::<File>::calculate_physical_size_with_mode(
             logical_size,
             header_size,
-            self.block_size,
-            self.block_mac_bytes,
-            self.block_mode,
+            self.config.block_size as u64,
+            self.config.block_mac_bytes as u64,
+            self.config.block_mode(),
         )
     }
 
@@ -576,15 +563,11 @@ impl EncFs {
             return Ok(());
         }
 
-        let encoder = FileEncoder::new_with_mode(
+        let encoder = FileEncoder::new_from_config(
             &self.cipher,
             file_ref,
             file_iv,
-            header_size,
-            self.block_size,
-            self.block_mac_bytes,
-            self.block_mode,
-            self.allow_holes,
+            &self.config.file_codec_params(),
         );
 
         let data_block_size = block_layout.data_size_per_block();
@@ -606,7 +589,7 @@ impl EncFs {
             return Ok(());
         }
 
-        if self.allow_holes {
+        if self.config.allow_holes {
             let physical_size = self.physical_size_for_logical(new_logical_size, header_size);
             file_ref
                 .set_len(physical_size)
@@ -652,16 +635,12 @@ impl EncFs {
         }
 
         let block_start = new_logical_size - offset_in_block;
-        let decoder = FileDecoder::new_with_mode(
+        let decoder = FileDecoder::new_from_config(
             &self.cipher,
             file_ref,
             file_iv,
-            header_size,
-            self.block_size,
-            self.block_mac_bytes,
-            self.block_mode,
+            &self.config.file_codec_params(),
             false,
-            self.allow_holes,
         );
 
         let mut buf = vec![0u8; data_block_size as usize];
@@ -678,15 +657,11 @@ impl EncFs {
             .set_len(physical_size)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        let encoder = FileEncoder::new_with_mode(
+        let encoder = FileEncoder::new_from_config(
             &self.cipher,
             file_ref,
             file_iv,
-            header_size,
-            self.block_size,
-            self.block_mac_bytes,
-            self.block_mode,
-            self.allow_holes,
+            &self.config.file_codec_params(),
         );
         encoder
             .write_at(&buf, block_start)
@@ -880,14 +855,18 @@ impl FilesystemMT for EncFs {
         let metadata = file_ref
             .metadata()
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let block_layout = BlockLayout::new(self.block_mode, self.block_size, self.block_mac_bytes)
-            .map_err(|_| libc::EINVAL)?;
+        let block_layout = BlockLayout::new(
+            self.config.block_mode(),
+            self.config.block_size as u64,
+            self.config.block_mac_bytes as u64,
+        )
+        .map_err(|_| libc::EINVAL)?;
         let current_logical_size = FileDecoder::<File>::calculate_logical_size_with_mode(
             metadata.len(),
             header_size,
-            self.block_size,
-            self.block_mac_bytes,
-            self.block_mode,
+            self.config.block_size as u64,
+            self.config.block_mac_bytes as u64,
+            self.config.block_mode(),
         );
         if size == current_logical_size {
             return Ok(());
@@ -901,7 +880,7 @@ impl FilesystemMT for EncFs {
                 .read_exact_at(&mut header, 0)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             let (_, path_iv) = self.encrypt_path(path)?;
-            let external_iv = if self.external_iv_chaining {
+            let external_iv = if self.config.external_iv_chaining {
                 path_iv
             } else {
                 0
@@ -1049,7 +1028,7 @@ impl FilesystemMT for EncFs {
     ) -> ResultEntry {
         debug!("link: {:?} -> {:?}/{:?}", path, newparent, newname);
 
-        if self.external_iv_chaining {
+        if self.config.external_iv_chaining {
             return Err(libc::EPERM);
         }
 
@@ -1142,9 +1121,9 @@ impl FilesystemMT for EncFs {
             size = FileDecoder::<std::fs::File>::calculate_logical_size_with_mode(
                 metadata.len(),
                 header_size,
-                self.block_size,
-                self.block_mac_bytes,
-                self.block_mode,
+                self.config.block_size as u64,
+                self.config.block_mac_bytes as u64,
+                self.config.block_mode(),
             );
         }
 
@@ -1259,7 +1238,7 @@ impl FilesystemMT for EncFs {
 
         let mut file_iv = 0;
         let header_size = self.config.header_size();
-        let external_iv = if self.external_iv_chaining {
+        let external_iv = if self.config.external_iv_chaining {
             path_iv
         } else {
             0
@@ -1331,11 +1310,7 @@ impl FilesystemMT for EncFs {
         }
 
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        let handle = Arc::new(FileHandle {
-            file,
-            file_iv,
-            header_size,
-        });
+        let handle = Arc::new(FileHandle { file, file_iv });
 
         self.handles_guard().insert(fh, handle);
 
@@ -1361,16 +1336,12 @@ impl FilesystemMT for EncFs {
             }
         };
 
-        let decoder = FileDecoder::new_with_mode(
+        let decoder = FileDecoder::new_from_config(
             &self.cipher,
             &handle.file,
             handle.file_iv,
-            handle.header_size,
-            self.block_size,
-            self.block_mac_bytes,
-            self.block_mode,
+            &self.config.file_codec_params(),
             false,
-            self.allow_holes,
         );
 
         const MAX_READ_SIZE: u32 = 1024 * 1024;
@@ -1423,15 +1394,11 @@ impl FilesystemMT for EncFs {
             }
         };
 
-        let encoder = FileEncoder::new_with_mode(
+        let encoder = FileEncoder::new_from_config(
             &self.cipher,
             &handle.file,
             handle.file_iv,
-            handle.header_size,
-            self.block_size,
-            self.block_mac_bytes,
-            self.block_mode,
-            self.allow_holes,
+            &self.config.file_codec_params(),
         );
 
         match encoder.write_at(&data, offset) {
@@ -1478,7 +1445,7 @@ impl FilesystemMT for EncFs {
         let mut file_iv = 0;
 
         if header_size > 0 {
-            let external_iv = if self.external_iv_chaining {
+            let external_iv = if self.config.external_iv_chaining {
                 path_iv
             } else {
                 0
@@ -1498,11 +1465,7 @@ impl FilesystemMT for EncFs {
         self.set_ownership_fd(file.as_raw_fd(), &req)?;
 
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        let handle = Arc::new(FileHandle {
-            file,
-            file_iv,
-            header_size,
-        });
+        let handle = Arc::new(FileHandle { file, file_iv });
 
         self.handles_guard().insert(fh, handle);
 
@@ -1581,7 +1544,7 @@ impl FilesystemMT for EncFs {
             use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
             let header_size = self.config.header_size();
-            let external_iv = if self.external_iv_chaining {
+            let external_iv = if self.config.external_iv_chaining {
                 path_iv
             } else {
                 0

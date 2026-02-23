@@ -91,15 +91,22 @@ pub struct EncfsConfig {
     #[serde(rename = "blockMACRandBytes", default)]
     pub block_mac_rand_bytes: i32,
 
+    // Unique IV for each file. If enabled then each file has a unique IV
+    // stored in the file header.
     #[serde(rename = "uniqueIV", default)]
     pub unique_iv: bool,
 
+    // IV chaining from path to file IV. If enabled then the file IV depends on
+    // the path IV, so renaming an encrypted file will make it unreadable.
     #[serde(rename = "externalIVChaining", default)]
     pub external_iv_chaining: bool,
 
+    // IV chaining for path components: file or directory IV is computed
+    // from parent directory IV + name.
     #[serde(rename = "chainedNameIV", default)]
     pub chained_name_iv: bool,
 
+    // Allow sparse files (holes).
     #[serde(rename = "allowHoles", default)]
     pub allow_holes: bool,
 
@@ -813,6 +820,17 @@ impl EncfsConfig {
     }
     pub fn header_size(&self) -> u64 {
         if self.unique_iv { 8 } else { 0 }
+    }
+
+    /// Returns grouped file codec parameters for constructing `FileDecoder`/`FileEncoder`.
+    pub fn file_codec_params(&self) -> crate::crypto::file::FileCodecParams {
+        crate::crypto::file::FileCodecParams {
+            header_size: self.header_size(),
+            block_size: self.block_size as u64,
+            block_mac_bytes: self.block_mac_bytes as u64,
+            block_mode: self.block_mode(),
+            allow_holes: self.allow_holes,
+        }
     }
 
     pub fn block_mode(&self) -> crate::crypto::block::BlockMode {

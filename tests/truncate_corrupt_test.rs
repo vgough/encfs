@@ -222,16 +222,7 @@ fn test_truncate_extend_then_append_preserves_block0_tag() {
         .decrypt_header(&mut header, 0)
         .expect("decrypt header failed");
 
-    let decoder = FileDecoder::new(
-        &verify_cipher,
-        &file,
-        file_iv,
-        8,
-        1024,
-        8,
-        false,
-        true,
-    );
+    let decoder = FileDecoder::new(&verify_cipher, &file, file_iv, 8, 1024, 8, false, true);
 
     let final_size = append_offset as usize + payload2.len();
     let mut read_data = vec![0u8; final_size];

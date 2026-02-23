@@ -35,6 +35,18 @@ impl FileLen for std::fs::File {
     }
 }
 
+/// Parameters derived from an `EncfsConfig` that govern file codec behaviour.
+///
+/// Grouping these avoids passing many individual config fields to `FileDecoder`
+/// and `FileEncoder`. Construct one via `EncfsConfig::file_codec_params()`.
+pub struct FileCodecParams {
+    pub header_size: u64,
+    pub block_size: u64,
+    pub block_mac_bytes: u64,
+    pub block_mode: BlockMode,
+    pub allow_holes: bool,
+}
+
 /// Decodes encrypted files.
 ///
 /// Handles block-by-block decryption and verification for both legacy EncFS
@@ -99,6 +111,27 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
             ignore_mac_mismatch,
             allow_holes,
         }
+    }
+
+    /// Constructs a decoder using grouped config parameters from [`FileCodecParams`].
+    pub fn new_from_config(
+        cipher: &'a SslCipher,
+        file: &'a F,
+        file_iv: u64,
+        params: &FileCodecParams,
+        ignore_mac_mismatch: bool,
+    ) -> Self {
+        Self::new_with_mode(
+            cipher,
+            file,
+            file_iv,
+            params.header_size,
+            params.block_size,
+            params.block_mac_bytes,
+            params.block_mode,
+            ignore_mac_mismatch,
+            params.allow_holes,
+        )
     }
 
     /// Calculates the logical file size (plain text size) from the physical
@@ -270,6 +303,25 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
         }
     }
 
+    /// Constructs an encoder using grouped config parameters from [`FileCodecParams`].
+    pub fn new_from_config(
+        cipher: &'a SslCipher,
+        file: &'a F,
+        file_iv: u64,
+        params: &FileCodecParams,
+    ) -> Self {
+        Self::new_with_mode(
+            cipher,
+            file,
+            file_iv,
+            params.header_size,
+            params.block_size,
+            params.block_mac_bytes,
+            params.block_mode,
+            params.allow_holes,
+        )
+    }
+
     pub fn calculate_physical_size(
         logical_size: u64,
         header_size: u64,
@@ -339,8 +391,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
 
         while bytes_remaining > 0 {
             let block_offset = current_offset % data_block_size;
-            let bytes_in_block =
-                std::cmp::min(bytes_remaining, data_block_size - block_offset);
+            let bytes_in_block = std::cmp::min(bytes_remaining, data_block_size - block_offset);
 
             self.write_at_internal(
                 &buf[total_written..total_written + bytes_in_block as usize],
@@ -387,19 +438,14 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                     if n > 0 {
                         let existing_payload_len =
                             n.saturating_sub(layout.overhead_bytes() as usize);
-                        if block_offset == 0
-                            && (bytes_to_write as usize) >= existing_payload_len
-                        {
+                        if block_offset == 0 && (bytes_to_write as usize) >= existing_payload_len {
                             plaintext_block.clear();
                         } else {
                             on_disk_block.truncate(n);
                             plaintext_block = codec
                                 .decrypt_block(block_num, self.file_iv, &mut on_disk_block)
                                 .map_err(|e| {
-                                    io::Error::other(format!(
-                                        "Decrypt failed during RMW: {}",
-                                        e
-                                    ))
+                                    io::Error::other(format!("Decrypt failed during RMW: {}", e))
                                 })?;
                         }
                     }
