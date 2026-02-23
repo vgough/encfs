@@ -18,7 +18,7 @@ pub const DEFAULT_ARGON2_PARALLELISM: u32 = 4;
 pub const DEFAULT_CONFIG_VERSION: i32 = 20260101;
 
 /// Default block size for new filesystems
-pub const DEFAULT_BLOCK_SIZE: i32 = 4096 - crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
+pub const DEFAULT_BLOCK_SIZE: i32 = 4096;
 
 /// Buffer size for file operations (128 KB)
 pub const FILE_BUFFER_SIZE: usize = 128 * 1024;
