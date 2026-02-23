@@ -412,28 +412,53 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
             minor = config.name_iface.minor
         )
     );
-    if config.unique_iv {
-        println!("{}", t!("ctl.unique_iv_header"));
-    }
-
-    if config.chained_name_iv {
-        println!("{}", t!("ctl.chained_name_iv"));
-    }
-
-    if config.external_iv_chaining {
-        println!("{}", t!("ctl.external_iv_chaining"));
-    }
-
-    if config.block_mode() == encfs::crypto::block::BlockMode::AesGcmSiv {
-        println!("{}", t!("ctl.aes_gcm_siv_mode"));
-    }
+    println!(
+        "{}{}",
+        t!("ctl.unique_iv_header"),
+        t!(if config.unique_iv {
+            "ctl.bool_true"
+        } else {
+            "ctl.bool_false"
+        })
+    );
+    println!(
+        "{}{}",
+        t!("ctl.chained_name_iv"),
+        t!(if config.chained_name_iv {
+            "ctl.bool_true"
+        } else {
+            "ctl.bool_false"
+        })
+    );
+    println!(
+        "{}{}",
+        t!("ctl.external_iv_chaining"),
+        t!(if config.external_iv_chaining {
+            "ctl.bool_true"
+        } else {
+            "ctl.bool_false"
+        })
+    );
+    let block_mode_str = match (config.block_mode(), config.cipher_iface.name.as_str()) {
+        (encfs::crypto::block::BlockMode::AesGcmSiv, _) => t!("ctl.block_mode_aes_gcm_siv"),
+        (encfs::crypto::block::BlockMode::Legacy, "ssl/aes") => t!("ctl.block_mode_legacy_aes"),
+        (encfs::crypto::block::BlockMode::Legacy, "ssl/blowfish") => {
+            t!("ctl.block_mode_legacy_blowfish")
+        }
+        _ => t!("ctl.block_mode_legacy"),
+    };
+    println!("{}{}", t!("ctl.block_mode"), block_mode_str);
     println!("{}", t!("ctl.block_size", size = config.block_size));
-    if config.block_mac_bytes > 0 {
-        println!("{}", t!("ctl.block_mac", bytes = config.block_mac_bytes));
-    }
-    if config.allow_holes {
-        println!("{}", t!("ctl.allow_holes"));
-    }
+    println!("{}", t!("ctl.block_mac", bytes = config.block_mac_bytes));
+    println!(
+        "{}{}",
+        t!("ctl.allow_holes"),
+        t!(if config.allow_holes {
+            "ctl.bool_true"
+        } else {
+            "ctl.bool_false"
+        })
+    );
 
     // Show KDF information
     use config::KdfAlgorithm;
