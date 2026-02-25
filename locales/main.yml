@@ -51,3 +51,32 @@ main.password_prompt:
   en: "EncFS Password:"
   fr: "Mot de passe EncFS:"
   de: "EncFS-Passwort:"
+
+encfsr.no_config_found:
+  en: "error: no encfs config found in %{source}; create one with: encfsctl new %{source}"
+  fr: "erreur : aucune configuration encfs trouvée dans %{source} ; créez-en une avec : encfsctl new %{source}"
+  de: "Fehler: Keine encfs-Konfiguration in %{source} gefunden; erstellen Sie eine mit: encfsctl new %{source}"
+encfsr.source_not_found:
+  en: "error: source directory %{source} does not exist or is not accessible"
+  fr: "erreur : le répertoire source %{source} n'existe pas ou n'est pas accessible"
+  de: "Fehler: Quellverzeichnis %{source} existiert nicht oder ist nicht zugänglich"
+encfsr.source_not_dir:
+  en: "error: source path %{source} is not a directory"
+  fr: "erreur : le chemin source %{source} n'est pas un répertoire"
+  de: "Fehler: Quellpfad %{source} ist kein Verzeichnis"
+encfsr.unique_iv_rejected:
+  en: "error: unique_iv = true is not supported; set unique_iv = false to use encfsr"
+  fr: "erreur : unique_iv = true n'est pas pris en charge ; définissez unique_iv = false pour utiliser encfsr"
+  de: "Fehler: unique_iv = true wird nicht unterstützt; setzen Sie unique_iv = false, um encfsr zu verwenden"
+encfsr.config_load_failed:
+  en: "error: failed to load config from %{path}: %{error}"
+  fr: "erreur : échec du chargement de la configuration depuis %{path} : %{error}"
+  de: "Fehler: Konfiguration konnte nicht geladen werden von %{path}: %{error}"
+encfsr.decrypt_failed:
+  en: "error: failed to decrypt volume key (wrong password?): %{error}"
+  fr: "erreur : échec du déchiffrement de la clé de volume (mauvais mot de passe ?) : %{error}"
+  de: "Fehler: Volume-Schlüssel konnte nicht entschlüsselt werden (falsches Passwort?): %{error}"
+encfsr.mount_not_implemented:
+  en: "Config validated successfully. Mounting is not yet implemented (Phase 2)."
+  fr: "Configuration validée avec succès. Le montage n'est pas encore implémenté (Phase 2)."
+  de: "Konfiguration erfolgreich validiert. Das Einhängen ist noch nicht implementiert (Phase 2)."
