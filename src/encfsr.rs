@@ -4,7 +4,7 @@ extern crate rust_i18n;
 use anyhow::{Context, Result};
 use clap::Parser;
 use encfs::config;
-use log::info;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 i18n!("locales", fallback = "en");
@@ -155,7 +155,7 @@ fn main() -> Result<()> {
     // IMPORTANT: validate() inside get_cipher() rejects unique_iv=false (normal encfs requires it).
     // encfsr needs the OPPOSITE: reject unique_iv=true (deterministic output requires it to be false).
     // We check config.unique_iv directly after get_cipher() succeeds (per CONTEXT.md locked decision).
-    let _cipher = config.get_cipher(&password).unwrap_or_else(|e| {
+    let cipher = config.get_cipher(&password).unwrap_or_else(|e| {
         eprintln!("{}", t!("encfsr.decrypt_failed", error = e));
         std::process::exit(1);
     });
@@ -169,11 +169,28 @@ fn main() -> Result<()> {
 
     // CONF-02: chained_name_iv = true is explicitly allowed — no check here
 
-    // --- Phase 1 boundary: config is validated, mount is not yet implemented ---
-    info!("{}", t!("encfsr.mount_not_implemented"));
+    // --- Phase 2: mount the reverse filesystem ---
+    let fs = encfs::reverse_fs::ReverseFs::new(args.source, cipher, config);
 
-    // Future phases: build ReverseFilesystemMT and call fuse_mt::mount here.
-    // fuse_opts are captured in args.fuse_opts for use in Phase 2.
+    // Build FUSE options: always mount read-only at kernel level (FUSE-01)
+    // plus default_permissions, then pass through any user-provided fuse_opts.
+    let mut fuse_options: Vec<&OsStr> = vec![
+        OsStr::new("-o"),
+        OsStr::new("ro"),
+        OsStr::new("-o"),
+        OsStr::new("default_permissions"),
+    ];
+    let user_opts: Vec<OsString> = args.fuse_opts.iter().map(OsString::from).collect();
+    for opt in &user_opts {
+        fuse_options.push(opt.as_os_str());
+    }
+
+    let threads = 0; // fuse_mt default (num_cpus)
+    fuse_mt::mount(
+        fuse_mt::FuseMT::new(fs, threads),
+        &args.mount_point,
+        &fuse_options,
+    )?;
 
     Ok(())
 }
