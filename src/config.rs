@@ -272,6 +272,196 @@ impl EncfsConfig {
         Self::load_v5(&content_bytes)
     }
 
+    /// Variant of `load()` for use by `encfsr` (the reverse-mode filesystem).
+    ///
+    /// Unlike `load()`, this method accepts configs with `unique_iv = false`.
+    /// `encfsr` requires `unique_iv = false` for deterministic output and validates
+    /// this constraint itself (via the CONF-01 check) after loading and key derivation.
+    ///
+    /// All other validation checks (key size, block size, etc.) still apply.
+    pub fn load_for_encfsr(path: &Path) -> Result<Self> {
+        let mut file = File::open(path).context("Failed to open config file")?;
+        let mut content_bytes = Vec::new();
+        file.read_to_end(&mut content_bytes)
+            .context("Failed to read config file")?;
+
+        // V7 format: validate_for_encfsr is used inside load_v7_for_encfsr
+        if content_bytes.starts_with(V7_MAGIC) {
+            return Self::load_v7_for_encfsr(&content_bytes);
+        }
+
+        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+
+        if filename == ".encfs3" {
+            return Err(anyhow::anyhow!(
+                "{}",
+                t!("lib.error_version3_not_supported")
+            ));
+        }
+
+        if filename == ".encfs7"
+            || filename.ends_with(".encfs7.pb")
+            || filename.ends_with(".encfs7")
+        {
+            return Self::load_v7_for_encfsr(&content_bytes);
+        }
+
+        // V6 XML format — parse then run relaxed validation
+        if let Ok(content_str) = std::str::from_utf8(&content_bytes) {
+            match quick_xml::de::from_str::<BoostSerialization>(content_str) {
+                Ok(wrapper) => {
+                    let mut cfg = wrapper.cfg;
+                    cfg.config_type = ConfigType::V6;
+                    cfg.validate_for_encfsr()?;
+                    return Ok(cfg);
+                }
+                Err(e) => {
+                    debug!("Failed to parse XML config: {e}");
+                }
+            }
+        }
+
+        // V4 binary
+        if filename == ".encfs4" {
+            return Self::load_v4(&content_bytes);
+        }
+
+        // V5 binary
+        Self::load_v5(&content_bytes)
+    }
+
+    /// Load V7 protobuf format with relaxed validation (for `encfsr`).
+    fn load_v7_for_encfsr(data: &[u8]) -> Result<Self> {
+        let proto = Self::decode_v7_proto(data)?;
+
+        let argon2 = proto
+            .argon2
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config requires Argon2 KDF"))?;
+        let name_encoding = proto
+            .name_encoding
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config requires name_encoding"))?;
+
+        let computed_hash = Self::v7_config_hash_from_proto(&proto);
+        if !proto.config_hash.is_empty() && proto.config_hash != computed_hash {
+            anyhow::bail!("V7 config hash mismatch (tampered or corrupted)");
+        }
+        let config_hash = if proto.config_hash.is_empty() {
+            computed_hash
+        } else {
+            proto.config_hash.clone()
+        };
+
+        let key_data = proto.encrypted_key;
+        let (cipher_iface, key_size, block_size, block_mac_bytes, block_mac_rand_bytes, unique_iv) =
+            match proto.cipher {
+                None => {
+                    anyhow::bail!("V7 config requires a cipher");
+                }
+                Some(crate::config_proto::config::Cipher::Legacy(ref cipher)) => {
+                    let cipher_iface = match cipher.algorithm {
+                        1 => Interface {
+                            name: "ssl/aes".to_string(),
+                            major: 3,
+                            minor: 0,
+                            age: 0,
+                        },
+                        2 => Interface {
+                            name: "ssl/blowfish".to_string(),
+                            major: 0,
+                            minor: 0,
+                            age: 0,
+                        },
+                        _ => anyhow::bail!("V7: unsupported block cipher algorithm"),
+                    };
+                    let inferred_aead_from_mac = cipher.block_mac_bytes
+                        == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
+                    let block_mac_bytes = if inferred_aead_from_mac {
+                        crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
+                    } else {
+                        cipher.block_mac_bytes
+                    };
+                    (
+                        cipher_iface,
+                        cipher.key_size,
+                        cipher.block_size,
+                        block_mac_bytes,
+                        cipher.block_mac_rand_bytes,
+                        cipher.unique_iv,
+                    )
+                }
+                Some(crate::config_proto::config::Cipher::GcmSiv(ref cipher)) => (
+                    Interface {
+                        name: "ssl/aes".to_string(),
+                        major: 3,
+                        minor: 0,
+                        age: 0,
+                    },
+                    cipher.key_size,
+                    cipher.block_size,
+                    crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32,
+                    0,
+                    cipher.unique_iv,
+                ),
+            };
+
+        let name_iface = match name_encoding.mode {
+            1 => Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 0,
+                age: 0,
+            },
+            2 => Interface {
+                name: "nameio/block".to_string(),
+                major: 4,
+                minor: 0,
+                age: 0,
+            },
+            _ => Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 0,
+                age: 0,
+            },
+        };
+
+        let allow_holes = proto
+            .feature_flags
+            .as_ref()
+            .map(|f| f.allow_holes)
+            .unwrap_or(false);
+
+        let cfg = EncfsConfig {
+            config_type: ConfigType::V7,
+            creator: "encfs-rust".to_string(),
+            version: crate::constants::DEFAULT_CONFIG_VERSION,
+            cipher_iface,
+            name_iface,
+            key_size,
+            block_size,
+            key_data,
+            salt: argon2.salt.clone(),
+            kdf_iterations: 0,
+            desired_kdf_duration: 0,
+            kdf_algorithm: KdfAlgorithm::Argon2id,
+            argon2_memory_cost: Some(argon2.memory_cost_kib),
+            argon2_time_cost: Some(argon2.time_cost),
+            argon2_parallelism: Some(argon2.parallelism),
+            plain_data: false,
+            block_mac_bytes,
+            block_mac_rand_bytes,
+            unique_iv,
+            external_iv_chaining: name_encoding.external_iv_chaining,
+            chained_name_iv: name_encoding.chained_name_iv,
+            allow_holes,
+            config_hash: Some(config_hash),
+        };
+        cfg.validate_for_encfsr()?;
+        Ok(cfg)
+    }
+
     pub(crate) fn validate(&self) -> Result<()> {
         // Basic sanity checks to avoid negative sizes turning into huge `u64` via casts.
         if self.plain_data {
@@ -723,6 +913,247 @@ impl EncfsConfig {
         Ok(cfg)
     }
 
+    /// Variant of `validate()` used by `encfsr` (the reverse-mode filesystem).
+    ///
+    /// `encfsr` requires `unique_iv = false` (it performs this check itself after key derivation),
+    /// so this variant skips the `uniqueIV=0` rejection that would otherwise block key derivation.
+    /// All other validation checks still apply.
+    pub(crate) fn validate_for_encfsr(&self) -> Result<()> {
+        if self.plain_data {
+            return Err(anyhow::anyhow!(
+                "plainData=1 is not supported by this implementation"
+            ));
+        }
+        // NOTE: unlike validate(), we do NOT reject unique_iv=false here.
+        // encfsr requires unique_iv=false and checks it separately after get_cipher_for_encfsr().
+        if self.key_size <= 0 || self.key_size % 8 != 0 {
+            return Err(anyhow::anyhow!(
+                "Invalid keySize {} (must be positive and a multiple of 8)",
+                self.key_size
+            ));
+        }
+        if self.block_size <= 0 {
+            return Err(anyhow::anyhow!(
+                "Invalid blockSize {} (must be positive)",
+                self.block_size
+            ));
+        }
+        let legacy_max = crate::crypto::block::LEGACY_MAX_BLOCK_MAC_BYTES as i32;
+        let gcm_siv_tag = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
+        if self.block_mac_bytes < 0 {
+            return Err(anyhow::anyhow!(
+                "Invalid blockMACBytes {} (must be >= 0)",
+                self.block_mac_bytes
+            ));
+        }
+        if self.config_type == ConfigType::V7 {
+            if self.block_mac_bytes > legacy_max && self.block_mac_bytes != gcm_siv_tag {
+                return Err(anyhow::anyhow!(
+                    "Invalid V7 blockMACBytes {} (must be in 0..={} for legacy mode, or {} for AES-GCM-SIV mode)",
+                    self.block_mac_bytes,
+                    legacy_max,
+                    gcm_siv_tag
+                ));
+            }
+        } else if self.block_mac_bytes > legacy_max {
+            return Err(anyhow::anyhow!(
+                "Invalid blockMACBytes {} (must be in 0..={})",
+                self.block_mac_bytes,
+                legacy_max
+            ));
+        }
+        if self.block_mac_rand_bytes < 0 {
+            return Err(anyhow::anyhow!(
+                "Invalid blockMACRandBytes {} (must be >= 0)",
+                self.block_mac_rand_bytes
+            ));
+        }
+        if self.block_mac_rand_bytes != 0 {
+            return Err(anyhow::anyhow!(
+                "blockMACRandBytes={} is not supported yet",
+                self.block_mac_rand_bytes
+            ));
+        }
+        let block_overhead = match self.block_mode() {
+            crate::crypto::block::BlockMode::Legacy => self.block_mac_bytes,
+            crate::crypto::block::BlockMode::AesGcmSiv => {
+                if self.config_type != ConfigType::V7 {
+                    return Err(anyhow::anyhow!(
+                        "AES-GCM-SIV block mode is only supported in V7 configs"
+                    ));
+                }
+                if self.cipher_iface.name != "ssl/aes" {
+                    return Err(anyhow::anyhow!(
+                        "V7 AES-GCM-SIV block mode requires ssl/aes cipher (got {})",
+                        self.cipher_iface.name
+                    ));
+                }
+                if self.key_size != 128 && self.key_size != 256 {
+                    return Err(anyhow::anyhow!(
+                        "V7 AES-GCM-SIV block mode requires keySize 128 or 256 (got {})",
+                        self.key_size
+                    ));
+                }
+                gcm_siv_tag
+            }
+        };
+        if block_overhead + self.block_mac_rand_bytes >= self.block_size {
+            return Err(anyhow::anyhow!(
+                "Invalid block header sizes: blockSize={} blockMACBytes={} blockMACRandBytes={}",
+                self.block_size,
+                block_overhead,
+                self.block_mac_rand_bytes
+            ));
+        }
+        if self.kdf_iterations < 0 {
+            return Err(anyhow::anyhow!(
+                "Invalid kdfIterations {} (must be >= 0)",
+                self.kdf_iterations
+            ));
+        }
+        if self.kdf_algorithm == KdfAlgorithm::Argon2id {
+            if self.argon2_memory_cost.is_none()
+                || self.argon2_time_cost.is_none()
+                || self.argon2_parallelism.is_none()
+            {
+                return Err(anyhow::anyhow!(
+                    "Argon2id algorithm requires argon2MemoryCost, argon2TimeCost, and argon2Parallelism to be set"
+                ));
+            }
+            let memory_cost = self.argon2_memory_cost.unwrap();
+            let time_cost = self.argon2_time_cost.unwrap();
+            let parallelism = self.argon2_parallelism.unwrap();
+            if memory_cost < 8 {
+                return Err(anyhow::anyhow!(
+                    "Invalid argon2MemoryCost {} (must be at least 8 KiB)",
+                    memory_cost
+                ));
+            }
+            if time_cost < 1 {
+                return Err(anyhow::anyhow!(
+                    "Invalid argon2TimeCost {} (must be at least 1)",
+                    time_cost
+                ));
+            }
+            if parallelism < 1 {
+                return Err(anyhow::anyhow!(
+                    "Invalid argon2Parallelism {} (must be at least 1)",
+                    parallelism
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Derive cipher for use by `encfsr` (the reverse-mode filesystem).
+    ///
+    /// Unlike `get_cipher()`, this method does not reject `unique_iv = false` configs.
+    /// `encfsr` requires `unique_iv = false` and validates this constraint itself
+    /// (after the cipher is derived, not before).
+    ///
+    /// This is the correct entry point for `encfsr` — use `get_cipher()` for the
+    /// forward `encfs` binary which requires `unique_iv = true`.
+    pub fn get_cipher_for_encfsr(&self, password: &str) -> Result<crate::crypto::ssl::SslCipher> {
+        use crate::crypto::ssl::SslCipher;
+
+        self.validate_for_encfsr()?;
+        let mut cipher = SslCipher::new(&self.cipher_iface, self.key_size)?;
+
+        let key_len = usize::try_from(self.key_size / 8)
+            .map_err(|_| anyhow::anyhow!("Unsupported key size {}", self.key_size))?;
+        let iv_len = cipher.iv_len();
+        let user_key_len = key_len + iv_len;
+
+        // V7: AEAD decrypt with config hash as AAD
+        if self.config_type == ConfigType::V7 {
+            let aad = self
+                .config_hash
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash"))?;
+            let user_key = SslCipher::derive_key_argon2id(
+                password,
+                &self.salt,
+                self.argon2_memory_cost
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_MEMORY_COST),
+                self.argon2_time_cost
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_TIME_COST),
+                self.argon2_parallelism
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_PARALLELISM),
+                crate::crypto::aead::AEAD_KEY_LEN,
+            )?;
+            let volume_key_blob =
+                crate::crypto::aead::decrypt(user_key.as_slice(), aad, &self.key_data)?;
+            if volume_key_blob.len() < key_len + iv_len {
+                return Err(anyhow::anyhow!("Decrypted key blob too short"));
+            }
+            let volume_key = &volume_key_blob[..key_len];
+            let volume_iv = &volume_key_blob[key_len..key_len + iv_len];
+            cipher.set_key(volume_key, volume_iv);
+            cipher.set_name_encoding(&self.name_iface);
+            return Ok(cipher);
+        }
+
+        // Derive user key based on configured KDF algorithm
+        let user_key_blob = match self.kdf_algorithm {
+            KdfAlgorithm::Pbkdf2 => {
+                if self.kdf_iterations > 0 {
+                    SslCipher::derive_key(password, &self.salt, self.kdf_iterations, user_key_len)?
+                } else {
+                    SslCipher::derive_key_legacy(password, key_len, iv_len)?
+                }
+            }
+            KdfAlgorithm::Argon2id => {
+                let memory_cost = self
+                    .argon2_memory_cost
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_MEMORY_COST);
+                let time_cost = self
+                    .argon2_time_cost
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_TIME_COST);
+                let parallelism = self
+                    .argon2_parallelism
+                    .unwrap_or(crate::constants::DEFAULT_ARGON2_PARALLELISM);
+
+                SslCipher::derive_key_argon2id(
+                    password,
+                    &self.salt,
+                    memory_cost,
+                    time_cost,
+                    parallelism,
+                    user_key_len,
+                )?
+            }
+        };
+
+        // Split user_key_blob into key and IV
+        let user_key = &user_key_blob[..key_len];
+        let user_iv = &user_key_blob[key_len..];
+
+        // Decrypt volume key
+        let volume_key_blob =
+            if self.kdf_iterations > 0 || self.kdf_algorithm == KdfAlgorithm::Argon2id {
+                cipher.decrypt_key(&self.key_data, user_key, user_iv)?
+            } else {
+                cipher.decrypt_key_legacy(&self.key_data, user_key, user_iv)?
+            };
+
+        if volume_key_blob.len() < key_len + iv_len {
+            return Err(anyhow::anyhow!("Decrypted key blob too short"));
+        }
+
+        let volume_key = &volume_key_blob[..key_len];
+        let volume_iv = &volume_key_blob[key_len..key_len + iv_len];
+
+        cipher.set_key(volume_key, volume_iv);
+        cipher.set_name_encoding(&self.name_iface);
+
+        Ok(cipher)
+    }
+
+    /// Derive cipher from config and password.
+    ///
+    /// Calls `validate()` first, which rejects `unique_iv = false` configs (as required for the
+    /// forward `encfs` binary). Use `get_cipher_for_encfsr()` from the reverse-mode `encfsr`
+    /// binary which requires `unique_iv = false`.
     pub fn get_cipher(&self, password: &str) -> Result<crate::crypto::ssl::SslCipher> {
         use crate::crypto::ssl::SslCipher;
 
@@ -818,6 +1249,7 @@ impl EncfsConfig {
 
         Ok(cipher)
     }
+
     pub fn header_size(&self) -> u64 {
         if self.unique_iv { 8 } else { 0 }
     }

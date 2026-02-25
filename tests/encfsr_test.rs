@@ -1,7 +1,7 @@
 mod live;
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 fn encfsr_bin() -> PathBuf {
@@ -68,6 +68,97 @@ fn copy_std_fixture(dir: &std::path::Path) {
     let fixture_path = live::fixtures_dir().join("encfs6-std.xml");
     std::fs::copy(&fixture_path, dir.join(".encfs6.xml"))
         .expect("failed to copy encfs6-std.xml fixture");
+}
+
+/// Create a valid V6 encfsr-compatible config in `dir/.encfs6.xml`.
+///
+/// The config has:
+/// - uniqueIV=0 (required by encfsr)
+/// - chainedNameIV=1
+/// - blockMACBytes=0 (ciphertext size = plaintext size)
+/// - blockSize=1024
+/// - keySize=192 (AES-192)
+/// - kdfIterations=1 (fast, for tests only)
+/// - password: `password`
+///
+/// Returns the password used. Call with `password = "encfsr_test"` or similar.
+fn write_valid_encfsr_config(dir: &Path, password: &str) {
+    use encfs::config::{ConfigType, EncfsConfig, Interface, KdfAlgorithm};
+    use encfs::crypto::ssl::SslCipher;
+
+    let salt: Vec<u8> = (1u8..=20).collect(); // deterministic test salt
+    let key_size = 192i32;
+    let block_size = 1024i32;
+
+    let cipher_iface = Interface {
+        name: "ssl/aes".to_string(),
+        major: 3,
+        minor: 0,
+        age: 0,
+    };
+
+    let name_iface = Interface {
+        name: "nameio/block".to_string(),
+        major: 4,
+        minor: 0,
+        age: 0,
+    };
+
+    // Derive user key with PBKDF2
+    let mut temp_cipher = SslCipher::new(&cipher_iface, key_size).expect("failed to create cipher");
+    temp_cipher.set_name_encoding(&name_iface);
+    let key_len = (key_size / 8) as usize;
+    let iv_len = temp_cipher.iv_len();
+    let user_key_len = key_len + iv_len;
+
+    let user_key_blob =
+        SslCipher::derive_key(password, &salt, 1, user_key_len).expect("PBKDF2 failed");
+    let user_key = &user_key_blob[..key_len];
+    let user_iv = &user_key_blob[key_len..];
+
+    // Create a deterministic volume key (all zeros for test reproducibility)
+    let volume_key = vec![0u8; key_len];
+    let volume_iv = vec![0u8; iv_len];
+    let mut volume_blob = Vec::with_capacity(key_len + iv_len);
+    volume_blob.extend_from_slice(&volume_key);
+    volume_blob.extend_from_slice(&volume_iv);
+
+    // Encrypt the volume key blob
+    let encrypted_key = temp_cipher
+        .encrypt_key(&volume_blob, user_key, user_iv)
+        .expect("encrypt_key failed");
+
+    // Build EncfsConfig
+    let config = EncfsConfig {
+        config_type: ConfigType::V6,
+        creator: "encfsr-test".to_string(),
+        version: 20100713,
+        cipher_iface: cipher_iface.clone(),
+        name_iface: name_iface.clone(),
+        key_size,
+        block_size,
+        key_data: encrypted_key,
+        salt: salt.clone(),
+        kdf_iterations: 1,
+        desired_kdf_duration: 0,
+        kdf_algorithm: KdfAlgorithm::Pbkdf2,
+        argon2_memory_cost: None,
+        argon2_time_cost: None,
+        argon2_parallelism: None,
+        plain_data: false,
+        block_mac_bytes: 0,
+        block_mac_rand_bytes: 0,
+        unique_iv: false,
+        external_iv_chaining: false,
+        chained_name_iv: true,
+        allow_holes: false,
+        config_hash: None,
+    };
+
+    let config_path = dir.join(".encfs6.xml");
+    config
+        .save(&config_path)
+        .expect("failed to save encfsr test config");
 }
 
 /// Run encfsr with the given args, optionally piping `stdin_data` to stdin.
@@ -285,5 +376,42 @@ fn test_encfsr_fuse_opts_accepted() {
     assert!(
         stderr.contains("error:"),
         "stderr should contain 'error:' (source validation error). stderr: {stderr}"
+    );
+}
+
+#[test]
+fn test_encfsr_proceeds_to_mount_attempt() {
+    // Phase 2 regression test: encfsr with a valid uniqueIV=0 config should now
+    // attempt to mount (and fail at fuse_mt::mount due to nonexistent mount point),
+    // rather than printing the Phase 1 "not yet implemented" placeholder.
+    //
+    // The critical assertion: stderr does NOT contain "not yet implemented".
+    // Any other error (mount failure, FUSE error, etc.) is acceptable.
+    let dir =
+        live::unique_temp_dir("encfsr_test_mount_attempt").expect("failed to create temp dir");
+    let source_dir = dir.join("source");
+    // mount_dir intentionally does NOT exist — mount will fail at fuse_mt::mount
+    let mount_dir = dir.join("mnt");
+    std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
+
+    // Create a properly-encrypted uniqueIV=0 config that encfsr can actually decrypt.
+    write_valid_encfsr_config(&source_dir, "encfsr_test");
+
+    let (_success, _stdout, stderr) = run_encfsr(
+        &[
+            "--stdinpass",
+            source_dir.to_str().unwrap(),
+            mount_dir.to_str().unwrap(),
+        ],
+        Some("encfsr_test\n"),
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // Key assertion: Phase 1 "not yet implemented" message must NOT appear.
+    // The binary now attempts to mount with ReverseFs (Phase 2).
+    assert!(
+        !stderr.contains("not yet implemented"),
+        "encfsr should no longer print the Phase 1 placeholder. stderr: {stderr}"
     );
 }

@@ -115,7 +115,10 @@ fn main() -> Result<()> {
     };
 
     // --- Load config ---
-    let config = config::EncfsConfig::load(&config_path).unwrap_or_else(|e| {
+    // Use load_for_encfsr() rather than load() so that uniqueIV=0 configs are accepted at the
+    // load stage. The standard load() calls validate() which rejects uniqueIV=0, but encfsr
+    // requires uniqueIV=0 and validates this constraint itself via the CONF-01 check below.
+    let config = config::EncfsConfig::load_for_encfsr(&config_path).unwrap_or_else(|e| {
         eprintln!(
             "{}",
             t!(
@@ -151,11 +154,11 @@ fn main() -> Result<()> {
     };
 
     // --- Decrypt config and derive cipher ---
-    // get_cipher() calls the library's internal validate() first, then we do the encfsr-specific check.
-    // IMPORTANT: validate() inside get_cipher() rejects unique_iv=false (normal encfs requires it).
-    // encfsr needs the OPPOSITE: reject unique_iv=true (deterministic output requires it to be false).
-    // We check config.unique_iv directly after get_cipher() succeeds (per CONTEXT.md locked decision).
-    let cipher = config.get_cipher(&password).unwrap_or_else(|e| {
+    // Use get_cipher_for_encfsr() rather than get_cipher() because the standard validate() rejects
+    // unique_iv=false configs, but encfsr requires unique_iv=false for deterministic output.
+    // get_cipher_for_encfsr() skips the unique_iv=false rejection — encfsr performs that check
+    // itself (the CONF-01 check below) after the cipher is derived.
+    let cipher = config.get_cipher_for_encfsr(&password).unwrap_or_else(|e| {
         eprintln!("{}", t!("encfsr.decrypt_failed", error = e));
         std::process::exit(1);
     });
