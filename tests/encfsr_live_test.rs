@@ -7,12 +7,12 @@ use encfs::crypto::ssl::SslCipher;
 use live::{live_enabled, live_lock, path_has_tool, unique_temp_dir};
 use std::fs;
 use std::io::{Read, Write};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::os::unix::fs::MetadataExt;
 
 // ---------------------------------------------------------------------------
 // Test config parameters — shared across all live tests.
@@ -602,7 +602,8 @@ fn test_encfsr_v6_round_trip_block_boundaries() -> Result<()> {
         BlockMode::Legacy,
         config.block_size as u64,
         config.block_mac_bytes as u64,
-    ).map_err(|e| anyhow!("BlockLayout error: {}", e))?;
+    )
+    .map_err(|e| anyhow!("BlockLayout error: {}", e))?;
     let data_block_size = layout.data_size_per_block();
 
     // Write the 4 block boundary files
@@ -621,7 +622,12 @@ fn test_encfsr_v6_round_trip_block_boundaries() -> Result<()> {
     )?;
 
     // Step 3: Compare decrypted files with source files
-    let test_files = ["empty.bin", "sub_block.bin", "one_block.bin", "multi_block.bin"];
+    let test_files = [
+        "empty.bin",
+        "sub_block.bin",
+        "one_block.bin",
+        "multi_block.bin",
+    ];
     for filename in &test_files {
         let source_path = source_dir.join(filename);
         let decrypted_path = decrypt_mount.mount_point.join(filename);
@@ -652,8 +658,7 @@ fn test_encfsr_virtual_config_file_present() -> Result<()> {
     let dir = unique_temp_dir("encfsr_virtual_config")?;
     let source_dir = setup_source_dir(&dir)?;
     let config_path = source_dir.join(".encfs6.xml");
-    let encfsr_mount =
-        EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
 
     // 1. Verify it appears in directory listing
     let entries: Vec<String> = fs::read_dir(&encfsr_mount.mount_point)?
@@ -721,7 +726,9 @@ fn test_encfsr_v6_external_iv_chaining_round_trip() -> Result<()> {
     let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
     let live_cfg = live_config_from_encfs(&config);
     let decrypt_mount = live::MountGuard::mount_existing_backing_root(
-        live_cfg, true, encfsr_mount.mount_point.clone(),
+        live_cfg,
+        true,
+        encfsr_mount.mount_point.clone(),
     )?;
 
     // Compare
@@ -758,7 +765,9 @@ fn test_encfsr_v7_aes_gcm_siv_round_trip() -> Result<()> {
     // V7: volume_key_blob is the raw (unencrypted) key material.
     // EncfsConfig::standard_v7() sets up AES-256 (32 bytes) + IV (16 bytes) = 48 bytes.
     let volume_key_blob = vec![0u8; 48];
-    config.set_v7_key(TEST_PASSWORD, &volume_key_blob).expect("set_v7_key failed");
+    config
+        .set_v7_key(TEST_PASSWORD, &volume_key_blob)
+        .expect("set_v7_key failed");
 
     config.save(&source_dir.join(".encfs7"))?;
 
@@ -772,7 +781,9 @@ fn test_encfsr_v7_aes_gcm_siv_round_trip() -> Result<()> {
     live_cfg.kind = live::LiveConfigKind::V7;
 
     let decrypt_mount = live::MountGuard::mount_existing_backing_root(
-        live_cfg, true, encfsr_mount.mount_point.clone(),
+        live_cfg,
+        true,
+        encfsr_mount.mount_point.clone(),
     )?;
 
     assert_eq!(
@@ -803,11 +814,12 @@ fn test_encfsr_symlink_encryption_round_trip() -> Result<()> {
     #[cfg(unix)]
     std::os::unix::fs::symlink("hello.txt", source_dir.join("link.txt"))?;
 
-    let encfsr_mount =
-        EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
     let live_cfg = live_config_from_encfs(&config);
     let decrypt_mount = live::MountGuard::mount_existing_backing_root(
-        live_cfg, true, encfsr_mount.mount_point.clone(),
+        live_cfg,
+        true,
+        encfsr_mount.mount_point.clone(),
     )?;
 
     let target = fs::read_link(decrypt_mount.mount_point.join("link.txt"))?;
@@ -846,8 +858,7 @@ fn test_encfsr_multi_gb_streaming_no_buffering() -> Result<()> {
         }
     }
 
-    let encfsr_mount =
-        EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
 
     // Locate encrypted name (dir_iv=0 at root)
     let cipher = config.get_cipher(TEST_PASSWORD)?;
@@ -860,7 +871,9 @@ fn test_encfsr_multi_gb_streaming_no_buffering() -> Result<()> {
     let mut total_read = 0u64;
     loop {
         let n = file.read(&mut buf)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         total_read += n as u64;
     }
 

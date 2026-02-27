@@ -49,10 +49,8 @@ impl ReverseFs {
         config_bytes: Vec<u8>,
         config_metadata: std::fs::Metadata,
     ) -> Self {
-        let config_mtime = system_time_from_metadata_secs(
-            config_metadata.mtime(),
-            config_metadata.mtime_nsec(),
-        );
+        let config_mtime =
+            system_time_from_metadata_secs(config_metadata.mtime(), config_metadata.mtime_nsec());
         let config_uid = config_metadata.uid();
         let config_gid = config_metadata.gid();
         Self {
@@ -379,8 +377,10 @@ impl FilesystemMT for ReverseFs {
         // we must not run it through encrypted path resolution.
         if path == Path::new("/.encfs7") {
             // Enforce read-only semantics for the virtual config file.
-            let write_flags =
-                libc::O_WRONLY as u32 | libc::O_RDWR as u32 | libc::O_TRUNC as u32 | libc::O_CREAT as u32;
+            let write_flags = libc::O_WRONLY as u32
+                | libc::O_RDWR as u32
+                | libc::O_TRUNC as u32
+                | libc::O_CREAT as u32;
             if flags & write_flags != 0 {
                 return Err(libc::EROFS);
             }

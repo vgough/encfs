@@ -148,10 +148,7 @@ fn main() -> Result<()> {
     if config.config_type != encfs::config::ConfigType::V7 {
         eprintln!(
             "{}",
-            t!(
-                "encfsr.config_not_v7",
-                path = config_path.display()
-            )
+            t!("encfsr.config_not_v7", path = config_path.display())
         );
         std::process::exit(1);
     }
@@ -218,8 +215,13 @@ fn main() -> Result<()> {
         );
         std::process::exit(1);
     });
-    let fs =
-        encfs::reverse_fs::ReverseFs::new(args.source, cipher, config, config_bytes, config_metadata);
+    let fs = encfs::reverse_fs::ReverseFs::new(
+        args.source,
+        cipher,
+        config,
+        config_bytes,
+        config_metadata,
+    );
 
     // Build FUSE options: always mount read-only at kernel level (FUSE-01)
     // plus default_permissions, then pass through any user-provided fuse_opts.
