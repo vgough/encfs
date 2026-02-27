@@ -349,10 +349,10 @@ fn test_encfsr_live_readdir_shows_encrypted_names() -> Result<()> {
     let mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
 
     // Load config and derive cipher for verification
-    let config = EncfsConfig::load_for_encfsr(&source_dir.join(".encfs6.xml"))
+    let config = EncfsConfig::load(&source_dir.join(".encfs6.xml"))
         .context("failed to load encfsr config for verification")?;
     let cipher = config
-        .get_cipher_for_encfsr(TEST_PASSWORD)
+        .get_cipher(TEST_PASSWORD)
         .context("failed to derive cipher for verification")?;
 
     // Read the virtual root directory (entries are encrypted names)
@@ -418,8 +418,8 @@ fn test_encfsr_live_stat_reports_ciphertext_size() -> Result<()> {
     let config_path = source_dir.join(".encfs6.xml");
     let mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
 
-    let config = EncfsConfig::load_for_encfsr(&source_dir.join(".encfs6.xml"))?;
-    let cipher = config.get_cipher_for_encfsr(TEST_PASSWORD)?;
+    let config = EncfsConfig::load(&source_dir.join(".encfs6.xml"))?;
+    let cipher = config.get_cipher(TEST_PASSWORD)?;
 
     // Get plaintext file size
     let plaintext_path = source_dir.join(TEST_PLAINTEXT_FILENAME);
@@ -503,8 +503,8 @@ fn test_encfsr_live_path_resolution_correct() -> Result<()> {
     let config_path = source_dir.join(".encfs6.xml");
     let mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
 
-    let config = EncfsConfig::load_for_encfsr(&source_dir.join(".encfs6.xml"))?;
-    let cipher = config.get_cipher_for_encfsr(TEST_PASSWORD)?;
+    let config = EncfsConfig::load(&source_dir.join(".encfs6.xml"))?;
+    let cipher = config.get_cipher(TEST_PASSWORD)?;
 
     // Encrypt the known plaintext filename to get the virtual encrypted name
     // dir_iv=0 at the root
@@ -850,7 +850,7 @@ fn test_encfsr_multi_gb_streaming_no_buffering() -> Result<()> {
         EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
 
     // Locate encrypted name (dir_iv=0 at root)
-    let cipher = config.get_cipher_for_encfsr(TEST_PASSWORD)?;
+    let cipher = config.get_cipher(TEST_PASSWORD)?;
     let (encrypted_name, _) = cipher.encrypt_filename(b"big.bin", 0)?;
     let virtual_path = encfsr_mount.mount_point.join(&encrypted_name);
 

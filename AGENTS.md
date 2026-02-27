@@ -308,7 +308,7 @@ Three methods (in order of precedence):
 ### 9. Validation Requirements
 The `EncfsConfig::validate()` method enforces:
 - `plain_data` must be false (not supported)
-- `unique_iv` must be true (except V4)
+- `unique_iv` may be true or false (filesystem supports both)
 - `block_mac_rand_bytes` must be 0 (not implemented yet)
 - `key_size` must be positive and multiple of 8
 - `block_size` must be positive

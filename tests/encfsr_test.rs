@@ -15,6 +15,7 @@ fn encfsr_bin() -> PathBuf {
 /// Note: The encoded key in this fixture is from tests/unique_iv_check.rs.
 /// When unique_iv=0, the library's validate() rejects the config before
 /// attempting decryption, so the password never matters for that case.
+#[allow(dead_code)]
 fn write_test_config(dir: &std::path::Path, unique_iv: bool) {
     let unique_iv_val = if unique_iv { 1 } else { 0 };
     let xml = format!(
@@ -64,10 +65,26 @@ tccFKejCQQ9w0b9oEaATUZ0eFWE=
 }
 
 /// Copy the standard fixture config (uniqueIV=1, password="test") into `dir`.
+#[allow(dead_code)]
 fn copy_std_fixture(dir: &std::path::Path) {
     let fixture_path = live::fixtures_dir().join("encfs6-std.xml");
     std::fs::copy(&fixture_path, dir.join(".encfs6.xml"))
         .expect("failed to copy encfs6-std.xml fixture");
+}
+
+/// Create a minimal V7 config for encfsr tests. Saves to `path` (e.g. `dir.join("config.encfs7")`).
+/// `unique_iv` and `password` are set as given; volume key is zeros (test only).
+fn write_v7_config(path: &Path, unique_iv: bool, password: &str) {
+    use encfs::config::EncfsConfig;
+
+    let mut config = EncfsConfig::standard_v7();
+    config.unique_iv = unique_iv;
+    // Volume key blob: 32-byte key + 16-byte IV (AES-256, stream cipher IV)
+    let volume_key_blob = vec![0u8; 32 + 16];
+    config
+        .set_v7_key(password, &volume_key_blob)
+        .expect("set_v7_key failed");
+    config.save(path).expect("save V7 config failed");
 }
 
 /// Create a valid V6 encfsr-compatible config in `dir/.encfs6.xml`.
@@ -82,6 +99,7 @@ fn copy_std_fixture(dir: &std::path::Path) {
 /// - password: `password`
 ///
 /// Returns the password used. Call with `password = "encfsr_test"` or similar.
+#[allow(dead_code)]
 fn write_valid_encfsr_config(dir: &Path, password: &str) {
     use encfs::config::{ConfigType, EncfsConfig, Interface, KdfAlgorithm};
     use encfs::crypto::ssl::SslCipher;
@@ -222,11 +240,18 @@ fn test_encfsr_version() {
 fn test_encfsr_missing_source_dir() {
     let dir =
         live::unique_temp_dir("encfsr_test_missing_source").expect("failed to create temp dir");
+    let config_path = dir.join("config.encfs7");
     let nonexistent = dir.join("nonexistent_source");
     let mount_dir = dir.join("mnt");
 
+    write_v7_config(&config_path, false, "test");
+
     let (success, _stdout, stderr) = run_encfsr(
-        &[nonexistent.to_str().unwrap(), mount_dir.to_str().unwrap()],
+        &[
+            config_path.to_str().unwrap(),
+            nonexistent.to_str().unwrap(),
+            mount_dir.to_str().unwrap(),
+        ],
         None,
     );
 
@@ -251,10 +276,15 @@ fn test_encfsr_no_config_file() {
     let dir = live::unique_temp_dir("encfsr_test_no_config").expect("failed to create temp dir");
     let source_dir = dir.join("source");
     let mount_dir = dir.join("mnt");
+    let config_path = source_dir.join(".encfs6.xml"); // does not exist
     std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
 
     let (success, _stdout, stderr) = run_encfsr(
-        &[source_dir.to_str().unwrap(), mount_dir.to_str().unwrap()],
+        &[
+            config_path.to_str().unwrap(),
+            source_dir.to_str().unwrap(),
+            mount_dir.to_str().unwrap(),
+        ],
         None,
     );
 
@@ -270,25 +300,25 @@ fn test_encfsr_no_config_file() {
     );
     assert!(
         stderr.contains(source_dir.to_str().unwrap()),
-        "stderr should contain the source path. stderr: {stderr}"
+        "stderr should contain the source path (config path is under source). stderr: {stderr}"
     );
 }
 
 #[test]
 fn test_encfsr_rejects_unique_iv_true() {
-    // Use the standard fixture (uniqueIV=1, password="test") to test CONF-01.
-    // The library's validate() allows uniqueIV=1 (normal encfs requires it),
-    // get_cipher() succeeds with password "test", then our encfsr check fires.
+    // V7 config with uniqueIV=1; encfsr loads it, then CONF-01 check fires.
     let dir = live::unique_temp_dir("encfsr_test_rejects_uiv").expect("failed to create temp dir");
     let source_dir = dir.join("source");
     let mount_dir = dir.join("mnt");
+    let config_path = dir.join("config.encfs7");
     std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
 
-    copy_std_fixture(&source_dir);
+    write_v7_config(&config_path, true, "test");
 
     let (success, _stdout, stderr) = run_encfsr(
         &[
             "--stdinpass",
+            config_path.to_str().unwrap(),
             source_dir.to_str().unwrap(),
             mount_dir.to_str().unwrap(),
         ],
@@ -309,20 +339,19 @@ fn test_encfsr_rejects_unique_iv_true() {
 
 #[test]
 fn test_encfsr_allows_chained_name_iv() {
-    // Use an inline config with uniqueIV=0 and chainedNameIV=1.
-    // The library's validate() rejects uniqueIV=0 (not supported for normal encfs),
-    // so get_cipher() returns Err with a library validation error — NOT the CONF-01 message.
-    // CONF-02 requirement: the error must NOT be "unique_iv = true is not supported".
+    // V7 config with uniqueIV=0; encfsr accepts it (CONF-02: no CONF-01 message).
     let dir = live::unique_temp_dir("encfsr_test_chained_iv").expect("failed to create temp dir");
     let source_dir = dir.join("source");
     let mount_dir = dir.join("mnt");
+    let config_path = dir.join("config.encfs7");
     std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
 
-    write_test_config(&source_dir, false); // uniqueIV=0, chainedNameIV=1
+    write_v7_config(&config_path, false, "test");
 
     let (_success, _stdout, stderr) = run_encfsr(
         &[
             "--stdinpass",
+            config_path.to_str().unwrap(),
             source_dir.to_str().unwrap(),
             mount_dir.to_str().unwrap(),
         ],
@@ -332,7 +361,7 @@ fn test_encfsr_allows_chained_name_iv() {
     let _ = std::fs::remove_dir_all(&dir);
 
     // The critical CONF-02 assertion: encfsr must NOT report the CONF-01 message
-    // for a config that merely has uniqueIV=0 (without uniqueIV=1).
+    // for a config that has uniqueIV=0.
     assert!(
         !stderr.contains("unique_iv = true is not supported"),
         "encfsr with uniqueIV=0 should NOT report the CONF-01 unique_iv message. stderr: {stderr}"
@@ -341,16 +370,21 @@ fn test_encfsr_allows_chained_name_iv() {
 
 #[test]
 fn test_encfsr_fuse_opts_accepted() {
-    // encfsr <nonexistent> <mnt> -o allow_other should fail on the missing source,
-    // NOT on a clap parse error about -o being unrecognized.
+    // encfsr <config> <source> <mnt> -o allow_other: clap must accept trailing -o allow_other,
+    // then we fail on the missing source (not on a parse error).
     let dir = live::unique_temp_dir("encfsr_test_fuse_opts").expect("failed to create temp dir");
+    let config_path = dir.join("config.encfs7");
     let nonexistent = dir.join("nonexistent_source");
     let mount_dir = dir.join("mnt");
 
+    write_v7_config(&config_path, false, "test");
+
     let (success, _stdout, stderr) = run_encfsr(
         &[
+            config_path.to_str().unwrap(),
             nonexistent.to_str().unwrap(),
             mount_dir.to_str().unwrap(),
+            "--",
             "-o",
             "allow_other",
         ],
@@ -372,7 +406,6 @@ fn test_encfsr_fuse_opts_accepted() {
         !stderr.contains("unexpected argument"),
         "stderr should NOT contain 'unexpected argument' (clap parse error). stderr: {stderr}"
     );
-    // Should show the source path error, not a clap usage error
     assert!(
         stderr.contains("error:"),
         "stderr should contain 'error:' (source validation error). stderr: {stderr}"
@@ -381,25 +414,24 @@ fn test_encfsr_fuse_opts_accepted() {
 
 #[test]
 fn test_encfsr_proceeds_to_mount_attempt() {
-    // Phase 2 regression test: encfsr with a valid uniqueIV=0 config should now
+    // Phase 2 regression test: encfsr with a valid V7 uniqueIV=0 config should
     // attempt to mount (and fail at fuse_mt::mount due to nonexistent mount point),
     // rather than printing the Phase 1 "not yet implemented" placeholder.
     //
     // The critical assertion: stderr does NOT contain "not yet implemented".
-    // Any other error (mount failure, FUSE error, etc.) is acceptable.
     let dir =
         live::unique_temp_dir("encfsr_test_mount_attempt").expect("failed to create temp dir");
     let source_dir = dir.join("source");
-    // mount_dir intentionally does NOT exist — mount will fail at fuse_mt::mount
+    let config_path = dir.join("config.encfs7");
     let mount_dir = dir.join("mnt");
     std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
 
-    // Create a properly-encrypted uniqueIV=0 config that encfsr can actually decrypt.
-    write_valid_encfsr_config(&source_dir, "encfsr_test");
+    write_v7_config(&config_path, false, "encfsr_test");
 
     let (_success, _stdout, stderr) = run_encfsr(
         &[
             "--stdinpass",
+            config_path.to_str().unwrap(),
             source_dir.to_str().unwrap(),
             mount_dir.to_str().unwrap(),
         ],
@@ -408,8 +440,6 @@ fn test_encfsr_proceeds_to_mount_attempt() {
 
     let _ = std::fs::remove_dir_all(&dir);
 
-    // Key assertion: Phase 1 "not yet implemented" message must NOT appear.
-    // The binary now attempts to mount with ReverseFs (Phase 2).
     assert!(
         !stderr.contains("not yet implemented"),
         "encfsr should no longer print the Phase 1 placeholder. stderr: {stderr}"
