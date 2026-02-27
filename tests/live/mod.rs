@@ -31,6 +31,7 @@ pub struct LiveConfig {
 pub enum LiveConfigKind {
     Standard,
     Paranoia,
+    V7,
 }
 
 impl LiveConfigKind {
@@ -38,6 +39,7 @@ impl LiveConfigKind {
         match self {
             LiveConfigKind::Standard => "encfs6-std.xml",
             LiveConfigKind::Paranoia => "encfs6-paranoia.xml",
+            LiveConfigKind::V7 => ".encfs7",
         }
     }
 }
@@ -204,9 +206,11 @@ impl MountGuard {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = cmd.spawn().context("failed to spawn encfs")?;
-        let stdout_tail: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
-        let stderr_tail: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+                let mut child = cmd.spawn().context("failed to spawn encfs")?;
+                println!("  [live] Spawned encfs bin (pid={})", child.id());
+        
+                let stdout_tail: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+                let stderr_tail: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         // Drain stdout/stderr so the child can't deadlock on a full pipe. Keep a small tail
         // for debugging mount failures/timeouts.
         const LOG_TAIL_MAX: usize = 64 * 1024;

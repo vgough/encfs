@@ -14,6 +14,10 @@ fn help_encfsr_about() -> String {
     t!("help.encfsr.about").to_string()
 }
 
+fn help_encfsr_config() -> String {
+    t!("help.encfsr.config").to_string()
+}
+
 fn help_encfsr_source() -> String {
     t!("help.encfsr.source").to_string()
 }
@@ -41,6 +45,10 @@ fn help_encfsr_fuse_opts() -> String {
 #[derive(Parser, Debug)]
 #[command(author, version, about = help_encfsr_about(), long_about = None)]
 struct Args {
+    /// EncFS config file (e.g. .encfs6.xml or .encfs7)
+    #[arg(help = help_encfsr_config())]
+    config: PathBuf,
+
     /// Source directory containing plaintext files and encfs config
     #[arg(help = help_encfsr_source())]
     source: PathBuf,
@@ -97,22 +105,30 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    // --- Locate config file (QUAL-01) ---
-    // Search order matches main.rs: .encfs7, .encfs6.xml, .encfs5
-    let config_path = {
-        let candidates = [".encfs7", ".encfs6.xml", ".encfs5"];
-        candidates
-            .iter()
-            .map(|name| args.source.join(name))
-            .find(|p| p.exists())
-            .unwrap_or_else(|| {
-                eprintln!(
-                    "{}",
-                    t!("encfsr.no_config_found", source = args.source.display())
-                );
-                std::process::exit(1);
-            })
-    };
+    // --- Config file validation ---
+    let config_path = args.config.clone();
+    if !config_path.exists() {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.config_load_failed",
+                path = config_path.display(),
+                error = "config file does not exist"
+            )
+        );
+        std::process::exit(1);
+    }
+    if !config_path.is_file() {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.config_load_failed",
+                path = config_path.display(),
+                error = "config path is not a regular file"
+            )
+        );
+        std::process::exit(1);
+    }
 
     // --- Load config ---
     // Use load_for_encfsr() rather than load() so that uniqueIV=0 configs are accepted at the
@@ -173,7 +189,30 @@ fn main() -> Result<()> {
     // CONF-02: chained_name_iv = true is explicitly allowed — no check here
 
     // --- Phase 2: mount the reverse filesystem ---
-    let fs = encfs::reverse_fs::ReverseFs::new(args.source, cipher, config);
+    let config_bytes = std::fs::read(&config_path).unwrap_or_else(|e| {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.config_load_failed",
+                path = config_path.display(),
+                error = e
+            )
+        );
+        std::process::exit(1);
+    });
+    let config_metadata = std::fs::symlink_metadata(&config_path).unwrap_or_else(|e| {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.config_load_failed",
+                path = config_path.display(),
+                error = e
+            )
+        );
+        std::process::exit(1);
+    });
+    let fs =
+        encfs::reverse_fs::ReverseFs::new(args.source, cipher, config, config_bytes, config_metadata);
 
     // Build FUSE options: always mount read-only at kernel level (FUSE-01)
     // plus default_permissions, then pass through any user-provided fuse_opts.

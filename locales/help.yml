@@ -213,6 +213,10 @@ help.encfsr.about:
   en: "EncFS Reverse - Virtual Encrypted Read-Only Filesystem"
   fr: "EncFS Reverse - Système de fichiers chiffré virtuel en lecture seule"
   de: "EncFS Reverse - Virtuelles verschlüsseltes schreibgeschütztes Dateisystem"
+help.encfsr.config:
+  en: "EncFS config file (e.g. .encfs6.xml or .encfs7)"
+  fr: "Fichier de configuration EncFS (par ex. .encfs6.xml ou .encfs7)"
+  de: "EncFS-Konfigurationsdatei (z.B. .encfs6.xml oder .encfs7)"
 help.encfsr.source:
   en: "Source directory (plaintext)"
   fr: "Répertoire source (texte en clair)"

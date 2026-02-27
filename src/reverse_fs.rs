@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileTypeExt, MetadataExt};
+use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -20,6 +20,7 @@ use std::time::{Duration, SystemTime};
 
 struct ReverseFileHandle {
     file: File,
+    file_iv: u64,
 }
 
 /// A reverse-direction FUSE filesystem.
@@ -34,16 +35,36 @@ pub struct ReverseFs {
     pub config: EncfsConfig,
     handles: Mutex<HashMap<u64, Arc<ReverseFileHandle>>>,
     next_fh: AtomicU64,
+    config_bytes: Vec<u8>,
+    config_mtime: SystemTime,
+    config_uid: u32,
+    config_gid: u32,
 }
 
 impl ReverseFs {
-    pub fn new(source: PathBuf, cipher: SslCipher, config: EncfsConfig) -> Self {
+    pub fn new(
+        source: PathBuf,
+        cipher: SslCipher,
+        config: EncfsConfig,
+        config_bytes: Vec<u8>,
+        config_metadata: std::fs::Metadata,
+    ) -> Self {
+        let config_mtime = system_time_from_metadata_secs(
+            config_metadata.mtime(),
+            config_metadata.mtime_nsec(),
+        );
+        let config_uid = config_metadata.uid();
+        let config_gid = config_metadata.gid();
         Self {
             source,
             cipher,
             config,
             handles: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
+            config_bytes,
+            config_mtime,
+            config_uid,
+            config_gid,
         }
     }
 
@@ -92,6 +113,71 @@ impl ReverseFs {
         )
         .map_err(|_| libc::EINVAL)?;
         Ok(layout.physical_size_from_logical(plaintext_size, 0))
+    }
+
+    fn read_encrypted(
+        &self,
+        file: &File,
+        file_iv: u64,
+        offset: u64,
+        size: u32,
+    ) -> Result<Vec<u8>, libc::c_int> {
+        use crate::crypto::block::{BlockCodec, BlockLayout};
+
+        let layout = BlockLayout::new(
+            self.config.block_mode(),
+            self.config.block_size as u64,
+            self.config.block_mac_bytes as u64,
+        )
+        .map_err(|_| libc::EINVAL)?;
+
+        let codec = BlockCodec::new(
+            &self.cipher,
+            layout,
+            false, // ignore_legacy_mac_mismatch unused for encrypt
+            self.config.allow_holes,
+        );
+
+        let data_block_size = layout.data_size_per_block();
+        // CIPHERTEXT offset arithmetic: ciphertext block N is at [N*block_size, (N+1)*block_size)
+        // Corresponding plaintext is at [N*data_block_size, (N+1)*data_block_size)
+        // header_size = 0 because unique_iv = false (CONF-01 enforces this)
+        let start_block = offset / layout.block_size();
+        let end_block = (offset + size as u64 - 1) / layout.block_size();
+
+        let mut out = Vec::with_capacity(size as usize);
+
+        for block_num in start_block..=end_block {
+            let pt_offset = block_num * data_block_size; // header_size = 0
+            let mut plain_buf = vec![0u8; data_block_size as usize];
+            let n = file
+                .read_at(&mut plain_buf, pt_offset)
+                .map_err(|_| libc::EIO)?;
+            if n == 0 {
+                break;
+            }
+            plain_buf.truncate(n);
+
+            let cipher_block = codec
+                .encrypt_block(block_num, file_iv, &plain_buf)
+                .map_err(|_| libc::EIO)?;
+
+            // Slice out only the bytes the caller requested (first/last blocks may be partial)
+            let block_start_in_ct = block_num * layout.block_size();
+            let lo = if block_start_in_ct < offset {
+                (offset - block_start_in_ct) as usize
+            } else {
+                0
+            };
+            let hi = std::cmp::min(
+                cipher_block.len(),
+                (offset + size as u64 - block_start_in_ct) as usize,
+            );
+            if lo < hi {
+                out.extend_from_slice(&cipher_block[lo..hi]);
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -161,6 +247,30 @@ impl FilesystemMT for ReverseFs {
 
     fn getattr(&self, _req: RequestInfo, path: &Path, _fh: Option<u64>) -> ResultEntry {
         debug!("ReverseFs::getattr {:?}", path);
+
+        // Virtual config file at root
+        if path == Path::new("/.encfs7") {
+            let size = self.config_bytes.len() as u64;
+            return Ok((
+                Duration::from_secs(1),
+                FileAttr {
+                    size,
+                    blocks: size.div_ceil(512),
+                    atime: self.config_mtime,
+                    mtime: self.config_mtime,
+                    ctime: self.config_mtime,
+                    crtime: SystemTime::UNIX_EPOCH,
+                    kind: FileType::RegularFile,
+                    perm: 0o444,
+                    nlink: 1,
+                    uid: self.config_uid,
+                    gid: self.config_gid,
+                    rdev: 0,
+                    flags: 0,
+                },
+            ));
+        }
+
         let (source_path, _) = self.resolve_source_path(path)?;
         let metadata = std::fs::symlink_metadata(&source_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -251,16 +361,28 @@ impl FilesystemMT for ReverseFs {
             }
         }
 
+        if path == Path::new("/") {
+            result.push(DirectoryEntry {
+                name: OsStr::new(".encfs7").to_os_string(),
+                kind: FileType::RegularFile,
+            });
+        }
+
         Ok(result)
     }
 
     fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
         debug!("ReverseFs::open {:?}", path);
-        let (source_path, _) = self.resolve_source_path(path)?;
+        let (source_path, dir_iv) = self.resolve_source_path(path)?;
+        let file_iv = if self.config.external_iv_chaining {
+            dir_iv
+        } else {
+            0u64
+        };
         let file = File::open(&source_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
         self.handles_guard()
-            .insert(fh, Arc::new(ReverseFileHandle { file }));
+            .insert(fh, Arc::new(ReverseFileHandle { file, file_iv }));
         Ok((fh, flags))
     }
 
@@ -280,19 +402,32 @@ impl FilesystemMT for ReverseFs {
     fn read(
         &self,
         _req: RequestInfo,
-        _path: &Path,
+        path: &Path,
         fh: u64,
         offset: u64,
         size: u32,
         callback: impl FnOnce(ResultSlice<'_>) -> CallbackResult,
     ) -> CallbackResult {
+        // Special case: virtual .encfs7 config file (CRPT-05)
+        if path == Path::new("/.encfs7") {
+            let data = &self.config_bytes;
+            let start = offset as usize;
+            if start >= data.len() {
+                return callback(Ok(&[]));
+            }
+            let end = std::cmp::min(data.len(), start + size as usize);
+            return callback(Ok(&data[start..end]));
+        }
+
+        // CRITICAL: release the handles lock before calling callback to avoid deadlock
         let handle = {
             let handles = self.handles_guard();
             match handles.get(&fh).cloned() {
                 Some(h) => h,
                 None => return callback(Err(libc::EBADF)),
             }
-        };
+        }; // lock dropped here
+
         let plaintext_size = match handle.file.metadata() {
             Ok(m) => m.len(),
             Err(_) => return callback(Err(libc::EIO)),
@@ -304,17 +439,28 @@ impl FilesystemMT for ReverseFs {
         if offset >= ciphertext_size {
             return callback(Ok(&[]));
         }
-        let available = (ciphertext_size - offset).min(size as u64) as usize;
-        let zeros = vec![0u8; available];
-        callback(Ok(&zeros))
+
+        // Do encryption work without holding the handles lock
+        let actual_size = std::cmp::min(size as u64, ciphertext_size - offset) as u32;
+        match self.read_encrypted(&handle.file, handle.file_iv, offset, actual_size) {
+            Ok(data) => callback(Ok(&data)),
+            Err(e) => callback(Err(e)),
+        }
     }
 
     fn readlink(&self, _req: RequestInfo, path: &Path) -> Result<Vec<u8>, libc::c_int> {
         debug!("ReverseFs::readlink {:?}", path);
-        let (source_path, _) = self.resolve_source_path(path)?;
+        let (source_path, dir_iv) = self.resolve_source_path(path)?;
         let target =
             std::fs::read_link(&source_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        Ok(target.as_os_str().as_bytes().to_vec())
+        let plain_bytes = target.as_os_str().as_bytes();
+        // Encrypt the symlink target using the directory IV of the symlink's location (CRPT-04)
+        // This matches what forward encfs does in fs.rs::symlink() — same IV, same call
+        let (enc_target, _) = self
+            .cipher
+            .encrypt_filename(plain_bytes, dir_iv)
+            .map_err(|_| libc::EIO)?;
+        Ok(enc_target.into_bytes())
     }
 
     fn flush(&self, _req: RequestInfo, _path: &Path, _fh: u64, _lock_owner: u64) -> ResultEmpty {
