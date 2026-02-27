@@ -373,6 +373,22 @@ impl FilesystemMT for ReverseFs {
 
     fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
         debug!("ReverseFs::open {:?}", path);
+
+        // Special case: virtual .encfs7 config file at the FUSE root (CRPT-05).
+        // This file is backed by in-memory config bytes, not a real source file, so
+        // we must not run it through encrypted path resolution.
+        if path == Path::new("/.encfs7") {
+            // Enforce read-only semantics for the virtual config file.
+            let write_flags =
+                libc::O_WRONLY as u32 | libc::O_RDWR as u32 | libc::O_TRUNC as u32 | libc::O_CREAT as u32;
+            if flags & write_flags != 0 {
+                return Err(libc::EROFS);
+            }
+            // We don't need a real file handle here because read() for .encfs7 ignores fh
+            // and serves data directly from self.config_bytes.
+            return Ok((0, flags));
+        }
+
         let (source_path, dir_iv) = self.resolve_source_path(path)?;
         let file_iv = if self.config.external_iv_chaining {
             dir_iv

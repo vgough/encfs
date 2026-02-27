@@ -45,7 +45,7 @@ fn help_encfsr_fuse_opts() -> String {
 #[derive(Parser, Debug)]
 #[command(author, version, about = help_encfsr_about(), long_about = None)]
 struct Args {
-    /// EncFS config file (e.g. .encfs6.xml or .encfs7)
+    /// EncFS config file (V7 protobuf, e.g. .encfs7)
     #[arg(help = help_encfsr_config())]
     config: PathBuf,
 
@@ -131,9 +131,9 @@ fn main() -> Result<()> {
     }
 
     // --- Load config ---
-    // Use load_for_encfsr() rather than load() so that uniqueIV=0 configs are accepted at the
-    // load stage. The standard load() calls validate() which rejects uniqueIV=0, but encfsr
-    // requires uniqueIV=0 and validates this constraint itself via the CONF-01 check below.
+    // Use load_for_encfsr() rather than load() so that configs with unique_iv = false are accepted
+    // at the load stage. The standard load() calls validate() which rejects unique_iv = false for
+    // most config versions.
     let config = config::EncfsConfig::load_for_encfsr(&config_path).unwrap_or_else(|e| {
         eprintln!(
             "{}",
@@ -145,6 +145,19 @@ fn main() -> Result<()> {
         );
         std::process::exit(1);
     });
+
+    // encfsr exposes the config inside the virtual filesystem as ".encfs7", so it must be a
+    // true V7 protobuf config on disk. Reject legacy V4/V5/V6 configs here.
+    if config.config_type != encfs::config::ConfigType::V7 {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.config_not_v7",
+                path = config_path.display()
+            )
+        );
+        std::process::exit(1);
+    }
 
     // --- Password acquisition (matches main.rs pattern) ---
     let password = if let Some(prog) = args.extpass {
@@ -171,16 +184,17 @@ fn main() -> Result<()> {
 
     // --- Decrypt config and derive cipher ---
     // Use get_cipher_for_encfsr() rather than get_cipher() because the standard validate() rejects
-    // unique_iv=false configs, but encfsr requires unique_iv=false for deterministic output.
-    // get_cipher_for_encfsr() skips the unique_iv=false rejection — encfsr performs that check
-    // itself (the CONF-01 check below) after the cipher is derived.
+    // unique_iv = false configs, but encfsr supports both unique_iv = false and unique_iv = true.
+    // get_cipher_for_encfsr() skips the unique_iv = false rejection so encfsr can handle both
+    // deterministic (unique_iv = false) and non-deterministic (unique_iv = true) modes.
     let cipher = config.get_cipher_for_encfsr(&password).unwrap_or_else(|e| {
         eprintln!("{}", t!("encfsr.decrypt_failed", error = e));
         std::process::exit(1);
     });
 
     // --- encfsr-specific config validation (CONF-01, CONF-02) ---
-    // CONF-01: reject unique_iv = true (produces non-deterministic output)
+    // CONF-01: reject unique_iv = true. Reverse mode requires deterministic output and a
+    // header-less layout (unique_iv = false) so that ReverseFs size calculations stay correct.
     if config.unique_iv {
         eprintln!("{}", t!("encfsr.unique_iv_rejected"));
         std::process::exit(1);

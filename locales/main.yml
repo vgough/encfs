@@ -68,6 +68,10 @@ encfsr.unique_iv_rejected:
   en: "error: unique_iv = true is not supported; set unique_iv = false to use encfsr"
   fr: "erreur : unique_iv = true n'est pas pris en charge ; définissez unique_iv = false pour utiliser encfsr"
   de: "Fehler: unique_iv = true wird nicht unterstützt; setzen Sie unique_iv = false, um encfsr zu verwenden"
+encfsr.unique_iv_warning:
+  en: "warning: unique_iv = true will make the reverse filesystem output non-deterministic; encrypted filenames may change between runs"
+  fr: "avertissement : unique_iv = true rendra la sortie du système de fichiers inversé non déterministe ; les noms de fichiers chiffrés peuvent changer entre les exécutions"
+  de: "Warnung: unique_iv = true macht die Ausgabe des Reverse-Dateisystems nicht deterministisch; verschlüsselte Dateinamen können sich zwischen Ausführungen ändern"
 encfsr.config_load_failed:
   en: "error: failed to load config from %{path}: %{error}"
   fr: "erreur : échec du chargement de la configuration depuis %{path} : %{error}"
@@ -76,6 +80,10 @@ encfsr.decrypt_failed:
   en: "error: failed to decrypt volume key (wrong password?): %{error}"
   fr: "erreur : échec du déchiffrement de la clé de volume (mauvais mot de passe ?) : %{error}"
   de: "Fehler: Volume-Schlüssel konnte nicht entschlüsselt werden (falsches Passwort?): %{error}"
+encfsr.config_not_v7:
+  en: "error: encfsr only supports V7 config files (.encfs7); got non-V7 config at %{path}"
+  fr: "erreur : encfsr ne prend en charge que les fichiers de configuration V7 (.encfs7) ; configuration non V7 trouvée à %{path}"
+  de: "Fehler: encfsr unterstützt nur V7-Konfigurationsdateien (.encfs7); nicht-V7-Konfiguration bei %{path} gefunden"
 encfsr.mount_not_implemented:
   en: "Config validated successfully. Mounting is not yet implemented (Phase 2)."
   fr: "Configuration validée avec succès. Le montage n'est pas encore implémenté (Phase 2)."

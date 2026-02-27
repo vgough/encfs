@@ -208,6 +208,10 @@ help.encfsctl.new_no_chained_iv:
   en: "Disable IV chaining for path components (like legacy EncFS V4)"
   fr: "Désactiver le chaînage IV pour les composants de chemin (comme EncFS V4 legacy)"
   de: "IV-Verkettung für Pfadkomponenten deaktivieren (wie Legacy EncFS V4)"
+help.encfsctl.new_no_unique_iv:
+  en: "Disable per-file IV headers (create configs intended for reverse mode / encfsr)"
+  fr: "Désactiver les en-têtes IV par fichier (crée des configurations destinées au mode inversé / encfsr)"
+  de: "Per-Datei-IV-Header deaktivieren (Konfigurationen für den Reverse-Modus / encfsr erstellen)"
 
 help.encfsr.about:
   en: "EncFS Reverse - Virtual Encrypted Read-Only Filesystem"
