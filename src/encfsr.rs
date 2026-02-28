@@ -23,19 +23,19 @@ fn help_encfsr_source() -> String {
 }
 
 fn help_encfsr_mount_point() -> String {
-    t!("help.encfsr.mount_point").to_string()
+    t!("help.encfs.mount_point").to_string()
 }
 
 fn help_encfsr_stdinpass() -> String {
-    t!("help.encfsr.stdinpass").to_string()
+    t!("help.encfs.stdinpass").to_string()
 }
 
 fn help_encfsr_extpass() -> String {
-    t!("help.encfsr.extpass").to_string()
+    t!("help.encfs.extpass").to_string()
 }
 
 fn help_encfsr_foreground() -> String {
-    t!("help.encfsr.foreground").to_string()
+    t!("help.encfs.foreground").to_string()
 }
 
 fn help_encfsr_fuse_opts() -> String {

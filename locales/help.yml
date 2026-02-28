@@ -225,22 +225,6 @@ help.encfsr.source:
   en: "Source directory (plaintext)"
   fr: "Répertoire source (texte en clair)"
   de: "Quellverzeichnis (Klartext)"
-help.encfsr.mount_point:
-  en: "Mount point"
-  fr: "Point de montage"
-  de: "Einhängepunkt"
-help.encfsr.stdinpass:
-  en: "Read password from stdin (for scripted use)"
-  fr: "Lire le mot de passe depuis stdin (pour les scripts)"
-  de: "Passwort von stdin lesen (für Skriptverwendung)"
-help.encfsr.extpass:
-  en: "External password program"
-  fr: "Programme de mot de passe externe"
-  de: "Externes Passwortprogramm"
-help.encfsr.foreground:
-  en: "Run in foreground (do not daemonize)"
-  fr: "Exécuter au premier plan (ne pas démoniser)"
-  de: "Im Vordergrund ausführen (kein Daemon)"
 help.encfsr.fuse_opts:
   en: "FUSE options (e.g. -o allow_other)"
   fr: "Options FUSE (ex : -o allow_other)"
