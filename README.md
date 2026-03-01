@@ -54,10 +54,44 @@ Overall status
   - [x] support for a new key derivation function (Argon2id)
   - [x] new block encryption mode (aes-gcm-siv)
 - Extended features
-  - [ ] reverse encryption mode
+  - [x] reverse encryption mode
 - Multi-language
   - [x] basic multi-language support
   - [ ] translations beyond auto-generated FR and DE strings
+
+## Reverse encryption mode (encfsr)
+
+The **encfsr** binary provides *reverse* encryption: your **plaintext** files live on disk in a source directory, and encfsr mounts a **read-only** virtual filesystem that exposes the **encrypted** view of that directory. Use this when you want to back up or sync an encrypted representation of local data (e.g. to an untrusted or cloud storage) without storing plaintext there.
+
+- **Normal encfs**: encrypted dir → mount point shows plaintext (read/write).
+- **encfsr**: plaintext dir → mount point shows encrypted view (read-only).
+
+### Requirements
+
+- A **V7** EncFS config (e.g. `.encfs7`). Legacy V4/V5/V6 configs are not supported.
+- Config must be created **without** per-file IV headers: use `encfsctl new --no-unique-iv ...` so the layout is deterministic and suitable for reverse mode.
+
+### Usage
+
+```bash
+encfsr <config> <source_dir> <mount_point>
+```
+
+Example: plaintext in `~/Documents`, encrypted view at `/mnt/enc`:
+
+```bash
+encfsr ~/Documents/.encfs7 ~/Documents /mnt/enc
+```
+
+Then copy or sync from `/mnt/enc` to your backup/cloud target; the content and filenames there are encrypted.
+
+Options (same as encfs where applicable):
+
+- `-f` / `--foreground` — run in foreground (do not daemonize).
+- `-S` / `--stdinpass` — read password from stdin (e.g. for scripts).
+- `--extpass <program>` — run a program to get the password; `RootDir` is set to the source directory.
+
+Unmount when done: `fusermount -u <mount_point>` (Linux) or `umount <mount_point>` (macOS/FreeBSD).
 
 ## FAQ
 
