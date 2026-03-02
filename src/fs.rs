@@ -474,6 +474,10 @@ fn metadata_to_file_type(metadata: &std::fs::Metadata) -> FileType {
     }
 }
 
+fn headerless_file_iv(header_size: u64, external_iv: u64) -> u64 {
+    if header_size == 0 { external_iv } else { 0 }
+}
+
 impl EncFs {
     /// POSIX utime permission check: owner and root may always set; others may set to
     /// current time only if they have write access; setting explicit time requires owner or root.
@@ -888,6 +892,9 @@ impl FilesystemMT for EncFs {
             self.cipher
                 .decrypt_header(&mut header, external_iv)
                 .map_err(|_| libc::EIO)?
+        } else if self.config.external_iv_chaining {
+            let (_, path_iv) = self.encrypt_path(path)?;
+            path_iv
         } else {
             0
         };
@@ -1236,13 +1243,13 @@ impl FilesystemMT for EncFs {
             .open(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        let mut file_iv = 0;
         let header_size = self.config.header_size();
         let external_iv = if self.config.external_iv_chaining {
             path_iv
         } else {
             0
         };
+        let mut file_iv = headerless_file_iv(header_size, external_iv);
 
         if want_trunc && want_write {
             // If the file was truncated, we must generate and write a new header (if header_size > 0).
@@ -1442,7 +1449,12 @@ impl FilesystemMT for EncFs {
 
         // Encrypt and write header if header_size > 0
         let header_size = self.config.header_size();
-        let mut file_iv = 0;
+        let external_iv = if self.config.external_iv_chaining {
+            path_iv
+        } else {
+            0
+        };
+        let mut file_iv = headerless_file_iv(header_size, external_iv);
 
         if header_size > 0 {
             let external_iv = if self.config.external_iv_chaining {
@@ -1919,5 +1931,23 @@ impl FilesystemMT for EncFs {
                 .raw_os_error()
                 .unwrap_or(libc::EIO))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::headerless_file_iv;
+
+    #[test]
+    fn headerless_files_use_external_iv() {
+        assert_eq!(
+            headerless_file_iv(0, 0x1234_5678_9abc_def0),
+            0x1234_5678_9abc_def0
+        );
+    }
+
+    #[test]
+    fn headered_files_ignore_external_iv() {
+        assert_eq!(headerless_file_iv(8, 0x1234_5678_9abc_def0), 0);
     }
 }

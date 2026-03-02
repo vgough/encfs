@@ -28,11 +28,10 @@ looking into newer alternatives, such as the excellent
 [GoCryptFS](https://github.com/rfjakob/gocryptfs), or else use full-disk
 encryption when possible.
 
-## Status - Jan 2026
+## Status - Feb 2026
 
 Data has a long lifespan, and people still have data that was encrypted with EncFS.
-I switched to using full-disk encryption when it became performant enough, and
-haven't worked on the codebase in years. I've recently begun porting EncFS
+This project has been mostly dormant for years. I've recently begun porting EncFS
 to Rust as a way to learn Rust, which turned out to be easier than I'd expected
 with the help of modern-day developer tooling.
 
@@ -40,8 +39,8 @@ The old C++ code has been removed. The code can be found in old branches, or old
 releases, but is not being maintained.
 
 EncFS was a mature program, so while the new implementation is already functional 
-in *read-only* mode, it is still considered *alpha* and I wouldn't trust it for
-important data. 
+it is still considered a *alpha* release, and I would always have a separate backup
+for anything stored in it.
 
 Overall status
 
@@ -54,10 +53,78 @@ Overall status
   - [x] support for a new key derivation function (Argon2id)
   - [x] new block encryption mode (aes-gcm-siv)
 - Extended features
-  - [ ] reverse encryption mode
+  - [x] reverse encryption mode
 - Multi-language
   - [x] basic multi-language support
   - [ ] translations beyond auto-generated FR and DE strings
+
+
+## Getting started
+
+### Upgrading from a previous config (V4/V5/V6):
+
+Use `encfsctl passwd --upgrade <rootdir>` to convert an existing filesystem to the V7 config format and switch to the Argon2id key-derivation function. You will be prompted for the current password and a new one. The tool writes a new `.encfs7` file; the old config file is left in place. Ensure the volume is not mounted when upgrading.
+
+For scripted or non-interactive setup, use `encfsctl new --stdinpass` or `--extpass <program>`, and `encfs -S` or `--extpass` for mounting.
+
+
+### Create a new encrypted filesystem and mount it in two steps.
+
+**1. Create a new EncFS config** in the directory that will hold the encrypted files. This creates a V7 config (e.g. `.encfs7`) and prompts for a password:
+
+```bash
+mkdir -p ~/encrypted
+encfsctl new ~/encrypted
+```
+
+**2. Mount the filesystem** with encfs. The first argument is the encrypted root directory (where the config lives), the second is the mount point where you will see plaintext:
+
+```bash
+mkdir -p ~/mount
+encfs ~/encrypted ~/mount
+```
+
+You can now read and write files under `~/mount`; they are stored encrypted under `~/encrypted`. When finished, unmount:
+
+```bash
+fusermount -u ~/mount   # Linux
+# or: umount ~/mount    # macOS / FreeBSD
+```
+
+
+## Reverse encryption mode (encfsr)
+
+The **encfsr** binary provides *reverse* encryption: your **plaintext** files live on disk in a source directory, and encfsr mounts a **read-only** virtual filesystem that exposes the **encrypted** view of that directory. Use this when you want to back up or sync an encrypted representation of local data (e.g. to an untrusted or cloud storage) without storing plaintext there.
+
+- **Normal encfs**: encrypted dir → mount point shows plaintext (read/write).
+- **encfsr**: plaintext dir → mount point shows encrypted view (read-only).
+
+### Requirements
+
+- A **V7** EncFS config (e.g. `.encfs7`). Older configs are not supported.
+- Config should be created **without** per-file IV headers: use `encfsctl new --no-unique-iv ...` so the content is deterministic and suitable for reverse mode.
+
+### Usage
+
+```bash
+encfsr <config> <source_dir> <mount_point>
+```
+
+Example: plaintext in `~/Documents`, encrypted view at `/mnt/enc`:
+
+```bash
+encfsr ~/Documents/.encfs7 ~/Documents /mnt/enc
+```
+
+Then copy or sync from `/mnt/enc` to your backup/cloud target; the content and filenames there are encrypted.
+
+Options (same as encfs where applicable):
+
+- `-f` / `--foreground` — run in foreground (do not daemonize).
+- `-S` / `--stdinpass` — read password from stdin (e.g. for scripts).
+- `--extpass <program>` — run a program to get the password; `RootDir` is set to the source directory.
+
+Unmount when done: `fusermount -u <mount_point>` (Linux) or `umount <mount_point>` (macOS/FreeBSD).
 
 ## FAQ
 

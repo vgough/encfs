@@ -166,6 +166,10 @@ fn help_new_no_chained_iv() -> String {
     t!("help.encfsctl.new_no_chained_iv").to_string()
 }
 
+fn help_new_no_unique_iv() -> String {
+    t!("help.encfsctl.new_no_unique_iv").to_string()
+}
+
 #[derive(Parser)]
 #[command(name = "encfsctl")]
 #[command(about = help_about())]
@@ -259,6 +263,8 @@ enum Command {
         stdinpass: bool,
         #[arg(long, help = help_new_no_chained_iv())]
         no_chained_iv: bool,
+        #[arg(long, help = help_new_no_unique_iv())]
+        no_unique_iv: bool,
     },
 }
 
@@ -303,7 +309,8 @@ fn main() -> Result<()> {
             extpass,
             stdinpass,
             no_chained_iv,
-        }) => cmd_new(&rootdir, extpass, stdinpass, no_chained_iv),
+            no_unique_iv,
+        }) => cmd_new(&rootdir, extpass, stdinpass, no_chained_iv, no_unique_iv),
         None => {
             // Default to info command if rootdir is provided
             if let Some(rootdir) = cli.rootdir {
@@ -1174,6 +1181,7 @@ fn cmd_new(
     extpass: Option<String>,
     stdinpass: bool,
     no_chained_iv: bool,
+    no_unique_iv: bool,
 ) -> Result<()> {
     use openssl::rand::rand_bytes;
 
@@ -1210,6 +1218,9 @@ fn cmd_new(
     if no_chained_iv {
         config.chained_name_iv = false;
         config.external_iv_chaining = false;
+    }
+    if no_unique_iv {
+        config.unique_iv = false;
     }
     rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
 

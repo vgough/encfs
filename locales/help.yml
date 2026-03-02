@@ -208,3 +208,24 @@ help.encfsctl.new_no_chained_iv:
   en: "Disable IV chaining for path components (like legacy EncFS V4)"
   fr: "Désactiver le chaînage IV pour les composants de chemin (comme EncFS V4 legacy)"
   de: "IV-Verkettung für Pfadkomponenten deaktivieren (wie Legacy EncFS V4)"
+help.encfsctl.new_no_unique_iv:
+  en: "Disable per-file IV headers (create configs intended for reverse mode / encfsr)"
+  fr: "Désactiver les en-têtes IV par fichier (crée des configurations destinées au mode inversé / encfsr)"
+  de: "Per-Datei-IV-Header deaktivieren (Konfigurationen für den Reverse-Modus / encfsr erstellen)"
+
+help.encfsr.about:
+  en: "EncFS Reverse - Virtual Encrypted Read-Only Filesystem"
+  fr: "EncFS Reverse - Système de fichiers chiffré virtuel en lecture seule"
+  de: "EncFS Reverse - Virtuelles verschlüsseltes schreibgeschütztes Dateisystem"
+help.encfsr.config:
+  en: "EncFS config file (e.g. .encfs6.xml or .encfs7)"
+  fr: "Fichier de configuration EncFS (par ex. .encfs6.xml ou .encfs7)"
+  de: "EncFS-Konfigurationsdatei (z.B. .encfs6.xml oder .encfs7)"
+help.encfsr.source:
+  en: "Source directory (plaintext)"
+  fr: "Répertoire source (texte en clair)"
+  de: "Quellverzeichnis (Klartext)"
+help.encfsr.fuse_opts:
+  en: "FUSE options (e.g. -o allow_other)"
+  fr: "Options FUSE (ex : -o allow_other)"
+  de: "FUSE-Optionen (z.B. -o allow_other)"

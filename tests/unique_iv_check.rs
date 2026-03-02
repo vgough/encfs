@@ -1,8 +1,9 @@
 use encfs::config::EncfsConfig;
 use std::io::Write;
 
+/// V6 config with uniqueIV=0 is accepted; the filesystem supports unique_iv=false for all config types.
 #[test]
-fn test_unique_iv_false_is_rejected() {
+fn test_unique_iv_false_is_accepted() {
     let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE boost_serialization>
 <boost_serialization signature="serialization::archive" version="7">
@@ -22,7 +23,7 @@ fn test_unique_iv_false_is_rejected() {
         <keySize>192</keySize>
         <blockSize>1024</blockSize>
         <plainData>0</plainData>
-        <uniqueIV>0</uniqueIV> <!-- This is the problematic value -->
+        <uniqueIV>0</uniqueIV>
         <chainedNameIV>1</chainedNameIV>
         <externalIVChaining>0</externalIVChaining>
         <blockMACBytes>0</blockMACBytes>
@@ -42,7 +43,6 @@ tccFKejCQQ9w0b9oEaATUZ0eFWE=
 </boost_serialization>
 "#;
 
-    // Use a temp file
     let dir = std::env::temp_dir();
     let config_path = dir.join(format!("encfs_test_unique_iv_{}.xml", std::process::id()));
 
@@ -50,17 +50,13 @@ tccFKejCQQ9w0b9oEaATUZ0eFWE=
     f.write_all(xml.as_bytes()).expect("failed to write config");
     drop(f);
 
-    // Try to load it
     let result = EncfsConfig::load(&config_path);
 
-    // Cleanup
     let _ = std::fs::remove_file(&config_path);
 
-    // Assert that it fails
-    // Currently (before fix), this will probably succeed (Ok), so we expect assert!(result.is_err()) to fail.
+    let config = result.expect("EncfsConfig::load should succeed with uniqueIV=0");
     assert!(
-        result.is_err(),
-        "EncfsConfig::load should fail when uniqueIV is 0 (false), but it succeeded: {:?}",
-        result
+        !config.unique_iv,
+        "loaded config should have unique_iv=false"
     );
 }

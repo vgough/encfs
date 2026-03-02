@@ -279,11 +279,6 @@ impl EncfsConfig {
                 "plainData=1 is not supported by this implementation"
             ));
         }
-        if !self.unique_iv && self.config_type != ConfigType::V4 {
-            return Err(anyhow::anyhow!(
-                "uniqueIV=0 is not supported by this implementation"
-            ));
-        }
         if self.key_size <= 0 || self.key_size % 8 != 0 {
             return Err(anyhow::anyhow!(
                 "Invalid keySize {} (must be positive and a multiple of 8)",
@@ -723,6 +718,9 @@ impl EncfsConfig {
         Ok(cfg)
     }
 
+    /// Derive cipher from config and password.
+    ///
+    /// Calls `validate()` first.
     pub fn get_cipher(&self, password: &str) -> Result<crate::crypto::ssl::SslCipher> {
         use crate::crypto::ssl::SslCipher;
 
@@ -818,6 +816,7 @@ impl EncfsConfig {
 
         Ok(cipher)
     }
+
     pub fn header_size(&self) -> u64 {
         if self.unique_iv { 8 } else { 0 }
     }
