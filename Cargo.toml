@@ -22,7 +22,6 @@ daemonize = "0.5"
 chrono = "0.4"
 clap = { version = "4.5.57", features = ["derive"] }
 env_logger = "0.11.8"
-fuse_mt = "0.6.3"
 libc = "0.2.180"
 log = "0.4.29"
 openssl = "0.10.75"
@@ -32,6 +31,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 rust-i18n = "3"
 prost = "0.14.3"
 sha2 = "0.10"
+fuse_mt = { git = "https://github.com/vgough/fuse-mt.git", branch = "vgough/fuser-17" }
 
 [[bin]]
 name = "encfsctl"
