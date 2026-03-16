@@ -6,7 +6,7 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo};
+use encfs::fuse_wrapper::{FilesystemMT, RequestInfo};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -302,7 +302,7 @@ fn test_symlink_permissions_are_standard() {
     // Verify it's marked as a symlink
     assert_eq!(
         attr.kind,
-        fuse_mt::FileType::Symlink,
+        encfs::fuse_wrapper::FileType::Symlink,
         "Expected symlink file type"
     );
 

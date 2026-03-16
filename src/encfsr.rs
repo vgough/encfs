@@ -236,9 +236,8 @@ fn main() -> Result<()> {
         fuse_options.push(opt.as_os_str());
     }
 
-    let threads = 0; // fuse_mt default (num_cpus)
-    fuse_mt::mount(
-        fuse_mt::FuseMT::new(fs, threads),
+    encfs::fuse_wrapper::mount(
+        encfs::fuse_wrapper::FuseAdapter::new(fs),
         &args.mount_point,
         &fuse_options,
     )?;

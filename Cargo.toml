@@ -31,7 +31,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 rust-i18n = "3"
 prost = "0.14.3"
 sha2 = "0.10"
-fuse_mt = { git = "https://github.com/vgough/fuse-mt.git", branch = "vgough/fuser-17" }
+fuser = "0.17"
 
 [[bin]]
 name = "encfsctl"

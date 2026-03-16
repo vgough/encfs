@@ -1,8 +1,9 @@
 use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
 use crate::crypto::ssl::SslCipher;
-use fuse_mt::{
-    CallbackResult, DirectoryEntry, FileAttr, FileType, FilesystemMT, RequestInfo, ResultCreate,
+use crate::fuse_wrapper::{
+    CallbackResult, DirectoryEntry, FileAttr, FileType, FilesystemMT, INodeNo, RequestInfo,
+    ResultCreate,
     ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultSlice, ResultStatfs, ResultWrite,
     ResultXattr, Statfs,
 };
@@ -252,6 +253,7 @@ impl FilesystemMT for ReverseFs {
             return Ok((
                 Duration::from_secs(1),
                 FileAttr {
+                    ino: INodeNo(0),
                     size,
                     blocks: size.div_ceil(512),
                     atime: self.config_mtime,
@@ -264,6 +266,7 @@ impl FilesystemMT for ReverseFs {
                     uid: self.config_uid,
                     gid: self.config_gid,
                     rdev: 0,
+                    blksize: 4096,
                     flags: 0,
                 },
             ));
@@ -285,6 +288,7 @@ impl FilesystemMT for ReverseFs {
         Ok((
             Duration::from_secs(1),
             FileAttr {
+                ino: INodeNo(0),
                 size: reported_size,
                 blocks: metadata.blocks(),
                 atime,
@@ -297,6 +301,7 @@ impl FilesystemMT for ReverseFs {
                 uid: metadata.uid(),
                 gid: metadata.gid(),
                 rdev: metadata.rdev() as u32,
+                blksize: 4096,
                 flags: 0,
             },
         ))

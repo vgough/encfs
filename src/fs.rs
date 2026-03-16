@@ -3,8 +3,9 @@ use crate::crypto::file::{FileDecoder, FileEncoder};
 use crate::crypto::ssl::SslCipher;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
-use fuse_mt::{
-    CallbackResult, CreatedEntry, DirectoryEntry, FileAttr, FileType, FilesystemMT, RequestInfo,
+use crate::fuse_wrapper::{
+    CallbackResult, CreatedEntry, DirectoryEntry, FileAttr, FileType, FilesystemMT, INodeNo,
+    RequestInfo,
     ResultCreate, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultSlice, ResultStatfs,
     ResultWrite, Statfs, Xattr,
 };
@@ -1135,6 +1136,7 @@ impl FilesystemMT for EncFs {
         }
 
         let attr = FileAttr {
+            ino: INodeNo(0),
             size,
             blocks: metadata.blocks(),
             atime: SystemTime::UNIX_EPOCH
@@ -1150,6 +1152,7 @@ impl FilesystemMT for EncFs {
             uid: metadata.uid(),
             gid: metadata.gid(),
             rdev: metadata.rdev() as u32,
+            blksize: 4096,
             flags: 0,
         };
 
@@ -1484,6 +1487,7 @@ impl FilesystemMT for EncFs {
         // We need to return CreatedEntry which includes FileAttr
         // We can get attributes from the open file or construct them
         let attr = FileAttr {
+            ino: INodeNo(0),
             size: 0,
             blocks: 1, // Header block
             atime: SystemTime::now(),
@@ -1496,6 +1500,7 @@ impl FilesystemMT for EncFs {
             uid: req.uid,
             gid: req.gid,
             rdev: 0,
+            blksize: 4096,
             flags: 0,
         };
 

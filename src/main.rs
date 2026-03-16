@@ -27,10 +27,6 @@ fn help_main_debug() -> String {
     t!("help.encfs.debug").to_string()
 }
 
-fn help_main_single_thread() -> String {
-    t!("help.encfs.single_thread").to_string()
-}
-
 fn help_main_public() -> String {
     t!("help.encfs.public").to_string()
 }
@@ -70,9 +66,6 @@ struct Args {
 
     #[arg(short, help = help_main_debug())]
     debug: bool,
-
-    #[arg(short = 's', help = help_main_single_thread())]
-    single_thread: bool,
 
     #[arg(long, help = help_main_public())]
     public: bool,
@@ -204,12 +197,8 @@ fn main() -> Result<()> {
             // If we want to support full FUSE args, checking clap's handling of unknown args would be better,
             // but for now we construct what we support.
 
-            // fuse-mt default threads logic:
-            // 0 means default (usually num_cpus). 1 means single threaded.
-            let threads = if args.single_thread { 1 } else { 0 };
-
-            fuse_mt::mount(
-                fuse_mt::FuseMT::new(fs, threads),
+            encfs::fuse_wrapper::mount(
+                encfs::fuse_wrapper::FuseAdapter::new(fs),
                 &args.mount_point,
                 &check_opts,
             )?;

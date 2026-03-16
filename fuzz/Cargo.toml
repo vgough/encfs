@@ -16,9 +16,6 @@ arbitrary = { version = "1", features = ["derive"] }
 [dependencies.encfs]
 path = ".."
 
-[dependencies.fuse_mt]
-version = "0.6.3"
-
 [[bin]]
 name = "fuzz_file_ops"
 path = "fuzz_targets/fuzz_file_ops.rs"

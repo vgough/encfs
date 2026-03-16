@@ -4,6 +4,7 @@ pub mod config_proto;
 pub mod constants;
 pub mod crypto;
 pub mod fs;
+pub mod fuse_wrapper;
 pub mod reverse_fs;
 
 rust_i18n::i18n!("locales", fallback = "en");
