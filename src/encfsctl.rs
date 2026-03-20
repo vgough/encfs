@@ -633,6 +633,15 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     io::stdout().flush()?;
     let new_password = prompt_password("")?;
 
+    // Confirm new password
+    print!("{}", t!("ctl.confirm_new_password"));
+    io::stdout().flush()?;
+    let confirm_password = prompt_password("")?;
+
+    if new_password != confirm_password {
+        anyhow::bail!("{}", t!("ctl.error_password_mismatch"));
+    }
+
     // Generate new salt and iterations for new password
     use openssl::rand::rand_bytes;
     if config.salt.is_empty() {

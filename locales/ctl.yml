@@ -139,6 +139,14 @@ ctl.enter_new_password:
   en: "Enter new Encfs password: "
   fr: "Entrez le nouveau mot de passe Encfs : "
   de: "Neues Encfs-Passwort eingeben: "
+ctl.confirm_new_password:
+  en: "Confirm new Encfs password: "
+  fr: "Confirmez le nouveau mot de passe Encfs : "
+  de: "Neues Encfs-Passwort bestätigen: "
+ctl.error_password_mismatch:
+  en: "Passwords do not match."
+  fr: "Les mots de passe ne correspondent pas."
+  de: "Passwörter stimmen nicht überein."
 ctl.volume_key_updated:
   en: "Volume Key successfully updated."
   fr: "Clé de volume mise à jour avec succès."
