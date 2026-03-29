@@ -1039,6 +1039,7 @@ impl SslCipher {
         let bs = self.block_cipher.block_size();
 
         // 1. Check minimum size (must be at least one block)
+        #[allow(clippy::manual_is_multiple_of)] // is_multiple_of is unstable on stable Rust
         if encrypted_data.len() < bs || encrypted_data.len() % bs != 0 {
             return Err(anyhow!("Encrypted xattr data length invalid"));
         }
