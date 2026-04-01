@@ -76,6 +76,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    encfs::security::harden_process();
     encfs::init_locale();
 
     let args = Args::parse();
@@ -154,7 +155,7 @@ fn main() -> Result<()> {
     }
 
     // --- Password acquisition (matches main.rs pattern) ---
-    let password = if let Some(prog) = args.extpass {
+    let mut password = if let Some(prog) = args.extpass {
         use std::process::Command;
         let output = Command::new("sh")
             .arg("-c")
@@ -177,7 +178,10 @@ fn main() -> Result<()> {
     };
 
     // --- Decrypt config and derive cipher ---
-    let cipher = config.get_cipher(&password).unwrap_or_else(|e| {
+    let cipher_result = config.get_cipher(&password);
+    zeroize::Zeroize::zeroize(&mut password);
+
+    let cipher = cipher_result.unwrap_or_else(|e| {
         eprintln!("{}", t!("encfsr.decrypt_failed", error = e));
         std::process::exit(1);
     });

@@ -97,6 +97,7 @@ struct Args {
 }
 
 fn main() -> Result<()> {
+    encfs::security::harden_process();
     encfs::init_locale();
 
     let args = Args::parse();
@@ -144,7 +145,7 @@ fn main() -> Result<()> {
     let config =
         config::EncfsConfig::load(&config_path).context(t!("main.failed_to_load_config"))?;
 
-    let password = if let Some(prog) = args.extpass {
+    let mut password = if let Some(prog) = args.extpass {
         use std::process::Command;
         let output = Command::new("sh")
             .arg("-c")
@@ -166,7 +167,10 @@ fn main() -> Result<()> {
             .context(t!("main.failed_to_read_password"))?
     };
 
-    match config.get_cipher(&password) {
+    let cipher_result = config.get_cipher(&password);
+    zeroize::Zeroize::zeroize(&mut password);
+
+    match cipher_result {
         Ok(cipher) => {
             info!("{}", t!("main.successfully_decrypted"));
 

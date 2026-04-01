@@ -269,6 +269,7 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+    encfs::security::harden_process();
     encfs::init_locale();
 
     let cli = Cli::parse();
@@ -550,7 +551,7 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     // Get current password
     print!("{}", t!("ctl.enter_current_password"));
     io::stdout().flush()?;
-    let current_password = prompt_password("")?;
+    let mut current_password = prompt_password("")?;
 
     // Decrypt volume key with current password
     let cipher = config
@@ -628,19 +629,25 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
         cipher.decrypt_key_legacy(&config.key_data, user_key, user_iv)?
     };
 
+    // current_password no longer needed — zeroize
+    zeroize::Zeroize::zeroize(&mut current_password);
+
     // Get new password
     print!("{}", t!("ctl.enter_new_password"));
     io::stdout().flush()?;
-    let new_password = prompt_password("")?;
+    let mut new_password = prompt_password("")?;
 
     // Confirm new password
     print!("{}", t!("ctl.confirm_new_password"));
     io::stdout().flush()?;
-    let confirm_password = prompt_password("")?;
+    let mut confirm_password = prompt_password("")?;
 
     if new_password != confirm_password {
+        zeroize::Zeroize::zeroize(&mut new_password);
+        zeroize::Zeroize::zeroize(&mut confirm_password);
         anyhow::bail!("{}", t!("ctl.error_password_mismatch"));
     }
+    zeroize::Zeroize::zeroize(&mut confirm_password);
 
     // Generate new salt and iterations for new password
     use openssl::rand::rand_bytes;
@@ -748,6 +755,9 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
         config.key_data = encrypted_key;
     }
 
+    // new_password no longer needed — zeroize
+    zeroize::Zeroize::zeroize(&mut new_password);
+
     // Save config (upgrade to V7 writes .encfs7)
     let save_path = if upgrading_to_v7 {
         rootdir.join(".encfs7")
@@ -785,8 +795,7 @@ fn cmd_showcruft(rootdir: &Path) -> Result<()> {
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
-    let password = get_password(&config_path, None)?;
-    let cipher = config.get_cipher(&password).context("Invalid password")?;
+    let cipher = get_cipher_zeroizing(&config, &config_path, None)?;
 
     let mut stats = ShowcruftStats {
         files_checked: 0,
@@ -831,8 +840,7 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
-    let password = get_password(&config_path, extpass)?;
-    let cipher = config.get_cipher(&password).context("Invalid password")?;
+    let cipher = get_cipher_zeroizing(&config, &config_path, extpass)?;
 
     if names.is_empty() {
         // Read from stdin
@@ -869,8 +877,7 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
-    let password = get_password(&config_path, extpass)?;
-    let cipher = config.get_cipher(&password).context("Invalid password")?;
+    let cipher = get_cipher_zeroizing(&config, &config_path, extpass)?;
 
     if names.is_empty() {
         // Read from stdin
@@ -917,8 +924,7 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
-    let password = get_password(&config_path, extpass)?;
-    let cipher = config.get_cipher(&password).context("Invalid password")?;
+    let cipher = get_cipher_zeroizing(&config, &config_path, extpass)?;
 
     let (file_path, path_iv) = resolve_file_path(&rootdir, &path, &cipher, &config)?;
     let file =
@@ -981,8 +987,7 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
-    let password = get_password(&config_path, extpass)?;
-    let cipher = config.get_cipher(&password).context("Invalid password")?;
+    let cipher = get_cipher_zeroizing(&config, &config_path, extpass)?;
 
     // Encrypt the path to get the real directory path
     let plaintext_path = PathBuf::from(path);
@@ -1075,7 +1080,7 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     let stdin = io::stdin();
     let mut lines = stdin.lock().lines();
 
-    let current_password = lines
+    let mut current_password = lines
         .next()
         .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_no_current_password")))?
         .context(t!("ctl.error_failed_to_read_current_password"))?;
@@ -1117,6 +1122,9 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
         SslCipher::derive_key_legacy(&current_password, key_len, iv_len)?
     };
 
+    // current_password no longer needed — zeroize
+    zeroize::Zeroize::zeroize(&mut current_password);
+
     let volume_key_blob = if config.config_type == config::ConfigType::V7 {
         use encfs::crypto::aead;
         let aad = config
@@ -1135,7 +1143,7 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     };
 
     // Read new password from stdin (second line)
-    let new_password = lines
+    let mut new_password = lines
         .next()
         .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_no_new_password")))?
         .context(t!("ctl.error_failed_to_read_new_password"))?;
@@ -1174,6 +1182,9 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
         let encrypted_key = new_cipher.encrypt_key(&volume_key_blob, new_user_key, new_user_iv)?;
         config.key_data = encrypted_key;
     }
+
+    // new_password no longer needed — zeroize
+    zeroize::Zeroize::zeroize(&mut new_password);
 
     // Save config
     config
@@ -1238,7 +1249,7 @@ fn cmd_new(
     let mut volume_key_blob = vec![0u8; key_len + iv_len];
     rand_bytes(&mut volume_key_blob).context(t!("ctl.error_failed_to_generate_salt"))?;
 
-    let password = if let Some(prog) = extpass {
+    let mut password = if let Some(prog) = extpass {
         get_password_from_program(&prog)?
     } else if stdinpass {
         let stdin = io::stdin();
@@ -1256,6 +1267,7 @@ fn cmd_new(
     config
         .set_v7_key(&password, &volume_key_blob)
         .context(t!("ctl.error_failed_to_save_config"))?;
+    zeroize::Zeroize::zeroize(&mut password);
     config.save(&v7_path)?;
 
     println!("{}", t!("ctl.new_config_created", path = v7_path.display()));
@@ -1273,8 +1285,7 @@ fn cmd_export(
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
-    let password = get_password(&config_path, extpass)?;
-    let cipher = config.get_cipher(&password).context("Invalid password")?;
+    let cipher = get_cipher_zeroizing(&config, &config_path, extpass)?;
 
     // Create destination directory if it doesn't exist
     if !destdir.exists() {
@@ -1875,6 +1886,18 @@ fn get_password(_config_path: &Path, extpass: Option<String>) -> Result<String> 
     } else {
         prompt_password(&t!("ctl.password_prompt")).context(t!("ctl.error_failed_to_read_password"))
     }
+}
+
+/// Get password and derive cipher in one step, zeroizing the password immediately after use.
+fn get_cipher_zeroizing(
+    config: &config::EncfsConfig,
+    config_path: &Path,
+    extpass: Option<String>,
+) -> Result<SslCipher> {
+    let mut password = get_password(config_path, extpass)?;
+    let result = config.get_cipher(&password);
+    zeroize::Zeroize::zeroize(&mut password);
+    result.context("Invalid password")
 }
 
 fn get_password_from_program(prog: &str) -> Result<String> {
