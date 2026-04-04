@@ -31,6 +31,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 rust-i18n = "3"
 prost = "0.14.3"
 sha2 = "0.10"
+fuser = "0.17"
 zeroize = { version = "1", features = ["derive"] }
 
 [[bin]]
