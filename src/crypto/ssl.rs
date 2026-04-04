@@ -8,6 +8,7 @@ use openssl::pkcs5::pbkdf2_hmac;
 use openssl::rand::rand_bytes;
 use openssl::symm::{Cipher as OpenSslCipher, Crypter, Mode};
 use rust_i18n::t;
+use zeroize::Zeroize;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NameEncoding {
@@ -25,6 +26,13 @@ pub struct SslCipher {
     iv: Vec<u8>,
     name_encoding: NameEncoding,
     iface: Interface,
+}
+
+impl Drop for SslCipher {
+    fn drop(&mut self) {
+        self.key.zeroize();
+        self.iv.zeroize();
+    }
 }
 
 impl SslCipher {
@@ -1039,7 +1047,8 @@ impl SslCipher {
         let bs = self.block_cipher.block_size();
 
         // 1. Check minimum size (must be at least one block)
-        if encrypted_data.len() < bs || !encrypted_data.len().is_multiple_of(bs) {
+        #[allow(clippy::manual_is_multiple_of)] // is_multiple_of is unstable on stable Rust
+        if encrypted_data.len() < bs || encrypted_data.len() % bs != 0 {
             return Err(anyhow!("Encrypted xattr data length invalid"));
         }
 

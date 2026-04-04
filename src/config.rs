@@ -723,6 +723,7 @@ impl EncfsConfig {
     /// Calls `validate()` first.
     pub fn get_cipher(&self, password: &str) -> Result<crate::crypto::ssl::SslCipher> {
         use crate::crypto::ssl::SslCipher;
+        use zeroize::Zeroize;
 
         self.validate()?;
         let mut cipher = SslCipher::new(&self.cipher_iface, self.key_size)?;
@@ -738,7 +739,7 @@ impl EncfsConfig {
                 .config_hash
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash"))?;
-            let user_key = SslCipher::derive_key_argon2id(
+            let mut user_key = SslCipher::derive_key_argon2id(
                 password,
                 &self.salt,
                 self.argon2_memory_cost
@@ -749,20 +750,21 @@ impl EncfsConfig {
                     .unwrap_or(crate::constants::DEFAULT_ARGON2_PARALLELISM),
                 crate::crypto::aead::AEAD_KEY_LEN,
             )?;
-            let volume_key_blob =
+            let mut volume_key_blob =
                 crate::crypto::aead::decrypt(user_key.as_slice(), aad, &self.key_data)?;
+            user_key.zeroize();
             if volume_key_blob.len() < key_len + iv_len {
+                volume_key_blob.zeroize();
                 return Err(anyhow::anyhow!("Decrypted key blob too short"));
             }
-            let volume_key = &volume_key_blob[..key_len];
-            let volume_iv = &volume_key_blob[key_len..key_len + iv_len];
-            cipher.set_key(volume_key, volume_iv);
+            cipher.set_key(&volume_key_blob[..key_len], &volume_key_blob[key_len..key_len + iv_len]);
+            volume_key_blob.zeroize();
             cipher.set_name_encoding(&self.name_iface);
             return Ok(cipher);
         }
 
         // Derive user key based on configured KDF algorithm
-        let user_key_blob = match self.kdf_algorithm {
+        let mut user_key_blob = match self.kdf_algorithm {
             KdfAlgorithm::Pbkdf2 => {
                 if self.kdf_iterations > 0 {
                     SslCipher::derive_key(password, &self.salt, self.kdf_iterations, user_key_len)?
@@ -797,21 +799,21 @@ impl EncfsConfig {
         let user_iv = &user_key_blob[key_len..];
 
         // Decrypt volume key
-        let volume_key_blob =
+        let mut volume_key_blob =
             if self.kdf_iterations > 0 || self.kdf_algorithm == KdfAlgorithm::Argon2id {
                 cipher.decrypt_key(&self.key_data, user_key, user_iv)?
             } else {
                 cipher.decrypt_key_legacy(&self.key_data, user_key, user_iv)?
             };
+        user_key_blob.zeroize();
 
         if volume_key_blob.len() < key_len + iv_len {
+            volume_key_blob.zeroize();
             return Err(anyhow::anyhow!("Decrypted key blob too short"));
         }
 
-        let volume_key = &volume_key_blob[..key_len];
-        let volume_iv = &volume_key_blob[key_len..key_len + iv_len];
-
-        cipher.set_key(volume_key, volume_iv);
+        cipher.set_key(&volume_key_blob[..key_len], &volume_key_blob[key_len..key_len + iv_len]);
+        volume_key_blob.zeroize();
         cipher.set_name_encoding(&self.name_iface);
 
         Ok(cipher)
