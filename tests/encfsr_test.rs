@@ -79,6 +79,10 @@ fn write_v7_config(path: &Path, unique_iv: bool, password: &str) {
 
     let mut config = EncfsConfig::standard_v7();
     config.unique_iv = unique_iv;
+    // Lower Argon2 parameters for tests to avoid mlockall/RLIMIT_MEMLOCK ENOMEM
+    config.argon2_memory_cost = Some(8);
+    config.argon2_time_cost = Some(1);
+    config.argon2_parallelism = Some(1);
     // Volume key blob: 32-byte key + 16-byte IV (AES-256, stream cipher IV)
     let volume_key_blob = vec![0u8; 32 + 16];
     config
