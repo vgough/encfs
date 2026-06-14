@@ -7,15 +7,14 @@
 
 use log::warn;
 
-/// Apply all available memory protections for the current platform.
+/// Apply basic memory protections for the current platform.
 ///
 /// This should be called early in main(), before any sensitive data is loaded.
-/// Failures are logged as warnings but do not abort — some protections require
-/// elevated privileges (e.g. mlockall may need CAP_IPC_LOCK on Linux).
+/// Failures are logged as warnings but do not abort.
+/// See also lock_memory() for additional protection.
 pub fn harden_process() {
     disable_core_dumps();
     set_nondumpable();
-    lock_memory();
 }
 
 /// Set RLIMIT_CORE to 0 to prevent core dumps.
@@ -81,7 +80,7 @@ fn set_nondumpable() {
 /// This prevents sensitive key material from being written to swap space.
 /// Requires CAP_IPC_LOCK on Linux or appropriate privileges on other platforms.
 /// Available on Linux, FreeBSD, and macOS.
-fn lock_memory() {
+pub fn lock_memory() {
     unsafe {
         if libc::mlockall(libc::MCL_CURRENT | libc::MCL_FUTURE) != 0 {
             warn!(

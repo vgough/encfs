@@ -270,7 +270,6 @@ enum Command {
 }
 
 fn main() -> Result<()> {
-    encfs::security::harden_process();
     encfs::init_locale();
 
     let cli = Cli::parse();
