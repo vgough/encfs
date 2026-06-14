@@ -18,7 +18,7 @@ tasks:
   test:
     desc: Run unit + integration tests (live mount tests remain ignored)
     cmds:
-      - "{{.CARGO}} test"
+      - "{{.CARGO}} nextest run --release"
 
   test-live:
     desc: Run live-mount FUSE integration tests (requires Linux+FUSE); sets ENCFS_LIVE_TESTS=1

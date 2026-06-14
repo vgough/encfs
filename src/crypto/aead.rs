@@ -1,7 +1,7 @@
 //! AEAD key wrap for V7 config: encrypt/decrypt volume key with AES-256-GCM,
 //! using config hash as additional authenticated data (AAD).
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use aes_gcm::aead::{AeadInPlace, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce, Tag};
 
@@ -19,7 +19,8 @@ pub fn encrypt(key: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
         anyhow::bail!("AEAD key must be {} bytes", AEAD_KEY_LEN);
     }
 
-    let cipher = Aes256Gcm::new_from_slice(key).context("AEAD key init failed")?;
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| anyhow::anyhow!("AEAD key init failed: {}", e))?;
     let mut nonce = [0u8; GCM_NONCE_LEN];
     getrandom::fill(&mut nonce)
         .map_err(|e| anyhow::anyhow!("Failed to generate nonce: {}", e))?;
@@ -53,7 +54,8 @@ pub fn decrypt(key: &[u8], aad: &[u8], encrypted: &[u8]) -> Result<Vec<u8>> {
     let (nonce, rest) = encrypted.split_at(GCM_NONCE_LEN);
     let (ciphertext, tag) = rest.split_at(rest.len() - GCM_TAG_LEN);
 
-    let cipher = Aes256Gcm::new_from_slice(key).context("AEAD key init failed")?;
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| anyhow::anyhow!("AEAD key init failed: {}", e))?;
     let nonce = Nonce::from_slice(nonce);
     let tag = Tag::from_slice(tag);
 

@@ -32,7 +32,10 @@ rpassword = "7.5.4"
 serde = { version = "1.0.228", features = ["derive"] }
 rust-i18n = "4"
 prost = "0.14.4"
-getrandom = "0.3"
+getrandom = "0.4"
+hmac = "0.13"
+pbkdf2 = "0.13"
+sha1 = "0.11"
 sha2 = "0.11"
 zeroize = { version = "1", features = ["derive"] }
 
@@ -45,7 +48,6 @@ name = "encfsr"
 path = "src/encfsr.rs"
 
 [dev-dependencies]
-sha1 = "0.10"
 tar = "0.4"
 
 [package.metadata.i18n]

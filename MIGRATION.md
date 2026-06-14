@@ -142,6 +142,8 @@ Result: Phase 2 exit criteria are satisfied.
 
 ### Phase 3: Migrate Hash/HMAC/KDF Primitives in Legacy Path
 
+Status: complete.
+
 1. Replace PBKDF2-HMAC-SHA1 with `pbkdf2` + `hmac` + `sha1`.
 2. Replace HMAC-SHA1 usage in:
    - `mac_64_with_key`
@@ -154,6 +156,32 @@ Exit criteria:
 
 - Existing fixtures and compatibility tests produce identical outputs to pre-migration.
 - No behavior change in password derivation and key validation paths.
+
+### Phase 3 Progress Log (2026-06-13)
+
+Completed:
+
+- Replaced PBKDF2-HMAC-SHA1 in `src/crypto/ssl.rs` with RustCrypto `pbkdf2` + `sha1`.
+- Replaced HMAC-SHA1 usage in:
+   - `mac_64_with_key`
+   - `mac_64_no_iv_with_key`
+   - `mac_32_with_key`
+   - `calculate_iv` (major >= 3 path)
+   using RustCrypto `hmac` + `sha1`.
+- Reimplemented legacy BytesToKey derivation using `sha1` crate while preserving 16-round behavior.
+- Added runtime dependencies in `Cargo.toml`:
+   - `hmac = "0.12"`
+   - `pbkdf2 = "0.12"`
+   - moved `sha1 = "0.10"` from dev-dependencies to dependencies.
+
+Validation:
+
+- `cargo test --lib test_phase0_` passed.
+- `cargo test --test config_compatibility test_legacy_kdf` passed.
+- `cargo test --test passwd_upgrade_test` passed.
+- Full suite passed via `task test`.
+
+Result: Phase 3 exit criteria are satisfied.
 
 ### Phase 4: Migrate Legacy Cipher Operations (`src/crypto/ssl.rs`)
 

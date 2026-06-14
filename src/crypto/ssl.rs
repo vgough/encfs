@@ -1,13 +1,17 @@
 use crate::config::Interface;
-use aes_gcm_siv::aead::{AeadInPlace, KeyInit};
+use aes_gcm_siv::aead::{AeadInPlace, KeyInit as AeadKeyInit};
 use aes_gcm_siv::{Aes128GcmSiv, Aes256GcmSiv, Nonce, Tag};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use argon2::{Algorithm, Argon2, Params, Version};
-use openssl::hash::MessageDigest;
-use openssl::pkcs5::pbkdf2_hmac;
+use hmac::digest::KeyInit as HmacKeyInit;
+use hmac::{Hmac, Mac};
 use openssl::symm::{Cipher as OpenSslCipher, Crypter, Mode};
+use pbkdf2::pbkdf2_hmac;
 use rust_i18n::t;
+use sha1::{Digest, Sha1};
 use zeroize::Zeroize;
+
+type HmacSha1 = Hmac<Sha1>;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NameEncoding {
@@ -88,43 +92,35 @@ impl SslCipher {
         iterations: i32,
         key_len: usize,
     ) -> Result<Vec<u8>> {
+        if iterations <= 0 {
+            return Err(anyhow!("PBKDF2 iterations must be positive"));
+        }
+
         let mut key = vec![0u8; key_len];
-        pbkdf2_hmac(
-            password.as_bytes(),
-            salt,
-            iterations as usize,
-            MessageDigest::sha1(),
-            &mut key,
-        )
-        .context("PBKDF2 failed")?;
+        pbkdf2_hmac::<Sha1>(password.as_bytes(), salt, iterations as u32, &mut key);
         Ok(key)
     }
 
     /// Legacy key derivation for EncFS cipher interface version 2.
     /// Uses BytesToKey algorithm with SHA1 and 16 rounds.
     pub fn derive_key_legacy(password: &str, key_len: usize, iv_len: usize) -> Result<Vec<u8>> {
-        use openssl::hash::Hasher;
-
         // BytesToKey with SHA1, 16 rounds, no salt (matching SSL_Cipher.cpp line 452-454)
         let total_len = key_len + iv_len;
         let mut out = Vec::with_capacity(total_len);
         let mut digest = Vec::new();
         let pass_bytes = password.as_bytes();
-        let sha1 = MessageDigest::sha1();
 
         while out.len() < total_len {
-            let mut hasher = Hasher::new(sha1)?;
+            let mut hasher = Sha1::new();
             if !digest.is_empty() {
-                hasher.update(&digest)?;
+                hasher.update(&digest);
             }
-            hasher.update(pass_bytes)?;
-            digest = hasher.finish()?.to_vec();
+            hasher.update(pass_bytes);
+            digest = hasher.finalize().to_vec();
 
-            // 16 additional rounds of hashing
+            // 16 total rounds of hashing.
             for _ in 1..16 {
-                let mut hasher = Hasher::new(sha1)?;
-                hasher.update(&digest)?;
-                digest = hasher.finish()?.to_vec();
+                digest = Sha1::digest(&digest).to_vec();
             }
 
             let to_copy = std::cmp::min(digest.len(), total_len - out.len());
@@ -305,14 +301,11 @@ impl SslCipher {
             return Ok(0);
         }
 
-        let hmac_key = openssl::pkey::PKey::hmac(key)?;
-
-        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
-
-        signer.update(data)?;
-        signer.update(&iv.to_le_bytes())?;
-
-        let hmac = signer.sign_to_vec()?;
+        let mut signer = HmacSha1::new_from_slice(key)
+            .map_err(|e| anyhow!("Failed to initialize HMAC-SHA1: {}", e))?;
+        signer.update(data);
+        signer.update(&iv.to_le_bytes());
+        let hmac = signer.finalize().into_bytes();
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -334,13 +327,10 @@ impl SslCipher {
             return Ok(0);
         }
 
-        let hmac_key = openssl::pkey::PKey::hmac(key)?;
-
-        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
-
-        signer.update(data)?;
-
-        let hmac = signer.sign_to_vec()?;
+        let mut signer = HmacSha1::new_from_slice(key)
+            .map_err(|e| anyhow!("Failed to initialize HMAC-SHA1: {}", e))?;
+        signer.update(data);
+        let hmac = signer.finalize().into_bytes();
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -363,13 +353,12 @@ impl SslCipher {
             return Ok(0);
         }
 
-        let hmac_key = openssl::pkey::PKey::hmac(key)?;
-        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
-
-        signer.update(data)?;
+        let mut signer = HmacSha1::new_from_slice(key)
+            .map_err(|e| anyhow!("Failed to initialize HMAC-SHA1: {}", e))?;
+        signer.update(data);
         // NO IV update here for key verification!
 
-        let hmac = signer.sign_to_vec()?;
+        let hmac = signer.finalize().into_bytes();
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -428,13 +417,11 @@ impl SslCipher {
     fn calculate_iv(&self, seed: u64, key: &[u8], iv: &[u8]) -> Result<Vec<u8>> {
         if self.iface.major >= 3 {
             // HMAC(key, iv || seed)
-            let hmac_key = openssl::pkey::PKey::hmac(key)?;
-            let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
-
-            signer.update(iv)?;
-            signer.update(&seed.to_le_bytes())?; // EncFS uses little endian for seed in HMAC
-
-            let hmac = signer.sign_to_vec()?;
+            let mut signer = HmacSha1::new_from_slice(key)
+                .map_err(|e| anyhow!("Failed to initialize HMAC-SHA1: {}", e))?;
+            signer.update(iv);
+            signer.update(&seed.to_le_bytes()); // EncFS uses little endian for seed in HMAC
+            let hmac = signer.finalize().into_bytes();
 
             let mut new_iv = vec![0u8; self.iv_len];
             let len = std::cmp::min(self.iv_len, hmac.len());
