@@ -1572,13 +1572,13 @@ mod tests {
             allow_holes: false,
             config_hash: None,
         };
-        openssl::rand::rand_bytes(&mut config.salt).context("rand")?;
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
 
         // Volume key blob: key (24) + iv (16) for AES-192
         let key_len = (config.key_size / 8) as usize;
         let iv_len = 16;
         let mut volume_key_blob = vec![0u8; key_len + iv_len];
-        openssl::rand::rand_bytes(&mut volume_key_blob).context("rand")?;
+        getrandom::fill(&mut volume_key_blob).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
 
         let password = "test_password";
         config.set_v7_key(password, &volume_key_blob)?;
@@ -1651,11 +1651,11 @@ mod tests {
         ));
 
         let mut config = EncfsConfig::standard_v7();
-        openssl::rand::rand_bytes(&mut config.salt).context("rand")?;
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
         let key_len = (config.key_size / 8) as usize;
         let iv_len = 16;
         let mut volume_key_blob = vec![0u8; key_len + iv_len];
-        openssl::rand::rand_bytes(&mut volume_key_blob).context("rand")?;
+        getrandom::fill(&mut volume_key_blob).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
 
         let password = "test_password";
         config.set_v7_key(password, &volume_key_blob)?;
@@ -1714,7 +1714,7 @@ mod tests {
             allow_holes: false,
             config_hash: None,
         };
-        openssl::rand::rand_bytes(&mut config.salt).context("rand")?;
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
         let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
         config.set_v7_key("pass", &volume_key_blob)?;
         config.save(&config_path)?;

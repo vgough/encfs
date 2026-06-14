@@ -5,7 +5,6 @@ use anyhow::{Context, Result, anyhow};
 use argon2::{Algorithm, Argon2, Params, Version};
 use openssl::hash::MessageDigest;
 use openssl::pkcs5::pbkdf2_hmac;
-use openssl::rand::rand_bytes;
 use openssl::symm::{Cipher as OpenSslCipher, Crypter, Mode};
 use rust_i18n::t;
 use zeroize::Zeroize;
@@ -774,7 +773,8 @@ impl SslCipher {
     pub fn encrypt_header(&self, external_iv: u64) -> Result<(Vec<u8>, u64)> {
         // Generate random 64-bit file IV
         let mut file_iv_bytes = [0u8; 8];
-        rand_bytes(&mut file_iv_bytes).context("Failed to generate random IV")?;
+        getrandom::fill(&mut file_iv_bytes)
+            .map_err(|e| anyhow!("Failed to generate random IV: {}", e))?;
 
         let file_iv = u64::from_be_bytes(file_iv_bytes);
         let mut header = file_iv_bytes.to_vec();
@@ -1830,5 +1830,180 @@ mod tests {
                 "Key length should match requested length"
             );
         }
+    }
+
+    #[test]
+    fn test_phase0_pbkdf2_sha1_known_vector() {
+        let password = "phase0-password";
+        let salt = b"phase0-salt";
+        let iterations = 12345;
+        let key_len = 32;
+
+        let derived =
+            SslCipher::derive_key(password, salt, iterations, key_len).expect("PBKDF2 failed");
+
+        let expected = [
+            0x58, 0x2e, 0x2d, 0xf2, 0x0b, 0x8e, 0xee, 0x96, 0x5b, 0x27, 0xcb, 0xeb, 0x7c, 0x20,
+            0xf4, 0xee, 0xd6, 0x93, 0x6c, 0xfb, 0x00, 0xed, 0xb8, 0x40, 0x32, 0xd2, 0xaf, 0x76,
+            0x00, 0x3f, 0x21, 0x2d,
+        ];
+
+        assert_eq!(
+            derived, expected,
+            "PBKDF2-SHA1 output must remain stable for migration compatibility"
+        );
+    }
+
+    #[test]
+    fn test_phase0_mac64_no_iv_known_vector() {
+        let key = b"phase0-mac-key";
+        let data = b"phase0-mac-data";
+
+        let mac = SslCipher::mac_64_no_iv_with_key(data, key).expect("mac_64_no_iv failed");
+
+        // Invariant: this value depends on XOR folding of HMAC-SHA1 bytes 0..19
+        // excluding the last digest byte, interpreted as a big-endian u64.
+        let expected: u64 = 0x26d56564aa8adc97;
+        assert_eq!(
+            mac, expected,
+            "MAC folding/endian behavior must remain unchanged"
+        );
+    }
+
+    #[test]
+    fn test_phase0_calculate_iv_uses_little_endian_seed() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let cipher = SslCipher::new(&iface, 256).expect("cipher init failed");
+
+        let key = b"phase0-iv-key";
+        let iv: Vec<u8> = (0u8..16u8).collect();
+        let seed = 0x0123456789abcdefu64;
+
+        let calculated = cipher
+            .calculate_iv(seed, key, &iv)
+            .expect("calculate_iv failed");
+
+        let expected = [
+            0x63, 0x6e, 0x50, 0x1d, 0x3b, 0xa1, 0xdf, 0xaa, 0x2c, 0x35, 0x26, 0x80, 0x14, 0x1b,
+            0x8a, 0x21,
+        ];
+        let known_big_endian_seed = [
+            0x87, 0xa9, 0x94, 0x3d, 0x39, 0x30, 0xc9, 0x09, 0xb2, 0x7c, 0xf2, 0x34, 0x01, 0x73,
+            0x85, 0x1e,
+        ];
+
+        assert_eq!(
+            calculated, expected,
+            "IV derivation must use little-endian seed bytes"
+        );
+        assert_ne!(
+            calculated, known_big_endian_seed,
+            "Guardrail: changing to big-endian seed would break compatibility"
+        );
+    }
+
+    #[test]
+    fn test_phase0_key_wrap_known_vector_and_unwrap() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+
+        let cipher = SslCipher::new(&iface, 256).expect("cipher init failed");
+
+        let user_key = [0x11u8; 32];
+        let user_iv = [0x22u8; 16];
+        let volume_key = [0x33u8; 48];
+
+        let wrapped = cipher
+            .encrypt_key(&volume_key, &user_key, &user_iv)
+            .expect("encrypt_key failed");
+        let unwrapped = cipher
+            .decrypt_key(&wrapped, &user_key, &user_iv)
+            .expect("decrypt_key failed");
+
+        let expected_wrapped = [
+            0x51, 0xd3, 0x9e, 0x05, 0x18, 0x27, 0x73, 0x54, 0xd7, 0xd8, 0x3e, 0xde, 0xe7, 0xed,
+            0xc1, 0xab, 0x35, 0xed, 0x82, 0xf9, 0xeb, 0xe7, 0x98, 0xc6, 0x1a, 0x2a, 0xef, 0xd2,
+            0x86, 0xba, 0xea, 0x89, 0x9f, 0x84, 0xb6, 0xc6, 0x7a, 0x77, 0xe3, 0xed, 0xc4, 0x5a,
+            0x86, 0x39, 0x7f, 0xed, 0x8d, 0x76, 0xc7, 0xce, 0xd0, 0x15,
+        ];
+
+        assert_eq!(
+            wrapped, expected_wrapped,
+            "Key wrap output must remain stable for compatibility"
+        );
+        assert_eq!(unwrapped, volume_key);
+    }
+
+    #[test]
+    fn test_phase0_filename_header_block_known_vectors() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+
+        let mut cipher = SslCipher::new(&iface, 256).expect("cipher init failed");
+
+        let fs_key = [0x44u8; 32];
+        let fs_iv = [0x55u8; 16];
+        cipher.set_key(&fs_key, &fs_iv);
+
+        let (encoded_name, name_iv_out) = cipher
+            .encrypt_filename(b"phase0-name.txt", 0x0102030405060708u64)
+            .expect("encrypt_filename failed");
+
+        assert_eq!(
+            encoded_name, "jXPDn,UNesj7jaXJf3CI3Z6",
+            "Filename encoding must remain stable"
+        );
+        assert_eq!(
+            name_iv_out, 0xc9c55c89023378c7u64,
+            "Filename-derived next IV must remain stable"
+        );
+
+        let header = cipher
+            .encrypt_header_with_iv(0x0f1e2d3c4b5a6978u64, 0x8877665544332211u64)
+            .expect("encrypt_header_with_iv failed");
+        assert_eq!(
+            header,
+            [0x68, 0xd9, 0xed, 0x17, 0x09, 0x3d, 0x81, 0xc1],
+            "Header encryption with fixed IV must remain stable"
+        );
+
+        let mut full_block: Vec<u8> = (0u8..16u8).collect();
+        cipher
+            .encrypt_block_inplace(&mut full_block, 7, 0x1020304050607080u64, 16)
+            .expect("encrypt full block failed");
+        assert_eq!(
+            full_block,
+            [
+                0xbb, 0xf9, 0x45, 0xd9, 0x40, 0x80, 0x05, 0x86, 0x7d, 0xdb, 0x2d, 0x64, 0x3c,
+                0x30, 0xc9, 0x4d,
+            ],
+            "Full block encryption vector must remain stable"
+        );
+
+        let mut partial_block = b"phase0-partial".to_vec();
+        cipher
+            .encrypt_block_inplace(&mut partial_block, 7, 0x1020304050607080u64, 16)
+            .expect("encrypt partial block failed");
+        assert_eq!(
+            partial_block,
+            [
+                0x68, 0x2b, 0x49, 0xcd, 0xce, 0xff, 0x7a, 0xf3, 0x12, 0x47, 0xe6, 0x5e, 0xc6,
+                0x1e,
+            ],
+            "Partial block encryption vector must remain stable"
+        );
     }
 }

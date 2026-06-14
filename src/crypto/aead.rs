@@ -2,8 +2,8 @@
 //! using config hash as additional authenticated data (AAD).
 
 use anyhow::{Context, Result};
-use openssl::rand::rand_bytes;
-use openssl::symm::{Cipher, decrypt_aead, encrypt_aead};
+use aes_gcm::aead::{AeadInPlace, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce, Tag};
 
 /// Nonce length for AES-GCM (96 bits recommended).
 pub const GCM_NONCE_LEN: usize = 12;
@@ -18,16 +18,20 @@ pub fn encrypt(key: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
     if key.len() != AEAD_KEY_LEN {
         anyhow::bail!("AEAD key must be {} bytes", AEAD_KEY_LEN);
     }
-    let mut nonce = [0u8; GCM_NONCE_LEN];
-    rand_bytes(&mut nonce).context("Failed to generate nonce")?;
 
-    let cipher = Cipher::aes_256_gcm();
-    let mut tag = [0u8; GCM_TAG_LEN];
-    let ciphertext = encrypt_aead(cipher, key, Some(&nonce), aad, plaintext, &mut tag)
-        .context("AEAD encrypt")?;
+    let cipher = Aes256Gcm::new_from_slice(key).context("AEAD key init failed")?;
+    let mut nonce = [0u8; GCM_NONCE_LEN];
+    getrandom::fill(&mut nonce)
+        .map_err(|e| anyhow::anyhow!("Failed to generate nonce: {}", e))?;
+    let nonce = Nonce::from_slice(&nonce);
+
+    let mut ciphertext = plaintext.to_vec();
+    let tag = cipher
+        .encrypt_in_place_detached(nonce, aad, &mut ciphertext)
+        .map_err(|e| anyhow::anyhow!("AEAD encrypt: {}", e))?;
 
     let mut out = Vec::with_capacity(GCM_NONCE_LEN + ciphertext.len() + GCM_TAG_LEN);
-    out.extend_from_slice(&nonce);
+    out.extend_from_slice(nonce);
     out.extend_from_slice(&ciphertext);
     out.extend_from_slice(&tag);
     Ok(out)
@@ -49,9 +53,19 @@ pub fn decrypt(key: &[u8], aad: &[u8], encrypted: &[u8]) -> Result<Vec<u8>> {
     let (nonce, rest) = encrypted.split_at(GCM_NONCE_LEN);
     let (ciphertext, tag) = rest.split_at(rest.len() - GCM_TAG_LEN);
 
-    let cipher = Cipher::aes_256_gcm();
-    decrypt_aead(cipher, key, Some(nonce), aad, ciphertext, tag)
-        .context("AEAD decrypt failed (wrong password or tampered config)")
+    let cipher = Aes256Gcm::new_from_slice(key).context("AEAD key init failed")?;
+    let nonce = Nonce::from_slice(nonce);
+    let tag = Tag::from_slice(tag);
+
+    let mut plaintext = ciphertext.to_vec();
+    cipher
+        .decrypt_in_place_detached(nonce, aad, &mut plaintext, tag)
+        .map_err(|e| anyhow::anyhow!(
+            "AEAD decrypt failed (wrong password or tampered config): {}",
+            e
+        ))?;
+
+    Ok(plaintext)
 }
 
 #[cfg(test)]
@@ -87,5 +101,29 @@ mod tests {
         let plaintext = b"secret";
         let encrypted = encrypt(key.as_slice(), aad, plaintext).unwrap();
         assert!(decrypt(key.as_slice(), b"aad2", &encrypted).is_err());
+    }
+
+    #[test]
+    fn blob_layout_and_tamper_failures() {
+        let key = [7u8; AEAD_KEY_LEN];
+        let aad = b"layout-check";
+        let plaintext = b"volume key blob";
+        let encrypted = encrypt(key.as_slice(), aad, plaintext).unwrap();
+
+        // Wire format: nonce (12) || ciphertext (len == plaintext) || tag (16).
+        assert_eq!(encrypted.len(), GCM_NONCE_LEN + plaintext.len() + GCM_TAG_LEN);
+
+        let mut tampered_ct = encrypted.clone();
+        tampered_ct[GCM_NONCE_LEN] ^= 0x01;
+        assert!(decrypt(key.as_slice(), aad, &tampered_ct).is_err());
+
+        let mut tampered_tag = encrypted.clone();
+        let tag_start = tampered_tag.len() - GCM_TAG_LEN;
+        tampered_tag[tag_start] ^= 0x80;
+        assert!(decrypt(key.as_slice(), aad, &tampered_tag).is_err());
+
+        let mut tampered_nonce = encrypted;
+        tampered_nonce[0] ^= 0x40;
+        assert!(decrypt(key.as_slice(), aad, &tampered_nonce).is_err());
     }
 }

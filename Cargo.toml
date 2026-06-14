@@ -16,6 +16,7 @@ protoc-bin-vendored = "3.2"
 [dependencies]
 anyhow = "1.0.102"
 argon2 = "0.5"
+aes-gcm = "0.10"
 aes-gcm-siv = "0.11.1"
 base64 = "0.22.1"
 daemonize = "0.5"
@@ -31,6 +32,7 @@ rpassword = "7.5.4"
 serde = { version = "1.0.228", features = ["derive"] }
 rust-i18n = "4"
 prost = "0.14.4"
+getrandom = "0.3"
 sha2 = "0.11"
 zeroize = { version = "1", features = ["derive"] }
 
@@ -43,8 +45,12 @@ name = "encfsr"
 path = "src/encfsr.rs"
 
 [dev-dependencies]
+sha1 = "0.10"
 tar = "0.4"
 
 [package.metadata.i18n]
 default-locale = "en"
 available-locales = ["en", "fr", "de"]
+
+[patch.crates-io]
+fuse_mt = { git = "https://github.com/wfraser/fuse-mt", branch = "fuser-0.17" }

@@ -4,6 +4,7 @@ extern crate rust_i18n;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use encfs::{config, constants, crypto::ssl::SslCipher};
+use getrandom::fill as fill_random;
 use rpassword::prompt_password;
 use std::io::{self, BufRead, Write};
 use std::os::unix::ffi::OsStrExt;
@@ -650,11 +651,11 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     zeroize::Zeroize::zeroize(&mut confirm_password);
 
     // Generate new salt and iterations for new password
-    use openssl::rand::rand_bytes;
     if config.salt.is_empty() {
         config.salt = vec![0u8; constants::DEFAULT_SALT_SIZE];
     }
-    rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
+    fill_random(&mut config.salt)
+        .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
 
     // Handle upgrade to Argon2id if requested (or to V7)
     if upgrade {
@@ -1149,11 +1150,11 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
         .context(t!("ctl.error_failed_to_read_new_password"))?;
 
     // Generate new salt
-    use openssl::rand::rand_bytes;
     if config.salt.is_empty() {
         config.salt = vec![0u8; constants::DEFAULT_SALT_SIZE];
     }
-    rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
+    fill_random(&mut config.salt)
+        .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
 
     if config.kdf_iterations == 0 && config.config_type != config::ConfigType::V7 {
         config.kdf_iterations = constants::DEFAULT_KDF_ITERATIONS;
@@ -1203,7 +1204,6 @@ fn cmd_new(
     no_chained_iv: bool,
     no_unique_iv: bool,
 ) -> Result<()> {
-    use openssl::rand::rand_bytes;
 
     // Create directory if it doesn't exist
     if !rootdir.exists() {
@@ -1242,12 +1242,14 @@ fn cmd_new(
     if no_unique_iv {
         config.unique_iv = false;
     }
-    rand_bytes(&mut config.salt).context(t!("ctl.error_failed_to_generate_salt"))?;
+    fill_random(&mut config.salt)
+        .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
 
     let key_len = (config.key_size / 8) as usize;
     let iv_len = 16;
     let mut volume_key_blob = vec![0u8; key_len + iv_len];
-    rand_bytes(&mut volume_key_blob).context(t!("ctl.error_failed_to_generate_salt"))?;
+    fill_random(&mut volume_key_blob)
+        .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
 
     let mut password = if let Some(prog) = extpass {
         get_password_from_program(&prog)?
