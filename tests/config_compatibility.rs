@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use encfs::config::EncfsConfig;
 use encfs::crypto::file::FileDecoder;
 use encfs::fs::EncFs;
-use openssl::hash::{Hasher, MessageDigest};
+use sha1::{Digest, Sha1};
 use std::fs::File;
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
@@ -92,9 +92,9 @@ fn read_and_hash_file(
     decrypted_content.truncate(bytes_read);
 
     // Calculate SHA1 hash
-    let mut hasher = Hasher::new(MessageDigest::sha1()).context("Failed to create SHA1 hasher")?;
-    hasher.update(&decrypted_content)?;
-    let hash = hasher.finish()?;
+    let mut hasher = Sha1::new();
+    hasher.update(&decrypted_content);
+    let hash = hasher.finalize();
     let hash_hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
 
     Ok(hash_hex)

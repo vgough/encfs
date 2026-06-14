@@ -757,7 +757,10 @@ impl EncfsConfig {
                 volume_key_blob.zeroize();
                 return Err(anyhow::anyhow!("Decrypted key blob too short"));
             }
-            cipher.set_key(&volume_key_blob[..key_len], &volume_key_blob[key_len..key_len + iv_len]);
+            cipher.set_key(
+                &volume_key_blob[..key_len],
+                &volume_key_blob[key_len..key_len + iv_len],
+            );
             volume_key_blob.zeroize();
             cipher.set_name_encoding(&self.name_iface);
             return Ok(cipher);
@@ -812,7 +815,10 @@ impl EncfsConfig {
             return Err(anyhow::anyhow!("Decrypted key blob too short"));
         }
 
-        cipher.set_key(&volume_key_blob[..key_len], &volume_key_blob[key_len..key_len + iv_len]);
+        cipher.set_key(
+            &volume_key_blob[..key_len],
+            &volume_key_blob[key_len..key_len + iv_len],
+        );
         volume_key_blob.zeroize();
         cipher.set_name_encoding(&self.name_iface);
 

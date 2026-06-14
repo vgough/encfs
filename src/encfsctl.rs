@@ -1204,7 +1204,6 @@ fn cmd_new(
     no_chained_iv: bool,
     no_unique_iv: bool,
 ) -> Result<()> {
-
     // Create directory if it doesn't exist
     if !rootdir.exists() {
         std::fs::create_dir_all(rootdir).context(t!(
@@ -1249,7 +1248,7 @@ fn cmd_new(
     let iv_len = 16;
     let mut volume_key_blob = vec![0u8; key_len + iv_len];
     fill_random(&mut volume_key_blob)
-        .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
+        .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_volume_key"), e))?;
 
     let mut password = if let Some(prog) = extpass {
         get_password_from_program(&prog)?

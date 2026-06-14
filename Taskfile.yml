@@ -3,6 +3,7 @@ version: "3"
 vars:
   CARGO: cargo
   LIVE_TIMEOUT_SECS: '{{default "30" .LIVE_TIMEOUT_SECS}}'
+  MACOS_TARGET: '{{default "aarch64-apple-darwin" .MACOS_TARGET}}'
 
 tasks:
   build:
@@ -14,6 +15,11 @@ tasks:
     desc: Build release binaries
     cmds:
       - "{{.CARGO}} build --release"
+
+  build-osx:
+    desc: Build release binaries for macOS (requires Rust target aarch64-apple-darwin or x86_64-apple-darwin)
+    cmds:
+      - "{{.CARGO}} build --release --target {{.MACOS_TARGET}}"
 
   test:
     desc: Run unit + integration tests (live mount tests remain ignored)
