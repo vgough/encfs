@@ -33,6 +33,87 @@ struct PathInfo<'a> {
     iv: u64,
 }
 
+#[cfg(target_os = "macos")]
+fn xattr_nofollow_flags() -> libc::c_int {
+    libc::XATTR_NOFOLLOW
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn setxattr_nofollow(
+    path: *const libc::c_char,
+    name: *const libc::c_char,
+    value: *const libc::c_void,
+    size: usize,
+    flags: libc::c_int,
+) -> libc::c_int {
+    unsafe { libc::setxattr(path, name, value, size, 0, flags | xattr_nofollow_flags()) }
+}
+
+#[cfg(not(target_os = "macos"))]
+unsafe fn setxattr_nofollow(
+    path: *const libc::c_char,
+    name: *const libc::c_char,
+    value: *const libc::c_void,
+    size: usize,
+    flags: libc::c_int,
+) -> libc::c_int {
+    unsafe { libc::lsetxattr(path, name, value, size, flags) }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn getxattr_nofollow(
+    path: *const libc::c_char,
+    name: *const libc::c_char,
+    value: *mut libc::c_void,
+    size: usize,
+) -> libc::ssize_t {
+    unsafe { libc::getxattr(path, name, value, size, 0, xattr_nofollow_flags()) }
+}
+
+#[cfg(not(target_os = "macos"))]
+unsafe fn getxattr_nofollow(
+    path: *const libc::c_char,
+    name: *const libc::c_char,
+    value: *mut libc::c_void,
+    size: usize,
+) -> libc::ssize_t {
+    unsafe { libc::lgetxattr(path, name, value, size) }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn listxattr_nofollow(
+    path: *const libc::c_char,
+    value: *mut libc::c_char,
+    size: usize,
+) -> libc::ssize_t {
+    unsafe { libc::listxattr(path, value, size, xattr_nofollow_flags()) }
+}
+
+#[cfg(not(target_os = "macos"))]
+unsafe fn listxattr_nofollow(
+    path: *const libc::c_char,
+    value: *mut libc::c_char,
+    size: usize,
+) -> libc::ssize_t {
+    unsafe { libc::llistxattr(path, value, size) }
+}
+
+#[cfg(target_os = "macos")]
+unsafe fn removexattr_nofollow(
+    path: *const libc::c_char,
+    name: *const libc::c_char,
+) -> libc::c_int {
+    unsafe { libc::removexattr(path, name, xattr_nofollow_flags()) }
+}
+
+#[cfg(not(target_os = "macos"))]
+unsafe fn removexattr_nofollow(
+    path: *const libc::c_char,
+    name: *const libc::c_char,
+) -> libc::c_int {
+    unsafe { libc::lremovexattr(path, name) }
+}
+
 /// The main FUSE filesystem implementation.
 ///
 /// Handles mapping of FUSE operations to the underlying encrypted directory.
@@ -723,11 +804,11 @@ impl FilesystemMT for EncFs {
         }
 
         Ok(Statfs {
-            blocks: stat.f_blocks,
-            bfree: stat.f_bfree,
-            bavail: stat.f_bavail,
-            files: stat.f_files,
-            ffree: stat.f_ffree,
+            blocks: stat.f_blocks as u64,
+            bfree: stat.f_bfree as u64,
+            bavail: stat.f_bavail as u64,
+            files: stat.f_files as u64,
+            ffree: stat.f_ffree as u64,
             bsize: stat.f_bsize as u32,
             namelen: self.cipher.max_plaintext_name_len(stat.f_namemax as u32),
             frsize: stat.f_frsize as u32,
@@ -1544,14 +1625,15 @@ impl FilesystemMT for EncFs {
 
         let c_path = CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
-        let mode_bits = mode & libc::S_IFMT;
+        let mode_t = mode as libc::mode_t;
+        let mode_bits = mode_t & libc::S_IFMT;
         let res = if mode_bits == libc::S_IFIFO {
-            unsafe { libc::mkfifo(c_path.as_ptr(), mode) }
+            unsafe { libc::mkfifo(c_path.as_ptr(), mode_t) }
         } else if mode_bits == libc::S_IFCHR
             || mode_bits == libc::S_IFBLK
             || mode_bits == libc::S_IFSOCK
         {
-            unsafe { libc::mknod(c_path.as_ptr(), mode, rdev as libc::dev_t) }
+            unsafe { libc::mknod(c_path.as_ptr(), mode_t, rdev as libc::dev_t) }
         } else if mode_bits == libc::S_IFREG {
             use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
@@ -1670,7 +1752,7 @@ impl FilesystemMT for EncFs {
 
         // Set xattr on underlying filesystem
         let ret = unsafe {
-            libc::lsetxattr(
+            setxattr_nofollow(
                 c_path.as_ptr(),
                 c_name.as_ptr(),
                 encrypted_value.as_ptr() as *const libc::c_void,
@@ -1723,7 +1805,7 @@ impl FilesystemMT for EncFs {
         // Get xattr size first if size is 0
         let buf_size = if size == 0 {
             let ret = unsafe {
-                libc::lgetxattr(c_path.as_ptr(), c_name.as_ptr(), std::ptr::null_mut(), 0)
+                getxattr_nofollow(c_path.as_ptr(), c_name.as_ptr(), std::ptr::null_mut(), 0)
             };
             if ret < 0 {
                 return Err(std::io::Error::last_os_error()
@@ -1738,7 +1820,7 @@ impl FilesystemMT for EncFs {
         // Read encrypted value
         let mut encrypted_value = vec![0u8; buf_size];
         let ret = unsafe {
-            libc::lgetxattr(
+            getxattr_nofollow(
                 c_path.as_ptr(),
                 c_name.as_ptr(),
                 encrypted_value.as_mut_ptr() as *mut libc::c_void,
@@ -1776,7 +1858,7 @@ impl FilesystemMT for EncFs {
 
         // Get list size first if size is 0
         let buf_size = if size == 0 {
-            let ret = unsafe { libc::llistxattr(c_path.as_ptr(), std::ptr::null_mut(), 0) };
+            let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), std::ptr::null_mut(), 0) };
             if ret < 0 {
                 return Err(std::io::Error::last_os_error()
                     .raw_os_error()
@@ -1790,7 +1872,7 @@ impl FilesystemMT for EncFs {
         // Read xattr names list
         // llistxattr expects *mut c_char (i8), so we use a Vec<i8>
         let mut list = vec![0i8; buf_size];
-        let ret = unsafe { libc::llistxattr(c_path.as_ptr(), list.as_mut_ptr(), buf_size) };
+        let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), list.as_mut_ptr(), buf_size) };
 
         if ret < 0 {
             return Err(std::io::Error::last_os_error()
@@ -1922,7 +2004,7 @@ impl FilesystemMT for EncFs {
             std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
         // Remove xattr from underlying filesystem
-        let ret = unsafe { libc::lremovexattr(c_path.as_ptr(), c_name.as_ptr()) };
+        let ret = unsafe { removexattr_nofollow(c_path.as_ptr(), c_name.as_ptr()) };
 
         if ret == 0 {
             Ok(())

@@ -232,11 +232,11 @@ impl FilesystemMT for ReverseFs {
                 .unwrap_or(libc::EIO));
         }
         Ok(Statfs {
-            blocks: stat.f_blocks,
-            bfree: stat.f_bfree,
-            bavail: stat.f_bavail,
-            files: stat.f_files,
-            ffree: stat.f_ffree,
+            blocks: stat.f_blocks as u64,
+            bfree: stat.f_bfree as u64,
+            bavail: stat.f_bavail as u64,
+            files: stat.f_files as u64,
+            ffree: stat.f_ffree as u64,
             bsize: stat.f_bsize as u32,
             namelen: stat.f_namemax as u32,
             frsize: stat.f_frsize as u32,
