@@ -32,7 +32,7 @@ tasks:
       - |
         set -euo pipefail
         ENCFS_LIVE_TESTS=1 ENCFS_LIVE_MOUNT_TIMEOUT_SECS='{{.LIVE_TIMEOUT_SECS}}' \
-          {{.CARGO}} test --test live_mount -- --ignored --test-threads=1
+          {{.CARGO}} test --release --test live_mount -- --ignored --test-threads=1
 
   fmt:
     desc: Format Rust code
