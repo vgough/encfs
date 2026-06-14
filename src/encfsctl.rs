@@ -173,7 +173,7 @@ fn help_new_no_unique_iv() -> String {
 
 #[derive(Parser)]
 #[command(name = "encfsctl")]
-#[command(about = help_about())]
+#[command(about = help_about(), arg_required_else_help=true)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
