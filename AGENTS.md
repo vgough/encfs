@@ -14,7 +14,7 @@ This document provides comprehensive information for AI agents working in the En
 - Encrypts individual files (not block devices)
 - Uses FUSE for filesystem operations
 - Supports multiple config formats (V4, V5, V6)
-- OpenSSL for legacy cryptographic operations
+- RustCrypto-based cryptographic operations (AES, Blowfish, SHA1, PBKDF2, Argon2, AES-GCM, AES-GCM-SIV)
 - Modern cryptography (AES-GCM-SIV, Argon2) for new setups
 - Internationalization support
 
@@ -115,7 +115,7 @@ encfs/
 │   ├── fs.rs                # FUSE filesystem implementation
 │   └── crypto/              # Cryptographic operations
 │       ├── mod.rs           # Crypto module exports
-│       ├── ssl.rs           # OpenSSL cipher wrapper
+│       ├── ssl.rs           # Legacy cipher wrapper (RustCrypto)
 │       └── file.rs          # File encryption/decryption
 ├── tests/                   # Integration tests
 │   ├── fixtures/            # Test data (encrypted files)
@@ -151,8 +151,8 @@ encfs/
    - `ConfigVar`: Variable-length encoded values
 
 4. **`crypto/` namespace**: Cryptographic operations
-   - **`ssl.rs`**: OpenSSL cipher wrapper (legacy modes)
-   - **`aead.rs`** / **`block.rs`**: Modern authenticated encryption (AES-GCM-SIV)
+   - **`ssl.rs`**: Legacy cipher wrapper using RustCrypto (AES/Blowfish CFB/CBC modes)
+   - **`aead.rs`**: Modern authenticated encryption (AES-256-GCM for V7 configs)
    - **`file.rs`**: File-level encryption, handles block boundaries, MACs, headers
 
 5. **`fs.rs`**: FUSE filesystem implementation
@@ -337,7 +337,7 @@ The `EncfsConfig::validate()` method enforces:
 
 ### Core Dependencies
 - **fuse_mt** (0.6.3): Multi-threaded FUSE bindings
-- **openssl** (0.10.75): Cryptographic operations
+
 - **clap** (4.5.57): CLI argument parsing
 - **anyhow** (1.0.101): Error handling
 - **serde** (1.0.228): Serialization/deserialization
@@ -354,8 +354,6 @@ The `EncfsConfig::validate()` method enforces:
 
 ### System Dependencies
 - **FUSE**: libfuse-dev (Linux), fusefs-libs (FreeBSD), fuse-t (macOS)
-- **OpenSSL**: libssl-dev
-- **pkg-config**: For finding system libraries
 
 ## CI/CD
 
@@ -372,7 +370,7 @@ Steps:
 ### Cirrus CI (`.cirrus.yml`)
 Runs on: `FreeBSD 15.0`
 Steps:
-1. Install Rust, FUSE, OpenSSL
+1. Install Rust, FUSE
 2. Load fusefs kernel module
 3. Build release
 4. Run tests
@@ -536,7 +534,7 @@ task test-live           # Live mount tests
 
 ### Most Common Issues
 1. **Live tests fail**: Check `ENCFS_LIVE_TESTS=1` and FUSE module loaded
-2. **Build fails on OpenSSL**: Install libssl-dev
+
 3. **Build fails on FUSE**: Install libfuse-dev
 
 ---

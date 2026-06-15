@@ -1,14 +1,29 @@
 use crate::config::Interface;
-use aes_gcm_siv::aead::{AeadInPlace, KeyInit};
+use aes::{Aes128, Aes192, Aes256};
+use aes_gcm_siv::aead::{AeadInPlace, KeyInit as AeadKeyInit};
 use aes_gcm_siv::{Aes128GcmSiv, Aes256GcmSiv, Nonce, Tag};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use argon2::{Algorithm, Argon2, Params, Version};
-use openssl::hash::MessageDigest;
-use openssl::pkcs5::pbkdf2_hmac;
-use openssl::rand::rand_bytes;
-use openssl::symm::{Cipher as OpenSslCipher, Crypter, Mode};
+use blowfish::Blowfish;
+use cbc::cipher::block_padding::NoPadding;
+use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit as BlockKeyIvInit};
+use cfb_mode::cipher::AsyncStreamCipher;
+use hmac::digest::KeyInit as HmacKeyInit;
+use hmac::{Hmac, Mac};
+use pbkdf2::pbkdf2_hmac;
 use rust_i18n::t;
+use sha1::{Digest, Sha1};
 use zeroize::Zeroize;
+
+type HmacSha1 = Hmac<Sha1>;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LegacyCipherKind {
+    Aes128,
+    Aes192,
+    Aes256,
+    Blowfish,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NameEncoding {
@@ -20,8 +35,7 @@ pub enum NameEncoding {
 /// Handles key derivation, file content encryption (stream/block), and filename encryption.
 pub struct SslCipher {
     pub iv_len: usize,
-    cipher: OpenSslCipher,
-    block_cipher: OpenSslCipher,
+    cipher_kind: LegacyCipherKind,
     key: Vec<u8>,
     iv: Vec<u8>,
     name_encoding: NameEncoding,
@@ -36,21 +50,16 @@ impl Drop for SslCipher {
 }
 
 impl SslCipher {
+    fn hmac_sha1(key: &[u8]) -> Result<HmacSha1> {
+        HmacSha1::new_from_slice(key).map_err(|e| anyhow!("Failed to initialize HMAC-SHA1: {}", e))
+    }
+
     pub fn new(iface: &Interface, key_size: i32) -> Result<Self> {
-        let (cipher, block_cipher) = match (iface.name.as_str(), key_size) {
-            ("ssl/aes", 128) => (
-                OpenSslCipher::aes_128_cfb128(),
-                OpenSslCipher::aes_128_cbc(),
-            ),
-            ("ssl/aes", 192) => (
-                OpenSslCipher::aes_192_cfb128(),
-                OpenSslCipher::aes_192_cbc(),
-            ),
-            ("ssl/aes", 256) => (
-                OpenSslCipher::aes_256_cfb128(),
-                OpenSslCipher::aes_256_cbc(),
-            ),
-            ("ssl/blowfish", _) => (OpenSslCipher::bf_cfb64(), OpenSslCipher::bf_cbc()),
+        let cipher_kind = match (iface.name.as_str(), key_size) {
+            ("ssl/aes", 128) => LegacyCipherKind::Aes128,
+            ("ssl/aes", 192) => LegacyCipherKind::Aes192,
+            ("ssl/aes", 256) => LegacyCipherKind::Aes256,
+            ("ssl/blowfish", _) => LegacyCipherKind::Blowfish,
             _ => {
                 return Err(anyhow!(
                     "{}",
@@ -63,10 +72,14 @@ impl SslCipher {
             }
         };
 
+        let iv_len = match cipher_kind {
+            LegacyCipherKind::Blowfish => 8,
+            _ => 16,
+        };
+
         Ok(Self {
-            iv_len: cipher.iv_len().unwrap_or(16),
-            cipher,
-            block_cipher,
+            iv_len,
+            cipher_kind,
             key: vec![],
             iv: vec![],
             name_encoding: NameEncoding::Stream, // Default
@@ -82,6 +95,143 @@ impl SslCipher {
         }
     }
 
+    fn block_size(&self) -> usize {
+        match self.cipher_kind {
+            LegacyCipherKind::Blowfish => 8,
+            _ => 16,
+        }
+    }
+
+    fn stream_encrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        match self.cipher_kind {
+            LegacyCipherKind::Aes128 => {
+                let cipher = cfb_mode::Encryptor::<Aes128>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-128-CFB init failed: {}", e))?;
+                cipher.encrypt(data);
+            }
+            LegacyCipherKind::Aes192 => {
+                let cipher = cfb_mode::Encryptor::<Aes192>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-192-CFB init failed: {}", e))?;
+                cipher.encrypt(data);
+            }
+            LegacyCipherKind::Aes256 => {
+                let cipher = cfb_mode::Encryptor::<Aes256>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-256-CFB init failed: {}", e))?;
+                cipher.encrypt(data);
+            }
+            LegacyCipherKind::Blowfish => {
+                let cipher = cfb_mode::Encryptor::<Blowfish>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("Blowfish-CFB init failed: {}", e))?;
+                cipher.encrypt(data);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn stream_decrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        match self.cipher_kind {
+            LegacyCipherKind::Aes128 => {
+                let cipher = cfb_mode::Decryptor::<Aes128>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-128-CFB init failed: {}", e))?;
+                cipher.decrypt(data);
+            }
+            LegacyCipherKind::Aes192 => {
+                let cipher = cfb_mode::Decryptor::<Aes192>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-192-CFB init failed: {}", e))?;
+                cipher.decrypt(data);
+            }
+            LegacyCipherKind::Aes256 => {
+                let cipher = cfb_mode::Decryptor::<Aes256>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-256-CFB init failed: {}", e))?;
+                cipher.decrypt(data);
+            }
+            LegacyCipherKind::Blowfish => {
+                let cipher = cfb_mode::Decryptor::<Blowfish>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("Blowfish-CFB init failed: {}", e))?;
+                cipher.decrypt(data);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn block_encrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let mut out = vec![0u8; data.len()];
+
+        match self.cipher_kind {
+            LegacyCipherKind::Aes128 => {
+                let cipher = cbc::Encryptor::<Aes128>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-128-CBC init failed: {}", e))?;
+                cipher
+                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+                    .map_err(|e| anyhow!("AES-128-CBC encrypt failed: {}", e))?;
+            }
+            LegacyCipherKind::Aes192 => {
+                let cipher = cbc::Encryptor::<Aes192>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-192-CBC init failed: {}", e))?;
+                cipher
+                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+                    .map_err(|e| anyhow!("AES-192-CBC encrypt failed: {}", e))?;
+            }
+            LegacyCipherKind::Aes256 => {
+                let cipher = cbc::Encryptor::<Aes256>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-256-CBC init failed: {}", e))?;
+                cipher
+                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+                    .map_err(|e| anyhow!("AES-256-CBC encrypt failed: {}", e))?;
+            }
+            LegacyCipherKind::Blowfish => {
+                let cipher = cbc::Encryptor::<Blowfish>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("Blowfish-CBC init failed: {}", e))?;
+                cipher
+                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+                    .map_err(|e| anyhow!("Blowfish-CBC encrypt failed: {}", e))?;
+            }
+        }
+
+        data.copy_from_slice(&out);
+        Ok(())
+    }
+
+    fn block_decrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let mut out = vec![0u8; data.len()];
+
+        match self.cipher_kind {
+            LegacyCipherKind::Aes128 => {
+                let cipher = cbc::Decryptor::<Aes128>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-128-CBC init failed: {}", e))?;
+                cipher
+                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+                    .map_err(|e| anyhow!("AES-128-CBC decrypt failed: {}", e))?;
+            }
+            LegacyCipherKind::Aes192 => {
+                let cipher = cbc::Decryptor::<Aes192>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-192-CBC init failed: {}", e))?;
+                cipher
+                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+                    .map_err(|e| anyhow!("AES-192-CBC decrypt failed: {}", e))?;
+            }
+            LegacyCipherKind::Aes256 => {
+                let cipher = cbc::Decryptor::<Aes256>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("AES-256-CBC init failed: {}", e))?;
+                cipher
+                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+                    .map_err(|e| anyhow!("AES-256-CBC decrypt failed: {}", e))?;
+            }
+            LegacyCipherKind::Blowfish => {
+                let cipher = cbc::Decryptor::<Blowfish>::new_from_slices(key, iv)
+                    .map_err(|e| anyhow!("Blowfish-CBC init failed: {}", e))?;
+                cipher
+                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+                    .map_err(|e| anyhow!("Blowfish-CBC decrypt failed: {}", e))?;
+            }
+        }
+
+        data.copy_from_slice(&out);
+        Ok(())
+    }
+
     /// Derives the User Key from the password using PBKDF2-HMAC-SHA1.
     pub fn derive_key(
         password: &str,
@@ -89,44 +239,39 @@ impl SslCipher {
         iterations: i32,
         key_len: usize,
     ) -> Result<Vec<u8>> {
+        if iterations <= 0 {
+            return Err(anyhow!("PBKDF2 iterations must be positive"));
+        }
+
         let mut key = vec![0u8; key_len];
-        pbkdf2_hmac(
-            password.as_bytes(),
-            salt,
-            iterations as usize,
-            MessageDigest::sha1(),
-            &mut key,
-        )
-        .context("PBKDF2 failed")?;
+        pbkdf2_hmac::<Sha1>(password.as_bytes(), salt, iterations as u32, &mut key);
         Ok(key)
     }
 
     /// Legacy key derivation for EncFS cipher interface version 2.
     /// Uses BytesToKey algorithm with SHA1 and 16 rounds.
     pub fn derive_key_legacy(password: &str, key_len: usize, iv_len: usize) -> Result<Vec<u8>> {
-        use openssl::hash::Hasher;
-
         // BytesToKey with SHA1, 16 rounds, no salt (matching SSL_Cipher.cpp line 452-454)
         let total_len = key_len + iv_len;
         let mut out = Vec::with_capacity(total_len);
-        let mut digest = Vec::new();
+        let mut digest = [0u8; 20];
+        let mut has_prev_digest = false;
         let pass_bytes = password.as_bytes();
-        let sha1 = MessageDigest::sha1();
 
         while out.len() < total_len {
-            let mut hasher = Hasher::new(sha1)?;
-            if !digest.is_empty() {
-                hasher.update(&digest)?;
+            let mut hasher = Sha1::new();
+            if has_prev_digest {
+                hasher.update(digest);
             }
-            hasher.update(pass_bytes)?;
-            digest = hasher.finish()?.to_vec();
+            hasher.update(pass_bytes);
+            digest.copy_from_slice(&hasher.finalize());
 
-            // 16 additional rounds of hashing
+            // 16 total rounds of hashing.
             for _ in 1..16 {
-                let mut hasher = Hasher::new(sha1)?;
-                hasher.update(&digest)?;
-                digest = hasher.finish()?.to_vec();
+                let round_digest = Sha1::digest(digest);
+                digest.copy_from_slice(&round_digest);
             }
+            has_prev_digest = true;
 
             let to_copy = std::cmp::min(digest.len(), total_len - out.len());
             out.extend_from_slice(&digest[..to_copy]);
@@ -269,20 +414,13 @@ impl SslCipher {
         // Pass 1: shuffle, encrypt with iv64, flip, shuffle
         Self::shuffle_bytes(&mut data);
         let ivec1 = self.calculate_iv(checksum as u64, user_key, user_iv)?;
-        let mut crypter1 = Crypter::new(self.cipher, Mode::Encrypt, user_key, Some(&ivec1))?;
-        let mut out = vec![0u8; data.len() + self.cipher.block_size()];
-        let count1 = crypter1.update(&data, &mut out)?;
-        let rest1 = crypter1.finalize(&mut out[count1..])?;
-        data.copy_from_slice(&out[..count1 + rest1]);
+        self.stream_encrypt_inplace(&mut data, user_key, &ivec1)?;
         Self::flip_bytes(&mut data);
         Self::shuffle_bytes(&mut data);
 
         // Pass 2: encrypt with iv64+1
         let ivec2 = self.calculate_iv(checksum as u64 + 1, user_key, user_iv)?;
-        let mut crypter2 = Crypter::new(self.cipher, Mode::Encrypt, user_key, Some(&ivec2))?;
-        let count2 = crypter2.update(&data, &mut out)?;
-        let rest2 = crypter2.finalize(&mut out[count2..])?;
-        data.copy_from_slice(&out[..count2 + rest2]);
+        self.stream_encrypt_inplace(&mut data, user_key, &ivec2)?;
 
         // 3. Prepend checksum (4 bytes, Big Endian)
         let mut result = Vec::with_capacity(4 + data.len());
@@ -306,14 +444,10 @@ impl SslCipher {
             return Ok(0);
         }
 
-        let hmac_key = openssl::pkey::PKey::hmac(key)?;
-
-        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
-
-        signer.update(data)?;
-        signer.update(&iv.to_le_bytes())?;
-
-        let hmac = signer.sign_to_vec()?;
+        let mut signer = Self::hmac_sha1(key)?;
+        signer.update(data);
+        signer.update(&iv.to_le_bytes());
+        let hmac = signer.finalize().into_bytes();
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -335,13 +469,9 @@ impl SslCipher {
             return Ok(0);
         }
 
-        let hmac_key = openssl::pkey::PKey::hmac(key)?;
-
-        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
-
-        signer.update(data)?;
-
-        let hmac = signer.sign_to_vec()?;
+        let mut signer = Self::hmac_sha1(key)?;
+        signer.update(data);
+        let hmac = signer.finalize().into_bytes();
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -364,13 +494,11 @@ impl SslCipher {
             return Ok(0);
         }
 
-        let hmac_key = openssl::pkey::PKey::hmac(key)?;
-        let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
-
-        signer.update(data)?;
+        let mut signer = Self::hmac_sha1(key)?;
+        signer.update(data);
         // NO IV update here for key verification!
 
-        let hmac = signer.sign_to_vec()?;
+        let hmac = signer.finalize().into_bytes();
 
         // EncFS XORs only mdLen - 1 bytes (skips last byte)!
         let mut h = [0u8; 8];
@@ -404,23 +532,14 @@ impl SslCipher {
 
         // Pass 1
         let ivec1 = self.calculate_iv(iv64 + 1, key, iv)?;
-        let mut crypter1 = Crypter::new(self.cipher, Mode::Decrypt, key, Some(&ivec1))?;
-
-        let mut out = vec![0u8; data.len() + self.cipher.block_size()];
-        let count = crypter1.update(data, &mut out)?;
-        let rest = crypter1.finalize(&mut out[count..])?;
-        data.copy_from_slice(&out[..count + rest]);
+        self.stream_decrypt_inplace(data, key, &ivec1)?;
 
         Self::unshuffle_bytes(data);
         Self::flip_bytes(data);
 
         // Pass 2
         let ivec2 = self.calculate_iv(iv64, key, iv)?;
-        let mut crypter2 = Crypter::new(self.cipher, Mode::Decrypt, key, Some(&ivec2))?;
-
-        let count = crypter2.update(data, &mut out)?;
-        let rest = crypter2.finalize(&mut out[count..])?;
-        data.copy_from_slice(&out[..count + rest]);
+        self.stream_decrypt_inplace(data, key, &ivec2)?;
 
         Self::unshuffle_bytes(data);
         Ok(())
@@ -429,13 +548,10 @@ impl SslCipher {
     fn calculate_iv(&self, seed: u64, key: &[u8], iv: &[u8]) -> Result<Vec<u8>> {
         if self.iface.major >= 3 {
             // HMAC(key, iv || seed)
-            let hmac_key = openssl::pkey::PKey::hmac(key)?;
-            let mut signer = openssl::sign::Signer::new(MessageDigest::sha1(), &hmac_key)?;
-
-            signer.update(iv)?;
-            signer.update(&seed.to_le_bytes())?; // EncFS uses little endian for seed in HMAC
-
-            let hmac = signer.sign_to_vec()?;
+            let mut signer = Self::hmac_sha1(key)?;
+            signer.update(iv);
+            signer.update(&seed.to_le_bytes()); // EncFS uses little endian for seed in HMAC
+            let hmac = signer.finalize().into_bytes();
 
             let mut new_iv = vec![0u8; self.iv_len];
             let len = std::cmp::min(self.iv_len, hmac.len());
@@ -546,7 +662,7 @@ impl SslCipher {
 
         // 3. Decrypt
         let mut block_data = data[2..].to_vec();
-        let bs = self.block_cipher.block_size();
+        let bs = self.block_size();
 
         if block_data.len() < bs || block_data.len() % bs != 0 {
             return Err(anyhow!("Block data length invalid"));
@@ -596,7 +712,7 @@ impl SslCipher {
         match self.name_encoding {
             NameEncoding::Stream => max_bytes - 2,
             NameEncoding::Block => {
-                let bs = self.block_cipher.block_size() as u32;
+                let bs = self.block_size() as u32;
                 let max_bs_multiple = max_bytes - 2;
                 let max_blocks = (max_bs_multiple / bs) * bs;
                 if max_blocks == 0 { 0 } else { max_blocks - 1 }
@@ -630,7 +746,7 @@ impl SslCipher {
     }
 
     fn encrypt_filename_block(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
-        let bs = self.block_cipher.block_size();
+        let bs = self.block_size();
 
         // 1. Calculate Padding
         let len = plaintext_name.len();
@@ -672,41 +788,21 @@ impl SslCipher {
         Self::shuffle_bytes(data);
 
         let ivec = self.calculate_iv(iv64, key, iv)?;
-        let mut crypter = Crypter::new(self.cipher, Mode::Encrypt, key, Some(&ivec))?;
-
-        let mut out = vec![0u8; data.len() + self.cipher.block_size()];
-        let count = crypter.update(data, &mut out)?;
-        let rest = crypter.finalize(&mut out[count..])?;
-        data.copy_from_slice(&out[..count + rest]);
+        self.stream_encrypt_inplace(data, key, &ivec)?;
 
         // Pass 2: Flip -> Shuffle -> Encrypt(IV+1)
         Self::flip_bytes(data);
         Self::shuffle_bytes(data);
 
         let ivec2 = self.calculate_iv(iv64 + 1, key, iv)?;
-        let mut crypter2 = Crypter::new(self.cipher, Mode::Encrypt, key, Some(&ivec2))?;
-
-        let mut out2 = vec![0u8; data.len() + self.cipher.block_size()];
-        let count2 = crypter2.update(data, &mut out2)?;
-        let rest2 = crypter2.finalize(&mut out2[count2..])?;
-        data.copy_from_slice(&out2[..count2 + rest2]);
+        self.stream_encrypt_inplace(data, key, &ivec2)?;
 
         Ok(())
     }
 
     pub fn block_encode(&self, data: &mut [u8], iv64: u64, key: &[u8], iv: &[u8]) -> Result<()> {
         let ivec = self.calculate_iv(iv64, key, iv)?;
-
-        let mut crypter = Crypter::new(self.block_cipher, Mode::Encrypt, key, Some(&ivec))?;
-
-        crypter.pad(false);
-
-        let mut out = vec![0u8; data.len() + self.block_cipher.block_size()];
-        let count = crypter.update(data, &mut out)?;
-        let rest = crypter.finalize(&mut out[count..])?;
-
-        data.copy_from_slice(&out[..count + rest]);
-        Ok(())
+        self.block_encrypt_inplace(data, key, &ivec)
     }
 
     fn filename_base64_encode(data: &[u8]) -> Result<String> {
@@ -774,7 +870,8 @@ impl SslCipher {
     pub fn encrypt_header(&self, external_iv: u64) -> Result<(Vec<u8>, u64)> {
         // Generate random 64-bit file IV
         let mut file_iv_bytes = [0u8; 8];
-        rand_bytes(&mut file_iv_bytes).context("Failed to generate random IV")?;
+        getrandom::fill(&mut file_iv_bytes)
+            .map_err(|e| anyhow!("Failed to generate random IV: {}", e))?;
 
         let file_iv = u64::from_be_bytes(file_iv_bytes);
         let mut header = file_iv_bytes.to_vec();
@@ -956,17 +1053,7 @@ impl SslCipher {
         iv: &[u8],
     ) -> Result<()> {
         let ivec = self.calculate_iv(iv64, key, iv)?;
-
-        let mut crypter = Crypter::new(self.block_cipher, Mode::Decrypt, key, Some(&ivec))?;
-
-        crypter.pad(false);
-
-        let mut out = vec![0u8; data.len() + self.block_cipher.block_size()];
-        let count = crypter.update(data, &mut out)?;
-        let rest = crypter.finalize(&mut out[count..])?;
-
-        data.copy_from_slice(&out[..count + rest]);
-        Ok(())
+        self.block_decrypt_inplace(data, key, &ivec)
     }
     pub fn set_key(&mut self, key: &[u8], iv: &[u8]) {
         self.key = key.to_vec();
@@ -1021,7 +1108,7 @@ impl SslCipher {
         buffer.push((mac & 0xff) as u8);
 
         // 3. Pad to block size
-        let bs = self.block_cipher.block_size();
+        let bs = self.block_size();
         let padding = bs - (buffer.len() % bs);
         for _ in 0..padding {
             buffer.push(padding as u8);
@@ -1044,7 +1131,7 @@ impl SslCipher {
         path_iv: u64,
         iv_offset: u64,
     ) -> Result<Vec<u8>> {
-        let bs = self.block_cipher.block_size();
+        let bs = self.block_size();
 
         // 1. Check minimum size (must be at least one block)
         #[allow(clippy::manual_is_multiple_of)] // is_multiple_of is unstable on stable Rust
@@ -1830,5 +1917,179 @@ mod tests {
                 "Key length should match requested length"
             );
         }
+    }
+
+    #[test]
+    fn test_phase0_pbkdf2_sha1_known_vector() {
+        let password = "phase0-password";
+        let salt = b"phase0-salt";
+        let iterations = 12345;
+        let key_len = 32;
+
+        let derived =
+            SslCipher::derive_key(password, salt, iterations, key_len).expect("PBKDF2 failed");
+
+        let expected = [
+            0x58, 0x2e, 0x2d, 0xf2, 0x0b, 0x8e, 0xee, 0x96, 0x5b, 0x27, 0xcb, 0xeb, 0x7c, 0x20,
+            0xf4, 0xee, 0xd6, 0x93, 0x6c, 0xfb, 0x00, 0xed, 0xb8, 0x40, 0x32, 0xd2, 0xaf, 0x76,
+            0x00, 0x3f, 0x21, 0x2d,
+        ];
+
+        assert_eq!(
+            derived, expected,
+            "PBKDF2-SHA1 output must remain stable for migration compatibility"
+        );
+    }
+
+    #[test]
+    fn test_phase0_mac64_no_iv_known_vector() {
+        let key = b"phase0-mac-key";
+        let data = b"phase0-mac-data";
+
+        let mac = SslCipher::mac_64_no_iv_with_key(data, key).expect("mac_64_no_iv failed");
+
+        // Invariant: this value depends on XOR folding of HMAC-SHA1 bytes 0..19
+        // excluding the last digest byte, interpreted as a big-endian u64.
+        let expected: u64 = 0x26d56564aa8adc97;
+        assert_eq!(
+            mac, expected,
+            "MAC folding/endian behavior must remain unchanged"
+        );
+    }
+
+    #[test]
+    fn test_phase0_calculate_iv_uses_little_endian_seed() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let cipher = SslCipher::new(&iface, 256).expect("cipher init failed");
+
+        let key = b"phase0-iv-key";
+        let iv: Vec<u8> = (0u8..16u8).collect();
+        let seed = 0x0123456789abcdefu64;
+
+        let calculated = cipher
+            .calculate_iv(seed, key, &iv)
+            .expect("calculate_iv failed");
+
+        let expected = [
+            0x63, 0x6e, 0x50, 0x1d, 0x3b, 0xa1, 0xdf, 0xaa, 0x2c, 0x35, 0x26, 0x80, 0x14, 0x1b,
+            0x8a, 0x21,
+        ];
+        let known_big_endian_seed = [
+            0x87, 0xa9, 0x94, 0x3d, 0x39, 0x30, 0xc9, 0x09, 0xb2, 0x7c, 0xf2, 0x34, 0x01, 0x73,
+            0x85, 0x1e,
+        ];
+
+        assert_eq!(
+            calculated, expected,
+            "IV derivation must use little-endian seed bytes"
+        );
+        assert_ne!(
+            calculated, known_big_endian_seed,
+            "Guardrail: changing to big-endian seed would break compatibility"
+        );
+    }
+
+    #[test]
+    fn test_phase0_key_wrap_known_vector_and_unwrap() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+
+        let cipher = SslCipher::new(&iface, 256).expect("cipher init failed");
+
+        let user_key = [0x11u8; 32];
+        let user_iv = [0x22u8; 16];
+        let volume_key = [0x33u8; 48];
+
+        let wrapped = cipher
+            .encrypt_key(&volume_key, &user_key, &user_iv)
+            .expect("encrypt_key failed");
+        let unwrapped = cipher
+            .decrypt_key(&wrapped, &user_key, &user_iv)
+            .expect("decrypt_key failed");
+
+        let expected_wrapped = [
+            0x51, 0xd3, 0x9e, 0x05, 0x18, 0x27, 0x73, 0x54, 0xd7, 0xd8, 0x3e, 0xde, 0xe7, 0xed,
+            0xc1, 0xab, 0x35, 0xed, 0x82, 0xf9, 0xeb, 0xe7, 0x98, 0xc6, 0x1a, 0x2a, 0xef, 0xd2,
+            0x86, 0xba, 0xea, 0x89, 0x9f, 0x84, 0xb6, 0xc6, 0x7a, 0x77, 0xe3, 0xed, 0xc4, 0x5a,
+            0x86, 0x39, 0x7f, 0xed, 0x8d, 0x76, 0xc7, 0xce, 0xd0, 0x15,
+        ];
+
+        assert_eq!(
+            wrapped, expected_wrapped,
+            "Key wrap output must remain stable for compatibility"
+        );
+        assert_eq!(unwrapped, volume_key);
+    }
+
+    #[test]
+    fn test_phase0_filename_header_block_known_vectors() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+
+        let mut cipher = SslCipher::new(&iface, 256).expect("cipher init failed");
+
+        let fs_key = [0x44u8; 32];
+        let fs_iv = [0x55u8; 16];
+        cipher.set_key(&fs_key, &fs_iv);
+
+        let (encoded_name, name_iv_out) = cipher
+            .encrypt_filename(b"phase0-name.txt", 0x0102030405060708u64)
+            .expect("encrypt_filename failed");
+
+        assert_eq!(
+            encoded_name, "jXPDn,UNesj7jaXJf3CI3Z6",
+            "Filename encoding must remain stable"
+        );
+        assert_eq!(
+            name_iv_out, 0xc9c55c89023378c7u64,
+            "Filename-derived next IV must remain stable"
+        );
+
+        let header = cipher
+            .encrypt_header_with_iv(0x0f1e2d3c4b5a6978u64, 0x8877665544332211u64)
+            .expect("encrypt_header_with_iv failed");
+        assert_eq!(
+            header,
+            [0x68, 0xd9, 0xed, 0x17, 0x09, 0x3d, 0x81, 0xc1],
+            "Header encryption with fixed IV must remain stable"
+        );
+
+        let mut full_block: Vec<u8> = (0u8..16u8).collect();
+        cipher
+            .encrypt_block_inplace(&mut full_block, 7, 0x1020304050607080u64, 16)
+            .expect("encrypt full block failed");
+        assert_eq!(
+            full_block,
+            [
+                0xbb, 0xf9, 0x45, 0xd9, 0x40, 0x80, 0x05, 0x86, 0x7d, 0xdb, 0x2d, 0x64, 0x3c, 0x30,
+                0xc9, 0x4d,
+            ],
+            "Full block encryption vector must remain stable"
+        );
+
+        let mut partial_block = b"phase0-partial".to_vec();
+        cipher
+            .encrypt_block_inplace(&mut partial_block, 7, 0x1020304050607080u64, 16)
+            .expect("encrypt partial block failed");
+        assert_eq!(
+            partial_block,
+            [
+                0x68, 0x2b, 0x49, 0xcd, 0xce, 0xff, 0x7a, 0xf3, 0x12, 0x47, 0xe6, 0x5e, 0xc6, 0x1e,
+            ],
+            "Partial block encryption vector must remain stable"
+        );
     }
 }

@@ -60,7 +60,7 @@ fn help_main_mount_point() -> String {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = help_main_about(), long_about = None)]
+#[command(author, version, about = help_main_about(), long_about = None, arg_required_else_help = true)]
 struct Args {
     #[arg(short, long, help = help_main_foreground())]
     foreground: bool,

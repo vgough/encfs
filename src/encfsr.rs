@@ -43,7 +43,7 @@ fn help_encfsr_fuse_opts() -> String {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = help_encfsr_about(), long_about = None)]
+#[command(author, version, about = help_encfsr_about(), long_about = None, arg_required_else_help = true)]
 struct Args {
     /// EncFS config file (V7 protobuf, e.g. .encfs7)
     #[arg(help = help_encfsr_config())]

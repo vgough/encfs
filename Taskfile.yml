@@ -3,6 +3,7 @@ version: "3"
 vars:
   CARGO: cargo
   LIVE_TIMEOUT_SECS: '{{default "30" .LIVE_TIMEOUT_SECS}}'
+  MACOS_TARGET: '{{default "aarch64-apple-darwin" .MACOS_TARGET}}'
 
 tasks:
   build:
@@ -15,10 +16,15 @@ tasks:
     cmds:
       - "{{.CARGO}} build --release"
 
+  build-osx:
+    desc: Build release binaries for macOS (requires Rust target aarch64-apple-darwin or x86_64-apple-darwin)
+    cmds:
+      - "{{.CARGO}} build --release --target {{.MACOS_TARGET}}"
+
   test:
     desc: Run unit + integration tests (live mount tests remain ignored)
     cmds:
-      - "{{.CARGO}} test"
+      - "{{.CARGO}} nextest run --release"
 
   test-live:
     desc: Run live-mount FUSE integration tests (requires Linux+FUSE); sets ENCFS_LIVE_TESTS=1
@@ -26,7 +32,7 @@ tasks:
       - |
         set -euo pipefail
         ENCFS_LIVE_TESTS=1 ENCFS_LIVE_MOUNT_TIMEOUT_SECS='{{.LIVE_TIMEOUT_SECS}}' \
-          {{.CARGO}} test --test live_mount -- --ignored --test-threads=1
+          {{.CARGO}} test --release --test live_mount -- --ignored --test-threads=1
 
   fmt:
     desc: Format Rust code

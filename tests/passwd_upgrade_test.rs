@@ -96,9 +96,8 @@ fn test_upgrade_pbkdf2_to_argon2() -> Result<()> {
     let decrypted_volume_blob = cipher.decrypt_key(&config.key_data, old_user_key, old_user_iv)?;
 
     // 2. Generate new salt for Argon2
-    use openssl::rand::rand_bytes;
     let mut new_salt = vec![0u8; 20];
-    rand_bytes(&mut new_salt)?;
+    getrandom::fill(&mut new_salt).map_err(|e| anyhow::anyhow!("getrandom failed: {}", e))?;
 
     // 3. Upgrade to Argon2id
     config.kdf_algorithm = KdfAlgorithm::Argon2id;

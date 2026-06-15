@@ -235,6 +235,10 @@ ctl.error_failed_to_generate_salt:
   en: "Failed to generate salt"
   fr: "Échec de la génération du sel"
   de: "Fehler beim Generieren des Salts"
+ctl.error_failed_to_generate_volume_key:
+  en: "Failed to generate volume key"
+  fr: "Échec de la génération de la clé de volume"
+  de: "Fehler beim Generieren des Volumenschlüssels"
 ctl.error_failed_to_save_config:
   en: "Failed to save config file"
   fr: "Échec de l'enregistrement du fichier de configuration"

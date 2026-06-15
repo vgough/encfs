@@ -1,0 +1,4 @@
+[profile.default]
+# Mark as "slow" after 10s, kill after 3 × 10s = 30s
+slow-timeout = { period = "10s", terminate-after = 3 }
+

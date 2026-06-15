@@ -31,7 +31,7 @@ pub fn init_locale() {
 
 #[cfg(test)]
 mod tests {
-    use openssl::hash::{Hasher, MessageDigest};
+    use sha1::{Digest, Sha1};
     use std::fs::File;
     use std::os::unix::fs::FileExt;
     use std::path::PathBuf;
@@ -96,9 +96,7 @@ mod tests {
         println!("Decrypted {} bytes of content", decrypted_content.len());
 
         // Calculate SHA1 hash of decrypted content
-        let mut hasher = Hasher::new(MessageDigest::sha1())?;
-        hasher.update(&decrypted_content)?;
-        let hash = hasher.finish()?;
+        let hash = Sha1::digest(&decrypted_content);
         let hash_hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
 
         println!("SHA1 hash: {}", hash_hex);
@@ -178,9 +176,7 @@ mod tests {
         println!("Decrypted {} bytes of content", decrypted_content.len());
 
         // Calculate SHA1 hash of decrypted content
-        let mut hasher = Hasher::new(MessageDigest::sha1())?;
-        hasher.update(&decrypted_content)?;
-        let hash = hasher.finish()?;
+        let hash = Sha1::digest(&decrypted_content);
         let hash_hex: String = hash.iter().map(|b| format!("{:02x}", b)).collect();
 
         println!("SHA1 hash: {}", hash_hex);

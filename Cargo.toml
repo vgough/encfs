@@ -4,7 +4,7 @@ exclude = ["fuzz"]
 
 [package]
 name = "encfs"
-version = "2.0.0-alpha.3"
+version = "2.0.0-beta.1"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -16,8 +16,13 @@ protoc-bin-vendored = "3.2"
 [dependencies]
 anyhow = "1.0.102"
 argon2 = "0.5"
+aes = "0.8"
+aes-gcm = "0.10"
 aes-gcm-siv = "0.11.1"
 base64 = "0.22.1"
+blowfish = "0.9"
+cbc = "0.1"
+cfb-mode = "0.8"
 daemonize = "0.5"
 chrono = "0.4"
 clap = { version = "4.6.1", features = ["derive"] }
@@ -25,12 +30,15 @@ env_logger = "0.11.10"
 fuse_mt = "0.6.4"
 libc = "0.2.186"
 log = "0.4.32"
-openssl = "0.10.81"
 quick-xml = { version = "0.40.1", features = ["serialize"] }
 rpassword = "7.5.4"
 serde = { version = "1.0.228", features = ["derive"] }
 rust-i18n = "4"
 prost = "0.14.4"
+getrandom = "0.4"
+hmac = "0.13"
+pbkdf2 = "0.13"
+sha1 = "0.11"
 sha2 = "0.11"
 zeroize = { version = "1", features = ["derive"] }
 

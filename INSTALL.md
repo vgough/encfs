@@ -9,9 +9,9 @@ EncFS v2 (from 2026) is implemented in Rust. To build:
 
     cargo build --release
 
-To run tests:
+To run tests (`task test`), or:
 
-    cargo test
+    cargo nextest run --release
 
 To install:
 
@@ -20,4 +20,3 @@ To install:
 Dependencies:
     * Rust toolchain (stable or nightly)
     * FUSE library (libfuse or OSXFUSE on macOS)
-    * OpenSSL development libraries
