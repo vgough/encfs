@@ -33,7 +33,7 @@ jobs:
       run: cargo build --release
       
     - name: Run tests
-      run: cargo nextest run --release
+      run: cargo test --release
       
     - name: Run live mount tests
       run: ENCFS_LIVE_TESTS=1 cargo test --release --test live_mount -- --ignored --test-threads=1
