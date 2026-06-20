@@ -6,8 +6,12 @@ use anyhow::{Result, anyhow};
 use argon2::{Algorithm, Argon2, Params, Version};
 use blowfish::Blowfish;
 use cbc::cipher::block_padding::NoPadding;
-use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit as BlockKeyIvInit};
+use cbc::cipher::{
+    BlockCipher, BlockDecryptMut, BlockEncryptMut, KeyInit as BlockCipherKeyInit,
+    KeyIvInit as BlockKeyIvInit,
+};
 use cfb_mode::cipher::AsyncStreamCipher;
+use std::marker::PhantomData;
 use hmac::digest::KeyInit as HmacKeyInit;
 use hmac::{Hmac, Mac};
 use pbkdf2::pbkdf2_hmac;
@@ -17,12 +21,71 @@ use zeroize::Zeroize;
 
 type HmacSha1 = Hmac<Sha1>;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum LegacyCipherKind {
-    Aes128,
-    Aes192,
-    Aes256,
-    Blowfish,
+/// A symmetric block-cipher algorithm, abstracted over CBC (full file blocks)
+/// and CFB (partial blocks / stream) modes. One implementation per algorithm:
+/// adding a cipher is adding a `Primitive<NewAlgorithm>`, not another arm in a
+/// `match self.cipher_kind`.
+trait BlockPrimitive: Send + Sync {
+    fn cbc_encrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()>;
+    fn cbc_decrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()>;
+    fn cfb_encrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()>;
+    fn cfb_decrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()>;
+}
+
+/// Generic [`BlockPrimitive`] over any RustCrypto block cipher `C` (AES-128/192/
+/// 256, Blowfish, ...). The `fn() -> C` marker keeps `Primitive<C>` `Send + Sync`
+/// without requiring `C: Send`, and carries no runtime state.
+struct Primitive<C> {
+    _marker: PhantomData<fn() -> C>,
+}
+
+impl<C> Primitive<C> {
+    const fn new() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<C> BlockPrimitive for Primitive<C>
+where
+    C: BlockCipher + BlockEncryptMut + BlockDecryptMut + BlockCipherKeyInit,
+{
+    fn cbc_encrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let mut out = vec![0u8; data.len()];
+        let cipher = cbc::Encryptor::<C>::new_from_slices(key, iv)
+            .map_err(|e| anyhow!("CBC encrypt init failed: {}", e))?;
+        cipher
+            .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+            .map_err(|e| anyhow!("CBC encrypt failed: {}", e))?;
+        data.copy_from_slice(&out);
+        Ok(())
+    }
+
+    fn cbc_decrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let mut out = vec![0u8; data.len()];
+        let cipher = cbc::Decryptor::<C>::new_from_slices(key, iv)
+            .map_err(|e| anyhow!("CBC decrypt init failed: {}", e))?;
+        cipher
+            .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+            .map_err(|e| anyhow!("CBC decrypt failed: {}", e))?;
+        data.copy_from_slice(&out);
+        Ok(())
+    }
+
+    fn cfb_encrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let cipher = cfb_mode::Encryptor::<C>::new_from_slices(key, iv)
+            .map_err(|e| anyhow!("CFB encrypt init failed: {}", e))?;
+        cipher.encrypt(data);
+        Ok(())
+    }
+
+    fn cfb_decrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let cipher = cfb_mode::Decryptor::<C>::new_from_slices(key, iv)
+            .map_err(|e| anyhow!("CFB decrypt init failed: {}", e))?;
+        cipher.decrypt(data);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,7 +98,7 @@ pub enum NameEncoding {
 /// Handles key derivation, file content encryption (stream/block), and filename encryption.
 pub struct SslCipher {
     pub iv_len: usize,
-    cipher_kind: LegacyCipherKind,
+    primitive: Box<dyn BlockPrimitive>,
     key: Vec<u8>,
     iv: Vec<u8>,
     name_encoding: NameEncoding,
@@ -55,31 +118,30 @@ impl SslCipher {
     }
 
     pub fn new(iface: &Interface, key_size: i32) -> Result<Self> {
-        let cipher_kind = match (iface.name.as_str(), key_size) {
-            ("ssl/aes", 128) => LegacyCipherKind::Aes128,
-            ("ssl/aes", 192) => LegacyCipherKind::Aes192,
-            ("ssl/aes", 256) => LegacyCipherKind::Aes256,
-            ("ssl/blowfish", _) => LegacyCipherKind::Blowfish,
-            _ => {
-                return Err(anyhow!(
-                    "{}",
-                    t!(
-                        "lib.error_unsupported_cipher",
-                        name = iface.name,
-                        key_size = key_size
-                    )
-                ));
-            }
-        };
-
-        let iv_len = match cipher_kind {
-            LegacyCipherKind::Blowfish => 8,
-            _ => 16,
-        };
+        // Select the block-cipher primitive and its IV length. This is the one
+        // place that maps a cipher interface to an algorithm; the per-block
+        // crypto dispatches through the boxed `BlockPrimitive`.
+        let (primitive, iv_len): (Box<dyn BlockPrimitive>, usize) =
+            match (iface.name.as_str(), key_size) {
+                ("ssl/aes", 128) => (Box::new(Primitive::<Aes128>::new()), 16),
+                ("ssl/aes", 192) => (Box::new(Primitive::<Aes192>::new()), 16),
+                ("ssl/aes", 256) => (Box::new(Primitive::<Aes256>::new()), 16),
+                ("ssl/blowfish", _) => (Box::new(Primitive::<Blowfish>::new()), 8),
+                _ => {
+                    return Err(anyhow!(
+                        "{}",
+                        t!(
+                            "lib.error_unsupported_cipher",
+                            name = iface.name,
+                            key_size = key_size
+                        )
+                    ));
+                }
+            };
 
         Ok(Self {
             iv_len,
-            cipher_kind,
+            primitive,
             key: vec![],
             iv: vec![],
             name_encoding: NameEncoding::Stream, // Default
@@ -96,140 +158,25 @@ impl SslCipher {
     }
 
     fn block_size(&self) -> usize {
-        match self.cipher_kind {
-            LegacyCipherKind::Blowfish => 8,
-            _ => 16,
-        }
+        // The CBC block size equals the IV length for every supported cipher
+        // (AES = 16, Blowfish = 8), selected once in `new`.
+        self.iv_len
     }
 
     fn stream_encrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
-        match self.cipher_kind {
-            LegacyCipherKind::Aes128 => {
-                let cipher = cfb_mode::Encryptor::<Aes128>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-128-CFB init failed: {}", e))?;
-                cipher.encrypt(data);
-            }
-            LegacyCipherKind::Aes192 => {
-                let cipher = cfb_mode::Encryptor::<Aes192>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-192-CFB init failed: {}", e))?;
-                cipher.encrypt(data);
-            }
-            LegacyCipherKind::Aes256 => {
-                let cipher = cfb_mode::Encryptor::<Aes256>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-256-CFB init failed: {}", e))?;
-                cipher.encrypt(data);
-            }
-            LegacyCipherKind::Blowfish => {
-                let cipher = cfb_mode::Encryptor::<Blowfish>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("Blowfish-CFB init failed: {}", e))?;
-                cipher.encrypt(data);
-            }
-        }
-
-        Ok(())
+        self.primitive.cfb_encrypt(data, key, iv)
     }
 
     fn stream_decrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
-        match self.cipher_kind {
-            LegacyCipherKind::Aes128 => {
-                let cipher = cfb_mode::Decryptor::<Aes128>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-128-CFB init failed: {}", e))?;
-                cipher.decrypt(data);
-            }
-            LegacyCipherKind::Aes192 => {
-                let cipher = cfb_mode::Decryptor::<Aes192>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-192-CFB init failed: {}", e))?;
-                cipher.decrypt(data);
-            }
-            LegacyCipherKind::Aes256 => {
-                let cipher = cfb_mode::Decryptor::<Aes256>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-256-CFB init failed: {}", e))?;
-                cipher.decrypt(data);
-            }
-            LegacyCipherKind::Blowfish => {
-                let cipher = cfb_mode::Decryptor::<Blowfish>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("Blowfish-CFB init failed: {}", e))?;
-                cipher.decrypt(data);
-            }
-        }
-
-        Ok(())
+        self.primitive.cfb_decrypt(data, key, iv)
     }
 
     fn block_encrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
-        let mut out = vec![0u8; data.len()];
-
-        match self.cipher_kind {
-            LegacyCipherKind::Aes128 => {
-                let cipher = cbc::Encryptor::<Aes128>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-128-CBC init failed: {}", e))?;
-                cipher
-                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-128-CBC encrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Aes192 => {
-                let cipher = cbc::Encryptor::<Aes192>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-192-CBC init failed: {}", e))?;
-                cipher
-                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-192-CBC encrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Aes256 => {
-                let cipher = cbc::Encryptor::<Aes256>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-256-CBC init failed: {}", e))?;
-                cipher
-                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-256-CBC encrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Blowfish => {
-                let cipher = cbc::Encryptor::<Blowfish>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("Blowfish-CBC init failed: {}", e))?;
-                cipher
-                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("Blowfish-CBC encrypt failed: {}", e))?;
-            }
-        }
-
-        data.copy_from_slice(&out);
-        Ok(())
+        self.primitive.cbc_encrypt(data, key, iv)
     }
 
     fn block_decrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
-        let mut out = vec![0u8; data.len()];
-
-        match self.cipher_kind {
-            LegacyCipherKind::Aes128 => {
-                let cipher = cbc::Decryptor::<Aes128>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-128-CBC init failed: {}", e))?;
-                cipher
-                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-128-CBC decrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Aes192 => {
-                let cipher = cbc::Decryptor::<Aes192>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-192-CBC init failed: {}", e))?;
-                cipher
-                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-192-CBC decrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Aes256 => {
-                let cipher = cbc::Decryptor::<Aes256>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-256-CBC init failed: {}", e))?;
-                cipher
-                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-256-CBC decrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Blowfish => {
-                let cipher = cbc::Decryptor::<Blowfish>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("Blowfish-CBC init failed: {}", e))?;
-                cipher
-                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("Blowfish-CBC decrypt failed: {}", e))?;
-            }
-        }
-
-        data.copy_from_slice(&out);
-        Ok(())
+        self.primitive.cbc_decrypt(data, key, iv)
     }
 
     /// Derives the User Key from the password using PBKDF2-HMAC-SHA1.
