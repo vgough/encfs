@@ -51,7 +51,7 @@ fn setup_test_fs(
     config.chained_name_iv = chained_name_iv;
     config.external_iv_chaining = external_iv_chaining;
 
-    let fs = EncFs::new(root.clone(), cipher, config);
+    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
     // Create verify cipher matches
     let verify_cipher = SslCipher::new(&iface, key_size).unwrap();

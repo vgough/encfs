@@ -96,7 +96,7 @@ fn test_legacy_v5_decode() -> anyhow::Result<()> {
     println!("Decrypting content (size: {})", content_len);
 
     let decoder = FileDecoder::new(
-        &encfs.cipher,
+        encfs.cipher.as_ref(),
         &file,
         file_iv,
         header_size,

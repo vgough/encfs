@@ -3,7 +3,7 @@ extern crate rust_i18n;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use encfs::{config, constants, crypto::ssl::SslCipher};
+use encfs::{config, constants, crypto::cipher::Cipher, crypto::ssl::SslCipher};
 use getrandom::fill as fill_random;
 use rpassword::prompt_password;
 use std::io::{self, BufRead, Write};
@@ -805,7 +805,7 @@ fn cmd_showcruft(rootdir: &Path) -> Result<()> {
     find_undecodable_files(
         rootdir,
         rootdir,
-        &cipher,
+        cipher.as_ref(),
         config.chained_name_iv,
         0, // Initial IV for root directory
         &mut stats,
@@ -851,7 +851,7 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
             if encoded_path.is_empty() {
                 continue;
             }
-            match decode_path_string(&cipher, encoded_path, config.chained_name_iv) {
+            match decode_path_string(cipher.as_ref(), encoded_path, config.chained_name_iv) {
                 Ok(decoded) => println!("{}", decoded),
                 Err(e) => eprintln!(
                     "{}",
@@ -862,7 +862,7 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
     } else {
         // Decode command line arguments
         for name in names {
-            match decode_path_string(&cipher, &name, config.chained_name_iv) {
+            match decode_path_string(cipher.as_ref(), &name, config.chained_name_iv) {
                 Ok(decoded) => println!("{}", decoded),
                 Err(e) => eprintln!("{}", t!("ctl.error_decoding", path = name, error = e)),
             }
@@ -888,7 +888,7 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
             if plaintext_path.is_empty() {
                 continue;
             }
-            match encode_path_string(&cipher, plaintext_path, config.chained_name_iv) {
+            match encode_path_string(cipher.as_ref(), plaintext_path, config.chained_name_iv) {
                 Ok(encoded) => println!("{}", encoded),
                 Err(e) => eprintln!(
                     "{}",
@@ -899,7 +899,7 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
     } else {
         // Encode command line arguments
         for name in names {
-            match encode_path_string(&cipher, &name, config.chained_name_iv) {
+            match encode_path_string(cipher.as_ref(), &name, config.chained_name_iv) {
                 Ok(encoded) => println!("{}", encoded),
                 Err(e) => eprintln!("{}", t!("ctl.error_encoding", path = name, error = e)),
             }
@@ -926,7 +926,7 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
 
     let cipher = get_cipher_zeroizing(&config, &config_path, extpass)?;
 
-    let (file_path, path_iv) = resolve_file_path(&rootdir, &path, &cipher, &config)?;
+    let (file_path, path_iv) = resolve_file_path(&rootdir, &path, cipher.as_ref(), &config)?;
     let file =
         std::fs::File::open(&file_path).context(t!("ctl.error_failed_to_open_encrypted_file"))?;
 
@@ -955,7 +955,7 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
     // Use FileDecoder to decrypt content
     use encfs::crypto::file::FileDecoder;
     let decoder = FileDecoder::new_from_config(
-        &cipher,
+        cipher.as_ref(),
         &file,
         file_iv,
         &config.file_codec_params(),
@@ -992,7 +992,7 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
     // Encrypt the path to get the real directory path
     let plaintext_path = PathBuf::from(path);
     let (encrypted_dir_path, dir_iv) =
-        encrypt_path_with_iv(rootdir, &plaintext_path, &cipher, &config)?;
+        encrypt_path_with_iv(rootdir, &plaintext_path, cipher.as_ref(), &config)?;
 
     let entries =
         std::fs::read_dir(&encrypted_dir_path).context(t!("ctl.error_failed_to_read_directory"))?;
@@ -1297,7 +1297,7 @@ fn cmd_export(
     export_directory(
         rootdir,
         destdir,
-        &cipher,
+        cipher.as_ref(),
         &config,
         0, // initial IV
         fail_on_error,
@@ -1309,7 +1309,7 @@ fn cmd_export(
 fn export_directory(
     current_encrypted_dir: &Path,
     current_dest_dir: &Path,
-    cipher: &SslCipher,
+    cipher: &dyn Cipher,
     config: &config::EncfsConfig,
     dir_iv: u64,
     fail_on_error: bool,
@@ -1540,7 +1540,7 @@ fn export_directory(
     Ok(())
 }
 
-fn decode_path_string(cipher: &SslCipher, encoded_path: &str, chained_iv: bool) -> Result<String> {
+fn decode_path_string(cipher: &dyn Cipher, encoded_path: &str, chained_iv: bool) -> Result<String> {
     // Decode an encrypted path by decoding each component with IV chaining across path components.
     // Note: IV chaining is per-path-component, not across unrelated sibling names.
     let mut out = PathBuf::new();
@@ -1573,7 +1573,7 @@ fn decode_path_string(cipher: &SslCipher, encoded_path: &str, chained_iv: bool) 
 }
 
 fn encode_path_string(
-    cipher: &SslCipher,
+    cipher: &dyn Cipher,
     plaintext_path: &str,
     chained_iv: bool,
 ) -> Result<String> {
@@ -1608,7 +1608,7 @@ fn encode_path_string(
 fn encrypt_path_with_iv(
     rootdir: &Path,
     plaintext_path: &Path,
-    cipher: &SslCipher,
+    cipher: &dyn Cipher,
     config: &config::EncfsConfig,
 ) -> Result<(PathBuf, u64)> {
     let mut encrypted_path = PathBuf::new();
@@ -1893,7 +1893,7 @@ fn get_cipher_zeroizing(
     config: &config::EncfsConfig,
     config_path: &Path,
     extpass: Option<String>,
-) -> Result<SslCipher> {
+) -> Result<Box<dyn Cipher>> {
     let mut password = get_password(config_path, extpass)?;
     let result = config.get_cipher(&password);
     zeroize::Zeroize::zeroize(&mut password);
@@ -1922,7 +1922,7 @@ fn get_password_from_program(prog: &str) -> Result<String> {
 fn find_undecodable_files(
     rootdir: &Path,
     current_dir: &Path,
-    cipher: &SslCipher,
+    cipher: &dyn Cipher,
     chained_iv: bool,
     dir_iv: u64,
     stats: &mut ShowcruftStats,
@@ -2013,7 +2013,7 @@ fn find_undecodable_files(
 fn resolve_file_path(
     rootdir: &Path,
     path: &str,
-    cipher: &SslCipher,
+    cipher: &dyn Cipher,
     config: &config::EncfsConfig,
 ) -> Result<(PathBuf, u64)> {
     // Try as plaintext path first
@@ -2041,7 +2041,7 @@ fn resolve_file_path(
 
 fn decrypt_path_with_iv(
     encrypted_path: &Path,
-    cipher: &SslCipher,
+    cipher: &dyn Cipher,
     config: &config::EncfsConfig,
 ) -> Result<(PathBuf, u64)> {
     let mut decrypted_path = PathBuf::new();
@@ -2098,7 +2098,7 @@ mod tests {
             age: 0,
         };
         // 192 bit key
-        let mut cipher = SslCipher::new(&iface, 192)?;
+        let mut cipher: Box<dyn Cipher> = Box::new(SslCipher::new(&iface, 192)?);
         let key = vec![0u8; 24];
         let iv = vec![0u8; cipher.iv_len()];
         cipher.set_key(&key, &iv);
@@ -2152,7 +2152,7 @@ mod tests {
         fs::write(src_dir.join(&enc_target), "dummy content")?;
 
         // Run export
-        export_directory(&src_dir, &dst_dir, &cipher, &config, 0, false)?;
+        export_directory(&src_dir, &dst_dir, cipher.as_ref(), &config, 0, false)?;
 
         // Check destination
         let exported_link = dst_dir.join(symlink_name);
@@ -2201,7 +2201,7 @@ mod tests {
             minor: 0,
             age: 0,
         };
-        let mut cipher = SslCipher::new(&iface, 192)?;
+        let mut cipher: Box<dyn Cipher> = Box::new(SslCipher::new(&iface, 192)?);
         let key = vec![0u8; 24];
         let iv = vec![0u8; cipher.iv_len()];
         cipher.set_key(&key, &iv);
@@ -2248,7 +2248,7 @@ mod tests {
         // Run export
         // This should NOT fail, but should just output a warning (after we fix it)
         // and skip the file.
-        export_directory(&src_dir, &dst_dir, &cipher, &config, 0, false)?;
+        export_directory(&src_dir, &dst_dir, cipher.as_ref(), &config, 0, false)?;
 
         // Check destination - should NOT exist
         let exported_link = dst_dir.join(link_name);
@@ -2281,7 +2281,7 @@ mod tests {
             minor: 0,
             age: 0,
         };
-        let mut cipher = SslCipher::new(&iface, 192)?;
+        let mut cipher: Box<dyn Cipher> = Box::new(SslCipher::new(&iface, 192)?);
         let key = vec![0u8; 24];
         let iv = vec![0u8; cipher.iv_len()];
         cipher.set_key(&key, &iv);
@@ -2341,7 +2341,7 @@ mod tests {
         // It will take first 8 bytes as "header", decrypt them (garbage IV),
         // then decrypt the rest (6 bytes) using that garbage IV.
         // The output will be truncated (6 bytes instead of 14) and garbage.
-        export_directory(&src_dir, &dst_dir, &cipher, &config, 0, false)?;
+        export_directory(&src_dir, &dst_dir, cipher.as_ref(), &config, 0, false)?;
 
         let exported_path = dst_dir.join(filename);
         if !exported_path.exists() {
@@ -2391,7 +2391,7 @@ mod tests {
             minor: 0,
             age: 0,
         };
-        let mut cipher = SslCipher::new(&iface, 192)?;
+        let mut cipher: Box<dyn Cipher> = Box::new(SslCipher::new(&iface, 192)?);
         let key = vec![0u8; 24]; // 192 bits
         let iv = vec![0u8; cipher.iv_len()];
         cipher.set_key(&key, &iv);
@@ -2424,7 +2424,7 @@ mod tests {
         };
 
         // Run find_undecodable_files
-        find_undecodable_files(&temp_dir, &temp_dir, &cipher, false, dir_iv, &mut stats)?;
+        find_undecodable_files(&temp_dir, &temp_dir, cipher.as_ref(), false, dir_iv, &mut stats)?;
 
         // Cleanup
         let _ = fs::remove_dir_all(&temp_dir);
@@ -2473,7 +2473,7 @@ mod tests {
             minor: 0,
             age: 0,
         };
-        let mut cipher = SslCipher::new(&iface, 192)?;
+        let mut cipher: Box<dyn Cipher> = Box::new(SslCipher::new(&iface, 192)?);
         let key = vec![0u8; 24];
         let iv = vec![0u8; cipher.iv_len()];
         cipher.set_key(&key, &iv);
@@ -2516,7 +2516,7 @@ mod tests {
 
         // Run export
         // This fails if the bug is present
-        match export_directory(&src_dir, &dst_dir, &cipher, &config, 0, false) {
+        match export_directory(&src_dir, &dst_dir, cipher.as_ref(), &config, 0, false) {
             Ok(_) => {}
             Err(e) => {
                 // Clean up before panicking
@@ -2549,7 +2549,7 @@ mod tests {
             minor: 0,
             age: 0,
         };
-        let mut cipher = SslCipher::new(&iface, 192)?;
+        let mut cipher: Box<dyn Cipher> = Box::new(SslCipher::new(&iface, 192)?);
         let key = vec![0u8; 24];
         let iv = vec![0u8; cipher.iv_len()];
         cipher.set_key(&key, &iv);
@@ -2586,7 +2586,7 @@ mod tests {
         symlink("INVALID_TARGET", src_dir.join(&enc_name))?;
 
         // Run export with fail_on_error = true
-        let result = export_directory(&src_dir, &dst_dir, &cipher, &config, 0, true);
+        let result = export_directory(&src_dir, &dst_dir, cipher.as_ref(), &config, 0, true);
 
         // Should return Error
         assert!(

@@ -1,5 +1,5 @@
 use crate::config::ConfigType;
-use crate::crypto::ssl::SslCipher;
+use crate::crypto::cipher::Cipher;
 use std::io;
 
 /// Fixed tag length for the V7 AES-GCM-SIV per-block format.
@@ -117,7 +117,7 @@ impl BlockLayout {
 /// Encapsulates on-disk block metadata handling (legacy MAC prefix vs AEAD tag)
 /// and per-block encryption/decryption.
 pub struct BlockCodec<'a> {
-    cipher: &'a SslCipher,
+    cipher: &'a dyn Cipher,
     layout: BlockLayout,
     ignore_legacy_mac_mismatch: bool,
     allow_holes: bool,
@@ -125,7 +125,7 @@ pub struct BlockCodec<'a> {
 
 impl<'a> BlockCodec<'a> {
     pub fn new(
-        cipher: &'a SslCipher,
+        cipher: &'a dyn Cipher,
         layout: BlockLayout,
         ignore_legacy_mac_mismatch: bool,
         allow_holes: bool,

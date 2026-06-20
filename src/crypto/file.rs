@@ -1,4 +1,6 @@
 use crate::crypto::block::{BlockCodec, BlockLayout, BlockMode};
+use crate::crypto::cipher::Cipher;
+#[cfg(test)]
 use crate::crypto::ssl::SslCipher;
 use std::io;
 use std::os::unix::fs::FileExt;
@@ -52,7 +54,7 @@ pub struct FileCodecParams {
 /// Handles block-by-block decryption and verification for both legacy EncFS
 /// block-MAC format and V7 AES-GCM-SIV block format.
 pub struct FileDecoder<'a, F: ReadAt> {
-    cipher: &'a SslCipher,
+    cipher: &'a dyn Cipher,
     file: &'a F,
     file_iv: u64,
     header_size: u64,
@@ -66,7 +68,7 @@ pub struct FileDecoder<'a, F: ReadAt> {
 impl<'a, F: ReadAt> FileDecoder<'a, F> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        cipher: &'a SslCipher,
+        cipher: &'a dyn Cipher,
         file: &'a F,
         file_iv: u64,
         header_size: u64,
@@ -90,7 +92,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_mode(
-        cipher: &'a SslCipher,
+        cipher: &'a dyn Cipher,
         file: &'a F,
         file_iv: u64,
         header_size: u64,
@@ -115,7 +117,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
 
     /// Constructs a decoder using grouped config parameters from [`FileCodecParams`].
     pub fn new_from_config(
-        cipher: &'a SslCipher,
+        cipher: &'a dyn Cipher,
         file: &'a F,
         file_iv: u64,
         params: &FileCodecParams,
@@ -247,7 +249,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
 
 /// Encodes encrypted files (writes).
 pub struct FileEncoder<'a, F: ReadAt + WriteAt + FileLen> {
-    cipher: &'a SslCipher,
+    cipher: &'a dyn Cipher,
     file: &'a F,
     file_iv: u64,
     header_size: u64,
@@ -260,7 +262,7 @@ pub struct FileEncoder<'a, F: ReadAt + WriteAt + FileLen> {
 impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        cipher: &'a SslCipher,
+        cipher: &'a dyn Cipher,
         file: &'a F,
         file_iv: u64,
         header_size: u64,
@@ -282,7 +284,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_mode(
-        cipher: &'a SslCipher,
+        cipher: &'a dyn Cipher,
         file: &'a F,
         file_iv: u64,
         header_size: u64,
@@ -305,7 +307,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
 
     /// Constructs an encoder using grouped config parameters from [`FileCodecParams`].
     pub fn new_from_config(
-        cipher: &'a SslCipher,
+        cipher: &'a dyn Cipher,
         file: &'a F,
         file_iv: u64,
         params: &FileCodecParams,

@@ -1,6 +1,6 @@
 use crate::crypto::block::BlockLayout;
+use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
-use crate::crypto::ssl::SslCipher;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use fuse_mt::{
@@ -120,14 +120,14 @@ unsafe fn removexattr_nofollow(
 /// Stores file handles and the cipher instance.
 pub struct EncFs {
     pub root: PathBuf,
-    pub cipher: SslCipher,
+    pub cipher: Box<dyn Cipher>,
     handles: Mutex<HashMap<u64, Arc<FileHandle>>>,
     next_fh: AtomicU64,
     pub config: crate::config::EncfsConfig,
 }
 
 impl EncFs {
-    pub fn new(root: PathBuf, cipher: SslCipher, config: crate::config::EncfsConfig) -> Self {
+    pub fn new(root: PathBuf, cipher: Box<dyn Cipher>, config: crate::config::EncfsConfig) -> Self {
         Self {
             root,
             cipher,
@@ -649,7 +649,7 @@ impl EncFs {
         }
 
         let encoder = FileEncoder::new_from_config(
-            &self.cipher,
+            self.cipher.as_ref(),
             file_ref,
             file_iv,
             &self.config.file_codec_params(),
@@ -721,7 +721,7 @@ impl EncFs {
 
         let block_start = new_logical_size - offset_in_block;
         let decoder = FileDecoder::new_from_config(
-            &self.cipher,
+            self.cipher.as_ref(),
             file_ref,
             file_iv,
             &self.config.file_codec_params(),
@@ -743,7 +743,7 @@ impl EncFs {
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
         let encoder = FileEncoder::new_from_config(
-            &self.cipher,
+            self.cipher.as_ref(),
             file_ref,
             file_iv,
             &self.config.file_codec_params(),
@@ -1425,7 +1425,7 @@ impl FilesystemMT for EncFs {
         };
 
         let decoder = FileDecoder::new_from_config(
-            &self.cipher,
+            self.cipher.as_ref(),
             &handle.file,
             handle.file_iv,
             &self.config.file_codec_params(),
@@ -1483,7 +1483,7 @@ impl FilesystemMT for EncFs {
         };
 
         let encoder = FileEncoder::new_from_config(
-            &self.cipher,
+            self.cipher.as_ref(),
             &handle.file,
             handle.file_iv,
             &self.config.file_codec_params(),

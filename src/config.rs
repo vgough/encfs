@@ -1,3 +1,4 @@
+use crate::crypto::cipher::Cipher;
 use anyhow::{Context, Result};
 use log::debug;
 use rust_i18n::t;
@@ -720,8 +721,11 @@ impl EncfsConfig {
 
     /// Derive cipher from config and password.
     ///
-    /// Calls `validate()` first.
-    pub fn get_cipher(&self, password: &str) -> Result<crate::crypto::ssl::SslCipher> {
+    /// Calls `validate()` first, then dispatches on the config format version.
+    /// The `match` is exhaustive on purpose: adding a new `ConfigType` variant
+    /// forces a decision here rather than silently falling through the legacy
+    /// key-derivation path.
+    pub fn get_cipher(&self, password: &str) -> Result<Box<dyn Cipher>> {
         use crate::crypto::ssl::SslCipher;
         use zeroize::Zeroize;
 
@@ -731,42 +735,84 @@ impl EncfsConfig {
         let key_len = usize::try_from(self.key_size / 8)
             .map_err(|_| anyhow::anyhow!("Unsupported key size {}", self.key_size))?;
         let iv_len = cipher.iv_len();
-        let user_key_len = key_len + iv_len;
 
-        // V7: AEAD decrypt with config hash as AAD
-        if self.config_type == ConfigType::V7 {
-            let aad = self
-                .config_hash
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash"))?;
-            let mut user_key = SslCipher::derive_key_argon2id(
-                password,
-                &self.salt,
-                self.argon2_memory_cost
-                    .unwrap_or(crate::constants::DEFAULT_ARGON2_MEMORY_COST),
-                self.argon2_time_cost
-                    .unwrap_or(crate::constants::DEFAULT_ARGON2_TIME_COST),
-                self.argon2_parallelism
-                    .unwrap_or(crate::constants::DEFAULT_ARGON2_PARALLELISM),
-                crate::crypto::aead::AEAD_KEY_LEN,
-            )?;
-            let mut volume_key_blob =
-                crate::crypto::aead::decrypt(user_key.as_slice(), aad, &self.key_data)?;
-            user_key.zeroize();
-            if volume_key_blob.len() < key_len + iv_len {
-                volume_key_blob.zeroize();
-                return Err(anyhow::anyhow!("Decrypted key blob too short"));
+        // Recover the decrypted volume-key blob according to the config version.
+        let mut volume_key_blob = match self.config_type {
+            // V7: AEAD-wrapped key, Argon2id user key, config hash as AAD.
+            ConfigType::V7 => self.derive_v7_volume_key(password)?,
+            // V4/V5/V6: legacy KDF + EncFS key-wrap through the stream cipher.
+            ConfigType::V4 | ConfigType::V5 | ConfigType::V6 => {
+                self.derive_legacy_volume_key(&cipher, password, key_len, iv_len)?
             }
-            cipher.set_key(
-                &volume_key_blob[..key_len],
-                &volume_key_blob[key_len..key_len + iv_len],
-            );
+            ConfigType::None | ConfigType::Prehistoric | ConfigType::V3 => {
+                return Err(anyhow::anyhow!(
+                    "Unsupported config version {:?} (only V4-V7 can derive a cipher)",
+                    self.config_type
+                ));
+            }
+        };
+
+        if volume_key_blob.len() < key_len + iv_len {
             volume_key_blob.zeroize();
-            cipher.set_name_encoding(&self.name_iface);
-            return Ok(cipher);
+            return Err(anyhow::anyhow!("Decrypted key blob too short"));
         }
 
-        // Derive user key based on configured KDF algorithm
+        cipher.set_key(
+            &volume_key_blob[..key_len],
+            &volume_key_blob[key_len..key_len + iv_len],
+        );
+        volume_key_blob.zeroize();
+        cipher.set_name_encoding(&self.name_iface);
+
+        Ok(Box::new(cipher))
+    }
+
+    /// V7 volume-key recovery: derive an Argon2id user key and AEAD-decrypt the
+    /// wrapped volume key, binding the config hash as additional authenticated
+    /// data. Returns the decrypted volume-key blob; the caller installs it into
+    /// the cipher and zeroizes it.
+    fn derive_v7_volume_key(&self, password: &str) -> Result<Vec<u8>> {
+        use crate::crypto::ssl::SslCipher;
+        use zeroize::Zeroize;
+
+        let aad = self
+            .config_hash
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash"))?;
+        let mut user_key = SslCipher::derive_key_argon2id(
+            password,
+            &self.salt,
+            self.argon2_memory_cost
+                .unwrap_or(crate::constants::DEFAULT_ARGON2_MEMORY_COST),
+            self.argon2_time_cost
+                .unwrap_or(crate::constants::DEFAULT_ARGON2_TIME_COST),
+            self.argon2_parallelism
+                .unwrap_or(crate::constants::DEFAULT_ARGON2_PARALLELISM),
+            crate::crypto::aead::AEAD_KEY_LEN,
+        )?;
+        let volume_key_blob =
+            crate::crypto::aead::decrypt(user_key.as_slice(), aad, &self.key_data)?;
+        user_key.zeroize();
+        Ok(volume_key_blob)
+    }
+
+    /// V4/V5/V6 volume-key recovery: derive the user key with the configured KDF
+    /// (PBKDF2 with iterations, the iteration-less legacy BytesToKey path, or
+    /// Argon2id) and unwrap the volume key through the legacy EncFS key-wrap.
+    /// Returns the decrypted volume-key blob.
+    fn derive_legacy_volume_key(
+        &self,
+        cipher: &dyn Cipher,
+        password: &str,
+        key_len: usize,
+        iv_len: usize,
+    ) -> Result<Vec<u8>> {
+        use crate::crypto::ssl::SslCipher;
+        use zeroize::Zeroize;
+
+        let user_key_len = key_len + iv_len;
+
+        // Derive the user key based on the configured KDF algorithm.
         let mut user_key_blob = match self.kdf_algorithm {
             KdfAlgorithm::Pbkdf2 => {
                 if self.kdf_iterations > 0 {
@@ -797,12 +843,12 @@ impl EncfsConfig {
             }
         };
 
-        // Split user_key_blob into key and IV
+        // Split user_key_blob into key and IV.
         let user_key = &user_key_blob[..key_len];
         let user_iv = &user_key_blob[key_len..];
 
-        // Decrypt volume key
-        let mut volume_key_blob =
+        // Decrypt the volume key (key-wrap variant matches the KDF path).
+        let volume_key_blob =
             if self.kdf_iterations > 0 || self.kdf_algorithm == KdfAlgorithm::Argon2id {
                 cipher.decrypt_key(&self.key_data, user_key, user_iv)?
             } else {
@@ -810,19 +856,7 @@ impl EncfsConfig {
             };
         user_key_blob.zeroize();
 
-        if volume_key_blob.len() < key_len + iv_len {
-            volume_key_blob.zeroize();
-            return Err(anyhow::anyhow!("Decrypted key blob too short"));
-        }
-
-        cipher.set_key(
-            &volume_key_blob[..key_len],
-            &volume_key_blob[key_len..key_len + iv_len],
-        );
-        volume_key_blob.zeroize();
-        cipher.set_name_encoding(&self.name_iface);
-
-        Ok(cipher)
+        Ok(volume_key_blob)
     }
 
     pub fn header_size(&self) -> u64 {
@@ -1746,6 +1780,130 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(config_path);
+        Ok(())
+    }
+
+    /// Golden version x KDF matrix for the `get_cipher` seam (rec #3).
+    ///
+    /// For each (config version, KDF) combination, wrap a KNOWN volume key and
+    /// assert that `get_cipher` recovers exactly that key — proven by checking
+    /// the derived cipher encrypts a fixed block byte-identically to a reference
+    /// cipher keyed directly with the known volume key. Any drift in the version
+    /// dispatch (wrong KDF, wrong key-wrap, wrong AAD) changes the recovered key
+    /// and fails here.
+    ///
+    /// The iteration-less legacy BytesToKey path (PBKDF2 kdfIterations==0) has no
+    /// fresh-wrap primitive and is instead locked by the real fixtures in
+    /// tests/legacy.rs.
+    #[test]
+    fn get_cipher_version_kdf_matrix() -> Result<()> {
+        use crate::crypto::ssl::SslCipher;
+
+        const PASSWORD: &str = "matrix_password";
+        let salt: Vec<u8> = (1..=20u8).collect();
+
+        // Assert get_cipher(config) yields a cipher equivalent to one keyed
+        // directly with `known_volume_key`.
+        fn assert_recovers_key(config: &EncfsConfig, known_volume_key: &[u8], label: &str) {
+            let derived = config
+                .get_cipher(PASSWORD)
+                .unwrap_or_else(|e| panic!("{}: get_cipher failed: {}", label, e));
+
+            let key_len = (config.key_size / 8) as usize;
+            let mut reference =
+                SslCipher::new(&config.cipher_iface, config.key_size).expect("reference cipher");
+            let iv_len = reference.iv_len();
+            assert!(
+                known_volume_key.len() >= key_len + iv_len,
+                "{}: volume key too short",
+                label
+            );
+            reference.set_key(
+                &known_volume_key[..key_len],
+                &known_volume_key[key_len..key_len + iv_len],
+            );
+
+            let mut a: Vec<u8> = (0..16u8).collect();
+            let mut b = a.clone();
+            derived
+                .encrypt_block_inplace(&mut a, 3, 0x1122334455667788, 16)
+                .expect("derived encrypt");
+            reference
+                .encrypt_block_inplace(&mut b, 3, 0x1122334455667788, 16)
+                .expect("reference encrypt");
+            assert_eq!(a, b, "{}: get_cipher derived a different volume key", label);
+        }
+
+        // Wrap a known volume key for a legacy (V4/V5/V6) config using the
+        // standard EncFS key-wrap, matching the user key the configured KDF yields.
+        fn wrap_legacy(config: &mut EncfsConfig, known_volume_key: &[u8]) {
+            let key_len = (config.key_size / 8) as usize;
+            let cipher = SslCipher::new(&config.cipher_iface, config.key_size).unwrap();
+            let iv_len = cipher.iv_len();
+            let user_key_blob = match config.kdf_algorithm {
+                KdfAlgorithm::Pbkdf2 => SslCipher::derive_key(
+                    PASSWORD,
+                    &config.salt,
+                    config.kdf_iterations,
+                    key_len + iv_len,
+                )
+                .unwrap(),
+                KdfAlgorithm::Argon2id => SslCipher::derive_key_argon2id(
+                    PASSWORD,
+                    &config.salt,
+                    config.argon2_memory_cost.unwrap(),
+                    config.argon2_time_cost.unwrap(),
+                    config.argon2_parallelism.unwrap(),
+                    key_len + iv_len,
+                )
+                .unwrap(),
+            };
+            let user_key = &user_key_blob[..key_len];
+            let user_iv = &user_key_blob[key_len..];
+            config.key_data = cipher
+                .encrypt_key(known_volume_key, user_key, user_iv)
+                .unwrap();
+        }
+
+        // --- V6 + PBKDF2 (iterations > 0) ---
+        {
+            let mut config = create_test_config();
+            config.config_type = ConfigType::V6;
+            config.salt = salt.clone();
+            let vk_len = (config.key_size / 8) as usize + 16;
+            let known_volume_key: Vec<u8> =
+                (0..vk_len).map(|i| (i as u8).wrapping_mul(0x07)).collect();
+            wrap_legacy(&mut config, &known_volume_key);
+            assert_recovers_key(&config, &known_volume_key, "V6/pbkdf2");
+        }
+
+        // --- V6 + Argon2id ---
+        {
+            let mut config = create_test_config();
+            config.config_type = ConfigType::V6;
+            config.salt = salt.clone();
+            config.kdf_algorithm = KdfAlgorithm::Argon2id;
+            config.argon2_memory_cost = Some(32768);
+            config.argon2_time_cost = Some(2);
+            config.argon2_parallelism = Some(1);
+            let vk_len = (config.key_size / 8) as usize + 16;
+            let known_volume_key: Vec<u8> =
+                (0..vk_len).map(|i| (i as u8).wrapping_mul(0x0b)).collect();
+            wrap_legacy(&mut config, &known_volume_key);
+            assert_recovers_key(&config, &known_volume_key, "V6/argon2id");
+        }
+
+        // --- V7 + Argon2id + AEAD key wrap ---
+        {
+            let mut config = EncfsConfig::standard_v7();
+            config.salt = salt.clone();
+            let vk_len = (config.key_size / 8) as usize + 16;
+            let known_volume_key: Vec<u8> =
+                (0..vk_len).map(|i| (i as u8).wrapping_mul(0x0d)).collect();
+            config.set_v7_key(PASSWORD, &known_volume_key)?;
+            assert_recovers_key(&config, &known_volume_key, "V7/argon2id-aead");
+        }
+
         Ok(())
     }
 }

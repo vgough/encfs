@@ -6,6 +6,11 @@ vars:
   MACOS_TARGET: '{{default "aarch64-apple-darwin" .MACOS_TARGET}}'
 
 tasks:
+  dev-deps:
+    desc: install development dependencies
+    cmds:
+      - "{{.CARGO}} install --locked cargo-nextest"
+
   build:
     desc: Build debug binaries
     cmds:

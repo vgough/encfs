@@ -113,7 +113,7 @@ fn make_encfs(root: PathBuf) -> EncFs {
     // allow_holes must be true so that the zero-filled regions introduced by
     // a truncate-expand can be read back without MAC verification errors.
     config.allow_holes = true;
-    EncFs::new(root, make_cipher(), config)
+    EncFs::new(root, Box::new(make_cipher()), config)
 }
 
 // ---------------------------------------------------------------------------

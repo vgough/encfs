@@ -6,8 +6,12 @@ use anyhow::{Result, anyhow};
 use argon2::{Algorithm, Argon2, Params, Version};
 use blowfish::Blowfish;
 use cbc::cipher::block_padding::NoPadding;
-use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit as BlockKeyIvInit};
+use cbc::cipher::{
+    BlockCipher, BlockDecryptMut, BlockEncryptMut, KeyInit as BlockCipherKeyInit,
+    KeyIvInit as BlockKeyIvInit,
+};
 use cfb_mode::cipher::AsyncStreamCipher;
+use std::marker::PhantomData;
 use hmac::digest::KeyInit as HmacKeyInit;
 use hmac::{Hmac, Mac};
 use pbkdf2::pbkdf2_hmac;
@@ -17,12 +21,71 @@ use zeroize::Zeroize;
 
 type HmacSha1 = Hmac<Sha1>;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum LegacyCipherKind {
-    Aes128,
-    Aes192,
-    Aes256,
-    Blowfish,
+/// A symmetric block-cipher algorithm, abstracted over CBC (full file blocks)
+/// and CFB (partial blocks / stream) modes. One implementation per algorithm:
+/// adding a cipher is adding a `Primitive<NewAlgorithm>`, not another arm in a
+/// `match self.cipher_kind`.
+trait BlockPrimitive: Send + Sync {
+    fn cbc_encrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()>;
+    fn cbc_decrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()>;
+    fn cfb_encrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()>;
+    fn cfb_decrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()>;
+}
+
+/// Generic [`BlockPrimitive`] over any RustCrypto block cipher `C` (AES-128/192/
+/// 256, Blowfish, ...). The `fn() -> C` marker keeps `Primitive<C>` `Send + Sync`
+/// without requiring `C: Send`, and carries no runtime state.
+struct Primitive<C> {
+    _marker: PhantomData<fn() -> C>,
+}
+
+impl<C> Primitive<C> {
+    const fn new() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<C> BlockPrimitive for Primitive<C>
+where
+    C: BlockCipher + BlockEncryptMut + BlockDecryptMut + BlockCipherKeyInit,
+{
+    fn cbc_encrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let mut out = vec![0u8; data.len()];
+        let cipher = cbc::Encryptor::<C>::new_from_slices(key, iv)
+            .map_err(|e| anyhow!("CBC encrypt init failed: {}", e))?;
+        cipher
+            .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+            .map_err(|e| anyhow!("CBC encrypt failed: {}", e))?;
+        data.copy_from_slice(&out);
+        Ok(())
+    }
+
+    fn cbc_decrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let mut out = vec![0u8; data.len()];
+        let cipher = cbc::Decryptor::<C>::new_from_slices(key, iv)
+            .map_err(|e| anyhow!("CBC decrypt init failed: {}", e))?;
+        cipher
+            .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
+            .map_err(|e| anyhow!("CBC decrypt failed: {}", e))?;
+        data.copy_from_slice(&out);
+        Ok(())
+    }
+
+    fn cfb_encrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let cipher = cfb_mode::Encryptor::<C>::new_from_slices(key, iv)
+            .map_err(|e| anyhow!("CFB encrypt init failed: {}", e))?;
+        cipher.encrypt(data);
+        Ok(())
+    }
+
+    fn cfb_decrypt(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
+        let cipher = cfb_mode::Decryptor::<C>::new_from_slices(key, iv)
+            .map_err(|e| anyhow!("CFB decrypt init failed: {}", e))?;
+        cipher.decrypt(data);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -35,7 +98,7 @@ pub enum NameEncoding {
 /// Handles key derivation, file content encryption (stream/block), and filename encryption.
 pub struct SslCipher {
     pub iv_len: usize,
-    cipher_kind: LegacyCipherKind,
+    primitive: Box<dyn BlockPrimitive>,
     key: Vec<u8>,
     iv: Vec<u8>,
     name_encoding: NameEncoding,
@@ -55,31 +118,30 @@ impl SslCipher {
     }
 
     pub fn new(iface: &Interface, key_size: i32) -> Result<Self> {
-        let cipher_kind = match (iface.name.as_str(), key_size) {
-            ("ssl/aes", 128) => LegacyCipherKind::Aes128,
-            ("ssl/aes", 192) => LegacyCipherKind::Aes192,
-            ("ssl/aes", 256) => LegacyCipherKind::Aes256,
-            ("ssl/blowfish", _) => LegacyCipherKind::Blowfish,
-            _ => {
-                return Err(anyhow!(
-                    "{}",
-                    t!(
-                        "lib.error_unsupported_cipher",
-                        name = iface.name,
-                        key_size = key_size
-                    )
-                ));
-            }
-        };
-
-        let iv_len = match cipher_kind {
-            LegacyCipherKind::Blowfish => 8,
-            _ => 16,
-        };
+        // Select the block-cipher primitive and its IV length. This is the one
+        // place that maps a cipher interface to an algorithm; the per-block
+        // crypto dispatches through the boxed `BlockPrimitive`.
+        let (primitive, iv_len): (Box<dyn BlockPrimitive>, usize) =
+            match (iface.name.as_str(), key_size) {
+                ("ssl/aes", 128) => (Box::new(Primitive::<Aes128>::new()), 16),
+                ("ssl/aes", 192) => (Box::new(Primitive::<Aes192>::new()), 16),
+                ("ssl/aes", 256) => (Box::new(Primitive::<Aes256>::new()), 16),
+                ("ssl/blowfish", _) => (Box::new(Primitive::<Blowfish>::new()), 8),
+                _ => {
+                    return Err(anyhow!(
+                        "{}",
+                        t!(
+                            "lib.error_unsupported_cipher",
+                            name = iface.name,
+                            key_size = key_size
+                        )
+                    ));
+                }
+            };
 
         Ok(Self {
             iv_len,
-            cipher_kind,
+            primitive,
             key: vec![],
             iv: vec![],
             name_encoding: NameEncoding::Stream, // Default
@@ -96,140 +158,25 @@ impl SslCipher {
     }
 
     fn block_size(&self) -> usize {
-        match self.cipher_kind {
-            LegacyCipherKind::Blowfish => 8,
-            _ => 16,
-        }
+        // The CBC block size equals the IV length for every supported cipher
+        // (AES = 16, Blowfish = 8), selected once in `new`.
+        self.iv_len
     }
 
     fn stream_encrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
-        match self.cipher_kind {
-            LegacyCipherKind::Aes128 => {
-                let cipher = cfb_mode::Encryptor::<Aes128>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-128-CFB init failed: {}", e))?;
-                cipher.encrypt(data);
-            }
-            LegacyCipherKind::Aes192 => {
-                let cipher = cfb_mode::Encryptor::<Aes192>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-192-CFB init failed: {}", e))?;
-                cipher.encrypt(data);
-            }
-            LegacyCipherKind::Aes256 => {
-                let cipher = cfb_mode::Encryptor::<Aes256>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-256-CFB init failed: {}", e))?;
-                cipher.encrypt(data);
-            }
-            LegacyCipherKind::Blowfish => {
-                let cipher = cfb_mode::Encryptor::<Blowfish>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("Blowfish-CFB init failed: {}", e))?;
-                cipher.encrypt(data);
-            }
-        }
-
-        Ok(())
+        self.primitive.cfb_encrypt(data, key, iv)
     }
 
     fn stream_decrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
-        match self.cipher_kind {
-            LegacyCipherKind::Aes128 => {
-                let cipher = cfb_mode::Decryptor::<Aes128>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-128-CFB init failed: {}", e))?;
-                cipher.decrypt(data);
-            }
-            LegacyCipherKind::Aes192 => {
-                let cipher = cfb_mode::Decryptor::<Aes192>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-192-CFB init failed: {}", e))?;
-                cipher.decrypt(data);
-            }
-            LegacyCipherKind::Aes256 => {
-                let cipher = cfb_mode::Decryptor::<Aes256>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-256-CFB init failed: {}", e))?;
-                cipher.decrypt(data);
-            }
-            LegacyCipherKind::Blowfish => {
-                let cipher = cfb_mode::Decryptor::<Blowfish>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("Blowfish-CFB init failed: {}", e))?;
-                cipher.decrypt(data);
-            }
-        }
-
-        Ok(())
+        self.primitive.cfb_decrypt(data, key, iv)
     }
 
     fn block_encrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
-        let mut out = vec![0u8; data.len()];
-
-        match self.cipher_kind {
-            LegacyCipherKind::Aes128 => {
-                let cipher = cbc::Encryptor::<Aes128>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-128-CBC init failed: {}", e))?;
-                cipher
-                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-128-CBC encrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Aes192 => {
-                let cipher = cbc::Encryptor::<Aes192>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-192-CBC init failed: {}", e))?;
-                cipher
-                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-192-CBC encrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Aes256 => {
-                let cipher = cbc::Encryptor::<Aes256>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-256-CBC init failed: {}", e))?;
-                cipher
-                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-256-CBC encrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Blowfish => {
-                let cipher = cbc::Encryptor::<Blowfish>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("Blowfish-CBC init failed: {}", e))?;
-                cipher
-                    .encrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("Blowfish-CBC encrypt failed: {}", e))?;
-            }
-        }
-
-        data.copy_from_slice(&out);
-        Ok(())
+        self.primitive.cbc_encrypt(data, key, iv)
     }
 
     fn block_decrypt_inplace(&self, data: &mut [u8], key: &[u8], iv: &[u8]) -> Result<()> {
-        let mut out = vec![0u8; data.len()];
-
-        match self.cipher_kind {
-            LegacyCipherKind::Aes128 => {
-                let cipher = cbc::Decryptor::<Aes128>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-128-CBC init failed: {}", e))?;
-                cipher
-                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-128-CBC decrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Aes192 => {
-                let cipher = cbc::Decryptor::<Aes192>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-192-CBC init failed: {}", e))?;
-                cipher
-                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-192-CBC decrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Aes256 => {
-                let cipher = cbc::Decryptor::<Aes256>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("AES-256-CBC init failed: {}", e))?;
-                cipher
-                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("AES-256-CBC decrypt failed: {}", e))?;
-            }
-            LegacyCipherKind::Blowfish => {
-                let cipher = cbc::Decryptor::<Blowfish>::new_from_slices(key, iv)
-                    .map_err(|e| anyhow!("Blowfish-CBC init failed: {}", e))?;
-                cipher
-                    .decrypt_padded_b2b_mut::<NoPadding>(data, &mut out)
-                    .map_err(|e| anyhow!("Blowfish-CBC decrypt failed: {}", e))?;
-            }
-        }
-
-        data.copy_from_slice(&out);
-        Ok(())
+        self.primitive.cbc_decrypt(data, key, iv)
     }
 
     /// Derives the User Key from the password using PBKDF2-HMAC-SHA1.
@@ -2091,5 +2038,205 @@ mod tests {
             ],
             "Partial block encryption vector must remain stable"
         );
+    }
+
+    fn golden_hex(b: &[u8]) -> String {
+        b.iter().map(|x| format!("{:02x}", x)).collect::<Vec<_>>().join("")
+    }
+
+    /// Frozen byte-exact output of every cipher primitive, per algorithm.
+    struct GoldenVec {
+        name: &'static str,
+        key_size: i32,
+        iv_size: usize,
+        block_size: usize,
+        block: &'static str,
+        stream: &'static str,
+        mac64: u64,
+        mac16: u16,
+        keywrap: &'static str,
+        xattr: &'static str,
+        header: &'static str,
+        fn_stream: (&'static str, u64),
+        fn_block: (&'static str, u64),
+        gcmsiv: Option<(&'static str, &'static str)>, // (ciphertext, tag)
+    }
+
+    fn golden_vectors() -> Vec<GoldenVec> {
+        vec![
+            GoldenVec {
+                name: "ssl/aes",
+                key_size: 128,
+                iv_size: 16,
+                block_size: 16,
+                block: "0e545ea9c5f15747250c75a0a169c027",
+                stream: "5a8f519fa366a80a594b72384e1debee1889",
+                mac64: 0x796fc611527fdeaf,
+                mac16: 0x33ae,
+                keywrap: "c2286e01741c8cc81730ea6869f71ee480c6d77df66d034835b6c6dee4bc1b271c407ffc",
+                xattr: "bfacbc2fbfe49729dddf7a43620139d8db4cd712abd03940952dba6e1b65d2d3",
+                header: "4b9eaf9496f34c31",
+                fn_stream: ("HAhBXFgO-ttY6OnNGRepms6", 0xbd5ab40ab477aef4),
+                fn_block: ("hl5JQgej,9kYgcxDF-ryZnBB", 0xaa6decc3b62a9df8),
+                gcmsiv: Some((
+                    "1af8c75974ad000eb7679f77a8599e94",
+                    "65e513a57d02052e82ea589dcd13868a",
+                )),
+            },
+            GoldenVec {
+                name: "ssl/aes",
+                key_size: 192,
+                iv_size: 16,
+                block_size: 16,
+                block: "52894d269c184fe83816505ac6e79e97",
+                stream: "2346481a59b94e8acb717d549faf900085b7",
+                mac64: 0xb228259970c60a7c,
+                mac16: 0xed0b,
+                keywrap: "0c8b757d9ab9679685154aadd0f1da5e7a2b5eb6bb4c908a42342c70d915f50c3a6fb879cc2113b078c1eec7",
+                xattr: "2c4810bee007af17a2261109bc6481f36f30dcb29a106a48291ffdf690ef41d8",
+                header: "ecd9b775cfd269d8",
+                fn_stream: ("kRzTZOUeeJtHMznFUHGThW1", 0xece7a75c8478bf34),
+                fn_block: ("TWSVKM1vp3P-qffW,wFogCPa", 0x7b222820ddbf1155),
+                gcmsiv: None,
+            },
+            GoldenVec {
+                name: "ssl/aes",
+                key_size: 256,
+                iv_size: 16,
+                block_size: 16,
+                block: "596ded9194e8f9e54996471f24e83f71",
+                stream: "0f72e309389272d7c4ed063f989707ed0840",
+                mac64: 0xe96fedfbe9d01e9f,
+                mac16: 0xf3db,
+                keywrap: "640f3df0c1a3658e6b653621d11f81c0a9dcefe650e64f1d7bb97e00e6005753b5609f28eb72335bb10189908f2293a8f55d1a4a",
+                xattr: "d06d8f524e0ba5073ff7675db613e16c4b0b469d29c4e927d289a80faebe8d2d",
+                header: "8847ba99c1fe4af3",
+                fn_stream: ("bSruiYfN2XN87rWyPct5h1,", 0x4b48afaedea29d33),
+                fn_block: ("rjQCKbBNIDTsT3q,ljeJVmlQ", 0xddc790c64921f3eb),
+                gcmsiv: Some((
+                    "581bbefb557f3fa29ae07d6c72d521cf",
+                    "b56459a4a675b3cbd9d77a3774af1910",
+                )),
+            },
+            GoldenVec {
+                name: "ssl/blowfish",
+                key_size: 160,
+                iv_size: 8,
+                block_size: 8,
+                block: "205718e3a4d25e38",
+                stream: "adc95d0c19c3a33a5ec86b2b23b5f7b44ce0",
+                mac64: 0x5897b7c2a87f5a2e,
+                mac16: 0x1d04,
+                keywrap: "b1219e3c4344164bf27eb88cc24bebdc7ab882cf2c1bd11d10d436c751338710",
+                xattr: "98eb9f01fe46fb1abef281a3eaed759a274cc3f1ced3a1f3",
+                header: "97e2b8026b49bc4a",
+                fn_stream: ("tZdEVGDXFgxrv0ROywh15p6", 0xe812fa99a6abcdb9),
+                fn_block: ("A3YjeNjXU6FDf2nXGrpLh,-I", 0x905537a2c0502be6),
+                gcmsiv: None,
+            },
+        ]
+    }
+
+    /// Byte-exact regression oracle for every cipher primitive across all
+    /// supported algorithms. These vectors lock the on-disk format: any drift
+    /// during the Cipher-trait refactor must fail HERE rather than silently
+    /// corrupt existing volumes. Vectors were generated from the in-tree
+    /// implementation (see `golden_capture` harness in git history to
+    /// regenerate if the format is ever intentionally changed).
+    #[test]
+    fn golden_cipher_vectors() {
+        for v in golden_vectors() {
+            let iface = Interface {
+                name: v.name.to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            };
+            let mut cipher = SslCipher::new(&iface, v.key_size).expect("new");
+            let key_len = (v.key_size / 8) as usize;
+            let key: Vec<u8> = (0..key_len).map(|i| (i as u8).wrapping_mul(0x11)).collect();
+            let iv: Vec<u8> = (0..v.iv_size).map(|i| (i as u8).wrapping_mul(0x22)).collect();
+            cipher.set_key(&key, &iv);
+            let tag = format!("{}-{}", v.name, v.key_size);
+
+            let mut blk: Vec<u8> = (0..v.block_size)
+                .map(|i| (i as u8).wrapping_mul(0x33))
+                .collect();
+            cipher
+                .block_encode(&mut blk, 0x1234567890abcdef, &key, &iv)
+                .expect("block_encode");
+            assert_eq!(golden_hex(&blk), v.block, "{}: block_encode drift", tag);
+
+            let mut s = b"golden-stream-data".to_vec();
+            cipher
+                .stream_encode(&mut s, 0x1234567890abcdef, &key, &iv)
+                .expect("stream_encode");
+            assert_eq!(golden_hex(&s), v.stream, "{}: stream_encode drift", tag);
+
+            let m64 = cipher
+                .mac_64(b"golden-mac-data", 0x0102030405060708)
+                .expect("mac64");
+            assert_eq!(m64, v.mac64, "{}: mac_64 drift", tag);
+            let (m16, _) = cipher
+                .mac_16(b"golden-mac-data", 0x0102030405060708)
+                .expect("mac16");
+            assert_eq!(m16, v.mac16, "{}: mac_16 drift", tag);
+
+            let vk: Vec<u8> = (0..key_len + v.iv_size)
+                .map(|i| (i as u8).wrapping_mul(0x55))
+                .collect();
+            let ek = cipher.encrypt_key(&vk, &key, &iv).expect("encrypt_key");
+            assert_eq!(golden_hex(&ek), v.keywrap, "{}: encrypt_key drift", tag);
+            let unwrapped = cipher.decrypt_key(&ek, &key, &iv).expect("decrypt_key");
+            assert_eq!(unwrapped, vk, "{}: key-wrap round-trip", tag);
+
+            let xv = cipher
+                .encrypt_xattr_value(b"golden-xattr-value", 0x1122334455667788)
+                .expect("xattr");
+            assert_eq!(golden_hex(&xv), v.xattr, "{}: encrypt_xattr_value drift", tag);
+
+            let hdr = cipher
+                .encrypt_header_with_iv(0x0f1e2d3c4b5a6978, 0x8877665544332211)
+                .expect("header");
+            assert_eq!(golden_hex(&hdr), v.header, "{}: encrypt_header_with_iv drift", tag);
+
+            let (fn_s, fiv_s) = cipher
+                .encrypt_filename(b"golden-name.txt", 0x0102030405060708)
+                .expect("fn stream");
+            assert_eq!(
+                (fn_s.as_str(), fiv_s),
+                v.fn_stream,
+                "{}: filename stream-encoding drift",
+                tag
+            );
+
+            let block_iface = Interface {
+                name: "nameio/block".to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            };
+            cipher.set_name_encoding(&block_iface);
+            let (fn_b, fiv_b) = cipher
+                .encrypt_filename(b"golden-name.txt", 0x0102030405060708)
+                .expect("fn block");
+            assert_eq!(
+                (fn_b.as_str(), fiv_b),
+                v.fn_block,
+                "{}: filename block-encoding drift",
+                tag
+            );
+
+            if let Some((exp_data, exp_tag)) = v.gcmsiv {
+                let mut g: Vec<u8> = (0..v.block_size)
+                    .map(|i| (i as u8).wrapping_mul(0x33))
+                    .collect();
+                let t = cipher
+                    .encrypt_block_aes_gcm_siv_inplace(&mut g, 7, 0x1020304050607080)
+                    .expect("gcmsiv");
+                assert_eq!(golden_hex(&g), exp_data, "{}: gcm-siv ciphertext drift", tag);
+                assert_eq!(golden_hex(&t), exp_tag, "{}: gcm-siv tag drift", tag);
+            }
+        }
     }
 }
