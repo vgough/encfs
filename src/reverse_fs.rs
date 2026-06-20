@@ -1,6 +1,6 @@
 use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
-use crate::crypto::ssl::SslCipher;
+use crate::crypto::cipher::Cipher;
 use fuse_mt::{
     CallbackResult, DirectoryEntry, FileAttr, FileType, FilesystemMT, RequestInfo, ResultCreate,
     ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultSlice, ResultStatfs, ResultWrite,
@@ -31,7 +31,7 @@ struct ReverseFileHandle {
 /// without duplicating storage.
 pub struct ReverseFs {
     pub source: PathBuf,
-    pub cipher: SslCipher,
+    pub cipher: Box<dyn Cipher>,
     pub config: EncfsConfig,
     handles: Mutex<HashMap<u64, Arc<ReverseFileHandle>>>,
     next_fh: AtomicU64,
@@ -44,7 +44,7 @@ pub struct ReverseFs {
 impl ReverseFs {
     pub fn new(
         source: PathBuf,
-        cipher: SslCipher,
+        cipher: Box<dyn Cipher>,
         config: EncfsConfig,
         config_bytes: Vec<u8>,
         config_metadata: std::fs::Metadata,
@@ -130,7 +130,7 @@ impl ReverseFs {
         .map_err(|_| libc::EINVAL)?;
 
         let codec = BlockCodec::new(
-            &self.cipher,
+            self.cipher.as_ref(),
             layout,
             false, // ignore_legacy_mac_mismatch unused for encrypt
             self.config.allow_holes,

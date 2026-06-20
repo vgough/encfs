@@ -38,7 +38,7 @@ fn test_open_trunc_header_regeneration() {
     verify_cipher.set_key(&user_key, &user_iv);
 
     let config = encfs::config::EncfsConfig::test_default();
-    let fs = EncFs::new(root.clone(), cipher, config);
+    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
     let req = RequestInfo {
         unique: 1,

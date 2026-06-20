@@ -48,7 +48,7 @@ fn test_truncate_corrupts_partial_block() {
 
     // I'll stick to what write_test.rs used: true, false.
     let config = encfs::config::EncfsConfig::test_default();
-    let fs = EncFs::new(root.clone(), cipher, config);
+    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
     let req = RequestInfo {
         unique: 1,
@@ -172,7 +172,7 @@ fn test_truncate_extend_then_append_preserves_block0_tag() {
 
     let mut config = encfs::config::EncfsConfig::test_default();
     config.allow_holes = true;
-    let fs = EncFs::new(root.clone(), cipher, config);
+    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
     let req = RequestInfo {
         unique: 1,

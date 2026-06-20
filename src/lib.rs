@@ -82,7 +82,7 @@ mod tests {
 
         // Use FileDecoder to read and decrypt
         let decoder = crate::crypto::file::FileDecoder::new_from_config(
-            &cipher,
+            cipher.as_ref(),
             &file,
             file_iv,
             &config.file_codec_params(),
@@ -162,7 +162,7 @@ mod tests {
         let content_size = metadata.len() - 8;
 
         let decoder = crate::crypto::file::FileDecoder::new_from_config(
-            &encfs.cipher,
+            encfs.cipher.as_ref(),
             &file,
             file_iv,
             &config.file_codec_params(),

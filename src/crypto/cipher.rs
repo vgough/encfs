@@ -19,7 +19,7 @@ use anyhow::Result;
 /// Every method takes `&self`/`&mut self` and concrete arguments and returns a
 /// `Result`, so `dyn Cipher` is object-safe and can be held as `Box<dyn Cipher>`
 /// / `&dyn Cipher` by the codec and filesystem layers.
-pub trait Cipher {
+pub trait Cipher: Send + Sync {
     /// Length in bytes of the cipher IV.
     fn iv_len(&self) -> usize;
 

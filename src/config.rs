@@ -1,3 +1,4 @@
+use crate::crypto::cipher::Cipher;
 use anyhow::{Context, Result};
 use log::debug;
 use rust_i18n::t;
@@ -724,7 +725,7 @@ impl EncfsConfig {
     /// The `match` is exhaustive on purpose: adding a new `ConfigType` variant
     /// forces a decision here rather than silently falling through the legacy
     /// key-derivation path.
-    pub fn get_cipher(&self, password: &str) -> Result<crate::crypto::ssl::SslCipher> {
+    pub fn get_cipher(&self, password: &str) -> Result<Box<dyn Cipher>> {
         use crate::crypto::ssl::SslCipher;
         use zeroize::Zeroize;
 
@@ -763,7 +764,7 @@ impl EncfsConfig {
         volume_key_blob.zeroize();
         cipher.set_name_encoding(&self.name_iface);
 
-        Ok(cipher)
+        Ok(Box::new(cipher))
     }
 
     /// V7 volume-key recovery: derive an Argon2id user key and AEAD-decrypt the

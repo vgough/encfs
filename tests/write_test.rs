@@ -57,7 +57,7 @@ fn test_virtual_driver_write() {
         allow_holes: false,
         config_hash: None,
     };
-    let fs = EncFs::new(root.clone(), cipher, config);
+    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
     // Create a second cipher instance for verification since SslCipher is not Clone (holds OpenSsl state)
     let verify_cipher = SslCipher::new(&iface, 192).unwrap();

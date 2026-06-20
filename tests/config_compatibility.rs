@@ -75,7 +75,7 @@ fn read_and_hash_file(
 
     // Decrypt content
     let decoder = FileDecoder::new(
-        &encfs.cipher,
+        encfs.cipher.as_ref(),
         &file,
         file_iv,
         8, // header_size
@@ -846,7 +846,7 @@ fn test_read_operations_standard_mode() -> anyhow::Result<()> {
     let file_iv = encfs.cipher.decrypt_header(&mut header, 0)?;
 
     let decoder = FileDecoder::new(
-        &encfs.cipher,
+        encfs.cipher.as_ref(),
         &file,
         file_iv,
         8,
@@ -909,7 +909,7 @@ fn test_read_operations_paranoia_mode() -> anyhow::Result<()> {
     let file_iv = encfs.cipher.decrypt_header(&mut header, path_iv)?;
 
     let decoder = FileDecoder::new(
-        &encfs.cipher,
+        encfs.cipher.as_ref(),
         &file,
         file_iv,
         8,
