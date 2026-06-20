@@ -802,7 +802,7 @@ impl EncfsConfig {
     /// Returns the decrypted volume-key blob.
     fn derive_legacy_volume_key(
         &self,
-        cipher: &crate::crypto::ssl::SslCipher,
+        cipher: &dyn Cipher,
         password: &str,
         key_len: usize,
         iv_len: usize,

@@ -112,8 +112,10 @@ pub trait Cipher: Send + Sync {
 
 /// Construct a boxed cipher for the given cipher interface and key size.
 ///
-/// This owns the cipher-selection decision (`match (iface.name, key_size)`)
-/// that used to live only inside `SslCipher::new`.
+/// This is the single entry point that hands callers a `Box<dyn Cipher>`
+/// instead of a concrete type. The algorithm-selection `match` still lives in
+/// [`SslCipher::new`]; once a second `Cipher` implementation exists, the
+/// decision of which one to build belongs here.
 pub fn build(iface: &Interface, key_size: i32) -> Result<Box<dyn Cipher>> {
     Ok(Box::new(SslCipher::new(iface, key_size)?))
 }
