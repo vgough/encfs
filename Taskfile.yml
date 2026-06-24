@@ -4,6 +4,7 @@ vars:
   CARGO: cargo
   LIVE_TIMEOUT_SECS: '{{default "30" .LIVE_TIMEOUT_SECS}}'
   MACOS_TARGET: '{{default "aarch64-apple-darwin" .MACOS_TARGET}}'
+  ARM_TARGET: '{{default "aarch64-unknown-linux-gnu" .ARM_TARGET}}'
 
 tasks:
   dev-deps:
@@ -25,6 +26,16 @@ tasks:
     desc: Build release binaries for macOS (requires Rust target aarch64-apple-darwin or x86_64-apple-darwin)
     cmds:
       - "{{.CARGO}} build --release --target {{.MACOS_TARGET}}"
+
+  build-arm:
+    desc: Build release binaries for ARM64 Linux (requires Rust target aarch64-unknown-linux-gnu and a cross-linker)
+    cmds:
+      - "{{.CARGO}} build --release --target {{.ARM_TARGET}}"
+
+  check-arm:
+    desc: Type-check for ARM64 Linux (catches platform-specific c_char signedness issues; no cross-linker needed - just `rustup target add aarch64-unknown-linux-gnu`)
+    cmds:
+      - "{{.CARGO}} check --target {{.ARM_TARGET}}"
 
   test:
     desc: Run unit + integration tests (live mount tests remain ignored)

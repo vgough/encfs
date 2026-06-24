@@ -1870,8 +1870,9 @@ impl FilesystemMT for EncFs {
         };
 
         // Read xattr names list
-        // llistxattr expects *mut c_char (i8), so we use a Vec<i8>
-        let mut list = vec![0i8; buf_size];
+        // llistxattr expects *mut c_char, whose signedness is platform-dependent
+        // (i8 on x86_64, u8 on aarch64), so we allocate a Vec<libc::c_char>.
+        let mut list = vec![0 as libc::c_char; buf_size];
         let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), list.as_mut_ptr(), buf_size) };
 
         if ret < 0 {
@@ -1883,7 +1884,7 @@ impl FilesystemMT for EncFs {
         list.truncate(ret as usize);
 
         // Process all xattr names in the list
-        // xattr lists are null-separated strings (as i8, convert to u8)
+        // xattr lists are null-separated strings (c_char, convert to u8)
         let list_u8: Vec<u8> = list.iter().map(|&b| b as u8).collect();
         let mut decrypted_list = Vec::new();
         let mut current_name = Vec::new();
