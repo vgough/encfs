@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use encfs::{config, constants, crypto::cipher::Cipher, crypto::ssl::SslCipher};
 use getrandom::fill as fill_random;
 use rpassword::prompt_password;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
@@ -325,6 +325,46 @@ fn main() -> Result<()> {
     }
 }
 
+/// How a setting shown by `info` compares to the current recommended defaults.
+#[derive(Clone, Copy, PartialEq)]
+enum Highlight {
+    /// Matches what a freshly created filesystem would use — shown in green.
+    Default,
+    /// An old or deprecated choice — shown in red.
+    Deprecated,
+    /// Valid but neither the default nor deprecated — left uncolored.
+    Plain,
+}
+
+/// Whether `info` output should be colorized. Colors are emitted only for a real
+/// terminal, and suppressed when NO_COLOR is set, so piped output stays clean.
+fn info_use_color() -> bool {
+    std::env::var_os("NO_COLOR").is_none() && io::stdout().is_terminal()
+}
+
+/// Wraps `text` in an ANSI color according to `hl`, or returns it unchanged when
+/// `color` is false.
+fn paint(text: &str, hl: Highlight, color: bool) -> String {
+    if !color {
+        return text.to_string();
+    }
+    match hl {
+        Highlight::Default => format!("\x1b[32m{text}\x1b[0m"),
+        Highlight::Deprecated => format!("\x1b[31m{text}\x1b[0m"),
+        Highlight::Plain => text.to_string(),
+    }
+}
+
+/// Maps a boolean security setting to a highlight: matching the default value is
+/// green, anything else is treated as a weaker/legacy choice and shown red.
+fn bool_highlight(value: bool, default: bool) -> Highlight {
+    if value == default {
+        Highlight::Default
+    } else {
+        Highlight::Deprecated
+    }
+}
+
 fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     use config::ConfigType;
 
@@ -342,53 +382,54 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Display version info based on config type
+    // Whether to colorize, and the settings a freshly created filesystem uses.
+    // Settings matching these defaults are shown green; old/deprecated ones red.
+    let color = info_use_color();
+    let def = config::EncfsConfig::standard_v7();
+
+    // Display version info based on config type. V7 is the current format (green);
+    // every older format is deprecated (red).
     println!();
     match config.config_type {
         ConfigType::V6 => {
-            println!(
-                "{}",
-                t!(
-                    "ctl.version6_config",
-                    creator = config.creator,
-                    version = config.version
-                )
+            let line = t!(
+                "ctl.version6_config",
+                creator = config.creator,
+                version = config.version
             );
+            println!("{}", paint(&line, Highlight::Deprecated, color));
         }
         ConfigType::V5 => {
-            println!(
-                "{}",
-                t!(
-                    "ctl.version5_config",
-                    creator = config.creator,
-                    version = config.version
-                )
+            let line = t!(
+                "ctl.version5_config",
+                creator = config.creator,
+                version = config.version
             );
+            println!("{}", paint(&line, Highlight::Deprecated, color));
         }
         ConfigType::V4 => {
-            println!("{}", t!("ctl.version4_config", creator = config.creator));
+            let line = t!("ctl.version4_config", creator = config.creator);
+            println!("{}", paint(&line, Highlight::Deprecated, color));
         }
         ConfigType::V7 => {
-            println!(
-                "{}",
-                t!(
-                    "ctl.version7_config",
-                    creator = config.creator,
-                    version = config.version
-                )
+            let line = t!(
+                "ctl.version7_config",
+                creator = config.creator,
+                version = config.version
             );
-            println!("{}", t!("ctl.v7_format_info"));
+            println!("{}", paint(&line, Highlight::Default, color));
+            println!("{}", paint(&t!("ctl.v7_format_info"), Highlight::Default, color));
         }
         ConfigType::V3 => {
             // V3 configs are detected but not supported
-            println!("{}", t!("ctl.version3_config"));
+            println!("{}", paint(&t!("ctl.version3_config"), Highlight::Deprecated, color));
             return Err(anyhow::anyhow!(
                 "{}",
                 t!("ctl.error_version3_not_supported")
             ));
         }
         ConfigType::Prehistoric => {
-            println!("{}", t!("ctl.prehistoric_config"));
+            println!("{}", paint(&t!("ctl.prehistoric_config"), Highlight::Deprecated, color));
             return Err(anyhow::anyhow!(
                 "{}",
                 t!("ctl.error_old_format_not_supported"),
@@ -400,54 +441,80 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     }
 
     // Show filesystem info
-    println!(
-        "{}",
-        t!(
-            "ctl.filesystem_cipher",
-            name = config.cipher_iface.name,
-            major = config.cipher_iface.major,
-            minor = config.cipher_iface.minor
-        )
+    let cipher_hl = if config.cipher_iface.name == def.cipher_iface.name
+        && config.cipher_iface.major == def.cipher_iface.major
+        && config.cipher_iface.minor == def.cipher_iface.minor
+    {
+        Highlight::Default
+    } else if config.cipher_iface.name == "ssl/blowfish" {
+        Highlight::Deprecated
+    } else {
+        Highlight::Plain
+    };
+    let cipher_line = t!(
+        "ctl.filesystem_cipher",
+        name = config.cipher_iface.name,
+        major = config.cipher_iface.major,
+        minor = config.cipher_iface.minor
     );
-    println!("  {}", t!("ctl.key_size", size = config.key_size));
+    println!("{}", paint(&cipher_line, cipher_hl, color));
 
-    println!(
-        "{}",
-        t!(
-            "ctl.filename_encoding",
-            name = config.name_iface.name,
-            major = config.name_iface.major,
-            minor = config.name_iface.minor
-        )
+    let key_hl = if config.key_size == def.key_size {
+        Highlight::Default
+    } else {
+        Highlight::Plain
+    };
+    let key_line = t!("ctl.key_size", size = config.key_size);
+    println!("  {}", paint(&key_line, key_hl, color));
+
+    let name_hl = if config.name_iface.name == def.name_iface.name
+        && config.name_iface.major == def.name_iface.major
+        && config.name_iface.minor == def.name_iface.minor
+    {
+        Highlight::Default
+    } else {
+        Highlight::Plain
+    };
+    let name_line = t!(
+        "ctl.filename_encoding",
+        name = config.name_iface.name,
+        major = config.name_iface.major,
+        minor = config.name_iface.minor
     );
+    println!("{}", paint(&name_line, name_hl, color));
+
+    // Boolean security settings: matching the current default is green, otherwise red.
+    let bool_str = |v: bool| t!(if v { "ctl.bool_true" } else { "ctl.bool_false" });
     println!(
         "{}{}",
         t!("ctl.unique_iv_header"),
-        t!(if config.unique_iv {
-            "ctl.bool_true"
-        } else {
-            "ctl.bool_false"
-        })
+        paint(
+            &bool_str(config.unique_iv),
+            bool_highlight(config.unique_iv, def.unique_iv),
+            color
+        )
     );
     println!(
         "{}{}",
         t!("ctl.chained_name_iv"),
-        t!(if config.chained_name_iv {
-            "ctl.bool_true"
-        } else {
-            "ctl.bool_false"
-        })
+        paint(
+            &bool_str(config.chained_name_iv),
+            bool_highlight(config.chained_name_iv, def.chained_name_iv),
+            color
+        )
     );
     println!(
         "{}{}",
         t!("ctl.external_iv_chaining"),
-        t!(if config.external_iv_chaining {
-            "ctl.bool_true"
-        } else {
-            "ctl.bool_false"
-        })
+        paint(
+            &bool_str(config.external_iv_chaining),
+            bool_highlight(config.external_iv_chaining, def.external_iv_chaining),
+            color
+        )
     );
-    let block_mode_str = match (config.block_mode(), config.cipher_iface.name.as_str()) {
+
+    let block_mode = config.block_mode();
+    let block_mode_str = match (block_mode, config.cipher_iface.name.as_str()) {
         (encfs::crypto::block::BlockMode::AesGcmSiv, _) => t!("ctl.block_mode_aes_gcm_siv"),
         (encfs::crypto::block::BlockMode::Legacy, "ssl/aes") => t!("ctl.block_mode_legacy_aes"),
         (encfs::crypto::block::BlockMode::Legacy, "ssl/blowfish") => {
@@ -455,24 +522,54 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         }
         _ => t!("ctl.block_mode_legacy"),
     };
-    println!("{}{}", t!("ctl.block_mode"), block_mode_str);
-    println!("{}", t!("ctl.block_size", size = config.block_size));
-    println!("{}", t!("ctl.block_mac", bytes = config.block_mac_bytes));
+    let is_default_block_mode = block_mode == encfs::crypto::block::BlockMode::AesGcmSiv;
+    let block_mode_hl = if is_default_block_mode {
+        Highlight::Default
+    } else {
+        Highlight::Deprecated
+    };
+    println!(
+        "{}{}",
+        t!("ctl.block_mode"),
+        paint(&block_mode_str, block_mode_hl, color)
+    );
+
+    let block_size_hl = if config.block_size == def.block_size {
+        Highlight::Default
+    } else {
+        Highlight::Plain
+    };
+    let block_size_line = t!("ctl.block_size", size = config.block_size);
+    println!("{}", paint(&block_size_line, block_size_hl, color));
+
+    // The MAC size is tied to the block mode; the AES-GCM-SIV default uses a 16-byte tag.
+    let block_mac_hl = if is_default_block_mode {
+        Highlight::Default
+    } else {
+        Highlight::Plain
+    };
+    let block_mac_line = t!("ctl.block_mac", bytes = config.block_mac_bytes);
+    println!("{}", paint(&block_mac_line, block_mac_hl, color));
+
     println!(
         "{}{}",
         t!("ctl.allow_holes"),
-        t!(if config.allow_holes {
-            "ctl.bool_true"
-        } else {
-            "ctl.bool_false"
-        })
+        paint(
+            &bool_str(config.allow_holes),
+            bool_highlight(config.allow_holes, def.allow_holes),
+            color
+        )
     );
 
-    // Show KDF information
+    // Show KDF information. Argon2id is the current default (green); PBKDF2 is
+    // the legacy KDF (red).
     use config::KdfAlgorithm;
     match config.kdf_algorithm {
         KdfAlgorithm::Pbkdf2 => {
-            println!("{}", t!("ctl.kdf_algorithm_pbkdf2"));
+            println!(
+                "{}",
+                paint(&t!("ctl.kdf_algorithm_pbkdf2"), Highlight::Deprecated, color)
+            );
             if config.kdf_iterations > 0 && !config.salt.is_empty() {
                 println!(
                     "{}",
@@ -482,20 +579,63 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
             }
         }
         KdfAlgorithm::Argon2id => {
-            println!("{}", t!("ctl.kdf_algorithm_argon2id"));
+            println!(
+                "{}",
+                paint(&t!("ctl.kdf_algorithm_argon2id"), Highlight::Default, color)
+            );
             if let (Some(mem), Some(time), Some(par)) = (
                 config.argon2_memory_cost,
                 config.argon2_time_cost,
                 config.argon2_parallelism,
             ) {
-                println!("{}", t!("ctl.argon2_memory_cost", kib = mem));
+                let mem_hl = if Some(mem) == def.argon2_memory_cost {
+                    Highlight::Default
+                } else {
+                    Highlight::Plain
+                };
+                let par_hl = if Some(par) == def.argon2_parallelism {
+                    Highlight::Default
+                } else {
+                    Highlight::Plain
+                };
+                println!(
+                    "{}",
+                    paint(&t!("ctl.argon2_memory_cost", kib = mem), mem_hl, color)
+                );
+                // time_cost is calibrated per machine, so a value at or above the
+                // default is fine — never flag it as deprecated.
                 println!("{}", t!("ctl.argon2_time_cost", iterations = time));
-                println!("{}", t!("ctl.argon2_parallelism", threads = par));
+                println!(
+                    "{}",
+                    paint(&t!("ctl.argon2_parallelism", threads = par), par_hl, color)
+                );
             }
             if !config.salt.is_empty() {
                 println!("{}", t!("ctl.salt_size", bits = config.salt.len() * 8));
             }
         }
+    }
+
+    // Indicate whether `encfsctl passwd --upgrade` can bring this filesystem to the
+    // current default format (Version 7 + Argon2id) in place.
+    let is_v7 = config.config_type == ConfigType::V7;
+    println!();
+    if !is_v7 && ensure_v7_compatible(&config).is_ok() {
+        println!(
+            "{}",
+            paint(
+                &t!("ctl.upgrade_available", rootdir = rootdir.display()),
+                Highlight::Default,
+                color
+            )
+        );
+    } else if !is_v7 {
+        println!(
+            "{}",
+            paint(&t!("ctl.upgrade_unavailable"), Highlight::Deprecated, color)
+        );
+    } else {
+        println!("{}", paint(&t!("ctl.up_to_date"), Highlight::Default, color));
     }
 
     Ok(())

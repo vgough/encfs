@@ -159,6 +159,18 @@ ctl.v7_config_backup:
   en: "Previous config backed up to %{path}; you may remove it when no longer needed."
   fr: "Ancienne configuration sauvegardée dans %{path} ; vous pouvez la supprimer lorsque inutile."
   de: "Vorherige Konfiguration gesichert unter %{path}; Sie können sie bei Bedarf entfernen."
+ctl.upgrade_available:
+  en: "An automatic upgrade to the current format (Version 7, Argon2id) is available. Run: encfsctl passwd --upgrade %{rootdir}"
+  fr: "Une mise à niveau automatique vers le format actuel (Version 7, Argon2id) est disponible. Exécutez : encfsctl passwd --upgrade %{rootdir}"
+  de: "Ein automatisches Upgrade auf das aktuelle Format (Version 7, Argon2id) ist verfügbar. Ausführen: encfsctl passwd --upgrade %{rootdir}"
+ctl.upgrade_unavailable:
+  en: "This filesystem uses an old format that cannot be upgraded automatically."
+  fr: "Ce système de fichiers utilise un ancien format qui ne peut pas être mis à niveau automatiquement."
+  de: "Dieses Dateisystem verwendet ein altes Format, das nicht automatisch aktualisiert werden kann."
+ctl.up_to_date:
+  en: "This filesystem already uses the current default format; no upgrade needed."
+  fr: "Ce système de fichiers utilise déjà le format par défaut actuel ; aucune mise à niveau nécessaire."
+  de: "Dieses Dateisystem verwendet bereits das aktuelle Standardformat; kein Upgrade erforderlich."
 ctl.calibrating_argon2:
   en: "Calibrating Argon2 parameters for optimal security..."
   fr: "Calibrage des paramètres Argon2 pour une sécurité optimale..."
