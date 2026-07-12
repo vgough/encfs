@@ -6,11 +6,17 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo, Xattr};
+use rfuse3::path::PathFilesystem;
+use rfuse3::path::Request;
+use rfuse3::path::reply::ReplyXAttr;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+
+/// Generous buffer size passed to getxattr/listxattr so the reply is always
+/// `ReplyXAttr::Data` rather than a `Size` probe.
+const XATTR_BUF_SIZE: u32 = 65536;
 
 fn setup_fs(root: &Path) -> EncFs {
     let iface = Interface {
@@ -29,8 +35,8 @@ fn setup_fs(root: &Path) -> EncFs {
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
-fn req() -> RequestInfo {
-    RequestInfo {
+fn req() -> Request {
+    Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -56,8 +62,8 @@ unsafe fn listxattr_nofollow(
     unsafe { libc::llistxattr(path, value, size) }
 }
 
-#[test]
-fn test_xattr_set_get() {
+#[tokio::test]
+async fn test_xattr_set_get() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_xattr_set_get_test");
     if tmp.exists() {
@@ -69,12 +75,22 @@ fn test_xattr_set_get() {
     let r = req();
 
     // Create a file
-    let parent = Path::new("/");
+    let parent = OsStr::new("/");
     let name = OsStr::new("test.txt");
     let created = encfs
         .create(r, parent, name, 0o644, 0)
+        .await
         .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
+    let _ = encfs
+        .release(
+            r,
+            Some(PathBuf::from("/test.txt").as_os_str()),
+            created.fh,
+            0,
+            0,
+            true,
+        )
+        .await;
 
     let path = PathBuf::from("/test.txt");
 
@@ -94,23 +110,25 @@ fn test_xattr_set_get() {
     for (attr_name, attr_value) in &test_cases {
         // Set xattr
         encfs
-            .setxattr(r, &path, OsStr::new(attr_name), attr_value, 0, 0)
+            .setxattr(r, path.as_os_str(), OsStr::new(attr_name), attr_value, 0, 0)
+            .await
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
 
         // Get xattr
         let result = encfs
-            .getxattr(r, &path, OsStr::new(attr_name), 0)
+            .getxattr(r, path.as_os_str(), OsStr::new(attr_name), XATTR_BUF_SIZE)
+            .await
             .unwrap_or_else(|_| panic!("getxattr failed for {}", attr_name));
 
         match result {
-            Xattr::Data(data) => {
+            ReplyXAttr::Data(data) => {
                 assert_eq!(
                     data, *attr_value,
                     "xattr value mismatch for {}: expected {:?}, got {:?}",
                     attr_name, attr_value, data
                 );
             }
-            Xattr::Size(_) => {
+            ReplyXAttr::Size(_) => {
                 panic!("getxattr returned Size instead of Data for {}", attr_name);
             }
         }
@@ -120,8 +138,8 @@ fn test_xattr_set_get() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_xattr_list() {
+#[tokio::test]
+async fn test_xattr_list() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_xattr_list_test");
     if tmp.exists() {
@@ -133,12 +151,22 @@ fn test_xattr_list() {
     let r = req();
 
     // Create a file
-    let parent = Path::new("/");
+    let parent = OsStr::new("/");
     let name = OsStr::new("test.txt");
     let created = encfs
         .create(r, parent, name, 0o644, 0)
+        .await
         .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
+    let _ = encfs
+        .release(
+            r,
+            Some(PathBuf::from("/test.txt").as_os_str()),
+            created.fh,
+            0,
+            0,
+            true,
+        )
+        .await;
 
     let path = PathBuf::from("/test.txt");
 
@@ -152,19 +180,23 @@ fn test_xattr_list() {
 
     for (attr_name, attr_value) in &attrs {
         encfs
-            .setxattr(r, &path, OsStr::new(attr_name), attr_value, 0, 0)
+            .setxattr(r, path.as_os_str(), OsStr::new(attr_name), attr_value, 0, 0)
+            .await
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
     }
 
     // List xattrs
-    let result = encfs.listxattr(r, &path, 0).expect("listxattr failed");
+    let result = encfs
+        .listxattr(r, path.as_os_str(), XATTR_BUF_SIZE)
+        .await
+        .expect("listxattr failed");
 
     let mut listed_attrs = Vec::new();
     match result {
-        Xattr::Data(data) => {
+        ReplyXAttr::Data(data) => {
             // Parse null-separated list
             let mut current = Vec::new();
-            for &byte in &data {
+            for &byte in data.iter() {
                 if byte == 0 {
                     if !current.is_empty() {
                         listed_attrs.push(String::from_utf8(current.clone()).unwrap());
@@ -178,7 +210,7 @@ fn test_xattr_list() {
                 listed_attrs.push(String::from_utf8(current).unwrap());
             }
         }
-        Xattr::Size(_) => {
+        ReplyXAttr::Size(_) => {
             panic!("listxattr returned Size instead of Data");
         }
     }
@@ -206,8 +238,8 @@ fn test_xattr_list() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_xattr_remove() {
+#[tokio::test]
+async fn test_xattr_remove() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_xattr_remove_test");
     if tmp.exists() {
@@ -219,12 +251,22 @@ fn test_xattr_remove() {
     let r = req();
 
     // Create a file
-    let parent = Path::new("/");
+    let parent = OsStr::new("/");
     let name = OsStr::new("test.txt");
     let created = encfs
         .create(r, parent, name, 0o644, 0)
+        .await
         .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
+    let _ = encfs
+        .release(
+            r,
+            Some(PathBuf::from("/test.txt").as_os_str()),
+            created.fh,
+            0,
+            0,
+            true,
+        )
+        .await;
 
     let path = PathBuf::from("/test.txt");
 
@@ -232,33 +274,45 @@ fn test_xattr_remove() {
     let attr_name = "user.foo";
     let attr_value = b"test_value".to_vec();
     encfs
-        .setxattr(r, &path, OsStr::new(attr_name), &attr_value, 0, 0)
+        .setxattr(
+            r,
+            path.as_os_str(),
+            OsStr::new(attr_name),
+            &attr_value,
+            0,
+            0,
+        )
+        .await
         .expect("setxattr failed");
 
     // Verify it exists
     let result = encfs
-        .getxattr(r, &path, OsStr::new(attr_name), 0)
+        .getxattr(r, path.as_os_str(), OsStr::new(attr_name), XATTR_BUF_SIZE)
+        .await
         .expect("getxattr failed");
     match result {
-        Xattr::Data(data) => assert_eq!(data, attr_value),
-        Xattr::Size(_) => panic!("getxattr returned Size instead of Data"),
+        ReplyXAttr::Data(data) => assert_eq!(data, attr_value),
+        ReplyXAttr::Size(_) => panic!("getxattr returned Size instead of Data"),
     }
 
     // Remove it
     encfs
-        .removexattr(r, &path, OsStr::new(attr_name))
+        .removexattr(r, path.as_os_str(), OsStr::new(attr_name))
+        .await
         .expect("removexattr failed");
 
     // Verify it's gone
-    let result = encfs.getxattr(r, &path, OsStr::new(attr_name), 0);
+    let result = encfs
+        .getxattr(r, path.as_os_str(), OsStr::new(attr_name), XATTR_BUF_SIZE)
+        .await;
     assert!(result.is_err(), "getxattr should fail after removexattr");
 
     // Cleanup
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_xattr_on_disk_storage() {
+#[tokio::test]
+async fn test_xattr_on_disk_storage() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_xattr_disk_test");
     if tmp.exists() {
@@ -270,12 +324,22 @@ fn test_xattr_on_disk_storage() {
     let r = req();
 
     // Create a file
-    let parent = Path::new("/");
+    let parent = OsStr::new("/");
     let name = OsStr::new("test.txt");
     let created = encfs
         .create(r, parent, name, 0o644, 0)
+        .await
         .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
+    let _ = encfs
+        .release(
+            r,
+            Some(PathBuf::from("/test.txt").as_os_str()),
+            created.fh,
+            0,
+            0,
+            true,
+        )
+        .await;
 
     let path = PathBuf::from("/test.txt");
 
@@ -283,7 +347,15 @@ fn test_xattr_on_disk_storage() {
     let attr_name = "user.foo";
     let attr_value = b"test_value".to_vec();
     encfs
-        .setxattr(r, &path, OsStr::new(attr_name), &attr_value, 0, 0)
+        .setxattr(
+            r,
+            path.as_os_str(),
+            OsStr::new(attr_name),
+            &attr_value,
+            0,
+            0,
+        )
+        .await
         .expect("setxattr failed");
 
     // Find the encrypted file on disk
@@ -333,8 +405,8 @@ fn test_xattr_on_disk_storage() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_xattr_round_trip() {
+#[tokio::test]
+async fn test_xattr_round_trip() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_xattr_round_trip_test");
     if tmp.exists() {
@@ -346,12 +418,22 @@ fn test_xattr_round_trip() {
     let r = req();
 
     // Create a file
-    let parent = Path::new("/");
+    let parent = OsStr::new("/");
     let name = OsStr::new("test.txt");
     let created = encfs
         .create(r, parent, name, 0o644, 0)
+        .await
         .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
+    let _ = encfs
+        .release(
+            r,
+            Some(PathBuf::from("/test.txt").as_os_str()),
+            created.fh,
+            0,
+            0,
+            true,
+        )
+        .await;
 
     let path = PathBuf::from("/test.txt");
 
@@ -370,35 +452,41 @@ fn test_xattr_round_trip() {
     for (attr_name, attr_value) in &test_cases {
         // Set
         encfs
-            .setxattr(r, &path, OsStr::new(attr_name), attr_value, 0, 0)
+            .setxattr(r, path.as_os_str(), OsStr::new(attr_name), attr_value, 0, 0)
+            .await
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
 
         // Get
         let result = encfs
-            .getxattr(r, &path, OsStr::new(attr_name), 0)
+            .getxattr(r, path.as_os_str(), OsStr::new(attr_name), XATTR_BUF_SIZE)
+            .await
             .unwrap_or_else(|_| panic!("getxattr failed for {}", attr_name));
 
         match result {
-            Xattr::Data(data) => {
+            ReplyXAttr::Data(data) => {
                 assert_eq!(
                     data, *attr_value,
                     "Round-trip failed for {}: expected {:?}, got {:?}",
                     attr_name, attr_value, data
                 );
             }
-            Xattr::Size(_) => {
+            ReplyXAttr::Size(_) => {
                 panic!("getxattr returned Size instead of Data for {}", attr_name);
             }
         }
 
         // Remove
         encfs
-            .removexattr(r, &path, OsStr::new(attr_name))
+            .removexattr(r, path.as_os_str(), OsStr::new(attr_name))
+            .await
             .unwrap_or_else(|_| panic!("removexattr failed for {}", attr_name));
 
         // Verify it's gone
         assert!(
-            encfs.getxattr(r, &path, OsStr::new(attr_name), 0).is_err(),
+            encfs
+                .getxattr(r, path.as_os_str(), OsStr::new(attr_name), XATTR_BUF_SIZE)
+                .await
+                .is_err(),
             "xattr should be removed: {}",
             attr_name
         );

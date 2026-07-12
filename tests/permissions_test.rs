@@ -6,7 +6,9 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo};
+use rfuse3::FileType;
+use rfuse3::path::PathFilesystem;
+use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -29,8 +31,8 @@ fn setup_fs(root: &Path) -> EncFs {
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
-fn req() -> RequestInfo {
-    RequestInfo {
+fn req() -> Request {
+    Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -38,8 +40,8 @@ fn req() -> RequestInfo {
     }
 }
 
-#[test]
-fn test_mkdir_uses_mode_parameter() {
+#[tokio::test]
+async fn test_mkdir_uses_mode_parameter() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_mkdir_mode_test");
     if tmp.exists() {
@@ -53,7 +55,8 @@ fn test_mkdir_uses_mode_parameter() {
     // Create a directory with restrictive permissions (0o700 = rwx------)
     let mode: u32 = 0o700;
     encfs
-        .mkdir(r, Path::new("/"), OsStr::new("restricted_dir"), mode)
+        .mkdir(r, OsStr::new("/"), OsStr::new("restricted_dir"), mode, 0)
+        .await
         .expect("mkdir failed");
 
     // Find the actual encrypted directory in the root
@@ -82,8 +85,8 @@ fn test_mkdir_uses_mode_parameter() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_mkdir_various_modes() {
+#[tokio::test]
+async fn test_mkdir_various_modes() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_mkdir_various_modes_test");
     if tmp.exists() {
@@ -108,16 +111,19 @@ fn test_mkdir_various_modes() {
 
     for (name, mode) in test_cases {
         encfs
-            .mkdir(r, Path::new("/"), OsStr::new(name), mode)
+            .mkdir(r, OsStr::new("/"), OsStr::new(name), mode, 0)
+            .await
             .unwrap_or_else(|_| panic!("mkdir {} failed", name));
     }
 
     // Check the modes via getattr
     for (name, expected_mode) in test_cases {
         let path = PathBuf::from("/").join(name);
-        let (_, attr) = encfs
-            .getattr(r, &path, None)
-            .unwrap_or_else(|_| panic!("getattr for {} failed", name));
+        let attr = encfs
+            .getattr(r, Some(path.as_os_str()), None, 0)
+            .await
+            .unwrap_or_else(|_| panic!("getattr for {} failed", name))
+            .attr;
         let actual_mode = (attr.perm as u32) & 0o777;
 
         println!(
@@ -139,8 +145,8 @@ fn test_mkdir_various_modes() {
 // File creation permission tests
 // ============================================================================
 
-#[test]
-fn test_create_file_uses_mode_parameter() {
+#[tokio::test]
+async fn test_create_file_uses_mode_parameter() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_create_file_mode_test");
     if tmp.exists() {
@@ -156,22 +162,25 @@ fn test_create_file_uses_mode_parameter() {
     let created = encfs
         .create(
             r,
-            Path::new("/"),
+            OsStr::new("/"),
             OsStr::new("restricted_file.txt"),
             mode,
             (libc::O_CREAT | libc::O_RDWR) as u32,
         )
+        .await
         .expect("create file failed");
 
     // Release the file handle
-    let _ = encfs.release(
-        r,
-        &PathBuf::from("/restricted_file.txt"),
-        created.fh,
-        0,
-        0,
-        true,
-    );
+    let _ = encfs
+        .release(
+            r,
+            Some(PathBuf::from("/restricted_file.txt").as_os_str()),
+            created.fh,
+            0,
+            0,
+            true,
+        )
+        .await;
 
     // Find the actual encrypted file in the root
     let entries: Vec<_> = fs::read_dir(&tmp)
@@ -201,8 +210,8 @@ fn test_create_file_uses_mode_parameter() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_create_file_various_modes() {
+#[tokio::test]
+async fn test_create_file_various_modes() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_create_file_various_modes_test");
     if tmp.exists() {
@@ -228,23 +237,35 @@ fn test_create_file_various_modes() {
         let created = encfs
             .create(
                 r,
-                Path::new("/"),
+                OsStr::new("/"),
                 OsStr::new(name),
                 mode,
                 (libc::O_CREAT | libc::O_RDWR) as u32,
             )
+            .await
             .unwrap_or_else(|_| panic!("create {} failed", name));
 
         // Release the file handle
-        let _ = encfs.release(r, &PathBuf::from("/").join(name), created.fh, 0, 0, true);
+        let _ = encfs
+            .release(
+                r,
+                Some(PathBuf::from("/").join(name).as_os_str()),
+                created.fh,
+                0,
+                0,
+                true,
+            )
+            .await;
     }
 
     // Check the modes via getattr
     for (name, expected_mode) in test_cases {
         let path = PathBuf::from("/").join(name);
-        let (_, attr) = encfs
-            .getattr(r, &path, None)
-            .unwrap_or_else(|_| panic!("getattr for {} failed", name));
+        let attr = encfs
+            .getattr(r, Some(path.as_os_str()), None, 0)
+            .await
+            .unwrap_or_else(|_| panic!("getattr for {} failed", name))
+            .attr;
         let actual_mode = (attr.perm as u32) & 0o777;
 
         println!(
@@ -266,8 +287,8 @@ fn test_create_file_various_modes() {
 // Symlink permission tests
 // ============================================================================
 
-#[test]
-fn test_symlink_permissions_are_standard() {
+#[tokio::test]
+async fn test_symlink_permissions_are_standard() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_symlink_permissions_test");
     if tmp.exists() {
@@ -282,17 +303,20 @@ fn test_symlink_permissions_are_standard() {
     encfs
         .symlink(
             r,
-            Path::new("/"),
+            OsStr::new("/"),
             OsStr::new("test_symlink"),
-            Path::new("target"),
+            Path::new("target").as_os_str(),
         )
+        .await
         .expect("symlink creation failed");
 
     // Check the symlink's attributes
     let path = PathBuf::from("/test_symlink");
-    let (_, attr) = encfs
-        .getattr(r, &path, None)
-        .expect("getattr for symlink failed");
+    let attr = encfs
+        .getattr(r, Some(path.as_os_str()), None, 0)
+        .await
+        .expect("getattr for symlink failed")
+        .attr;
 
     // On Unix, symlinks typically have mode 0o777 (or 0o120777 for type + perms)
     // The actual permission bits depend on the platform, but should be predictable
@@ -300,11 +324,7 @@ fn test_symlink_permissions_are_standard() {
     println!("Symlink permissions: {:o}", actual_mode);
 
     // Verify it's marked as a symlink
-    assert_eq!(
-        attr.kind,
-        fuse_mt::FileType::Symlink,
-        "Expected symlink file type"
-    );
+    assert_eq!(attr.kind, FileType::Symlink, "Expected symlink file type");
 
     // On most Unix systems, symlinks have 0o777 permissions
     // (the actual file permissions are determined by the target)
@@ -319,8 +339,8 @@ fn test_symlink_permissions_are_standard() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_permissions_mixed_types_in_directory() {
+#[tokio::test]
+async fn test_permissions_mixed_types_in_directory() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_mixed_permissions_test");
     if tmp.exists() {
@@ -334,7 +354,8 @@ fn test_permissions_mixed_types_in_directory() {
     // Create a directory with specific permissions
     let dir_mode: u32 = 0o750;
     encfs
-        .mkdir(r, Path::new("/"), OsStr::new("test_dir"), dir_mode)
+        .mkdir(r, OsStr::new("/"), OsStr::new("test_dir"), dir_mode, 0)
+        .await
         .expect("mkdir failed");
 
     // Create a file inside the directory with different permissions
@@ -342,35 +363,41 @@ fn test_permissions_mixed_types_in_directory() {
     let created = encfs
         .create(
             r,
-            Path::new("/test_dir"),
+            OsStr::new("/test_dir"),
             OsStr::new("test_file.txt"),
             file_mode,
             (libc::O_CREAT | libc::O_RDWR) as u32,
         )
+        .await
         .expect("create file failed");
-    let _ = encfs.release(
-        r,
-        &PathBuf::from("/test_dir/test_file.txt"),
-        created.fh,
-        0,
-        0,
-        true,
-    );
+    let _ = encfs
+        .release(
+            r,
+            Some(PathBuf::from("/test_dir/test_file.txt").as_os_str()),
+            created.fh,
+            0,
+            0,
+            true,
+        )
+        .await;
 
     // Create a symlink inside the directory
     encfs
         .symlink(
             r,
-            Path::new("/test_dir"),
+            OsStr::new("/test_dir"),
             OsStr::new("test_link"),
-            Path::new("test_file.txt"),
+            Path::new("test_file.txt").as_os_str(),
         )
+        .await
         .expect("symlink creation failed");
 
     // Verify directory permissions
-    let (_, dir_attr) = encfs
-        .getattr(r, &PathBuf::from("/test_dir"), None)
-        .expect("getattr for dir failed");
+    let dir_attr = encfs
+        .getattr(r, Some(PathBuf::from("/test_dir").as_os_str()), None, 0)
+        .await
+        .expect("getattr for dir failed")
+        .attr;
     let dir_actual = (dir_attr.perm as u32) & 0o777;
     assert_eq!(
         dir_actual, dir_mode,
@@ -379,9 +406,16 @@ fn test_permissions_mixed_types_in_directory() {
     );
 
     // Verify file permissions
-    let (_, file_attr) = encfs
-        .getattr(r, &PathBuf::from("/test_dir/test_file.txt"), None)
-        .expect("getattr for file failed");
+    let file_attr = encfs
+        .getattr(
+            r,
+            Some(PathBuf::from("/test_dir/test_file.txt").as_os_str()),
+            None,
+            0,
+        )
+        .await
+        .expect("getattr for file failed")
+        .attr;
     let file_actual = (file_attr.perm as u32) & 0o777;
     assert_eq!(
         file_actual, file_mode,
@@ -390,9 +424,16 @@ fn test_permissions_mixed_types_in_directory() {
     );
 
     // Verify symlink permissions (should be 0o777)
-    let (_, link_attr) = encfs
-        .getattr(r, &PathBuf::from("/test_dir/test_link"), None)
-        .expect("getattr for symlink failed");
+    let link_attr = encfs
+        .getattr(
+            r,
+            Some(PathBuf::from("/test_dir/test_link").as_os_str()),
+            None,
+            0,
+        )
+        .await
+        .expect("getattr for symlink failed")
+        .attr;
     let link_actual = (link_attr.perm as u32) & 0o777;
     #[cfg(not(target_os = "macos"))]
     assert_eq!(

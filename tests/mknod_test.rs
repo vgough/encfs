@@ -4,7 +4,10 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FileType, FilesystemMT, RequestInfo};
+use futures_util::StreamExt;
+use rfuse3::FileType;
+use rfuse3::path::PathFilesystem;
+use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileTypeExt;
@@ -30,8 +33,8 @@ fn setup_fs(root: &Path) -> EncFs {
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
-fn req() -> RequestInfo {
-    RequestInfo {
+fn req() -> Request {
+    Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -39,8 +42,8 @@ fn req() -> RequestInfo {
     }
 }
 
-#[test]
-fn test_mknod_fifo_getattr_returns_named_pipe() {
+#[tokio::test]
+async fn test_mknod_fifo_getattr_returns_named_pipe() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_mknod_fifo_test");
     if tmp.exists() {
@@ -56,13 +59,18 @@ fn test_mknod_fifo_getattr_returns_named_pipe() {
     let mode = S_IFIFO | 0o755;
 
     // Create FIFO via mknod
-    fs.mknod(r, &parent, name, mode, 0)
+    fs.mknod(r, parent.as_os_str(), name, mode, 0)
+        .await
         .expect("mknod FIFO failed");
 
     let path = parent.join("myfifo");
 
     // getattr should return NamedPipe (FIFO) type
-    let (ttl, attr) = fs.getattr(r, &path, None).expect("getattr failed");
+    let attr = fs
+        .getattr(r, Some(path.as_os_str()), None, 0)
+        .await
+        .expect("getattr failed")
+        .attr;
     assert_eq!(
         attr.kind,
         FileType::NamedPipe,
@@ -73,7 +81,6 @@ fn test_mknod_fifo_getattr_returns_named_pipe() {
         0o755,
         "FIFO permission bits should be 0755"
     );
-    let _ = ttl;
 
     // Backend should contain an encrypted FIFO
     let entries: Vec<_> = fs::read_dir(&tmp)
@@ -91,8 +98,8 @@ fn test_mknod_fifo_getattr_returns_named_pipe() {
     fs::remove_dir_all(&tmp).ok();
 }
 
-#[test]
-fn test_mknod_fifo_readdir_reports_named_pipe() {
+#[tokio::test]
+async fn test_mknod_fifo_readdir_reports_named_pipe() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_mknod_readdir_test");
     if tmp.exists() {
@@ -104,11 +111,27 @@ fn test_mknod_fifo_readdir_reports_named_pipe() {
     let r = req();
 
     let parent = PathBuf::from("");
-    fs.mknod(r, &parent, OsStr::new("pipe"), S_IFIFO | 0o600, 0)
-        .expect("mknod FIFO failed");
+    fs.mknod(
+        r,
+        parent.as_os_str(),
+        OsStr::new("pipe"),
+        S_IFIFO | 0o600,
+        0,
+    )
+    .await
+    .expect("mknod FIFO failed");
 
     let dir_path = PathBuf::from("");
-    let entries = fs.readdir(r, &dir_path, 0).expect("readdir failed");
+    let reply = fs
+        .readdir(r, dir_path.as_os_str(), 0, 0)
+        .await
+        .expect("readdir failed");
+    let entries_stream = reply.entries;
+    futures_util::pin_mut!(entries_stream);
+    let mut entries = Vec::new();
+    while let Some(entry) = entries_stream.next().await {
+        entries.push(entry.expect("readdir entry error"));
+    }
 
     let pipe_entry = entries
         .iter()

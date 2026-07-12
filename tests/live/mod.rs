@@ -121,8 +121,12 @@ fn run_quiet(cmd: &mut Command) -> io::Result<std::process::ExitStatus> {
         .status()
 }
 
-fn mountinfo_has_mount(mount_point: &Path) -> io::Result<bool> {
-    let mp = mount_point.to_string_lossy();
+#[cfg(target_os = "linux")]
+pub fn mountinfo_has_mount(mount_point: &Path) -> io::Result<bool> {
+    let mp = mount_point.to_string_lossy().to_string();
+    let canonical = fs::canonicalize(mount_point)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| mp.clone());
     let data = fs::read_to_string("/proc/self/mountinfo")?;
     for line in data.lines() {
         // Field 5 is mount point.
@@ -136,7 +140,7 @@ fn mountinfo_has_mount(mount_point: &Path) -> io::Result<bool> {
             Some(v) => v,
             None => continue,
         };
-        if mp_field != mp {
+        if mp_field != mp && mp_field != canonical {
             continue;
         }
         // Determine fstype after the " - " separator.
@@ -148,6 +152,22 @@ fn mountinfo_has_mount(mount_point: &Path) -> io::Result<bool> {
         }
     }
     Ok(false)
+}
+
+#[cfg(target_os = "macos")]
+pub fn mountinfo_has_mount(mount_point: &Path) -> io::Result<bool> {
+    // No /proc on macOS; parse `mount` output. Compare both the raw path and
+    // the canonicalized one (/var/folders/... resolves to /private/var/...).
+    let output = Command::new("/sbin/mount").stdin(Stdio::null()).output()?;
+    let data = String::from_utf8_lossy(&output.stdout);
+    let raw = format!(" on {} (", mount_point.display());
+    let canonical = mount_point
+        .canonicalize()
+        .map(|p| format!(" on {} (", p.display()))
+        .unwrap_or_else(|_| raw.clone());
+    Ok(data
+        .lines()
+        .any(|line| line.contains("fuse") && (line.contains(&raw) || line.contains(&canonical))))
 }
 
 #[allow(dead_code)]

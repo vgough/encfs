@@ -4,7 +4,6 @@ extern crate rust_i18n;
 use anyhow::{Context, Result};
 use clap::Parser;
 use encfs::config;
-use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 i18n!("locales", fallback = "en");
@@ -229,23 +228,44 @@ fn main() -> Result<()> {
 
     // Build FUSE options: always mount read-only at kernel level (FUSE-01)
     // plus default_permissions, then pass through any user-provided fuse_opts.
-    let mut fuse_options: Vec<&OsStr> = vec![
-        OsStr::new("-o"),
-        OsStr::new("ro"),
-        OsStr::new("-o"),
-        OsStr::new("default_permissions"),
-    ];
-    let user_opts: Vec<OsString> = args.fuse_opts.iter().map(OsString::from).collect();
-    for opt in &user_opts {
-        fuse_options.push(opt.as_os_str());
+    let mut mount_config = encfs::mount::MountConfig {
+        fs_name: "encfsr".to_string(),
+        read_only: true,
+        default_permissions: true,
+        ..Default::default()
+    };
+
+    // Parse user-provided "-o option[,option...]" pairs: map the options rfuse3
+    // knows about onto MountOptions setters, pass the rest through verbatim.
+    let mut opts_iter = args.fuse_opts.iter();
+    while let Some(token) = opts_iter.next() {
+        let words: Vec<&str> = if token == "-o" {
+            match opts_iter.next() {
+                Some(value) => value.split(',').collect(),
+                None => {
+                    eprintln!("error: -o requires an argument");
+                    std::process::exit(1);
+                }
+            }
+        } else if let Some(value) = token.strip_prefix("-o") {
+            value.split(',').collect()
+        } else {
+            eprintln!("error: unrecognized FUSE option argument: {token}");
+            std::process::exit(1);
+        };
+        for word in words {
+            match word {
+                "allow_other" => mount_config.allow_other = true,
+                "allow_root" => mount_config.allow_root = true,
+                "nonempty" => mount_config.nonempty = true,
+                "ro" => mount_config.read_only = true,
+                "default_permissions" => mount_config.default_permissions = true,
+                other => mount_config.extra_options.push(other.to_string()),
+            }
+        }
     }
 
-    let threads = 0; // fuse_mt default (num_cpus)
-    fuse_mt::mount(
-        fuse_mt::FuseMT::new(fs, threads),
-        &args.mount_point,
-        &fuse_options,
-    )?;
+    encfs::mount::mount_blocking(fs, &args.mount_point, &mount_config, false)?;
 
     Ok(())
 }

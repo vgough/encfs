@@ -1,26 +1,35 @@
+use crate::attr::{file_attr_from_metadata, file_type_from_metadata, synthetic_file_attr};
 use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
-use fuse_mt::{
-    CallbackResult, DirectoryEntry, FileAttr, FileType, FilesystemMT, RequestInfo, ResultCreate,
-    ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultSlice, ResultStatfs, ResultWrite,
-    ResultXattr, Statfs,
-};
+use bytes::Bytes;
+use futures_util::stream::{self, Stream};
 use libc;
 use log::{debug, warn};
+use rfuse3::path::Request;
+use rfuse3::path::reply::{
+    DirectoryEntry, FileAttr, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, ReplyInit,
+    ReplyOpen, ReplyStatFs, ReplyXAttr,
+};
+use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt};
+use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-struct ReverseFileHandle {
-    file: File,
-    file_iv: u64,
+const ATTR_TTL: Duration = Duration::from_secs(1);
+const CONFIG_FILE_NAME: &str = ".encfs7";
+
+enum ReverseHandle {
+    /// Virtual config file served from in-memory bytes.
+    Config,
+    /// A real plaintext source file being encrypted on the fly.
+    File { file: File, file_iv: u64 },
 }
 
 /// A reverse-direction FUSE filesystem.
@@ -33,7 +42,7 @@ pub struct ReverseFs {
     pub source: PathBuf,
     pub cipher: Box<dyn Cipher>,
     pub config: EncfsConfig,
-    handles: Mutex<HashMap<u64, Arc<ReverseFileHandle>>>,
+    handles: Mutex<HashMap<u64, Arc<ReverseHandle>>>,
     next_fh: AtomicU64,
     config_bytes: Vec<u8>,
     config_mtime: SystemTime,
@@ -49,8 +58,10 @@ impl ReverseFs {
         config_bytes: Vec<u8>,
         config_metadata: std::fs::Metadata,
     ) -> Self {
-        let config_mtime =
-            system_time_from_metadata_secs(config_metadata.mtime(), config_metadata.mtime_nsec());
+        let config_mtime = crate::attr::system_time_from_secs(
+            config_metadata.mtime(),
+            config_metadata.mtime_nsec(),
+        );
         let config_uid = config_metadata.uid();
         let config_gid = config_metadata.gid();
         Self {
@@ -66,8 +77,14 @@ impl ReverseFs {
         }
     }
 
-    fn handles_guard(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<ReverseFileHandle>>> {
+    // Guards are always dropped before any .await (the op bodies below contain
+    // no awaits), so a std::sync::Mutex is safe here.
+    fn handles_guard(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<ReverseHandle>>> {
         self.handles.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn is_config_path(path: &Path) -> bool {
+        path == Path::new("/").join(CONFIG_FILE_NAME)
     }
 
     /// Decrypt an incoming encrypted FUSE path to the corresponding plaintext source path.
@@ -177,96 +194,22 @@ impl ReverseFs {
         }
         Ok(out)
     }
-}
 
-/// Map std::fs::Metadata file type to FUSE FileType.
-fn metadata_to_filetype(metadata: &std::fs::Metadata) -> FileType {
-    let ft = metadata.file_type();
-    if ft.is_dir() {
-        FileType::Directory
-    } else if ft.is_symlink() {
-        FileType::Symlink
-    } else if ft.is_block_device() {
-        FileType::BlockDevice
-    } else if ft.is_char_device() {
-        FileType::CharDevice
-    } else if ft.is_fifo() {
-        FileType::NamedPipe
-    } else if ft.is_socket() {
-        FileType::Socket
-    } else {
-        FileType::RegularFile
-    }
-}
-
-/// Convert metadata timestamps (seconds + nanoseconds since epoch) to SystemTime.
-fn system_time_from_metadata_secs(secs: i64, nanos: i64) -> SystemTime {
-    if secs >= 0 {
-        SystemTime::UNIX_EPOCH + Duration::new(secs as u64, nanos as u32)
-    } else {
-        SystemTime::UNIX_EPOCH
-            .checked_sub(Duration::new((-secs) as u64, 0))
-            .unwrap_or(SystemTime::UNIX_EPOCH)
-    }
-}
-
-impl FilesystemMT for ReverseFs {
-    fn init(&self, _req: RequestInfo) -> ResultEmpty {
-        debug!("ReverseFs::init");
-        Ok(())
+    fn config_file_attr(&self) -> FileAttr {
+        synthetic_file_attr(
+            self.config_bytes.len() as u64,
+            self.config_mtime,
+            0o444,
+            self.config_uid,
+            self.config_gid,
+        )
     }
 
-    fn destroy(&self) {
-        debug!("ReverseFs::destroy");
-    }
-
-    fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
-        debug!("ReverseFs::statfs {:?}", path);
-        let c_path =
-            std::ffi::CString::new(self.source.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-        let res = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
-        if res != 0 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
-        }
-        Ok(Statfs {
-            blocks: stat.f_blocks as u64,
-            bfree: stat.f_bfree as u64,
-            bavail: stat.f_bavail as u64,
-            files: stat.f_files as u64,
-            ffree: stat.f_ffree as u64,
-            bsize: stat.f_bsize as u32,
-            namelen: stat.f_namemax as u32,
-            frsize: stat.f_frsize as u32,
-        })
-    }
-
-    fn getattr(&self, _req: RequestInfo, path: &Path, _fh: Option<u64>) -> ResultEntry {
-        debug!("ReverseFs::getattr {:?}", path);
-
-        // Virtual config file at root
-        if path == Path::new("/.encfs7") {
-            let size = self.config_bytes.len() as u64;
-            return Ok((
-                Duration::from_secs(1),
-                FileAttr {
-                    size,
-                    blocks: size.div_ceil(512),
-                    atime: self.config_mtime,
-                    mtime: self.config_mtime,
-                    ctime: self.config_mtime,
-                    crtime: SystemTime::UNIX_EPOCH,
-                    kind: FileType::RegularFile,
-                    perm: 0o444,
-                    nlink: 1,
-                    uid: self.config_uid,
-                    gid: self.config_gid,
-                    rdev: 0,
-                    flags: 0,
-                },
-            ));
+    /// Build the FUSE attributes for an encrypted FUSE path (including the
+    /// virtual config file), reporting ciphertext sizes for regular files.
+    fn attr_for_fuse_path(&self, path: &Path) -> Result<FileAttr, Errno> {
+        if Self::is_config_path(path) {
+            return Ok(self.config_file_attr());
         }
 
         let (source_path, _) = self.resolve_source_path(path)?;
@@ -278,56 +221,126 @@ impl FilesystemMT for ReverseFs {
             reported_size = self.ciphertext_size_for_plaintext(reported_size)?;
         }
 
-        let atime = system_time_from_metadata_secs(metadata.atime(), metadata.atime_nsec());
-        let mtime = system_time_from_metadata_secs(metadata.mtime(), metadata.mtime_nsec());
-        let ctime = system_time_from_metadata_secs(metadata.ctime(), metadata.ctime_nsec());
+        Ok(file_attr_from_metadata(&metadata, reported_size))
+    }
+}
 
-        Ok((
-            Duration::from_secs(1),
-            FileAttr {
-                size: reported_size,
-                blocks: metadata.blocks(),
-                atime,
-                mtime,
-                ctime,
-                crtime: SystemTime::UNIX_EPOCH,
-                kind: metadata_to_filetype(&metadata),
-                perm: metadata.mode() as u16,
-                nlink: metadata.nlink() as u32,
-                uid: metadata.uid(),
-                gid: metadata.gid(),
-                rdev: metadata.rdev() as u32,
-                flags: 0,
-            },
-        ))
+impl rfuse3::path::PathFilesystem for ReverseFs {
+    async fn init(&self, _req: Request) -> FuseResult<ReplyInit> {
+        debug!("ReverseFs::init");
+        Ok(ReplyInit::default())
     }
 
-    fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
+    async fn destroy(&self, _req: Request) {
+        debug!("ReverseFs::destroy");
+    }
+
+    async fn lookup(&self, _req: Request, parent: &OsStr, name: &OsStr) -> FuseResult<ReplyEntry> {
+        let path = Path::new(parent).join(name);
+        debug!("ReverseFs::lookup {:?}", path);
+        let attr = self.attr_for_fuse_path(&path)?;
+        Ok(ReplyEntry {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn getattr(
+        &self,
+        _req: Request,
+        path: Option<&OsStr>,
+        fh: Option<u64>,
+        _flags: u32,
+    ) -> FuseResult<ReplyAttr> {
+        debug!("ReverseFs::getattr {:?} fh={:?}", path, fh);
+
+        if let Some(path) = path {
+            let attr = self.attr_for_fuse_path(Path::new(path))?;
+            return Ok(ReplyAttr {
+                ttl: ATTR_TTL,
+                attr,
+            });
+        }
+
+        // Path unknown (possibly deleted): fall back to an open handle.
+        let handle = fh
+            .and_then(|fh| self.handles_guard().get(&fh).cloned())
+            .ok_or_else(|| Errno::from(libc::ESTALE))?;
+        let attr = match handle.as_ref() {
+            ReverseHandle::Config => self.config_file_attr(),
+            ReverseHandle::File { file, .. } => {
+                let metadata = file
+                    .metadata()
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                let size = self.ciphertext_size_for_plaintext(metadata.len())?;
+                file_attr_from_metadata(&metadata, size)
+            }
+        };
+        Ok(ReplyAttr {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn statfs(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyStatFs> {
+        debug!("ReverseFs::statfs {:?}", path);
+        let c_path =
+            std::ffi::CString::new(self.source.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        let res = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
+        if res != 0 {
+            return Err(Errno::from(
+                std::io::Error::last_os_error()
+                    .raw_os_error()
+                    .unwrap_or(libc::EIO),
+            ));
+        }
+        Ok(ReplyStatFs {
+            blocks: stat.f_blocks as u64,
+            bfree: stat.f_bfree as u64,
+            bavail: stat.f_bavail as u64,
+            files: stat.f_files as u64,
+            ffree: stat.f_ffree as u64,
+            bsize: stat.f_bsize as u32,
+            namelen: stat.f_namemax as u32,
+            frsize: stat.f_frsize as u32,
+        })
+    }
+
+    async fn opendir(&self, _req: Request, path: &OsStr, _flags: u32) -> FuseResult<ReplyOpen> {
         debug!("ReverseFs::opendir {:?}", path);
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        Ok((fh, 0))
+        Ok(ReplyOpen { fh, flags: 0 })
     }
 
-    fn releasedir(&self, _req: RequestInfo, _path: &Path, _fh: u64, _flags: u32) -> ResultEmpty {
+    async fn releasedir(
+        &self,
+        _req: Request,
+        _path: &OsStr,
+        _fh: u64,
+        _flags: u32,
+    ) -> FuseResult<()> {
         Ok(())
     }
 
-    fn readdir(&self, _req: RequestInfo, path: &Path, _fh: u64) -> ResultReaddir {
-        debug!("ReverseFs::readdir {:?}", path);
+    async fn readdir<'a>(
+        &'a self,
+        _req: Request,
+        path: &'a OsStr,
+        _fh: u64,
+        offset: i64,
+    ) -> FuseResult<ReplyDirectory<impl Stream<Item = FuseResult<DirectoryEntry>> + Send + 'a>>
+    {
+        let path = Path::new(path);
+        debug!("ReverseFs::readdir {:?} offset={}", path, offset);
         let (source_dir, dir_iv) = self.resolve_source_path(path)?;
 
         let read_dir =
             std::fs::read_dir(&source_dir).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
         let mut result = vec![
-            DirectoryEntry {
-                name: OsStr::new(".").to_os_string(),
-                kind: FileType::Directory,
-            },
-            DirectoryEntry {
-                name: OsStr::new("..").to_os_string(),
-                kind: FileType::Directory,
-            },
+            (OsStr::new(".").to_os_string(), FileType::Directory),
+            (OsStr::new("..").to_os_string(), FileType::Directory),
         ];
 
         for entry in read_dir {
@@ -345,10 +358,10 @@ impl FilesystemMT for ReverseFs {
                     let metadata = entry
                         .metadata()
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    result.push(DirectoryEntry {
-                        name: OsStr::new(&encrypted_name).to_os_string(),
-                        kind: metadata_to_filetype(&metadata),
-                    });
+                    result.push((
+                        OsStr::new(&encrypted_name).to_os_string(),
+                        file_type_from_metadata(&metadata),
+                    ));
                 }
                 Err(e) => {
                     warn!(
@@ -360,33 +373,51 @@ impl FilesystemMT for ReverseFs {
         }
 
         if path == Path::new("/") {
-            result.push(DirectoryEntry {
-                name: OsStr::new(".encfs7").to_os_string(),
-                kind: FileType::RegularFile,
-            });
+            result.push((
+                OsStr::new(CONFIG_FILE_NAME).to_os_string(),
+                FileType::RegularFile,
+            ));
         }
 
-        Ok(result)
+        // The kernel may issue multiple READDIR calls, resuming at `offset`;
+        // each entry's offset field is the offset of the *next* entry.
+        let entries = result
+            .into_iter()
+            .enumerate()
+            .skip(offset.max(0) as usize)
+            .map(|(i, (name, kind))| {
+                Ok(DirectoryEntry {
+                    kind,
+                    name,
+                    offset: i as i64 + 1,
+                })
+            });
+
+        Ok(ReplyDirectory {
+            entries: stream::iter(entries),
+        })
     }
 
-    fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
+    async fn open(&self, _req: Request, path: &OsStr, flags: u32) -> FuseResult<ReplyOpen> {
+        let path = Path::new(path);
         debug!("ReverseFs::open {:?}", path);
 
         // Special case: virtual .encfs7 config file at the FUSE root (CRPT-05).
         // This file is backed by in-memory config bytes, not a real source file, so
         // we must not run it through encrypted path resolution.
-        if path == Path::new("/.encfs7") {
+        if Self::is_config_path(path) {
             // Enforce read-only semantics for the virtual config file.
             let write_flags = libc::O_WRONLY as u32
                 | libc::O_RDWR as u32
                 | libc::O_TRUNC as u32
                 | libc::O_CREAT as u32;
             if flags & write_flags != 0 {
-                return Err(libc::EROFS);
+                return Err(Errno::from(libc::EROFS));
             }
-            // We don't need a real file handle here because read() for .encfs7 ignores fh
-            // and serves data directly from self.config_bytes.
-            return Ok((0, flags));
+            let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
+            self.handles_guard()
+                .insert(fh, Arc::new(ReverseHandle::Config));
+            return Ok(ReplyOpen { fh, flags });
         }
 
         let (source_path, dir_iv) = self.resolve_source_path(path)?;
@@ -398,73 +429,73 @@ impl FilesystemMT for ReverseFs {
         let file = File::open(&source_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
         self.handles_guard()
-            .insert(fh, Arc::new(ReverseFileHandle { file, file_iv }));
-        Ok((fh, flags))
+            .insert(fh, Arc::new(ReverseHandle::File { file, file_iv }));
+        Ok(ReplyOpen { fh, flags })
     }
 
-    fn release(
+    async fn release(
         &self,
-        _req: RequestInfo,
-        _path: &Path,
+        _req: Request,
+        _path: Option<&OsStr>,
         fh: u64,
         _flags: u32,
         _lock_owner: u64,
         _flush: bool,
-    ) -> ResultEmpty {
+    ) -> FuseResult<()> {
         self.handles_guard().remove(&fh);
         Ok(())
     }
 
-    fn read(
+    async fn read(
         &self,
-        _req: RequestInfo,
-        path: &Path,
+        _req: Request,
+        _path: Option<&OsStr>,
         fh: u64,
         offset: u64,
         size: u32,
-        callback: impl FnOnce(ResultSlice<'_>) -> CallbackResult,
-    ) -> CallbackResult {
-        // Special case: virtual .encfs7 config file (CRPT-05)
-        if path == Path::new("/.encfs7") {
-            let data = &self.config_bytes;
-            let start = offset as usize;
-            if start >= data.len() {
-                return callback(Ok(&[]));
-            }
-            let end = std::cmp::min(data.len(), start + size as usize);
-            return callback(Ok(&data[start..end]));
-        }
-
-        // CRITICAL: release the handles lock before calling callback to avoid deadlock
+    ) -> FuseResult<ReplyData> {
         let handle = {
             let handles = self.handles_guard();
-            match handles.get(&fh).cloned() {
-                Some(h) => h,
-                None => return callback(Err(libc::EBADF)),
+            handles
+                .get(&fh)
+                .cloned()
+                .ok_or_else(|| Errno::from(libc::EBADF))?
+        };
+
+        match handle.as_ref() {
+            // Virtual .encfs7 config file (CRPT-05), served from memory.
+            ReverseHandle::Config => {
+                let data = &self.config_bytes;
+                let start = offset as usize;
+                if start >= data.len() {
+                    return Ok(ReplyData { data: Bytes::new() });
+                }
+                let end = std::cmp::min(data.len(), start + size as usize);
+                Ok(ReplyData {
+                    data: Bytes::copy_from_slice(&data[start..end]),
+                })
             }
-        }; // lock dropped here
+            ReverseHandle::File { file, file_iv } => {
+                let plaintext_size = file
+                    .metadata()
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
+                    .len();
+                let ciphertext_size = self.ciphertext_size_for_plaintext(plaintext_size)?;
+                if offset >= ciphertext_size {
+                    return Ok(ReplyData { data: Bytes::new() });
+                }
 
-        let plaintext_size = match handle.file.metadata() {
-            Ok(m) => m.len(),
-            Err(_) => return callback(Err(libc::EIO)),
-        };
-        let ciphertext_size = match self.ciphertext_size_for_plaintext(plaintext_size) {
-            Ok(s) => s,
-            Err(e) => return callback(Err(e)),
-        };
-        if offset >= ciphertext_size {
-            return callback(Ok(&[]));
-        }
-
-        // Do encryption work without holding the handles lock
-        let actual_size = std::cmp::min(size as u64, ciphertext_size - offset) as u32;
-        match self.read_encrypted(&handle.file, handle.file_iv, offset, actual_size) {
-            Ok(data) => callback(Ok(&data)),
-            Err(e) => callback(Err(e)),
+                let actual_size = std::cmp::min(size as u64, ciphertext_size - offset) as u32;
+                let data = self.read_encrypted(file, *file_iv, offset, actual_size)?;
+                Ok(ReplyData {
+                    data: Bytes::from(data),
+                })
+            }
         }
     }
 
-    fn readlink(&self, _req: RequestInfo, path: &Path) -> Result<Vec<u8>, libc::c_int> {
+    async fn readlink(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyData> {
+        let path = Path::new(path);
         debug!("ReverseFs::readlink {:?}", path);
         let (source_path, dir_iv) = self.resolve_source_path(path)?;
         let target =
@@ -476,157 +507,165 @@ impl FilesystemMT for ReverseFs {
             .cipher
             .encrypt_filename(plain_bytes, dir_iv)
             .map_err(|_| libc::EIO)?;
-        Ok(enc_target.into_bytes())
+        Ok(ReplyData {
+            data: Bytes::from(enc_target.into_bytes()),
+        })
     }
 
-    fn flush(&self, _req: RequestInfo, _path: &Path, _fh: u64, _lock_owner: u64) -> ResultEmpty {
+    async fn flush(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        _fh: u64,
+        _lock_owner: u64,
+    ) -> FuseResult<()> {
         Ok(())
     }
 
-    fn fsync(&self, _req: RequestInfo, _path: &Path, _fh: u64, _datasync: bool) -> ResultEmpty {
+    async fn fsync(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        _fh: u64,
+        _datasync: bool,
+    ) -> FuseResult<()> {
         Ok(())
     }
 
-    fn fsyncdir(&self, _req: RequestInfo, _path: &Path, _fh: u64, _datasync: bool) -> ResultEmpty {
+    async fn fsyncdir(
+        &self,
+        _req: Request,
+        _path: &OsStr,
+        _fh: u64,
+        _datasync: bool,
+    ) -> FuseResult<()> {
         Ok(())
     }
 
-    fn getxattr(&self, _req: RequestInfo, _path: &Path, _name: &OsStr, _size: u32) -> ResultXattr {
-        Err(libc::ENODATA)
+    async fn getxattr(
+        &self,
+        _req: Request,
+        _path: &OsStr,
+        _name: &OsStr,
+        _size: u32,
+    ) -> FuseResult<ReplyXAttr> {
+        Err(Errno::from(libc::ENODATA))
     }
 
-    fn listxattr(&self, _req: RequestInfo, _path: &Path, _size: u32) -> ResultXattr {
-        Err(libc::ENOSYS)
+    async fn listxattr(&self, _req: Request, _path: &OsStr, _size: u32) -> FuseResult<ReplyXAttr> {
+        Err(Errno::from(libc::ENOSYS))
     }
 
     // All mutating operations return EROFS (FUSE-01)
 
-    fn write(
+    async fn setattr(
         &self,
-        _req: RequestInfo,
-        _path: &Path,
-        _fh: u64,
-        _offset: u64,
-        _data: Vec<u8>,
-        _flags: u32,
-    ) -> ResultWrite {
-        Err(libc::EROFS)
+        _req: Request,
+        _path: Option<&OsStr>,
+        _fh: Option<u64>,
+        _set_attr: SetAttr,
+    ) -> FuseResult<ReplyAttr> {
+        Err(Errno::from(libc::EROFS))
     }
 
-    fn create(
+    async fn write(
         &self,
-        _req: RequestInfo,
-        _parent: &Path,
+        _req: Request,
+        _path: Option<&OsStr>,
+        _fh: u64,
+        _offset: u64,
+        _data: &[u8],
+        _write_flags: u32,
+        _flags: u32,
+    ) -> FuseResult<rfuse3::path::reply::ReplyWrite> {
+        Err(Errno::from(libc::EROFS))
+    }
+
+    async fn create(
+        &self,
+        _req: Request,
+        _parent: &OsStr,
         _name: &OsStr,
         _mode: u32,
         _flags: u32,
-    ) -> ResultCreate {
-        Err(libc::EROFS)
+    ) -> FuseResult<rfuse3::path::reply::ReplyCreated> {
+        Err(Errno::from(libc::EROFS))
     }
 
-    fn mkdir(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr, _mode: u32) -> ResultEntry {
-        Err(libc::EROFS)
-    }
-
-    fn unlink(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr) -> ResultEmpty {
-        Err(libc::EROFS)
-    }
-
-    fn rmdir(&self, _req: RequestInfo, _parent: &Path, _name: &OsStr) -> ResultEmpty {
-        Err(libc::EROFS)
-    }
-
-    fn rename(
+    async fn mkdir(
         &self,
-        _req: RequestInfo,
-        _parent: &Path,
+        _req: Request,
+        _parent: &OsStr,
         _name: &OsStr,
-        _newparent: &Path,
-        _newname: &OsStr,
-    ) -> ResultEmpty {
-        Err(libc::EROFS)
+        _mode: u32,
+        _umask: u32,
+    ) -> FuseResult<ReplyEntry> {
+        Err(Errno::from(libc::EROFS))
     }
 
-    fn truncate(
-        &self,
-        _req: RequestInfo,
-        _path: &Path,
-        _fh: Option<u64>,
-        _size: u64,
-    ) -> ResultEmpty {
-        Err(libc::EROFS)
+    async fn unlink(&self, _req: Request, _parent: &OsStr, _name: &OsStr) -> FuseResult<()> {
+        Err(Errno::from(libc::EROFS))
     }
 
-    fn symlink(
+    async fn rmdir(&self, _req: Request, _parent: &OsStr, _name: &OsStr) -> FuseResult<()> {
+        Err(Errno::from(libc::EROFS))
+    }
+
+    async fn rename(
         &self,
-        _req: RequestInfo,
-        _parent: &Path,
+        _req: Request,
+        _origin_parent: &OsStr,
+        _origin_name: &OsStr,
+        _parent: &OsStr,
         _name: &OsStr,
-        _target: &Path,
-    ) -> ResultEntry {
-        Err(libc::EROFS)
+    ) -> FuseResult<()> {
+        Err(Errno::from(libc::EROFS))
     }
 
-    fn link(
+    async fn symlink(
         &self,
-        _req: RequestInfo,
-        _path: &Path,
-        _newparent: &Path,
-        _newname: &OsStr,
-    ) -> ResultEntry {
-        Err(libc::EROFS)
+        _req: Request,
+        _parent: &OsStr,
+        _name: &OsStr,
+        _link_path: &OsStr,
+    ) -> FuseResult<ReplyEntry> {
+        Err(Errno::from(libc::EROFS))
     }
 
-    fn mknod(
+    async fn link(
         &self,
-        _req: RequestInfo,
-        _parent: &Path,
+        _req: Request,
+        _path: &OsStr,
+        _new_parent: &OsStr,
+        _new_name: &OsStr,
+    ) -> FuseResult<ReplyEntry> {
+        Err(Errno::from(libc::EROFS))
+    }
+
+    async fn mknod(
+        &self,
+        _req: Request,
+        _parent: &OsStr,
         _name: &OsStr,
         _mode: u32,
         _rdev: u32,
-    ) -> ResultEntry {
-        Err(libc::EROFS)
+    ) -> FuseResult<ReplyEntry> {
+        Err(Errno::from(libc::EROFS))
     }
 
-    fn chmod(&self, _req: RequestInfo, _path: &Path, _fh: Option<u64>, _mode: u32) -> ResultEmpty {
-        Err(libc::EROFS)
-    }
-
-    fn chown(
+    async fn setxattr(
         &self,
-        _req: RequestInfo,
-        _path: &Path,
-        _fh: Option<u64>,
-        _uid: Option<u32>,
-        _gid: Option<u32>,
-    ) -> ResultEmpty {
-        Err(libc::EROFS)
-    }
-
-    fn utimens(
-        &self,
-        _req: RequestInfo,
-        _path: &Path,
-        _fh: Option<u64>,
-        _atime: Option<SystemTime>,
-        _mtime: Option<SystemTime>,
-    ) -> ResultEmpty {
-        Err(libc::EROFS)
-    }
-
-    fn setxattr(
-        &self,
-        _req: RequestInfo,
-        _path: &Path,
+        _req: Request,
+        _path: &OsStr,
         _name: &OsStr,
         _value: &[u8],
         _flags: u32,
         _position: u32,
-    ) -> ResultEmpty {
-        Err(libc::EROFS)
+    ) -> FuseResult<()> {
+        Err(Errno::from(libc::EROFS))
     }
 
-    fn removexattr(&self, _req: RequestInfo, _path: &Path, _name: &OsStr) -> ResultEmpty {
-        Err(libc::EROFS)
+    async fn removexattr(&self, _req: Request, _path: &OsStr, _name: &OsStr) -> FuseResult<()> {
+        Err(Errno::from(libc::EROFS))
     }
 }

@@ -2,7 +2,8 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo};
+use rfuse3::path::PathFilesystem;
+use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
@@ -61,8 +62,8 @@ fn setup_test_fs(
     (fs, tmp, verify_cipher, user_key, user_iv, block_mac_bytes)
 }
 
-#[test]
-fn test_write_legacy_v2() {
+#[tokio::test]
+async fn test_write_legacy_v2() {
     // Legacy: Major 2, No Chained Name IV (usually), No MAC, No ExtIV
     let (fs, tmp, verify_cipher, _, _, block_mac_bytes) = setup_test_fs(
         "encfs_write_legacy",
@@ -75,7 +76,7 @@ fn test_write_legacy_v2() {
     );
 
     // Need to reconstruct decoder properly
-    let req = RequestInfo {
+    let req = Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -84,12 +85,14 @@ fn test_write_legacy_v2() {
     let parent = PathBuf::from("");
     let name = OsStr::new("test.txt");
     let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+        .create(req, parent.as_os_str(), name, 0o644, 0)
+        .await
         .expect("create failed");
     let fh = create_res.fh;
     let data = b"legacy hello".to_vec();
     let path = parent.join("test.txt");
-    fs.write(req, &path, fh, 0, data.clone(), 0)
+    fs.write(req, Some(path.as_os_str()), fh, 0, &data, 0, 0)
+        .await
         .expect("write failed");
 
     // Verification
@@ -118,8 +121,8 @@ fn test_write_legacy_v2() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_write_paranoia() {
+#[tokio::test]
+async fn test_write_paranoia() {
     // Paranoia: Major 3, AES-256, MAC 8 bytes, Chained IV, Ext IV Chaining
     let (fs, tmp, verify_cipher, _, _, block_mac_bytes) = setup_test_fs(
         "encfs_write_paranoia",
@@ -131,7 +134,7 @@ fn test_write_paranoia() {
         true, // external_iv_chaining
     );
 
-    let req = RequestInfo {
+    let req = Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -140,12 +143,14 @@ fn test_write_paranoia() {
     let parent = PathBuf::from("");
     let name = OsStr::new("test_paranoia.txt");
     let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+        .create(req, parent.as_os_str(), name, 0o644, 0)
+        .await
         .expect("create failed");
     let fh = create_res.fh;
     let data = b"paranoia hello".to_vec();
     let path = parent.join("test_paranoia.txt");
-    fs.write(req, &path, fh, 0, data.clone(), 0)
+    fs.write(req, Some(path.as_os_str()), fh, 0, &data, 0, 0)
+        .await
         .expect("write failed");
 
     // Verification
@@ -178,12 +183,12 @@ fn test_write_paranoia() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_fstat_support() {
+#[tokio::test]
+async fn test_fstat_support() {
     // Setup standardized FS
     let (fs, tmp, _, _, _, _) = setup_test_fs("encfs_fstat", 3, 256, 1024, 8, true, true);
 
-    let req = RequestInfo {
+    let req = Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -194,7 +199,8 @@ fn test_fstat_support() {
 
     // Create file
     let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+        .create(req, parent.as_os_str(), name, 0o644, 0)
+        .await
         .expect("create failed");
     let fh = create_res.fh;
 
@@ -202,37 +208,48 @@ fn test_fstat_support() {
     let path = parent.join("fstat_test.txt");
 
     // Write data
-    fs.write(req, &path, fh, 0, logical_data.to_vec(), 0)
+    fs.write(req, Some(path.as_os_str()), fh, 0, logical_data, 0, 0)
+        .await
         .expect("write failed");
 
     // 1. Getattr with FH (fstat)
-    let (_, attr_fh) = fs
-        .getattr(req, &path, Some(fh))
-        .expect("getattr with fh failed");
+    let attr_fh = fs
+        .getattr(req, Some(path.as_os_str()), Some(fh), 0)
+        .await
+        .expect("getattr with fh failed")
+        .attr;
     assert_eq!(attr_fh.size, logical_data.len() as u64);
 
     // 2. Getattr without FH (stat/lstat)
-    let (_, attr_path) = fs
-        .getattr(req, &path, None)
-        .expect("getattr without fh failed");
+    let attr_path = fs
+        .getattr(req, Some(path.as_os_str()), None, 0)
+        .await
+        .expect("getattr without fh failed")
+        .attr;
     assert_eq!(attr_path.size, logical_data.len() as u64);
 
     // 3. Unlink file but keep open
-    fs.unlink(req, &parent, name).expect("unlink failed");
+    fs.unlink(req, parent.as_os_str(), name)
+        .await
+        .expect("unlink failed");
 
     // 4. Getattr without FH should fail now
-    let res = fs.getattr(req, &path, None);
+    let res = fs.getattr(req, Some(path.as_os_str()), None, 0).await;
     assert!(res.is_err(), "getattr path should fail after unlink");
 
     // 5. Getattr with FH (fstat) should still work on unlinked open file
-    let (_, attr_fh_unlinked) = fs
-        .getattr(req, &path, Some(fh))
-        .expect("getattr with fh failed after unlink");
+    let attr_fh_unlinked = fs
+        .getattr(req, Some(path.as_os_str()), Some(fh), 0)
+        .await
+        .expect("getattr with fh failed after unlink")
+        .attr;
     assert_eq!(attr_fh_unlinked.size, logical_data.len() as u64);
 
     // Cleanup
     // Close checks valid handle, though release implementation is simple removal
-    fs.release(req, &path, fh, 0, 0, false).unwrap();
+    fs.release(req, Some(path.as_os_str()), fh, 0, 0, false)
+        .await
+        .unwrap();
 
     // Verify directory is empty (file was unlinked)
     let count = std::fs::read_dir(&tmp).unwrap().count();
@@ -241,10 +258,10 @@ fn test_fstat_support() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[test]
-fn test_statfs_support() {
+#[tokio::test]
+async fn test_statfs_support() {
     let (fs, tmp, _, _, _, _) = setup_test_fs("encfs_statfs", 3, 256, 1024, 8, true, true);
-    let req = RequestInfo {
+    let req = Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -253,7 +270,8 @@ fn test_statfs_support() {
 
     // Check statfs on root
     let stat = fs
-        .statfs(req, std::path::Path::new("/"))
+        .statfs(req, OsStr::new("/"))
+        .await
         .expect("statfs failed");
 
     // Check reasonable values (should match tmp dir filesystem)

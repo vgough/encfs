@@ -2,14 +2,15 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder; // Import FileDecoder
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo};
+use rfuse3::path::PathFilesystem;
+use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt; // For read_at
 use std::path::PathBuf;
 
-#[test]
-fn test_open_trunc_header_regeneration() {
+#[tokio::test]
+async fn test_open_trunc_header_regeneration() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_open_trunc_test");
     if tmp.exists() {
@@ -40,7 +41,7 @@ fn test_open_trunc_header_regeneration() {
     let config = encfs::config::EncfsConfig::test_default();
     let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
-    let req = RequestInfo {
+    let req = Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -52,14 +53,18 @@ fn test_open_trunc_header_regeneration() {
 
     // 1. Create and Write initial data
     let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+        .create(req, parent.as_os_str(), name, 0o644, 0)
+        .await
         .expect("create failed");
     let fh = create_res.fh;
     let data = b"Initial Data".to_vec();
     let path = parent.join(name);
-    fs.write(req, &path, fh, 0, data.clone(), 0)
+    fs.write(req, Some(path.as_os_str()), fh, 0, &data, 0, 0)
+        .await
         .expect("write failed");
-    fs.release(req, &path, fh, 0, 0, true).unwrap();
+    fs.release(req, Some(path.as_os_str()), fh, 0, 0, true)
+        .await
+        .unwrap();
 
     // Verify physical file size is > 8 (header + data)
     let mut entries = fs::read_dir(&tmp).unwrap();
@@ -70,8 +75,11 @@ fn test_open_trunc_header_regeneration() {
 
     // 2. Open with O_TRUNC
     let flags = libc::O_WRONLY as u32 | libc::O_TRUNC as u32;
-    let open_res = fs.open(req, &path, flags).expect("open failed (trunc)");
-    let fh2 = open_res.0;
+    let open_res = fs
+        .open(req, path.as_os_str(), flags)
+        .await
+        .expect("open failed (trunc)");
+    let fh2 = open_res.fh;
 
     // 3. Verify physical file size IMMEDIATELY after open
     let meta_trunc = fs::metadata(&real_path).unwrap();
@@ -85,9 +93,12 @@ fn test_open_trunc_header_regeneration() {
 
     // 4. Write new data
     let new_data = b"New Data".to_vec();
-    fs.write(req, &path, fh2, 0, new_data.clone(), 0)
+    fs.write(req, Some(path.as_os_str()), fh2, 0, &new_data, 0, 0)
+        .await
         .expect("write failed (trunc)");
-    fs.release(req, &path, fh2, 0, 0, true).unwrap();
+    fs.release(req, Some(path.as_os_str()), fh2, 0, 0, true)
+        .await
+        .unwrap();
 
     // 5. Read verification using FileDecoder
     // Note: fs::read requires handle or open checks. verify via disk is robust.

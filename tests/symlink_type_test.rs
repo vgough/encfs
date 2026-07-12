@@ -1,13 +1,16 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FileType, FilesystemMT, RequestInfo};
+use futures_util::StreamExt;
+use rfuse3::FileType;
+use rfuse3::path::PathFilesystem;
+use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[test]
-fn test_symlink_type() {
+#[tokio::test]
+async fn test_symlink_type() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_symlink_test");
     if tmp.exists() {
@@ -33,7 +36,7 @@ fn test_symlink_type() {
     let config = encfs::config::EncfsConfig::test_default();
     let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
-    let req = RequestInfo {
+    let req = Request {
         unique: 1,
         pid: 1,
         gid: 0,
@@ -46,12 +49,17 @@ fn test_symlink_type() {
 
     // Create Symlink
     let _ = fs
-        .symlink(req, &parent, name, target)
+        .symlink(req, parent.as_os_str(), name, target.as_os_str())
+        .await
         .expect("symlink creation failed");
 
     // Check getattr
     let path = parent.join(name);
-    let (_ttl, attr) = fs.getattr(req, &path, None).expect("getattr failed");
+    let attr = fs
+        .getattr(req, Some(path.as_os_str()), None, 0)
+        .await
+        .expect("getattr failed")
+        .attr;
 
     // Logic: attr.kind should be Symlink, but currently it is RegularFile (bug)
     println!("File kind: {:?}", attr.kind);
@@ -63,7 +71,16 @@ fn test_symlink_type() {
     );
 
     // Check readdir
-    let entries = fs.readdir(req, &parent, 0).expect("readdir failed");
+    let reply = fs
+        .readdir(req, parent.as_os_str(), 0, 0)
+        .await
+        .expect("readdir failed");
+    let entries_stream = reply.entries;
+    futures_util::pin_mut!(entries_stream);
+    let mut entries = Vec::new();
+    while let Some(entry) = entries_stream.next().await {
+        entries.push(entry.expect("readdir entry error"));
+    }
     let entry = entries
         .iter()
         .find(|e| e.name.to_str() == Some("mysymlink"))

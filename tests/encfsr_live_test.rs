@@ -132,42 +132,7 @@ fn encfsr_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_encfsr"))
 }
 
-fn mountinfo_has_mount(mount_point: &std::path::Path) -> std::io::Result<bool> {
-    let mp = if let Ok(c) = fs::canonicalize(mount_point) {
-        c
-    } else {
-        mount_point.to_path_buf()
-    };
-    let mp_str = mp.to_string_lossy();
-    let data = fs::read_to_string("/proc/self/mountinfo")?;
-    for line in data.lines() {
-        let mut parts = line.split_whitespace();
-        let _id = parts.next();
-        let _parent = parts.next();
-        let _majmin = parts.next();
-        let _root = parts.next();
-        let mp_field = match parts.next() {
-            Some(v) => v,
-            None => continue,
-        };
-
-        if mp_field != mp_str {
-            // println!("  [debug] mismatch: {} != {}", mp_field, mp_str);
-            continue;
-        }
-        println!("  [debug] MATCH: {}", mp_field);
-        if let Some((_pre, post)) = line.split_once(" - ") {
-            let mut post_parts = post.split_whitespace();
-            let fstype = post_parts.next().unwrap_or("");
-            // In mountinfo, after " - " the fields are: fstype, mount_source, mount_options
-            // For FUSE, fstype is often "fuse" or "fuse.encfs"
-            if fstype.starts_with("fuse") {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
-}
+use live::mountinfo_has_mount;
 
 fn run_quiet(cmd: &mut Command) -> std::io::Result<std::process::ExitStatus> {
     cmd.stdin(Stdio::null())

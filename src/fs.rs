@@ -1,26 +1,36 @@
+use crate::attr::{file_attr_from_metadata, file_type_from_metadata, system_time_from_secs};
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
-use fuse_mt::{
-    CallbackResult, CreatedEntry, DirectoryEntry, FileAttr, FileType, FilesystemMT, RequestInfo,
-    ResultCreate, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultSlice, ResultStatfs,
-    ResultWrite, Statfs, Xattr,
-};
+use bytes::Bytes;
+use futures_util::stream::{self, Stream};
 use libc;
 use log::{debug, error, warn};
+use rfuse3::path::Request;
+use rfuse3::path::reply::{
+    DirectoryEntry, FileAttr, ReplyAttr, ReplyCreated, ReplyData, ReplyDirectory, ReplyEntry,
+    ReplyInit, ReplyOpen, ReplyStatFs, ReplyWrite, ReplyXAttr,
+};
+use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
 use std::ffi::{CString, OsStr};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt};
+use std::os::unix::fs::{FileExt, MetadataExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
+
+const ATTR_TTL: Duration = Duration::from_secs(1);
+
+/// Errors from internal helpers are raw errno values; trait methods convert
+/// them to rfuse3 Errno via `?`.
+type OpResult = Result<(), libc::c_int>;
 
 struct FileHandle {
     file: File,
@@ -124,6 +134,10 @@ pub struct EncFs {
     handles: Mutex<HashMap<u64, Arc<FileHandle>>>,
     next_fh: AtomicU64,
     pub config: crate::config::EncfsConfig,
+    /// Reject all mutating operations with EROFS. Enforced at the filesystem
+    /// layer as well as at mount level because macFUSE does not reliably
+    /// receive the `ro` mount option through rfuse3.
+    read_only: bool,
 }
 
 impl EncFs {
@@ -134,11 +148,25 @@ impl EncFs {
             handles: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
             config,
+            read_only: false,
         }
+    }
+
+    pub fn with_read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
+        self
     }
 
     fn handles_guard(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<FileHandle>>> {
         self.handles.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn ensure_writable(&self) -> OpResult {
+        if self.read_only {
+            Err(libc::EROFS)
+        } else {
+            Ok(())
+        }
     }
 
     /// Encrypts a plaintext path (from FUSE request) to an encrypted path (on disk).
@@ -202,16 +230,16 @@ impl EncFs {
 
     fn rename_internal(
         &self,
-        _req: RequestInfo,
         parent: &Path,
         name: &OsStr,
         newparent: &Path,
         newname: &OsStr,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         debug!(
             "rename: {:?}/{:?} -> {:?}/{:?}",
             parent, name, newparent, newname
         );
+        self.ensure_writable()?;
         let source = parent.join(name);
         let dest = newparent.join(newname);
 
@@ -317,7 +345,7 @@ impl EncFs {
         source: PathInfo,
         dest: PathInfo,
         meta: &std::fs::Metadata,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         if meta.is_dir() {
             // Create dest dir
             if let Err(e) = fs::create_dir(dest.physical) {
@@ -462,7 +490,7 @@ impl EncFs {
         real_dest: &Path,
         src_iv: u64,
         dst_iv: u64,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         // 1. Open source
         let mut src_f = File::open(real_src).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
@@ -533,28 +561,6 @@ impl EncFs {
     }
 }
 
-/// Map std::fs::Metadata file type to FUSE FileType (for getattr/readdir).
-fn metadata_to_file_type(metadata: &std::fs::Metadata) -> FileType {
-    if metadata.is_dir() {
-        FileType::Directory
-    } else if metadata.is_symlink() {
-        FileType::Symlink
-    } else {
-        let ft = metadata.file_type();
-        if ft.is_fifo() {
-            FileType::NamedPipe
-        } else if ft.is_char_device() {
-            FileType::CharDevice
-        } else if ft.is_block_device() {
-            FileType::BlockDevice
-        } else if ft.is_socket() {
-            FileType::Socket
-        } else {
-            FileType::RegularFile
-        }
-    }
-}
-
 fn headerless_file_iv(header_size: u64, external_iv: u64) -> u64 {
     if header_size == 0 { external_iv } else { 0 }
 }
@@ -564,7 +570,7 @@ impl EncFs {
     /// current time only if they have write access; setting explicit time requires owner or root.
     fn utimens_permission_check(
         &self,
-        req: &RequestInfo,
+        req: &Request,
         file_uid: u32,
         file_gid: u32,
         mode: u32,
@@ -607,7 +613,7 @@ impl EncFs {
     fn set_ownership_fd(
         &self,
         fd: std::os::unix::io::RawFd,
-        req: &RequestInfo,
+        req: &Request,
     ) -> Result<(), libc::c_int> {
         let uid = unsafe { libc::getuid() };
         let gid = unsafe { libc::getgid() };
@@ -643,7 +649,7 @@ impl EncFs {
         current_logical_size: u64,
         new_logical_size: u64,
         block_layout: BlockLayout,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         if new_logical_size <= current_logical_size {
             return Ok(());
         }
@@ -707,7 +713,7 @@ impl EncFs {
         header_size: u64,
         new_logical_size: u64,
         block_layout: BlockLayout,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         let physical_size = self.physical_size_for_logical(new_logical_size, header_size);
         let data_block_size = block_layout.data_size_per_block();
         let offset_in_block = new_logical_size % data_block_size;
@@ -757,7 +763,7 @@ impl EncFs {
 
     /// Sets ownership to req.uid/req.gid if different from current process.
     /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
-    fn set_ownership_path(&self, path: &Path, req: &RequestInfo) -> Result<(), libc::c_int> {
+    fn set_ownership_path(&self, path: &Path, req: &Request) -> Result<(), libc::c_int> {
         let uid = unsafe { libc::getuid() };
         let gid = unsafe { libc::getgid() };
         if req.uid == uid && req.gid == gid {
@@ -783,13 +789,10 @@ impl EncFs {
     }
 }
 
-impl FilesystemMT for EncFs {
-    fn init(&self, _req: RequestInfo) -> Result<(), libc::c_int> {
-        debug!("init");
-        Ok(())
-    }
-
-    fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
+/// Errno-based operation bodies shared by the PathFilesystem impl below.
+/// These contain no `.await`s; handle-table guards never cross await points.
+impl EncFs {
+    fn statfs_impl(&self, path: &Path) -> Result<ReplyStatFs, libc::c_int> {
         debug!("statfs: {:?}", path);
         // Check underlying filesystem of the root
         let c_path =
@@ -803,7 +806,7 @@ impl FilesystemMT for EncFs {
                 .unwrap_or(libc::EIO));
         }
 
-        Ok(Statfs {
+        Ok(ReplyStatFs {
             blocks: stat.f_blocks as u64,
             bfree: stat.f_bfree as u64,
             bavail: stat.f_bavail as u64,
@@ -815,28 +818,64 @@ impl FilesystemMT for EncFs {
         })
     }
 
-    fn chmod(&self, _req: RequestInfo, path: &Path, _fh: Option<u64>, mode: u32) -> ResultEmpty {
-        debug!("chmod: {:?} mode={:o}", path, mode);
-        let (real_path, _) = self.encrypt_path(path)?;
-
-        // Convert mode to Permissions.
-        // Note: fs::set_permissions takes std::fs::Permissions.
-        // We use PermissionsExt to construct it from u32 mode.
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(mode);
-
-        fs::set_permissions(real_path, perms).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
+    fn handle_for(&self, fh: Option<u64>) -> Option<Arc<FileHandle>> {
+        fh.and_then(|fh| self.handles_guard().get(&fh).cloned())
     }
 
-    fn chown(
+    fn do_chmod(&self, path: Option<&Path>, fh: Option<u64>, mode: u32) -> OpResult {
+        debug!("chmod: {:?} mode={:o}", path, mode);
+        self.ensure_writable()?;
+
+        if let Some(path) = path {
+            let (real_path, _) = self.encrypt_path(path)?;
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(mode);
+            return fs::set_permissions(real_path, perms)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO));
+        }
+
+        // Path unknown (possibly deleted): fall back to the open handle.
+        let handle = self.handle_for(fh).ok_or(libc::ESTALE)?;
+        let ret = unsafe { libc::fchmod(handle.file.as_raw_fd(), mode as libc::mode_t) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO))
+        }
+    }
+
+    fn do_chown(
         &self,
-        _req: RequestInfo,
-        path: &Path,
-        _fh: Option<u64>,
+        path: Option<&Path>,
+        fh: Option<u64>,
         uid: Option<u32>,
         gid: Option<u32>,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         debug!("chown: {:?} uid={:?} gid={:?}", path, uid, gid);
+        self.ensure_writable()?;
+
+        let path = match path {
+            Some(path) => path,
+            None => {
+                let handle = self.handle_for(fh).ok_or(libc::ESTALE)?;
+                let ret = unsafe {
+                    libc::fchown(
+                        handle.file.as_raw_fd(),
+                        uid.unwrap_or(u32::MAX),
+                        gid.unwrap_or(u32::MAX),
+                    )
+                };
+                if ret == 0 {
+                    return Ok(());
+                }
+                return Err(std::io::Error::last_os_error()
+                    .raw_os_error()
+                    .unwrap_or(libc::EIO));
+            }
+        };
+
         let (real_path, _) = self.encrypt_path(path)?;
 
         let c_path =
@@ -866,7 +905,7 @@ impl FilesystemMT for EncFs {
     /// Uses the file's stored uid, gid, and mode from the backend and the request's
     /// uid/gid to apply standard Unix permission checks. Root (uid 0) is always allowed.
     /// Only the primary gid is considered (no supplementary groups).
-    fn access(&self, req: RequestInfo, path: &Path, mask: u32) -> ResultEmpty {
+    fn access_impl(&self, req: Request, path: &Path, mask: u32) -> OpResult {
         debug!(
             "access: {:?} mask={:#o} uid={} gid={}",
             path, mask, req.uid, req.gid
@@ -908,16 +947,17 @@ impl FilesystemMT for EncFs {
         }
     }
 
-    fn truncate(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
+    fn do_truncate(&self, path: Option<&Path>, fh: Option<u64>, size: u64) -> OpResult {
         debug!("truncate: {:?} size={}", path, size);
+        self.ensure_writable()?;
 
-        let handle: Option<Arc<FileHandle>> =
-            fh.and_then(|fh| self.handles_guard().get(&fh).cloned());
+        let handle: Option<Arc<FileHandle>> = self.handle_for(fh);
         if fh.is_some() && handle.is_none() {
             return Err(libc::EBADF);
         }
 
         let owned_file: Option<File> = if handle.is_none() {
+            let path = path.ok_or(libc::ESTALE)?;
             let (real_path, _) = self.encrypt_path(path)?;
             Some(
                 fs::OpenOptions::new()
@@ -957,6 +997,8 @@ impl FilesystemMT for EncFs {
             return Ok(());
         }
 
+        // These branches only run without an open handle, where `path` was
+        // already required to open the file above.
         let file_iv = if let Some(h) = &handle {
             h.file_iv
         } else if header_size > 0 {
@@ -964,7 +1006,7 @@ impl FilesystemMT for EncFs {
             file_ref
                 .read_exact_at(&mut header, 0)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            let (_, path_iv) = self.encrypt_path(path)?;
+            let (_, path_iv) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
             let external_iv = if self.config.external_iv_chaining {
                 path_iv
             } else {
@@ -974,7 +1016,7 @@ impl FilesystemMT for EncFs {
                 .decrypt_header(&mut header, external_iv)
                 .map_err(|_| libc::EIO)?
         } else if self.config.external_iv_chaining {
-            let (_, path_iv) = self.encrypt_path(path)?;
+            let (_, path_iv) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
             path_iv
         } else {
             0
@@ -996,21 +1038,23 @@ impl FilesystemMT for EncFs {
         Ok(())
     }
 
-    fn utimens(
+    fn do_utimens(
         &self,
-        req: RequestInfo,
-        path: &Path,
+        req: Request,
+        path: Option<&Path>,
         fh: Option<u64>,
         atime: Option<std::time::SystemTime>,
         mtime: Option<std::time::SystemTime>,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         debug!("utimens: {:?} atime={:?} mtime={:?}", path, atime, mtime);
+        self.ensure_writable()?;
 
         // Get file metadata for permission check (owner/group/mode).
         let metadata = if let Some(fh) = fh {
             let handles = self.handles_guard();
             handles.get(&fh).and_then(|h| h.file.metadata().ok())
         } else {
+            let path = path.ok_or(libc::ESTALE)?;
             let (real_path, _) = self.encrypt_path(path)?;
             fs::symlink_metadata(real_path).ok()
         };
@@ -1065,7 +1109,7 @@ impl FilesystemMT for EncFs {
             }
         }
 
-        let (real_path, _) = self.encrypt_path(path)?;
+        let (real_path, _) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
         let c_path =
             std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
@@ -1087,7 +1131,7 @@ impl FilesystemMT for EncFs {
         }
     }
 
-    fn readlink(&self, _req: RequestInfo, path: &Path) -> Result<Vec<u8>, libc::c_int> {
+    fn readlink_impl(&self, path: &Path) -> Result<Vec<u8>, libc::c_int> {
         debug!("readlink: {:?}", path);
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1107,14 +1151,14 @@ impl FilesystemMT for EncFs {
         Ok(plain_target_bytes)
     }
 
-    fn link(
+    fn link_impl(
         &self,
-        req: RequestInfo,
         path: &Path,
         newparent: &Path,
         newname: &OsStr,
-    ) -> ResultEntry {
+    ) -> Result<FileAttr, libc::c_int> {
         debug!("link: {:?} -> {:?}/{:?}", path, newparent, newname);
+        self.ensure_writable()?;
 
         if self.config.external_iv_chaining {
             return Err(libc::EPERM);
@@ -1128,17 +1172,17 @@ impl FilesystemMT for EncFs {
             return Err(e.raw_os_error().unwrap_or(libc::EIO));
         }
 
-        self.getattr(req, &new_path, None)
+        self.attr_for_path(Some(&new_path), None)
     }
 
-    fn symlink(
+    fn symlink_impl(
         &self,
-        req: RequestInfo,
         parent: &Path,
         name: &std::ffi::OsStr,
         target: &std::path::Path,
-    ) -> ResultEntry {
+    ) -> Result<FileAttr, libc::c_int> {
         debug!("symlink: {:?}/{:?} -> {:?}", parent, name, target);
+        self.ensure_writable()?;
 
         let path = parent.join(name);
         let (real_path, path_iv) = self.encrypt_path(&path)?;
@@ -1162,13 +1206,8 @@ impl FilesystemMT for EncFs {
         let ret = unsafe { libc::symlink(c_target.as_ptr(), c_linkpath.as_ptr()) };
 
         if ret == 0 {
-            // Need to return lookup of new entry.
-            // But fuse_mt::ResultEntry expects a DirectoryEntry.
-            // We can reuse lookup or construct it.
-            // For simplicity, let's just lookup what we created.
-            // Actually fuse_mt requires we return the entry.
-            // Let's do a lookup.
-            self.getattr(req, &path, None)
+            // Return the attributes of the entry we just created.
+            self.attr_for_path(Some(&path), None)
         } else {
             Err(std::io::Error::last_os_error()
                 .raw_os_error()
@@ -1176,20 +1215,11 @@ impl FilesystemMT for EncFs {
         }
     }
 
-    fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultEntry {
+    fn attr_for_path(&self, path: Option<&Path>, fh: Option<u64>) -> Result<FileAttr, libc::c_int> {
         debug!("getattr: {:?} fh={:?}", path, fh);
 
-        let metadata = if let Some(fh) = fh {
-            let handle = {
-                let handles = self.handles_guard();
-                handles.get(&fh).cloned()
-            };
-
-            if let Some(handle) = handle {
-                handle.file.metadata().ok()
-            } else {
-                None
-            }
+        let metadata = if let Some(handle) = self.handle_for(fh) {
+            handle.file.metadata().ok()
         } else {
             None
         };
@@ -1197,6 +1227,7 @@ impl FilesystemMT for EncFs {
         let metadata = if let Some(m) = metadata {
             m
         } else {
+            let path = path.ok_or(libc::ESTALE)?;
             let (real_path, _) = self.encrypt_path(path)?;
             debug!("real_path: {:?}", real_path);
             fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
@@ -1215,45 +1246,23 @@ impl FilesystemMT for EncFs {
             );
         }
 
-        let attr = FileAttr {
-            size,
-            blocks: metadata.blocks(),
-            atime: SystemTime::UNIX_EPOCH
-                + Duration::new(metadata.atime() as u64, metadata.atime_nsec() as u32),
-            mtime: SystemTime::UNIX_EPOCH
-                + Duration::new(metadata.mtime() as u64, metadata.mtime_nsec() as u32),
-            ctime: SystemTime::UNIX_EPOCH
-                + Duration::new(metadata.ctime() as u64, metadata.ctime_nsec() as u32),
-            crtime: SystemTime::UNIX_EPOCH,
-            kind: metadata_to_file_type(&metadata),
-            perm: metadata.mode() as u16,
-            nlink: metadata.nlink() as u32,
-            uid: metadata.uid(),
-            gid: metadata.gid(),
-            rdev: metadata.rdev() as u32,
-            flags: 0,
-        };
-
-        Ok((Duration::from_secs(1), attr))
+        Ok(file_attr_from_metadata(&metadata, size))
     }
 
-    fn readdir(&self, _req: RequestInfo, path: &Path, _fh: u64) -> ResultReaddir {
+    fn readdir_impl(
+        &self,
+        path: &Path,
+    ) -> Result<Vec<(std::ffi::OsString, FileType)>, libc::c_int> {
         debug!("readdir: {:?}", path);
         let (real_path, dir_iv) = self.encrypt_path(path)?;
 
         let entries = fs::read_dir(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        let mut result = Vec::new();
-
         // Rust's fs::read_dir doesn't include . and .. entries, so add them explicitly
-        result.push(DirectoryEntry {
-            name: OsStr::new(".").to_os_string(),
-            kind: FileType::Directory,
-        });
-        result.push(DirectoryEntry {
-            name: OsStr::new("..").to_os_string(),
-            kind: FileType::Directory,
-        });
+        let mut result = vec![
+            (OsStr::new(".").to_os_string(), FileType::Directory),
+            (OsStr::new("..").to_os_string(), FileType::Directory),
+        ];
 
         for entry in entries {
             let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -1271,10 +1280,10 @@ impl FilesystemMT for EncFs {
                     let metadata = entry
                         .metadata()
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    result.push(DirectoryEntry {
-                        name: OsStr::from_bytes(&decrypted_name).to_os_string(),
-                        kind: metadata_to_file_type(&metadata),
-                    });
+                    result.push((
+                        OsStr::from_bytes(&decrypted_name).to_os_string(),
+                        file_type_from_metadata(&metadata),
+                    ));
                 }
                 Err(e) => {
                     warn!("Failed to decrypt filename {}: {}", name_str, e);
@@ -1285,24 +1294,7 @@ impl FilesystemMT for EncFs {
         Ok(result)
     }
 
-    fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
-        debug!("opendir: {:?}", path);
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        Ok((fh, 0))
-    }
-
-    fn releasedir(
-        &self,
-        _req: RequestInfo,
-        _path: &Path,
-        fh: u64,
-        _flags: u32,
-    ) -> Result<(), libc::c_int> {
-        debug!("releasedir: fh={}", fh);
-        Ok(())
-    }
-
-    fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
+    fn open_impl(&self, path: &Path, flags: u32) -> Result<u64, libc::c_int> {
         debug!("open: {:?}", path);
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1310,6 +1302,10 @@ impl FilesystemMT for EncFs {
         // write permissions; otherwise later `write`/`truncate` operations will fail with EBADF.
         let want_write = (flags as i32 & libc::O_WRONLY) != 0 || (flags as i32 & libc::O_RDWR) != 0;
         let want_trunc = (flags as i32 & libc::O_TRUNC) != 0;
+
+        if want_write || want_trunc {
+            self.ensure_writable()?;
+        }
 
         let mut opts = fs::OpenOptions::new();
         opts.read(true);
@@ -1402,25 +1398,17 @@ impl FilesystemMT for EncFs {
 
         self.handles_guard().insert(fh, handle);
 
-        Ok((fh, 0))
+        Ok(fh)
     }
 
-    fn read(
-        &self,
-        _req: RequestInfo,
-        path: &Path,
-        fh: u64,
-        offset: u64,
-        size: u32,
-        callback: impl FnOnce(ResultSlice<'_>) -> CallbackResult,
-    ) -> CallbackResult {
-        debug!("read: {:?} offset={} size={}", path, offset, size);
+    fn read_impl(&self, fh: u64, offset: u64, size: u32) -> Result<Vec<u8>, libc::c_int> {
+        debug!("read: fh={} offset={} size={}", fh, offset, size);
 
         let handle = {
             let handles = self.handles_guard();
             match handles.get(&fh).cloned() {
                 Some(h) => h,
-                None => return callback(Err(libc::EBADF)),
+                None => return Err(libc::EBADF),
             }
         };
 
@@ -1439,40 +1427,18 @@ impl FilesystemMT for EncFs {
         match decoder.read_at(&mut result_data, offset) {
             Ok(bytes_read) => {
                 result_data.truncate(bytes_read);
-                callback(Ok(&result_data))
+                Ok(result_data)
             }
             Err(e) => {
-                error!("Read failed on {:?}: {}", path, e);
-                let err = e.raw_os_error().unwrap_or(libc::EIO);
-                callback(Err(err))
+                error!("Read failed on fh {}: {}", fh, e);
+                Err(e.raw_os_error().unwrap_or(libc::EIO))
             }
         }
     }
 
-    fn release(
-        &self,
-        _req: RequestInfo,
-        _path: &Path,
-        fh: u64,
-        _flags: u32,
-        _lock_owner: u64,
-        _flush: bool,
-    ) -> Result<(), libc::c_int> {
-        debug!("release: fh={}", fh);
-        self.handles_guard().remove(&fh);
-        Ok(())
-    }
-
-    fn write(
-        &self,
-        _req: RequestInfo,
-        path: &Path,
-        fh: u64,
-        offset: u64,
-        data: Vec<u8>,
-        _flags: u32,
-    ) -> ResultWrite {
-        debug!("write: {:?} offset={} size={}", path, offset, data.len());
+    fn write_impl(&self, fh: u64, offset: u64, data: &[u8]) -> Result<u32, libc::c_int> {
+        debug!("write: fh={} offset={} size={}", fh, offset, data.len());
+        self.ensure_writable()?;
 
         let handle = {
             let handles = self.handles_guard();
@@ -1489,7 +1455,7 @@ impl FilesystemMT for EncFs {
             &self.config.file_codec_params(),
         );
 
-        match encoder.write_at(&data, offset) {
+        match encoder.write_at(data, offset) {
             Ok(written) => Ok(written as u32),
             Err(e) => {
                 error!("Write failed: {}", e);
@@ -1498,18 +1464,19 @@ impl FilesystemMT for EncFs {
         }
     }
 
-    fn create(
+    fn create_impl(
         &self,
-        req: RequestInfo,
+        req: Request,
         parent: &Path,
         name: &OsStr,
         mode: u32,
         flags: u32,
-    ) -> ResultCreate {
+    ) -> Result<(FileAttr, u64), libc::c_int> {
         debug!(
             "create: {:?}/{:?} flags={} mode={}",
             parent, name, flags, mode
         );
+        self.ensure_writable()?;
         let path = parent.join(name);
         let (real_path, path_iv) = self.encrypt_path(&path)?;
 
@@ -1557,47 +1524,39 @@ impl FilesystemMT for EncFs {
 
         self.set_ownership_fd(file.as_raw_fd(), &req)?;
 
+        // Build the reply attributes from the freshly created backing file
+        // (ownership was just set above); logical size of a new file is 0.
+        let metadata = file
+            .metadata()
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let attr = file_attr_from_metadata(&metadata, 0);
+
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
         let handle = Arc::new(FileHandle { file, file_iv });
 
         self.handles_guard().insert(fh, handle);
 
-        // We need to return CreatedEntry which includes FileAttr
-        // We can get attributes from the open file or construct them
-        let attr = FileAttr {
-            size: 0,
-            blocks: 1, // Header block
-            atime: SystemTime::now(),
-            mtime: SystemTime::now(),
-            ctime: SystemTime::now(),
-            crtime: SystemTime::now(),
-            kind: FileType::RegularFile,
-            perm: mode as u16,
-            nlink: 1,
-            uid: req.uid,
-            gid: req.gid,
-            rdev: 0,
-            flags: 0,
-        };
-
-        Ok(CreatedEntry {
-            ttl: Duration::from_secs(1),
-            attr,
-            fh,
-            flags: 0,
-        })
+        Ok((attr, fh))
     }
 
-    fn unlink(&self, _req: RequestInfo, parent: &Path, name: &OsStr) -> ResultEmpty {
+    fn unlink_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
         let path = parent.join(name);
         debug!("unlink: {:?}", path);
+        self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
         fs::remove_file(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
     }
 
-    fn mkdir(&self, req: RequestInfo, parent: &Path, name: &OsStr, mode: u32) -> ResultEntry {
+    fn mkdir_impl(
+        &self,
+        req: Request,
+        parent: &Path,
+        name: &OsStr,
+        mode: u32,
+    ) -> Result<FileAttr, libc::c_int> {
         let path = parent.join(name);
         debug!("mkdir: {:?} mode={:o}", path, mode);
+        self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
 
         use std::os::unix::fs::DirBuilderExt;
@@ -1608,19 +1567,20 @@ impl FilesystemMT for EncFs {
 
         self.set_ownership_path(&real_path, &req)?;
 
-        self.getattr(req, &path, None)
+        self.attr_for_path(Some(&path), None)
     }
 
-    fn mknod(
+    fn mknod_impl(
         &self,
-        req: RequestInfo,
+        req: Request,
         parent: &Path,
         name: &OsStr,
         mode: u32,
         rdev: u32,
-    ) -> ResultEntry {
+    ) -> Result<FileAttr, libc::c_int> {
         let path = parent.join(name);
         debug!("mknod: {:?} mode={:o} rdev={}", path, mode, rdev);
+        self.ensure_writable()?;
         let (real_path, path_iv) = self.encrypt_path(&path)?;
 
         let c_path = CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
@@ -1678,36 +1638,25 @@ impl FilesystemMT for EncFs {
 
         self.set_ownership_path(&real_path, &req)?;
 
-        self.getattr(req, &path, None)
+        self.attr_for_path(Some(&path), None)
     }
 
-    fn rmdir(&self, _req: RequestInfo, parent: &Path, name: &OsStr) -> ResultEmpty {
+    fn rmdir_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
         let path = parent.join(name);
         debug!("rmdir: {:?}", path);
+        self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
         fs::remove_dir(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
     }
 
-    fn rename(
+    fn setxattr_impl(
         &self,
-        req: RequestInfo,
-        parent: &Path,
-        name: &OsStr,
-        newparent: &Path,
-        newname: &OsStr,
-    ) -> ResultEmpty {
-        self.rename_internal(req, parent, name, newparent, newname)
-    }
-
-    fn setxattr(
-        &self,
-        _req: RequestInfo,
         path: &Path,
         name: &OsStr,
         value: &[u8],
         flags: u32,
         position: u32,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         debug!(
             "setxattr: {:?} name={:?} value_len={} flags={} position={}",
             path,
@@ -1716,6 +1665,7 @@ impl FilesystemMT for EncFs {
             flags,
             position
         );
+        self.ensure_writable()?;
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1770,14 +1720,8 @@ impl FilesystemMT for EncFs {
         }
     }
 
-    fn getxattr(
-        &self,
-        _req: RequestInfo,
-        path: &Path,
-        name: &OsStr,
-        size: u32,
-    ) -> Result<Xattr, libc::c_int> {
-        debug!("getxattr: {:?} name={:?} size={}", path, name, size);
+    fn getxattr_impl(&self, path: &Path, name: &OsStr) -> Result<Vec<u8>, libc::c_int> {
+        debug!("getxattr: {:?} name={:?}", path, name);
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1802,8 +1746,9 @@ impl FilesystemMT for EncFs {
         let c_path =
             std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
-        // Get xattr size first if size is 0
-        let buf_size = if size == 0 {
+        // Probe the on-disk (encrypted) value size; the caller's size limit is
+        // applied by the trait wrapper against the decrypted length.
+        let buf_size = {
             let ret = unsafe {
                 getxattr_nofollow(c_path.as_ptr(), c_name.as_ptr(), std::ptr::null_mut(), 0)
             };
@@ -1813,8 +1758,6 @@ impl FilesystemMT for EncFs {
                     .unwrap_or(libc::EIO));
             }
             ret as usize
-        } else {
-            size as usize
         };
 
         // Read encrypted value
@@ -1845,19 +1788,20 @@ impl FilesystemMT for EncFs {
                 libc::EIO
             })?;
 
-        Ok(Xattr::Data(decrypted_value))
+        Ok(decrypted_value)
     }
 
-    fn listxattr(&self, _req: RequestInfo, path: &Path, size: u32) -> Result<Xattr, libc::c_int> {
-        debug!("listxattr: {:?} size={}", path, size);
+    fn listxattr_impl(&self, path: &Path) -> Result<Vec<u8>, libc::c_int> {
+        debug!("listxattr: {:?}", path);
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
         let c_path =
             std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
-        // Get list size first if size is 0
-        let buf_size = if size == 0 {
+        // Probe the on-disk list size; the caller's size limit is applied by
+        // the trait wrapper against the decrypted list length.
+        let buf_size = {
             let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), std::ptr::null_mut(), 0) };
             if ret < 0 {
                 return Err(std::io::Error::last_os_error()
@@ -1865,8 +1809,6 @@ impl FilesystemMT for EncFs {
                     .unwrap_or(libc::EIO));
             }
             ret as usize
-        } else {
-            size as usize
         };
 
         // Read xattr names list
@@ -1944,7 +1886,7 @@ impl FilesystemMT for EncFs {
             let name_str = match std::str::from_utf8(&current_name) {
                 Ok(s) => s,
                 Err(_) => {
-                    return Ok(Xattr::Data(decrypted_list));
+                    return Ok(decrypted_list);
                 }
             };
 
@@ -1975,11 +1917,12 @@ impl FilesystemMT for EncFs {
             }
         }
 
-        Ok(Xattr::Data(decrypted_list))
+        Ok(decrypted_list)
     }
 
-    fn removexattr(&self, _req: RequestInfo, path: &Path, name: &OsStr) -> ResultEmpty {
+    fn removexattr_impl(&self, path: &Path, name: &OsStr) -> OpResult {
         debug!("removexattr: {:?} name={:?}", path, name);
+        self.ensure_writable()?;
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -2014,6 +1957,339 @@ impl FilesystemMT for EncFs {
                 .raw_os_error()
                 .unwrap_or(libc::EIO))
         }
+    }
+}
+
+/// Apply FUSE getxattr/listxattr size semantics: a zero-size request probes
+/// the value length; otherwise the data must fit in the caller's buffer.
+fn xattr_reply(data: Vec<u8>, size: u32) -> FuseResult<ReplyXAttr> {
+    if size == 0 {
+        Ok(ReplyXAttr::Size(data.len() as u32))
+    } else if data.len() > size as usize {
+        Err(Errno::from(libc::ERANGE))
+    } else {
+        Ok(ReplyXAttr::Data(Bytes::from(data)))
+    }
+}
+
+impl rfuse3::path::PathFilesystem for EncFs {
+    async fn init(&self, _req: Request) -> FuseResult<ReplyInit> {
+        debug!("init");
+        Ok(ReplyInit::default())
+    }
+
+    async fn destroy(&self, _req: Request) {
+        debug!("destroy");
+    }
+
+    async fn lookup(&self, _req: Request, parent: &OsStr, name: &OsStr) -> FuseResult<ReplyEntry> {
+        let path = Path::new(parent).join(name);
+        let attr = self.attr_for_path(Some(&path), None)?;
+        Ok(ReplyEntry {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn getattr(
+        &self,
+        _req: Request,
+        path: Option<&OsStr>,
+        fh: Option<u64>,
+        _flags: u32,
+    ) -> FuseResult<ReplyAttr> {
+        let attr = self.attr_for_path(path.map(Path::new), fh)?;
+        Ok(ReplyAttr {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn setattr(
+        &self,
+        req: Request,
+        path: Option<&OsStr>,
+        fh: Option<u64>,
+        set_attr: SetAttr,
+    ) -> FuseResult<ReplyAttr> {
+        debug!("setattr: {:?} fh={:?} {:?}", path, fh, set_attr);
+        let path = path.map(Path::new);
+
+        // One SETATTR request can carry several changes at once; apply them in
+        // a fixed order (size, then mode, then ownership, then times) and stop
+        // at the first error.
+        if let Some(size) = set_attr.size {
+            self.do_truncate(path, fh, size)?;
+        }
+        if let Some(mode) = set_attr.mode {
+            self.do_chmod(path, fh, mode as u32)?;
+        }
+        if set_attr.uid.is_some() || set_attr.gid.is_some() {
+            self.do_chown(path, fh, set_attr.uid, set_attr.gid)?;
+        }
+        if set_attr.atime.is_some() || set_attr.mtime.is_some() {
+            let atime = set_attr
+                .atime
+                .map(|t| system_time_from_secs(t.sec, t.nsec as i64));
+            let mtime = set_attr
+                .mtime
+                .map(|t| system_time_from_secs(t.sec, t.nsec as i64));
+            self.do_utimens(req, path, fh, atime, mtime)?;
+        }
+
+        let attr = self.attr_for_path(path, fh)?;
+        Ok(ReplyAttr {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn access(&self, req: Request, path: &OsStr, mask: u32) -> FuseResult<()> {
+        self.access_impl(req, Path::new(path), mask)?;
+        Ok(())
+    }
+
+    async fn statfs(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyStatFs> {
+        Ok(self.statfs_impl(Path::new(path))?)
+    }
+
+    async fn readlink(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyData> {
+        let target = self.readlink_impl(Path::new(path))?;
+        Ok(ReplyData {
+            data: Bytes::from(target),
+        })
+    }
+
+    async fn symlink(
+        &self,
+        _req: Request,
+        parent: &OsStr,
+        name: &OsStr,
+        link_path: &OsStr,
+    ) -> FuseResult<ReplyEntry> {
+        let attr = self.symlink_impl(Path::new(parent), name, Path::new(link_path))?;
+        Ok(ReplyEntry {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn link(
+        &self,
+        _req: Request,
+        path: &OsStr,
+        new_parent: &OsStr,
+        new_name: &OsStr,
+    ) -> FuseResult<ReplyEntry> {
+        let attr = self.link_impl(Path::new(path), Path::new(new_parent), new_name)?;
+        Ok(ReplyEntry {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn mknod(
+        &self,
+        req: Request,
+        parent: &OsStr,
+        name: &OsStr,
+        mode: u32,
+        rdev: u32,
+    ) -> FuseResult<ReplyEntry> {
+        let attr = self.mknod_impl(req, Path::new(parent), name, mode, rdev)?;
+        Ok(ReplyEntry {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn mkdir(
+        &self,
+        req: Request,
+        parent: &OsStr,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32,
+    ) -> FuseResult<ReplyEntry> {
+        // The kernel has already applied the umask to `mode` (we don't set
+        // MountOptions::dont_mask), so `_umask` is ignored.
+        let attr = self.mkdir_impl(req, Path::new(parent), name, mode)?;
+        Ok(ReplyEntry {
+            ttl: ATTR_TTL,
+            attr,
+        })
+    }
+
+    async fn unlink(&self, _req: Request, parent: &OsStr, name: &OsStr) -> FuseResult<()> {
+        self.unlink_impl(Path::new(parent), name)?;
+        Ok(())
+    }
+
+    async fn rmdir(&self, _req: Request, parent: &OsStr, name: &OsStr) -> FuseResult<()> {
+        self.rmdir_impl(Path::new(parent), name)?;
+        Ok(())
+    }
+
+    async fn rename(
+        &self,
+        _req: Request,
+        origin_parent: &OsStr,
+        origin_name: &OsStr,
+        parent: &OsStr,
+        name: &OsStr,
+    ) -> FuseResult<()> {
+        self.rename_internal(
+            Path::new(origin_parent),
+            origin_name,
+            Path::new(parent),
+            name,
+        )?;
+        Ok(())
+    }
+
+    async fn opendir(&self, _req: Request, path: &OsStr, _flags: u32) -> FuseResult<ReplyOpen> {
+        debug!("opendir: {:?}", path);
+        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
+        Ok(ReplyOpen { fh, flags: 0 })
+    }
+
+    async fn releasedir(
+        &self,
+        _req: Request,
+        _path: &OsStr,
+        fh: u64,
+        _flags: u32,
+    ) -> FuseResult<()> {
+        debug!("releasedir: fh={}", fh);
+        Ok(())
+    }
+
+    async fn readdir<'a>(
+        &'a self,
+        _req: Request,
+        path: &'a OsStr,
+        _fh: u64,
+        offset: i64,
+    ) -> FuseResult<ReplyDirectory<impl Stream<Item = FuseResult<DirectoryEntry>> + Send + 'a>>
+    {
+        let entries = self.readdir_impl(Path::new(path))?;
+
+        // The kernel may issue multiple READDIR calls, resuming at `offset`;
+        // each entry's offset field is the offset of the *next* entry.
+        let entries = entries
+            .into_iter()
+            .enumerate()
+            .skip(offset.max(0) as usize)
+            .map(|(i, (name, kind))| {
+                Ok(DirectoryEntry {
+                    kind,
+                    name,
+                    offset: i as i64 + 1,
+                })
+            });
+
+        Ok(ReplyDirectory {
+            entries: stream::iter(entries),
+        })
+    }
+
+    async fn open(&self, _req: Request, path: &OsStr, flags: u32) -> FuseResult<ReplyOpen> {
+        let fh = self.open_impl(Path::new(path), flags)?;
+        Ok(ReplyOpen { fh, flags: 0 })
+    }
+
+    async fn release(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        fh: u64,
+        _flags: u32,
+        _lock_owner: u64,
+        _flush: bool,
+    ) -> FuseResult<()> {
+        debug!("release: fh={}", fh);
+        self.handles_guard().remove(&fh);
+        Ok(())
+    }
+
+    async fn read(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        fh: u64,
+        offset: u64,
+        size: u32,
+    ) -> FuseResult<ReplyData> {
+        let data = self.read_impl(fh, offset, size)?;
+        Ok(ReplyData {
+            data: Bytes::from(data),
+        })
+    }
+
+    async fn write(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        fh: u64,
+        offset: u64,
+        data: &[u8],
+        _write_flags: u32,
+        _flags: u32,
+    ) -> FuseResult<ReplyWrite> {
+        let written = self.write_impl(fh, offset, data)?;
+        Ok(ReplyWrite { written })
+    }
+
+    async fn create(
+        &self,
+        req: Request,
+        parent: &OsStr,
+        name: &OsStr,
+        mode: u32,
+        flags: u32,
+    ) -> FuseResult<ReplyCreated> {
+        let (attr, fh) = self.create_impl(req, Path::new(parent), name, mode, flags)?;
+        Ok(ReplyCreated {
+            ttl: ATTR_TTL,
+            attr,
+            generation: 0,
+            fh,
+            flags: 0,
+        })
+    }
+
+    async fn setxattr(
+        &self,
+        _req: Request,
+        path: &OsStr,
+        name: &OsStr,
+        value: &[u8],
+        flags: u32,
+        position: u32,
+    ) -> FuseResult<()> {
+        self.setxattr_impl(Path::new(path), name, value, flags, position)?;
+        Ok(())
+    }
+
+    async fn getxattr(
+        &self,
+        _req: Request,
+        path: &OsStr,
+        name: &OsStr,
+        size: u32,
+    ) -> FuseResult<ReplyXAttr> {
+        let value = self.getxattr_impl(Path::new(path), name)?;
+        xattr_reply(value, size)
+    }
+
+    async fn listxattr(&self, _req: Request, path: &OsStr, size: u32) -> FuseResult<ReplyXAttr> {
+        let list = self.listxattr_impl(Path::new(path))?;
+        xattr_reply(list, size)
+    }
+
+    async fn removexattr(&self, _req: Request, path: &OsStr, name: &OsStr) -> FuseResult<()> {
+        self.removexattr_impl(Path::new(path), name)?;
+        Ok(())
     }
 }
 
