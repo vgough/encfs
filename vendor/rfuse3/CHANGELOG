@@ -1,0 +1,22 @@
+# Changelog
+
+## 2026-02-24
+
+### Fixed
+- rfuse3: gate `LoggingFileSystem::{getlk,setlk}` behind the `file-lock` feature to match the `Filesystem` trait.
+- rfuse3: fix examples to construct `ReplyInit` via `ReplyInit::default()`.
+
+## 2026-02-07
+
+### Added
+- rfuse3: buffer pool feature flag (buffer-pool).
+- rfuse3: mount options for max_write and max_readahead.
+- rfuse3: benchmark filesystem example and fio helper script.
+- rfuse3: performance report (report.md).
+- rfuse3: direct_io mount option to force FOPEN_DIRECT_IO on all file operations
+
+### Changed
+- rfuse3: init reply is now empty; size tuning is via mount options.
+- rfuse3: session uses aligned buffers and zero-copy request bodies for worker dispatch.
+- rfuse3: inode name manager uses DashMap for concurrent access.
+- rfuse3: cached bincode config uses OnceLock for MSRV compatibility.

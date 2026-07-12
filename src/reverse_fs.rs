@@ -424,31 +424,32 @@ impl rfuse3::path::PathFilesystem for ReverseFs {
         debug!("ReverseFs::readdirplus {:?} offset={}", dir, offset);
         let result = self.readdir_entries(dir)?;
 
-        let entries = result
-            .into_iter()
-            .enumerate()
-            .skip(offset as usize)
-            .map(|(i, (name, kind))| {
-                let entry_path = if name.as_os_str() == "." {
-                    dir.to_path_buf()
-                } else if name.as_os_str() == ".." {
-                    dir.parent()
-                        .filter(|p| !p.as_os_str().is_empty())
-                        .unwrap_or(dir)
-                        .to_path_buf()
-                } else {
-                    dir.join(&name)
-                };
-                let attr = self.attr_for_fuse_path(&entry_path)?;
-                Ok(DirectoryEntryPlus {
-                    kind,
-                    name,
-                    offset: i as i64 + 1,
-                    attr,
-                    entry_ttl: ATTR_TTL,
-                    attr_ttl: ATTR_TTL,
-                })
-            });
+        let entries =
+            result
+                .into_iter()
+                .enumerate()
+                .skip(offset as usize)
+                .map(|(i, (name, kind))| {
+                    let entry_path = if name.as_os_str() == "." {
+                        dir.to_path_buf()
+                    } else if name.as_os_str() == ".." {
+                        dir.parent()
+                            .filter(|p| !p.as_os_str().is_empty())
+                            .unwrap_or(dir)
+                            .to_path_buf()
+                    } else {
+                        dir.join(&name)
+                    };
+                    let attr = self.attr_for_fuse_path(&entry_path)?;
+                    Ok(DirectoryEntryPlus {
+                        kind,
+                        name,
+                        offset: i as i64 + 1,
+                        attr,
+                        entry_ttl: ATTR_TTL,
+                        attr_ttl: ATTR_TTL,
+                    })
+                });
 
         Ok(ReplyDirectoryPlus {
             entries: stream::iter(entries),

@@ -122,8 +122,13 @@ async fn test_mknod_fifo_readdir_reports_named_pipe() {
     .expect("mknod FIFO failed");
 
     let dir_path = PathBuf::from("");
+    let fh = fs
+        .opendir(r, dir_path.as_os_str(), 0)
+        .await
+        .expect("opendir failed")
+        .fh;
     let reply = fs
-        .readdir(r, dir_path.as_os_str(), 0, 0)
+        .readdir(r, dir_path.as_os_str(), fh, 0)
         .await
         .expect("readdir failed");
     let entries_stream = reply.entries;
@@ -169,8 +174,13 @@ async fn test_readdirplus_returns_entries_with_attrs() {
     .await
     .expect("mknod FIFO failed");
 
+    let fh = fs
+        .opendir(r, parent.as_os_str(), 0)
+        .await
+        .expect("opendir failed")
+        .fh;
     let reply = fs
-        .readdirplus(r, parent.as_os_str(), 0, 0, 0)
+        .readdirplus(r, parent.as_os_str(), fh, 0, 0)
         .await
         .expect("readdirplus failed");
     let entries_stream = reply.entries;
@@ -187,7 +197,9 @@ async fn test_readdirplus_returns_entries_with_attrs() {
     assert_eq!(pipe_entry.kind, FileType::NamedPipe);
     assert_eq!(pipe_entry.attr.kind, FileType::NamedPipe);
     assert!(
-        entries.iter().any(|e| e.name.as_os_str() == OsStr::new(".")),
+        entries
+            .iter()
+            .any(|e| e.name.as_os_str() == OsStr::new(".")),
         "readdirplus should include '.'"
     );
     assert!(

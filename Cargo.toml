@@ -1,6 +1,6 @@
 [workspace]
 members = ["."]
-exclude = ["fuzz"]
+exclude = ["fuzz", "vendor/rfuse3"]
 
 [package]
 name = "encfs"
@@ -60,3 +60,8 @@ tar = "0.4"
 [package.metadata.i18n]
 default-locale = "en"
 available-locales = ["en", "fr", "de"]
+
+[patch.crates-io]
+# rfuse3 0.0.9 omits alignment padding from directory-response bounds checks.
+# Remove this patch once crates.io publishes the corrected framing logic.
+rfuse3 = { path = "vendor/rfuse3" }

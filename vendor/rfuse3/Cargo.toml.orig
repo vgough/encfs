@@ -1,0 +1,65 @@
+[package]
+name = "rfuse3"
+version = "0.0.9"
+edition = "2021"
+readme = "README.md"
+keywords = ["fuse", "filesystem", "system", "bindings"]
+categories = ["api-bindings", "filesystem"]
+license = "MIT"
+description = "FUSE user-space library async version implementation."
+rust-version = "1.77"
+exclude = ["BUCK"]
+authors = ["rk8s-dev team"]
+repository = "https://github.com/r2cn-dev/rk8s/tree/main/project/rfuse3"
+
+[features]
+default = ["tokio-runtime", "unprivileged"]
+tokio-runtime = ["dep:tokio"]
+async-io-runtime = [
+  "dep:async-fs",
+  "dep:async-global-executor",
+  "dep:async-lock",
+  "dep:async-io",
+  "dep:async-process",
+  "futures-util/io",
+]
+file-lock = []
+unprivileged = ["nix/socket", "dep:which"]
+buffer-pool = []
+
+[dependencies]
+async-fs = { workspace = true, optional = true }
+async-global-executor = { workspace = true, optional = true }
+async-lock = { workspace = true, optional = true }
+async-notify = { workspace = true }
+async-io = { workspace = true, optional = true }
+async-process = { workspace = true, optional = true }
+bincode = { workspace = true }
+bytes = { workspace = true }
+dashmap = { workspace = true }
+futures-channel = { workspace = true, features = ["sink"] }
+futures-util = { workspace = true, features = ["sink"] }
+libc = { workspace = true }
+nix = { workspace = true, features = ["signal", "user", "fs", "socket", "sched", "mount", "mman", "resource", "dir", "term", "hostname", "process"] }
+serde = { workspace = true, features = ["derive"] }
+slab = { workspace = true }
+tracing = { workspace = true, features = ["attributes"] }
+trait-make = { workspace = true }
+async-trait = { workspace = true }
+which = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["full"], optional = true }
+aligned_box = { workspace = true }
+
+[dev-dependencies]
+clap = { workspace = true, features = ["derive"] }
+tracing-subscriber = { workspace = true }
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
+features = ["file-lock", "unprivileged", "tokio-runtime"]
+targets = [
+  "i686-unknown-freebsd",
+  "i686-unknown-linux-gnu",
+  "x86_64-unknown-freebsd",
+  "x86_64-unknown-linux-gnu",
+]

@@ -3,11 +3,13 @@ mod live;
 use anyhow::{Context, Result};
 use encfs::crypto::file::FileEncoder;
 use live::{MountGuard, data_block_size, live_enabled, load_live_config, unique_temp_dir};
+use std::collections::BTreeSet;
 use std::ffi::CString;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -62,6 +64,81 @@ fn expected_physical_size(logical: u64, cfg: &live::LiveConfig) -> u64 {
 fn ciphertext_single_file_size(backing_root: &Path) -> Result<u64> {
     let p = live::backing_single_ciphertext_file(backing_root)?;
     Ok(fs::metadata(p)?.len())
+}
+
+fn fixed_width_long_names(prefix: &str, count: usize) -> Vec<String> {
+    // Long enough that a few hundred entries span multiple kernel directory buffers, while
+    // remaining below NAME_MAX after EncFS filename encryption and base64 encoding.
+    let suffix = "x".repeat(140);
+    (0..count)
+        .map(|index| format!("{prefix}-{index:04}-{suffix}"))
+        .collect()
+}
+
+fn read_directory_names(path: &Path) -> Result<Vec<String>> {
+    fs::read_dir(path)
+        .with_context(|| format!("open directory {:?}", path))?
+        .map(|entry| {
+            let entry = entry.with_context(|| format!("read directory entry from {:?}", path))?;
+            entry
+                .file_name()
+                .into_string()
+                .map_err(|name| anyhow::anyhow!("non-UTF-8 directory entry: {:?}", name))
+        })
+        .collect()
+}
+
+fn create_offline_cargo_graph(root: &Path) -> Result<PathBuf> {
+    let leaf = root.join("leaf");
+    let middle = root.join("middle");
+    let application = root.join("application");
+    fs::create_dir_all(leaf.join("src"))?;
+    fs::create_dir_all(middle.join("src"))?;
+    fs::create_dir_all(application.join("src"))?;
+
+    fs::write(
+        leaf.join("Cargo.toml"),
+        r#"[package]
+name = "encfs-live-leaf"
+version = "0.1.0"
+edition = "2024"
+"#,
+    )?;
+    fs::write(leaf.join("src/lib.rs"), "pub fn value() -> u32 { 40 }\n")?;
+
+    fs::write(
+        middle.join("Cargo.toml"),
+        r#"[package]
+name = "encfs-live-middle"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+encfs-live-leaf = { path = "../leaf" }
+"#,
+    )?;
+    fs::write(
+        middle.join("src/lib.rs"),
+        "pub fn value() -> u32 { encfs_live_leaf::value() + 1 }\n",
+    )?;
+
+    fs::write(
+        application.join("Cargo.toml"),
+        r#"[package]
+name = "encfs-live-application"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+encfs-live-middle = { path = "../middle" }
+"#,
+    )?;
+    fs::write(
+        application.join("src/main.rs"),
+        "fn main() { println!(\"{}\", encfs_live_middle::value() + 1); }\n",
+    )?;
+
+    Ok(application.join("Cargo.toml"))
 }
 
 #[test]
@@ -853,6 +930,202 @@ fn live_backing_invalid_filename_is_ignored_in_readdir() -> Result<()> {
         entries
     );
 
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn live_large_directory_repeated_enumeration_standard() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+
+    const ENTRY_COUNT: usize = 512;
+    const ENUMERATION_COUNT: usize = 5;
+
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let directory = mount.mount_point.join("large-directory");
+    fs::create_dir(&directory).context("create large test directory")?;
+
+    let expected: BTreeSet<_> = fixed_width_long_names("large", ENTRY_COUNT)
+        .into_iter()
+        .collect();
+    for name in &expected {
+        fs::write(directory.join(name), b"")
+            .with_context(|| format!("create large-directory entry {name:?}"))?;
+    }
+
+    for pass in 0..ENUMERATION_COUNT {
+        let names = read_directory_names(&directory)
+            .with_context(|| format!("enumerate large directory on pass {pass}"))?;
+        let actual: BTreeSet<_> = names.iter().cloned().collect();
+        assert_eq!(
+            names.len(),
+            actual.len(),
+            "duplicate entry returned on enumeration pass {pass}"
+        );
+        assert_eq!(
+            actual, expected,
+            "large-directory entry set differed on enumeration pass {pass}"
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn live_large_directory_snapshot_survives_mutation_standard() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+
+    const ENTRY_COUNT: usize = 512;
+    const PREFIX_COUNT: usize = 256;
+
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let directory = mount.mount_point.join("snapshot-directory");
+    fs::create_dir(&directory).context("create snapshot test directory")?;
+
+    let original: BTreeSet<_> = fixed_width_long_names("snapshot", ENTRY_COUNT)
+        .into_iter()
+        .collect();
+    for name in &original {
+        fs::write(directory.join(name), b"")
+            .with_context(|| format!("create snapshot entry {name:?}"))?;
+    }
+
+    // `ReadDir` keeps one directory handle open. Consuming this many long names crosses a
+    // typical 32 KiB getdents buffer, so the mutation happens between response pages.
+    let mut open_snapshot = fs::read_dir(&directory).context("open snapshot directory")?;
+    let mut names_from_snapshot = Vec::with_capacity(ENTRY_COUNT);
+    for index in 0..PREFIX_COUNT {
+        let entry = open_snapshot
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("snapshot ended after only {index} entries"))?
+            .with_context(|| format!("read snapshot prefix entry {index}"))?;
+        names_from_snapshot.push(
+            entry
+                .file_name()
+                .into_string()
+                .map_err(|name| anyhow::anyhow!("non-UTF-8 snapshot entry: {:?}", name))?,
+        );
+    }
+
+    let seen_prefix: BTreeSet<_> = names_from_snapshot.iter().cloned().collect();
+    let removed_name = original
+        .difference(&seen_prefix)
+        .next()
+        .context("all snapshot names unexpectedly appeared in the prefix")?
+        .clone();
+    let added_name = format!("snapshot-added-9999-{}", "y".repeat(140));
+    assert!(!original.contains(&added_name));
+
+    fs::remove_file(directory.join(&removed_name))
+        .with_context(|| format!("remove entry {removed_name:?} during enumeration"))?;
+    fs::write(directory.join(&added_name), b"")
+        .with_context(|| format!("add entry {added_name:?} during enumeration"))?;
+
+    for entry in open_snapshot {
+        let entry = entry.context("resume snapshot enumeration after mutation")?;
+        names_from_snapshot.push(
+            entry
+                .file_name()
+                .into_string()
+                .map_err(|name| anyhow::anyhow!("non-UTF-8 snapshot entry: {:?}", name))?,
+        );
+    }
+
+    let snapshot_set: BTreeSet<_> = names_from_snapshot.iter().cloned().collect();
+    assert_eq!(
+        names_from_snapshot.len(),
+        snapshot_set.len(),
+        "snapshot enumeration returned a duplicate"
+    );
+    assert_eq!(
+        snapshot_set, original,
+        "an open directory handle must retain its pre-mutation snapshot"
+    );
+
+    let mut current = original;
+    assert!(current.remove(&removed_name));
+    assert!(current.insert(added_name));
+    let new_handle_names = read_directory_names(&directory)
+        .context("enumerate mutated directory through a new handle")?;
+    let new_handle_set: BTreeSet<_> = new_handle_names.iter().cloned().collect();
+    assert_eq!(new_handle_names.len(), new_handle_set.len());
+    assert_eq!(
+        new_handle_set, current,
+        "a newly opened directory handle must observe the mutation"
+    );
+
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn live_cargo_build_with_large_mounted_target_standard() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+
+    const DECOY_COUNT: usize = 512;
+
+    let source_root = unique_temp_dir("encfs_live_cargo_source")?;
+    let manifest = create_offline_cargo_graph(&source_root)
+        .context("create offline three-crate Cargo dependency graph")?;
+
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let target = mount.mount_point.join("cargo-target");
+    let deps = target.join("debug/deps");
+    fs::create_dir_all(&deps).context("create mounted target/debug/deps")?;
+    for name in fixed_width_long_names("cargo-decoy", DECOY_COUNT) {
+        fs::write(deps.join(&name), b"decoy")
+            .with_context(|| format!("prepopulate mounted deps entry {name:?}"))?;
+    }
+
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let cargo_output = Command::new(cargo)
+        .arg("build")
+        .arg("--offline")
+        .arg("--manifest-path")
+        .arg(&manifest)
+        .arg("--target-dir")
+        .arg(&target)
+        .env("CARGO_NET_OFFLINE", "true")
+        // This regression targets Cargo's dependency/output directory enumeration. Rustc's
+        // incremental session lifecycle is a separate FUSE behavior and is intentionally omitted.
+        .env("CARGO_INCREMENTAL", "0")
+        .output()
+        .context("run offline Cargo build with target inside EncFS")?;
+    anyhow::ensure!(
+        cargo_output.status.success(),
+        "offline Cargo build failed with {}\nstdout:\n{}\nstderr:\n{}",
+        cargo_output.status,
+        String::from_utf8_lossy(&cargo_output.stdout),
+        String::from_utf8_lossy(&cargo_output.stderr)
+    );
+
+    let executable = target.join("debug/encfs-live-application");
+    let run_output = Command::new(&executable)
+        .output()
+        .with_context(|| format!("execute mounted Cargo output {:?}", executable))?;
+    anyhow::ensure!(
+        run_output.status.success(),
+        "mounted Cargo output failed with {}\nstdout:\n{}\nstderr:\n{}",
+        run_output.status,
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
+    assert_eq!(String::from_utf8(run_output.stdout)?.trim(), "42");
+
+    fs::remove_dir_all(&source_root).context("remove offline Cargo source graph")?;
     Ok(())
 }
 

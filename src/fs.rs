@@ -16,7 +16,7 @@ use rfuse3::path::reply::{
 };
 use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
-use std::ffi::{CString, OsStr};
+use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::unix::ffi::OsStrExt;
@@ -36,6 +36,22 @@ type OpResult = Result<(), libc::c_int>;
 struct FileHandle {
     file: File,
     file_iv: u64,
+}
+
+#[derive(Clone)]
+struct DirectorySnapshotEntry {
+    name: OsString,
+    kind: FileType,
+    attr: FileAttr,
+}
+
+/// An immutable view of a directory captured by `opendir`.
+///
+/// Mutations after the handle is opened are intentionally not visible through
+/// that handle. A later `opendir` captures a new view, and retained attributes
+/// allow `readdirplus` to finish even when an entry has since been removed.
+struct DirectoryHandle {
+    entries: Vec<DirectorySnapshotEntry>,
 }
 
 struct PathInfo<'a> {
@@ -133,6 +149,7 @@ pub struct EncFs {
     pub root: PathBuf,
     pub cipher: Box<dyn Cipher>,
     handles: Mutex<HashMap<u64, Arc<FileHandle>>>,
+    directory_handles: Mutex<HashMap<u64, Arc<DirectoryHandle>>>,
     next_fh: AtomicU64,
     pub config: crate::config::EncfsConfig,
     /// Reject all mutating operations with EROFS. Enforced at the filesystem
@@ -147,6 +164,7 @@ impl EncFs {
             root,
             cipher,
             handles: Mutex::new(HashMap::new()),
+            directory_handles: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
             config,
             read_only: false,
@@ -160,6 +178,14 @@ impl EncFs {
 
     fn handles_guard(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<FileHandle>>> {
         self.handles.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn directory_handles_guard(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<DirectoryHandle>>> {
+        self.directory_handles
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     fn ensure_writable(&self) -> OpResult {
@@ -1234,6 +1260,10 @@ impl EncFs {
             fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
         };
 
+        Ok(self.attr_from_metadata(&metadata))
+    }
+
+    fn attr_from_metadata(&self, metadata: &fs::Metadata) -> FileAttr {
         let mut size = metadata.len();
         // Adjust size for header and MAC
         let header_size = self.config.header_size();
@@ -1247,28 +1277,44 @@ impl EncFs {
             );
         }
 
-        Ok(file_attr_from_metadata(&metadata, size))
+        file_attr_from_metadata(metadata, size)
     }
 
-    fn readdir_impl(
-        &self,
-        path: &Path,
-    ) -> Result<Vec<(std::ffi::OsString, FileType)>, libc::c_int> {
-        debug!("readdir: {:?}", path);
+    fn directory_snapshot(&self, path: &Path) -> Result<DirectoryHandle, libc::c_int> {
         let (real_path, dir_iv) = self.encrypt_path(path)?;
 
-        let entries = fs::read_dir(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let entries =
+            fs::read_dir(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+        let directory_metadata =
+            fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let parent = path.parent().unwrap_or(path);
+        let parent_attr = self.attr_for_path(Some(parent), None)?;
 
         // Rust's fs::read_dir doesn't include . and .. entries, so add them explicitly
         let mut result = vec![
-            (OsStr::new(".").to_os_string(), FileType::Directory),
-            (OsStr::new("..").to_os_string(), FileType::Directory),
+            DirectorySnapshotEntry {
+                name: OsString::from("."),
+                kind: FileType::Directory,
+                attr: self.attr_from_metadata(&directory_metadata),
+            },
+            DirectorySnapshotEntry {
+                name: OsString::from(".."),
+                kind: FileType::Directory,
+                attr: parent_attr,
+            },
         ];
 
         for entry in entries {
             let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             let file_name = entry.file_name();
-            let name_str = file_name.to_str().ok_or(libc::EILSEQ)?;
+            let Some(name_str) = file_name.to_str() else {
+                warn!(
+                    "Skipping non-UTF-8 backing filename {:?} while opening {:?}",
+                    file_name, path
+                );
+                continue;
+            };
 
             // Skip filenames starting with ".", since it isn't a valid encrypted filename.
             // Allows skipping over config files.
@@ -1278,13 +1324,13 @@ impl EncFs {
 
             match self.cipher.decrypt_filename(name_str, dir_iv) {
                 Ok((decrypted_name, _)) => {
-                    let metadata = entry
-                        .metadata()
+                    let metadata = fs::symlink_metadata(entry.path())
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    result.push((
-                        OsStr::from_bytes(&decrypted_name).to_os_string(),
-                        file_type_from_metadata(&metadata),
-                    ));
+                    result.push(DirectorySnapshotEntry {
+                        name: OsStr::from_bytes(&decrypted_name).to_os_string(),
+                        kind: file_type_from_metadata(&metadata),
+                        attr: self.attr_from_metadata(&metadata),
+                    });
                 }
                 Err(e) => {
                     warn!("Failed to decrypt filename {}: {}", name_str, e);
@@ -1292,7 +1338,7 @@ impl EncFs {
             }
         }
 
-        Ok(result)
+        Ok(DirectoryHandle { entries: result })
     }
 
     fn open_impl(&self, path: &Path, flags: u32) -> Result<u64, libc::c_int> {
@@ -2150,7 +2196,9 @@ impl rfuse3::path::PathFilesystem for EncFs {
 
     async fn opendir(&self, _req: Request, path: &OsStr, _flags: u32) -> FuseResult<ReplyOpen> {
         debug!("opendir: {:?}", path);
+        let handle = Arc::new(self.directory_snapshot(Path::new(path))?);
         let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
+        self.directory_handles_guard().insert(fh, handle);
         Ok(ReplyOpen { fh, flags: 0 })
     }
 
@@ -2162,32 +2210,35 @@ impl rfuse3::path::PathFilesystem for EncFs {
         _flags: u32,
     ) -> FuseResult<()> {
         debug!("releasedir: fh={}", fh);
+        self.directory_handles_guard().remove(&fh);
         Ok(())
     }
 
     async fn readdir<'a>(
         &'a self,
         _req: Request,
-        path: &'a OsStr,
-        _fh: u64,
+        _path: &'a OsStr,
+        fh: u64,
         offset: i64,
     ) -> FuseResult<ReplyDirectory<impl Stream<Item = FuseResult<DirectoryEntry>> + Send + 'a>>
     {
-        let entries = self.readdir_impl(Path::new(path))?;
+        let handle = self
+            .directory_handles_guard()
+            .get(&fh)
+            .cloned()
+            .ok_or(libc::EBADF)?;
+        let start = usize::try_from(offset.max(0)).unwrap_or(usize::MAX);
 
         // The kernel may issue multiple READDIR calls, resuming at `offset`;
         // each entry's offset field is the offset of the *next* entry.
-        let entries = entries
-            .into_iter()
-            .enumerate()
-            .skip(offset.max(0) as usize)
-            .map(|(i, (name, kind))| {
-                Ok(DirectoryEntry {
-                    kind,
-                    name,
-                    offset: i as i64 + 1,
-                })
-            });
+        let entries = (start..handle.entries.len()).map(move |i| {
+            let entry = &handle.entries[i];
+            Ok(DirectoryEntry {
+                kind: entry.kind,
+                name: entry.name.clone(),
+                offset: i as i64 + 1,
+            })
+        });
 
         Ok(ReplyDirectory {
             entries: stream::iter(entries),
@@ -2197,44 +2248,34 @@ impl rfuse3::path::PathFilesystem for EncFs {
     async fn readdirplus<'a>(
         &'a self,
         _req: Request,
-        path: &'a OsStr,
-        _fh: u64,
+        _path: &'a OsStr,
+        fh: u64,
         offset: u64,
         _lock_owner: u64,
     ) -> FuseResult<
         ReplyDirectoryPlus<impl Stream<Item = FuseResult<DirectoryEntryPlus>> + Send + 'a>,
     > {
-        let dir = Path::new(path);
-        debug!("readdirplus: {:?} offset={}", dir, offset);
-        let entries = self.readdir_impl(dir)?;
+        debug!("readdirplus: fh={} offset={}", fh, offset);
+        let handle = self
+            .directory_handles_guard()
+            .get(&fh)
+            .cloned()
+            .ok_or(libc::EBADF)?;
+        let start = usize::try_from(offset).unwrap_or(usize::MAX);
 
         // Same offset semantics as readdir; attrs are filled so the kernel can
         // skip separate lookup/getattr calls (FUSE_READDIRPLUS / AUTO).
-        let entries = entries
-            .into_iter()
-            .enumerate()
-            .skip(offset as usize)
-            .map(|(i, (name, kind))| {
-                let entry_path = if name.as_os_str() == "." {
-                    dir.to_path_buf()
-                } else if name.as_os_str() == ".." {
-                    dir.parent()
-                        .filter(|p| !p.as_os_str().is_empty())
-                        .unwrap_or(dir)
-                        .to_path_buf()
-                } else {
-                    dir.join(&name)
-                };
-                let attr = self.attr_for_path(Some(&entry_path), None)?;
-                Ok(DirectoryEntryPlus {
-                    kind,
-                    name,
-                    offset: i as i64 + 1,
-                    attr,
-                    entry_ttl: ATTR_TTL,
-                    attr_ttl: ATTR_TTL,
-                })
-            });
+        let entries = (start..handle.entries.len()).map(move |i| {
+            let entry = &handle.entries[i];
+            Ok(DirectoryEntryPlus {
+                kind: entry.kind,
+                name: entry.name.clone(),
+                offset: i as i64 + 1,
+                attr: entry.attr,
+                entry_ttl: ATTR_TTL,
+                attr_ttl: ATTR_TTL,
+            })
+        });
 
         Ok(ReplyDirectoryPlus {
             entries: stream::iter(entries),

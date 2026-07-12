@@ -71,8 +71,13 @@ async fn test_symlink_type() {
     );
 
     // Check readdir
+    let fh = fs
+        .opendir(req, parent.as_os_str(), 0)
+        .await
+        .expect("opendir failed")
+        .fh;
     let reply = fs
-        .readdir(req, parent.as_os_str(), 0, 0)
+        .readdir(req, parent.as_os_str(), fh, 0)
         .await
         .expect("readdir failed");
     let entries_stream = reply.entries;
