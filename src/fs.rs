@@ -10,8 +10,9 @@ use libc;
 use log::{debug, error, warn};
 use rfuse3::path::Request;
 use rfuse3::path::reply::{
-    DirectoryEntry, FileAttr, ReplyAttr, ReplyCreated, ReplyData, ReplyDirectory, ReplyEntry,
-    ReplyInit, ReplyOpen, ReplyStatFs, ReplyWrite, ReplyXAttr,
+    DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyCreated, ReplyData,
+    ReplyDirectory, ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyOpen, ReplyStatFs, ReplyWrite,
+    ReplyXAttr,
 };
 use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
@@ -2189,6 +2190,53 @@ impl rfuse3::path::PathFilesystem for EncFs {
             });
 
         Ok(ReplyDirectory {
+            entries: stream::iter(entries),
+        })
+    }
+
+    async fn readdirplus<'a>(
+        &'a self,
+        _req: Request,
+        path: &'a OsStr,
+        _fh: u64,
+        offset: u64,
+        _lock_owner: u64,
+    ) -> FuseResult<
+        ReplyDirectoryPlus<impl Stream<Item = FuseResult<DirectoryEntryPlus>> + Send + 'a>,
+    > {
+        let dir = Path::new(path);
+        debug!("readdirplus: {:?} offset={}", dir, offset);
+        let entries = self.readdir_impl(dir)?;
+
+        // Same offset semantics as readdir; attrs are filled so the kernel can
+        // skip separate lookup/getattr calls (FUSE_READDIRPLUS / AUTO).
+        let entries = entries
+            .into_iter()
+            .enumerate()
+            .skip(offset as usize)
+            .map(|(i, (name, kind))| {
+                let entry_path = if name.as_os_str() == "." {
+                    dir.to_path_buf()
+                } else if name.as_os_str() == ".." {
+                    dir.parent()
+                        .filter(|p| !p.as_os_str().is_empty())
+                        .unwrap_or(dir)
+                        .to_path_buf()
+                } else {
+                    dir.join(&name)
+                };
+                let attr = self.attr_for_path(Some(&entry_path), None)?;
+                Ok(DirectoryEntryPlus {
+                    kind,
+                    name,
+                    offset: i as i64 + 1,
+                    attr,
+                    entry_ttl: ATTR_TTL,
+                    attr_ttl: ATTR_TTL,
+                })
+            });
+
+        Ok(ReplyDirectoryPlus {
             entries: stream::iter(entries),
         })
     }

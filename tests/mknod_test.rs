@@ -145,3 +145,57 @@ async fn test_mknod_fifo_readdir_reports_named_pipe() {
 
     fs::remove_dir_all(&tmp).ok();
 }
+
+#[tokio::test]
+async fn test_readdirplus_returns_entries_with_attrs() {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let tmp = std::env::temp_dir().join("encfs_readdirplus_test");
+    if tmp.exists() {
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+    fs::create_dir(&tmp).unwrap();
+
+    let fs = setup_fs(&tmp);
+    let r = req();
+
+    let parent = PathBuf::from("");
+    fs.mknod(
+        r,
+        parent.as_os_str(),
+        OsStr::new("pipe"),
+        S_IFIFO | 0o600,
+        0,
+    )
+    .await
+    .expect("mknod FIFO failed");
+
+    let reply = fs
+        .readdirplus(r, parent.as_os_str(), 0, 0, 0)
+        .await
+        .expect("readdirplus failed");
+    let entries_stream = reply.entries;
+    futures_util::pin_mut!(entries_stream);
+    let mut entries = Vec::new();
+    while let Some(entry) = entries_stream.next().await {
+        entries.push(entry.expect("readdirplus entry error"));
+    }
+
+    let pipe_entry = entries
+        .iter()
+        .find(|e| e.name.as_os_str() == OsStr::new("pipe"))
+        .expect("readdirplus should list 'pipe'");
+    assert_eq!(pipe_entry.kind, FileType::NamedPipe);
+    assert_eq!(pipe_entry.attr.kind, FileType::NamedPipe);
+    assert!(
+        entries.iter().any(|e| e.name.as_os_str() == OsStr::new(".")),
+        "readdirplus should include '.'"
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.name.as_os_str() == OsStr::new("..")),
+        "readdirplus should include '..'"
+    );
+
+    fs::remove_dir_all(&tmp).ok();
+}

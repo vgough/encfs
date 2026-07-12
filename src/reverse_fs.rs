@@ -8,8 +8,8 @@ use libc;
 use log::{debug, warn};
 use rfuse3::path::Request;
 use rfuse3::path::reply::{
-    DirectoryEntry, FileAttr, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, ReplyInit,
-    ReplyOpen, ReplyStatFs, ReplyXAttr,
+    DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyData, ReplyDirectory,
+    ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyOpen, ReplyStatFs, ReplyXAttr,
 };
 use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
@@ -223,6 +223,61 @@ impl ReverseFs {
 
         Ok(file_attr_from_metadata(&metadata, reported_size))
     }
+
+    /// List encrypted directory entries for a FUSE path (including `.` / `..`
+    /// and the virtual root config file).
+    fn readdir_entries(
+        &self,
+        path: &Path,
+    ) -> Result<Vec<(std::ffi::OsString, FileType)>, libc::c_int> {
+        let (source_dir, dir_iv) = self.resolve_source_path(path)?;
+
+        let read_dir =
+            std::fs::read_dir(&source_dir).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+        let mut result = vec![
+            (OsStr::new(".").to_os_string(), FileType::Directory),
+            (OsStr::new("..").to_os_string(), FileType::Directory),
+        ];
+
+        for entry in read_dir {
+            let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            let file_name = entry.file_name();
+            let name_bytes = file_name.as_bytes();
+
+            // Skip dot-files: config files (.encfs6.xml, .encfs7) and hidden files
+            if name_bytes.starts_with(b".") {
+                continue;
+            }
+
+            match self.cipher.encrypt_filename(name_bytes, dir_iv) {
+                Ok((encrypted_name, _)) => {
+                    let metadata = entry
+                        .metadata()
+                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                    result.push((
+                        OsStr::new(&encrypted_name).to_os_string(),
+                        file_type_from_metadata(&metadata),
+                    ));
+                }
+                Err(e) => {
+                    warn!(
+                        "ReverseFs::readdir: failed to encrypt {:?}: {}",
+                        file_name, e
+                    );
+                }
+            }
+        }
+
+        if path == Path::new("/") {
+            result.push((
+                OsStr::new(CONFIG_FILE_NAME).to_os_string(),
+                FileType::RegularFile,
+            ));
+        }
+
+        Ok(result)
+    }
 }
 
 impl rfuse3::path::PathFilesystem for ReverseFs {
@@ -333,51 +388,7 @@ impl rfuse3::path::PathFilesystem for ReverseFs {
     {
         let path = Path::new(path);
         debug!("ReverseFs::readdir {:?} offset={}", path, offset);
-        let (source_dir, dir_iv) = self.resolve_source_path(path)?;
-
-        let read_dir =
-            std::fs::read_dir(&source_dir).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-        let mut result = vec![
-            (OsStr::new(".").to_os_string(), FileType::Directory),
-            (OsStr::new("..").to_os_string(), FileType::Directory),
-        ];
-
-        for entry in read_dir {
-            let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            let file_name = entry.file_name();
-            let name_bytes = file_name.as_bytes();
-
-            // Skip dot-files: config files (.encfs6.xml, .encfs7) and hidden files
-            if name_bytes.starts_with(b".") {
-                continue;
-            }
-
-            match self.cipher.encrypt_filename(name_bytes, dir_iv) {
-                Ok((encrypted_name, _)) => {
-                    let metadata = entry
-                        .metadata()
-                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    result.push((
-                        OsStr::new(&encrypted_name).to_os_string(),
-                        file_type_from_metadata(&metadata),
-                    ));
-                }
-                Err(e) => {
-                    warn!(
-                        "ReverseFs::readdir: failed to encrypt {:?}: {}",
-                        file_name, e
-                    );
-                }
-            }
-        }
-
-        if path == Path::new("/") {
-            result.push((
-                OsStr::new(CONFIG_FILE_NAME).to_os_string(),
-                FileType::RegularFile,
-            ));
-        }
+        let result = self.readdir_entries(path)?;
 
         // The kernel may issue multiple READDIR calls, resuming at `offset`;
         // each entry's offset field is the offset of the *next* entry.
@@ -394,6 +405,51 @@ impl rfuse3::path::PathFilesystem for ReverseFs {
             });
 
         Ok(ReplyDirectory {
+            entries: stream::iter(entries),
+        })
+    }
+
+    async fn readdirplus<'a>(
+        &'a self,
+        _req: Request,
+        path: &'a OsStr,
+        _fh: u64,
+        offset: u64,
+        _lock_owner: u64,
+    ) -> FuseResult<
+        ReplyDirectoryPlus<impl Stream<Item = FuseResult<DirectoryEntryPlus>> + Send + 'a>,
+    > {
+        let dir = Path::new(path);
+        debug!("ReverseFs::readdirplus {:?} offset={}", dir, offset);
+        let result = self.readdir_entries(dir)?;
+
+        let entries = result
+            .into_iter()
+            .enumerate()
+            .skip(offset as usize)
+            .map(|(i, (name, kind))| {
+                let entry_path = if name.as_os_str() == "." {
+                    dir.to_path_buf()
+                } else if name.as_os_str() == ".." {
+                    dir.parent()
+                        .filter(|p| !p.as_os_str().is_empty())
+                        .unwrap_or(dir)
+                        .to_path_buf()
+                } else {
+                    dir.join(&name)
+                };
+                let attr = self.attr_for_fuse_path(&entry_path)?;
+                Ok(DirectoryEntryPlus {
+                    kind,
+                    name,
+                    offset: i as i64 + 1,
+                    attr,
+                    entry_ttl: ATTR_TTL,
+                    attr_ttl: ATTR_TTL,
+                })
+            });
+
+        Ok(ReplyDirectoryPlus {
             entries: stream::iter(entries),
         })
     }
