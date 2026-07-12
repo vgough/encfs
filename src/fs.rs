@@ -11,8 +11,8 @@ use log::{debug, error, warn};
 use rfuse3::path::Request;
 use rfuse3::path::reply::{
     DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyCreated, ReplyData,
-    ReplyDirectory, ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyOpen, ReplyStatFs, ReplyWrite,
-    ReplyXAttr,
+    ReplyDirectory, ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyLock, ReplyOpen, ReplyStatFs,
+    ReplyWrite, ReplyXAttr,
 };
 use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
@@ -2286,6 +2286,44 @@ impl rfuse3::path::PathFilesystem for EncFs {
     ) -> FuseResult<ReplyWrite> {
         let written = self.write_impl(fh, offset, data)?;
         Ok(ReplyWrite { written })
+    }
+
+    async fn getlk(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        fh: u64,
+        _lock_owner: u64,
+        start: u64,
+        end: u64,
+        r#type: u32,
+        pid: u32,
+    ) -> FuseResult<ReplyLock> {
+        let handle = self.handle_for(Some(fh)).ok_or(libc::ESTALE)?;
+        Ok(crate::file_lock::getlk(
+            handle.file.as_raw_fd(),
+            start,
+            end,
+            r#type,
+            pid,
+        )?)
+    }
+
+    async fn setlk(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        fh: u64,
+        _lock_owner: u64,
+        start: u64,
+        end: u64,
+        r#type: u32,
+        pid: u32,
+        block: bool,
+    ) -> FuseResult<()> {
+        let handle = self.handle_for(Some(fh)).ok_or(libc::ESTALE)?;
+        crate::file_lock::setlk(handle.file.as_raw_fd(), start, end, r#type, pid, block)?;
+        Ok(())
     }
 
     async fn create(

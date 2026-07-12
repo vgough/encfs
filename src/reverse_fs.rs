@@ -9,12 +9,13 @@ use log::{debug, warn};
 use rfuse3::path::Request;
 use rfuse3::path::reply::{
     DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyData, ReplyDirectory,
-    ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyOpen, ReplyStatFs, ReplyXAttr,
+    ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyLock, ReplyOpen, ReplyStatFs, ReplyXAttr,
 };
 use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
+use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
@@ -548,6 +549,50 @@ impl rfuse3::path::PathFilesystem for ReverseFs {
                 })
             }
         }
+    }
+
+    async fn getlk(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        fh: u64,
+        _lock_owner: u64,
+        start: u64,
+        end: u64,
+        r#type: u32,
+        pid: u32,
+    ) -> FuseResult<ReplyLock> {
+        let handle = self.handles_guard().get(&fh).cloned().ok_or(libc::ESTALE)?;
+        let ReverseHandle::File { file, .. } = handle.as_ref() else {
+            return Err(Errno::from(libc::ENOSYS));
+        };
+        Ok(crate::file_lock::getlk(
+            file.as_raw_fd(),
+            start,
+            end,
+            r#type,
+            pid,
+        )?)
+    }
+
+    async fn setlk(
+        &self,
+        _req: Request,
+        _path: Option<&OsStr>,
+        fh: u64,
+        _lock_owner: u64,
+        start: u64,
+        end: u64,
+        r#type: u32,
+        pid: u32,
+        block: bool,
+    ) -> FuseResult<()> {
+        let handle = self.handles_guard().get(&fh).cloned().ok_or(libc::ESTALE)?;
+        let ReverseHandle::File { file, .. } = handle.as_ref() else {
+            return Err(Errno::from(libc::ENOSYS));
+        };
+        crate::file_lock::setlk(file.as_raw_fd(), start, end, r#type, pid, block)?;
+        Ok(())
     }
 
     async fn readlink(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyData> {

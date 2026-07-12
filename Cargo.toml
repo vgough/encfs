@@ -27,7 +27,7 @@ daemonize = "0.5"
 chrono = "0.4"
 clap = { version = "4.6.1", features = ["derive"] }
 env_logger = "0.11.10"
-rfuse3 = "0.0.9"
+rfuse3 = { version = "0.0.9", features = ["file-lock"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "signal", "macros"] }
 futures-util = "0.3"
 bytes = "1"
