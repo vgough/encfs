@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use bytes::Bytes;
-use futures_util::lock::Mutex as AsyncMutex;
 use futures_util::stream::{self, Stream, StreamExt};
 
 use super::inode_generator::InodeGenerator;
@@ -28,6 +27,121 @@ struct Name {
 impl Name {
     fn new(parent: Inode, name: OsString) -> Self {
         Self { parent, name }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn name(value: &str) -> Name {
+        Name::new(ROOT_INODE, OsString::from(value))
+    }
+
+    #[test]
+    fn rename_preserves_inode_and_lookup_references() {
+        let manager = InodeNameManager::new();
+        let old_name = name("old");
+        let new_name = name("new");
+        let inode = manager.lookup_inode(old_name.clone());
+        manager.get_or_insert_inode(name("unrelated"));
+
+        assert_eq!(manager.rename(&old_name, new_name.clone()), inode);
+        assert_eq!(manager.inode_for_name(&old_name), None);
+        assert_eq!(manager.inode_for_name(&new_name), Some(inode));
+        assert_eq!(manager.lookup_count(inode), Some(1));
+        assert_eq!(
+            manager.get_absolute_path(inode),
+            Some(PathBuf::from("/new"))
+        );
+    }
+
+    #[test]
+    fn rename_overwrite_retires_destination_only_after_forget() {
+        let manager = InodeNameManager::new();
+        let source_name = name("source");
+        let destination_name = name("destination");
+        let source_inode = manager.lookup_inode(source_name.clone());
+        let destination_inode = manager.lookup_inode(destination_name.clone());
+
+        assert_eq!(
+            manager.rename(&source_name, destination_name.clone()),
+            source_inode
+        );
+        assert_eq!(
+            manager.inode_for_name(&destination_name),
+            Some(source_inode)
+        );
+        assert!(manager.has_inode(destination_inode));
+        assert_eq!(manager.get_absolute_path(destination_inode), None);
+        manager.forget(destination_inode, 1);
+        assert!(!manager.has_inode(destination_inode));
+    }
+
+    #[test]
+    fn hard_link_adds_a_name_to_the_existing_inode() {
+        let manager = InodeNameManager::new();
+        let source_name = name("source");
+        let link_name = name("link");
+        let inode = manager.lookup_inode(source_name);
+
+        assert_eq!(manager.add_link(inode, link_name.clone()), Some(inode));
+        assert_eq!(manager.inode_for_name(&link_name), Some(inode));
+        assert_eq!(manager.lookup_count(inode), Some(2));
+    }
+
+    #[test]
+    fn rename_between_hard_links_is_a_noop() {
+        let manager = InodeNameManager::new();
+        let source_name = name("source");
+        let link_name = name("link");
+        let inode = manager.lookup_inode(source_name.clone());
+        manager.add_link(inode, link_name.clone());
+
+        assert_eq!(manager.rename(&source_name, link_name.clone()), inode);
+        assert_eq!(manager.inode_for_name(&source_name), Some(inode));
+        assert_eq!(manager.inode_for_name(&link_name), Some(inode));
+    }
+
+    #[test]
+    fn unlinked_inode_waits_for_all_forget_references() {
+        let manager = InodeNameManager::new();
+        let file_name = name("file");
+        let inode = manager.lookup_inode(file_name.clone());
+        assert_eq!(manager.lookup_inode(file_name.clone()), inode);
+        assert_eq!(manager.lookup_count(inode), Some(2));
+
+        manager.remove_name(&file_name);
+        assert!(manager.has_inode(inode));
+        assert_eq!(manager.get_absolute_path(inode), None);
+        manager.forget(inode, 1);
+        assert_eq!(manager.lookup_count(inode), Some(1));
+        manager.forget(inode, 1);
+        assert!(!manager.has_inode(inode));
+    }
+
+    #[test]
+    fn forget_keeps_a_still_linked_name_stable() {
+        let manager = InodeNameManager::new();
+        let file_name = name("file");
+        let inode = manager.lookup_inode(file_name.clone());
+
+        manager.forget(inode, 1);
+        assert_eq!(manager.lookup_count(inode), Some(0));
+        assert_eq!(manager.inode_for_name(&file_name), Some(inode));
+        assert_eq!(manager.lookup_inode(file_name), inode);
+    }
+
+    #[test]
+    fn retired_inode_number_is_not_reused() {
+        let manager = InodeNameManager::new();
+        let old_name = name("old");
+        let old_inode = manager.lookup_inode(old_name.clone());
+        manager.remove_name(&old_name);
+        manager.forget(old_inode, 1);
+
+        let new_inode = manager.lookup_inode(name("new"));
+        assert_ne!(new_inode, old_inode);
     }
 }
 
@@ -65,6 +179,8 @@ impl InodeNameManager {
             root_inode,
             InodeRecord {
                 names: HashSet::from_iter([Name::new(root_inode, OsString::from("/"))]),
+                // The FUSE root is a permanent mount anchor, rather than a
+                // reference-counted child node; model its lifetime as infinite.
                 lookup_count: u64::MAX,
             },
         );
@@ -184,8 +300,6 @@ impl InodeNameManager {
         let source_inode = state.name_to_inode.get(old_name).copied();
         if let Some(destination_inode) = state.name_to_inode.get(&new_name).copied() {
             if Some(destination_inode) == source_inode {
-                // POSIX rename is a no-op when both names already refer to the
-                // same object (for example, two hard links).
                 return destination_inode;
             }
             Self::remove_name_locked(&mut state, &new_name);
@@ -278,9 +392,6 @@ impl InodeNameManager {
 pub struct InodePathBridge<FS> {
     path_filesystem: FS,
     inode_name_manager: InodeNameManager,
-    /// Keeps backing namespace changes and the corresponding inode-map update
-    /// in one ordered critical section.
-    namespace_lock: AsyncMutex<()>,
 }
 
 impl<FS> InodePathBridge<FS> {
@@ -288,7 +399,6 @@ impl<FS> InodePathBridge<FS> {
         Self {
             path_filesystem,
             inode_name_manager: InodeNameManager::new(),
-            namespace_lock: AsyncMutex::new(()),
         }
     }
 }
@@ -313,7 +423,6 @@ where
     }
 
     async fn lookup(&self, req: Request, parent: u64, name: &OsStr) -> Result<ReplyEntry> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -347,7 +456,6 @@ where
     }
 
     async fn forget(&self, req: Request, inode: u64, nlookup: u64) {
-        let _namespace_guard = self.namespace_lock.lock().await;
         if let Some(path) = self.inode_name_manager.get_absolute_path(inode) {
             self.path_filesystem
                 .forget(req, path.as_ref(), nlookup)
@@ -412,7 +520,6 @@ where
         name: &OsStr,
         link: &OsStr,
     ) -> Result<ReplyEntry> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -453,7 +560,6 @@ where
         mode: u32,
         rdev: u32,
     ) -> Result<ReplyEntry> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -494,7 +600,6 @@ where
         mode: u32,
         umask: u32,
     ) -> Result<ReplyEntry> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -528,7 +633,6 @@ where
     }
 
     async fn unlink(&self, req: Request, parent: u64, name: &OsStr) -> Result<()> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -560,7 +664,6 @@ where
     }
 
     async fn rmdir(&self, req: Request, parent: u64, name: &OsStr) -> Result<()> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -599,7 +702,6 @@ where
         new_parent: u64,
         new_name: &OsStr,
     ) -> Result<()> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let origin_parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -634,7 +736,6 @@ where
         new_parent: u64,
         new_name: &OsStr,
     ) -> Result<ReplyEntry> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(inode)
@@ -669,7 +770,6 @@ where
     }
 
     async fn open(&self, req: Request, inode: u64, flags: u32) -> Result<ReplyOpen> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let path = self
             .inode_name_manager
             .get_absolute_path(inode)
@@ -831,7 +931,6 @@ where
     }
 
     async fn opendir(&self, req: Request, inode: u64, flags: u32) -> Result<ReplyOpen> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let path = self
             .inode_name_manager
             .get_absolute_path(inode)
@@ -849,7 +948,6 @@ where
         fh: u64,
         offset: i64,
     ) -> Result<ReplyDirectory<impl Stream<Item = Result<DirectoryEntry>> + Send + '_>> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -868,6 +966,7 @@ where
 
         while let Some(entry) = entries.next().await {
             let entry = entry?;
+
             let inode = if entry.name == OsStr::new(".") {
                 parent
             } else if entry.name == OsStr::new("..") {
@@ -991,7 +1090,6 @@ where
         mode: u32,
         flags: u32,
     ) -> Result<ReplyCreated> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -1080,7 +1178,6 @@ where
     }
 
     async fn batch_forget(&self, req: Request, inodes: &[(u64, u64)]) {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let paths = inodes
             .iter()
             .copied()
@@ -1127,7 +1224,6 @@ where
         lock_owner: u64,
     ) -> Result<ReplyDirectoryPlus<impl Stream<Item = Result<DirectoryEntryPlus>> + Send + '_>>
     {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -1146,6 +1242,7 @@ where
 
         while let Some(entry) = entries.next().await {
             let entry = entry?;
+
             let inode = if entry.name == OsStr::new(".") {
                 parent
             } else if entry.name == OsStr::new("..") {
@@ -1186,7 +1283,6 @@ where
         new_name: &OsStr,
         flags: u32,
     ) -> Result<()> {
-        let _namespace_guard = self.namespace_lock.lock().await;
         let origin_parent_path = self
             .inode_name_manager
             .get_absolute_path(parent)
@@ -1265,124 +1361,5 @@ where
                 flags,
             )
             .await
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn name(value: &str) -> Name {
-        Name::new(ROOT_INODE, OsString::from(value))
-    }
-
-    #[test]
-    fn rename_preserves_inode_and_lookup_references() {
-        let manager = InodeNameManager::new();
-        let old_name = name("old");
-        let new_name = name("new");
-        let inode = manager.lookup_inode(old_name.clone());
-
-        // An unrelated allocation must not affect rename identity.
-        manager.get_or_insert_inode(name("unrelated"));
-
-        assert_eq!(manager.rename(&old_name, new_name.clone()), inode);
-        assert_eq!(manager.inode_for_name(&old_name), None);
-        assert_eq!(manager.inode_for_name(&new_name), Some(inode));
-        assert_eq!(manager.lookup_count(inode), Some(1));
-        assert_eq!(
-            manager.get_absolute_path(inode),
-            Some(PathBuf::from("/new"))
-        );
-    }
-
-    #[test]
-    fn rename_overwrite_retires_destination_only_after_forget() {
-        let manager = InodeNameManager::new();
-        let source_name = name("source");
-        let destination_name = name("destination");
-        let source_inode = manager.lookup_inode(source_name.clone());
-        let destination_inode = manager.lookup_inode(destination_name.clone());
-
-        assert_eq!(
-            manager.rename(&source_name, destination_name.clone()),
-            source_inode
-        );
-        assert_eq!(
-            manager.inode_for_name(&destination_name),
-            Some(source_inode)
-        );
-        assert!(manager.has_inode(destination_inode));
-        assert_eq!(manager.get_absolute_path(destination_inode), None);
-
-        manager.forget(destination_inode, 1);
-        assert!(!manager.has_inode(destination_inode));
-    }
-
-    #[test]
-    fn hard_link_adds_a_name_to_the_existing_inode() {
-        let manager = InodeNameManager::new();
-        let source_name = name("source");
-        let link_name = name("link");
-        let inode = manager.lookup_inode(source_name);
-
-        assert_eq!(manager.add_link(inode, link_name.clone()), Some(inode));
-        assert_eq!(manager.inode_for_name(&link_name), Some(inode));
-        assert_eq!(manager.lookup_count(inode), Some(2));
-    }
-
-    #[test]
-    fn rename_between_hard_links_is_a_noop() {
-        let manager = InodeNameManager::new();
-        let source_name = name("source");
-        let link_name = name("link");
-        let inode = manager.lookup_inode(source_name.clone());
-        manager.add_link(inode, link_name.clone());
-
-        assert_eq!(manager.rename(&source_name, link_name.clone()), inode);
-        assert_eq!(manager.inode_for_name(&source_name), Some(inode));
-        assert_eq!(manager.inode_for_name(&link_name), Some(inode));
-    }
-
-    #[test]
-    fn unlinked_inode_waits_for_all_forget_references() {
-        let manager = InodeNameManager::new();
-        let file_name = name("file");
-        let inode = manager.lookup_inode(file_name.clone());
-        assert_eq!(manager.lookup_inode(file_name.clone()), inode);
-        assert_eq!(manager.lookup_count(inode), Some(2));
-
-        manager.remove_name(&file_name);
-        assert!(manager.has_inode(inode));
-        assert_eq!(manager.get_absolute_path(inode), None);
-
-        manager.forget(inode, 1);
-        assert_eq!(manager.lookup_count(inode), Some(1));
-        manager.forget(inode, 1);
-        assert!(!manager.has_inode(inode));
-    }
-
-    #[test]
-    fn forget_keeps_a_still_linked_name_stable() {
-        let manager = InodeNameManager::new();
-        let file_name = name("file");
-        let inode = manager.lookup_inode(file_name.clone());
-
-        manager.forget(inode, 1);
-        assert_eq!(manager.lookup_count(inode), Some(0));
-        assert_eq!(manager.inode_for_name(&file_name), Some(inode));
-        assert_eq!(manager.lookup_inode(file_name), inode);
-    }
-
-    #[test]
-    fn retired_inode_number_is_not_reused() {
-        let manager = InodeNameManager::new();
-        let old_name = name("old");
-        let old_inode = manager.lookup_inode(old_name.clone());
-        manager.remove_name(&old_name);
-        manager.forget(old_inode, 1);
-
-        let new_inode = manager.lookup_inode(name("new"));
-        assert_ne!(new_inode, old_inode);
     }
 }
