@@ -1099,9 +1099,6 @@ fn live_cargo_build_with_large_mounted_target_standard() -> Result<()> {
         .arg("--target-dir")
         .arg(&target)
         .env("CARGO_NET_OFFLINE", "true")
-        // This regression targets Cargo's dependency/output directory enumeration. Rustc's
-        // incremental session lifecycle is a separate FUSE behavior and is intentionally omitted.
-        .env("CARGO_INCREMENTAL", "0")
         .output()
         .context("run offline Cargo build with target inside EncFS")?;
     anyhow::ensure!(

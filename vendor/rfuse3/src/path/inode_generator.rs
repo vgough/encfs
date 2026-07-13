@@ -1,28 +1,26 @@
-use slab::Slab;
-
 use crate::Inode;
 
 #[derive(Debug)]
 pub struct InodeGenerator {
-    slab: Slab<()>,
+    next_inode: Inode,
 }
 
 impl InodeGenerator {
     pub fn new() -> Self {
-        let mut slab = Slab::new();
-        // drop 0 key
-        slab.insert(());
-
-        Self { slab }
+        Self { next_inode: 1 }
     }
 
     pub fn allocate_inode(&mut self) -> Inode {
-        self.slab.insert(()) as _
+        let inode = self.next_inode;
+        self.next_inode = self
+            .next_inode
+            .checked_add(1)
+            .expect("FUSE inode number space exhausted");
+        inode
     }
 
-    pub fn release_inode(&mut self, inode: Inode) {
-        if self.slab.contains(inode as _) {
-            self.slab.remove(inode as _);
-        }
-    }
+    /// Node IDs are deliberately not reused during a mount. The kernel may retain
+    /// cached references until a later FORGET, and generation zero cannot safely
+    /// distinguish an eagerly recycled ID from its previous object.
+    pub fn release_inode(&mut self, _inode: Inode) {}
 }
