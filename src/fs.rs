@@ -29,6 +29,13 @@ use std::time::{Duration, SystemTime};
 
 const ATTR_TTL: Duration = Duration::from_secs(1);
 
+/// macOS may add these attributes to files in the encrypted directory. They
+/// are not managed by EncFS and are intentionally omitted from the mounted
+/// filesystem's xattr list.
+fn is_apple_xattr(name: &str) -> bool {
+    name.starts_with("com.apple.")
+}
+
 /// Errors from internal helpers are raw errno values; trait methods convert
 /// them to rfuse3 Errno via `?`.
 type OpResult = Result<(), libc::c_int>;
@@ -1919,7 +1926,9 @@ impl EncFs {
                     } else {
                         // Non-encfs attribute (shouldn't happen if we encrypt all), skip it
                         // or pass through if there are any legacy unencrypted attributes
-                        warn!("Found non-encfs xattr on disk: {}, skipping", name_str);
+                        if !is_apple_xattr(name_str) {
+                            warn!("Found non-encfs xattr on disk: {}, skipping", name_str);
+                        }
                     }
                     current_name.clear();
                 }
@@ -2422,7 +2431,7 @@ impl rfuse3::path::PathFilesystem for EncFs {
 
 #[cfg(test)]
 mod tests {
-    use super::headerless_file_iv;
+    use super::{headerless_file_iv, is_apple_xattr};
 
     #[test]
     fn headerless_files_use_external_iv() {
@@ -2435,5 +2444,12 @@ mod tests {
     #[test]
     fn headered_files_ignore_external_iv() {
         assert_eq!(headerless_file_iv(8, 0x1234_5678_9abc_def0), 0);
+    }
+
+    #[test]
+    fn recognizes_apple_xattrs() {
+        assert!(is_apple_xattr("com.apple.provenance"));
+        assert!(!is_apple_xattr("user.encfs.attribute"));
+        assert!(!is_apple_xattr("com.example.attribute"));
     }
 }
