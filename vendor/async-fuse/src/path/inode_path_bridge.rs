@@ -1,14 +1,11 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::fmt::{self, Debug, Formatter};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use bytes::Bytes;
-use dashmap::mapref::entry::Entry;
-use dashmap::DashMap;
 use futures_util::stream::{self, Stream, StreamExt};
-use tracing::warn;
 
 use super::inode_generator::InodeGenerator;
 use super::path_filesystem::PathFilesystem;
@@ -33,16 +30,142 @@ impl Name {
     }
 }
 
-/// High-performance inode-name manager using DashMap for concurrent access.
-/// This replaces the previous RwLock<HashMap> implementation to reduce lock contention.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn name(value: &str) -> Name {
+        Name::new(ROOT_INODE, OsString::from(value))
+    }
+
+    #[test]
+    fn rename_preserves_inode_and_lookup_references() {
+        let manager = InodeNameManager::new();
+        let old_name = name("old");
+        let new_name = name("new");
+        let inode = manager.lookup_inode(old_name.clone());
+        manager.get_or_insert_inode(name("unrelated"));
+
+        assert_eq!(manager.rename(&old_name, new_name.clone()), inode);
+        assert_eq!(manager.inode_for_name(&old_name), None);
+        assert_eq!(manager.inode_for_name(&new_name), Some(inode));
+        assert_eq!(manager.lookup_count(inode), Some(1));
+        assert_eq!(
+            manager.get_absolute_path(inode),
+            Some(PathBuf::from("/new"))
+        );
+    }
+
+    #[test]
+    fn rename_overwrite_retires_destination_only_after_forget() {
+        let manager = InodeNameManager::new();
+        let source_name = name("source");
+        let destination_name = name("destination");
+        let source_inode = manager.lookup_inode(source_name.clone());
+        let destination_inode = manager.lookup_inode(destination_name.clone());
+
+        assert_eq!(
+            manager.rename(&source_name, destination_name.clone()),
+            source_inode
+        );
+        assert_eq!(
+            manager.inode_for_name(&destination_name),
+            Some(source_inode)
+        );
+        assert!(manager.has_inode(destination_inode));
+        assert_eq!(manager.get_absolute_path(destination_inode), None);
+        manager.forget(destination_inode, 1);
+        assert!(!manager.has_inode(destination_inode));
+    }
+
+    #[test]
+    fn hard_link_adds_a_name_to_the_existing_inode() {
+        let manager = InodeNameManager::new();
+        let source_name = name("source");
+        let link_name = name("link");
+        let inode = manager.lookup_inode(source_name);
+
+        assert_eq!(manager.add_link(inode, link_name.clone()), Some(inode));
+        assert_eq!(manager.inode_for_name(&link_name), Some(inode));
+        assert_eq!(manager.lookup_count(inode), Some(2));
+    }
+
+    #[test]
+    fn rename_between_hard_links_is_a_noop() {
+        let manager = InodeNameManager::new();
+        let source_name = name("source");
+        let link_name = name("link");
+        let inode = manager.lookup_inode(source_name.clone());
+        manager.add_link(inode, link_name.clone());
+
+        assert_eq!(manager.rename(&source_name, link_name.clone()), inode);
+        assert_eq!(manager.inode_for_name(&source_name), Some(inode));
+        assert_eq!(manager.inode_for_name(&link_name), Some(inode));
+    }
+
+    #[test]
+    fn unlinked_inode_waits_for_all_forget_references() {
+        let manager = InodeNameManager::new();
+        let file_name = name("file");
+        let inode = manager.lookup_inode(file_name.clone());
+        assert_eq!(manager.lookup_inode(file_name.clone()), inode);
+        assert_eq!(manager.lookup_count(inode), Some(2));
+
+        manager.remove_name(&file_name);
+        assert!(manager.has_inode(inode));
+        assert_eq!(manager.get_absolute_path(inode), None);
+        manager.forget(inode, 1);
+        assert_eq!(manager.lookup_count(inode), Some(1));
+        manager.forget(inode, 1);
+        assert!(!manager.has_inode(inode));
+    }
+
+    #[test]
+    fn forget_keeps_a_still_linked_name_stable() {
+        let manager = InodeNameManager::new();
+        let file_name = name("file");
+        let inode = manager.lookup_inode(file_name.clone());
+
+        manager.forget(inode, 1);
+        assert_eq!(manager.lookup_count(inode), Some(0));
+        assert_eq!(manager.inode_for_name(&file_name), Some(inode));
+        assert_eq!(manager.lookup_inode(file_name), inode);
+    }
+
+    #[test]
+    fn retired_inode_number_is_not_reused() {
+        let manager = InodeNameManager::new();
+        let old_name = name("old");
+        let old_inode = manager.lookup_inode(old_name.clone());
+        manager.remove_name(&old_name);
+        manager.forget(old_inode, 1);
+
+        let new_inode = manager.lookup_inode(name("new"));
+        assert_ne!(new_inode, old_inode);
+    }
+}
+
+#[derive(Debug)]
+struct InodeRecord {
+    names: HashSet<Name>,
+    lookup_count: u64,
+}
+
+#[derive(Debug)]
+struct InodeNameState {
+    inode_to_record: HashMap<Inode, InodeRecord>,
+    name_to_inode: HashMap<Name, Inode>,
+    inode_generator: InodeGenerator,
+}
+
+/// Maintains the kernel-visible node ID namespace.
+///
+/// Both directions live under one mutex so rename/link updates are atomic. In
+/// particular, a node ID must remain attached to the same object until all of
+/// the kernel's lookup references have been forgotten.
 #[derive(Debug)]
 struct InodeNameManager {
-    /// Maps inode -> set of names (supports hard links)
-    inode_to_names: DashMap<Inode, HashSet<Name>>,
-    /// Maps name -> inode for fast lookup
-    name_to_inode: DashMap<Name, Inode>,
-    /// Protected inode allocator
-    inode_generator: Mutex<InodeGenerator>,
+    state: Mutex<InodeNameState>,
 }
 
 impl InodeNameManager {
@@ -51,130 +174,223 @@ impl InodeNameManager {
         let root_inode = generator.allocate_inode();
         assert_eq!(root_inode, ROOT_INODE);
 
-        let inode_to_names = DashMap::new();
-        inode_to_names.insert(
+        let mut inode_to_record = HashMap::new();
+        inode_to_record.insert(
             root_inode,
-            HashSet::from_iter(vec![Name::new(root_inode, OsString::from("/"))]),
+            InodeRecord {
+                names: HashSet::from_iter([Name::new(root_inode, OsString::from("/"))]),
+                // The FUSE root is a permanent mount anchor, rather than a
+                // reference-counted child node; model its lifetime as infinite.
+                lookup_count: u64::MAX,
+            },
         );
 
         Self {
-            inode_to_names,
-            name_to_inode: DashMap::new(),
-            inode_generator: Mutex::new(generator),
+            state: Mutex::new(InodeNameState {
+                inode_to_record,
+                name_to_inode: HashMap::new(),
+                inode_generator: generator,
+            }),
         }
     }
 
     fn get_absolute_path(&self, inode: Inode) -> Option<PathBuf> {
-        let names = self.inode_to_names.get(&inode)?;
-        let name = names.iter().next().unwrap();
+        let state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        Self::absolute_path_locked(&state, inode, &mut HashSet::new())
+    }
 
+    fn absolute_path_locked(
+        state: &InodeNameState,
+        inode: Inode,
+        visited: &mut HashSet<Inode>,
+    ) -> Option<PathBuf> {
+        if !visited.insert(inode) {
+            return None;
+        }
+        let record = state.inode_to_record.get(&inode)?;
+        let name = record.names.iter().next()?;
         if name.parent == ROOT_INODE {
             Some(PathBuf::from("/").apply(|path| path.push(&name.name)))
         } else {
             Some(
-                self.get_absolute_path(name.parent)?
+                Self::absolute_path_locked(state, name.parent, visited)?
                     .apply(|path| path.push(&name.name)),
             )
         }
     }
 
+    fn retire_if_unlinked_and_forgotten(state: &mut InodeNameState, inode: Inode) {
+        let retire = state
+            .inode_to_record
+            .get(&inode)
+            .is_some_and(|record| record.names.is_empty() && record.lookup_count == 0);
+        if retire {
+            state.inode_to_record.remove(&inode);
+            state.inode_generator.release_inode(inode);
+        }
+    }
+
+    fn remove_name_locked(state: &mut InodeNameState, name: &Name) -> Option<Inode> {
+        let inode = state.name_to_inode.remove(name)?;
+        if let Some(record) = state.inode_to_record.get_mut(&inode) {
+            record.names.remove(name);
+        }
+        Self::retire_if_unlinked_and_forgotten(state, inode);
+        Some(inode)
+    }
+
     fn remove_name(&self, name: &Name) {
-        if let Some((_, inode)) = self.name_to_inode.remove(name) {
-            if let Entry::Occupied(mut entry) = self.inode_to_names.entry(inode) {
-                let names = entry.get_mut();
-                names.remove(name);
-                if names.is_empty() {
-                    entry.remove();
-                    if let Ok(mut gen) = self.inode_generator.lock() {
-                        gen.release_inode(inode);
-                    }
-                }
-            }
-        }
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        Self::remove_name_locked(&mut state, name);
     }
 
-    fn remove_inode(&self, inode: Inode) {
-        if let Some((_, names)) = self.inode_to_names.remove(&inode) {
-            for name in names {
-                self.name_to_inode.remove(&name);
-            }
-        }
-
-        if let Ok(mut gen) = self.inode_generator.lock() {
-            gen.release_inode(inode);
-        }
-    }
-
-    fn contains_name(&self, name: &Name) -> bool {
-        self.name_to_inode.contains_key(name)
-    }
-
-    fn insert_name(&self, name: Name) -> Inode {
-        let inode = self
-            .inode_generator
-            .lock()
-            .unwrap_or_else(|poisoned| {
-                warn!("inode_generator lock was poisoned, recovering");
-                poisoned.into_inner()
-            })
-            .allocate_inode();
-
-        self.name_to_inode.insert(name.clone(), inode);
-
-        let mut names = HashSet::with_capacity(1);
-        names.insert(name);
-
-        self.inode_to_names.insert(inode, names);
-
+    fn allocate_name_locked(state: &mut InodeNameState, name: Name) -> Inode {
+        let inode = state.inode_generator.allocate_inode();
+        state.name_to_inode.insert(name.clone(), inode);
+        state.inode_to_record.insert(
+            inode,
+            InodeRecord {
+                names: HashSet::from_iter([name]),
+                lookup_count: 0,
+            },
+        );
         inode
     }
 
-    /// Get or insert inode for a name atomically
-    fn get_or_insert_inode(&self, name: Name) -> Inode {
-        // Fast path: check if already exists
-        if let Some(inode) = self.name_to_inode.get(&name).map(|r| *r) {
-            return inode;
-        }
-
-        // Slow path: need to insert
-        let inode = self
-            .inode_generator
-            .lock()
-            .unwrap_or_else(|poisoned| {
-                warn!("inode_generator lock was poisoned, recovering");
-                poisoned.into_inner()
-            })
-            .allocate_inode();
-
-        // Use entry API to handle race condition
-        let actual_inode = *self.name_to_inode.entry(name.clone()).or_insert(inode);
-
-        if actual_inode == inode {
-            // We won the race, insert into inode_to_names
-            let mut names = HashSet::with_capacity(1);
-            names.insert(name);
-            self.inode_to_names.insert(inode, names);
+    fn get_or_insert_inode_locked(state: &mut InodeNameState, name: Name) -> Inode {
+        if let Some(inode) = state.name_to_inode.get(&name) {
+            *inode
         } else {
-            // Lost the race, release the allocated inode
-            if let Ok(mut gen) = self.inode_generator.lock() {
-                gen.release_inode(inode);
-            }
+            Self::allocate_name_locked(state, name)
         }
-
-        actual_inode
     }
 
-    /// Get parent inode for a given inode
+    fn get_or_insert_inode(&self, name: Name) -> Inode {
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        Self::get_or_insert_inode_locked(&mut state, name)
+    }
+
+    fn lookup_inode(&self, name: Name) -> Inode {
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        let inode = Self::get_or_insert_inode_locked(&mut state, name);
+        if inode != ROOT_INODE {
+            let record = state
+                .inode_to_record
+                .get_mut(&inode)
+                .expect("name map points to missing inode record");
+            record.lookup_count = record.lookup_count.saturating_add(1);
+        }
+        inode
+    }
+
+    fn forget(&self, inode: Inode, nlookup: u64) {
+        if inode == ROOT_INODE {
+            return;
+        }
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        if let Some(record) = state.inode_to_record.get_mut(&inode) {
+            record.lookup_count = record.lookup_count.saturating_sub(nlookup);
+        }
+        Self::retire_if_unlinked_and_forgotten(&mut state, inode);
+    }
+
+    fn rename(&self, old_name: &Name, new_name: Name) -> Inode {
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+
+        let source_inode = state.name_to_inode.get(old_name).copied();
+        if let Some(destination_inode) = state.name_to_inode.get(&new_name).copied() {
+            if Some(destination_inode) == source_inode {
+                return destination_inode;
+            }
+            Self::remove_name_locked(&mut state, &new_name);
+        }
+
+        let Some(inode) = source_inode else {
+            return Self::get_or_insert_inode_locked(&mut state, new_name);
+        };
+
+        state.name_to_inode.remove(old_name);
+        state.name_to_inode.insert(new_name.clone(), inode);
+        if let Some(record) = state.inode_to_record.get_mut(&inode) {
+            record.names.remove(old_name);
+            record.names.insert(new_name);
+        }
+        inode
+    }
+
+    fn add_link(&self, inode: Inode, new_name: Name) -> Option<Inode> {
+        let mut state = self.state.lock().unwrap_or_else(|err| err.into_inner());
+        if !state.inode_to_record.contains_key(&inode) {
+            return None;
+        }
+        if let Some(destination_inode) = state.name_to_inode.get(&new_name).copied() {
+            if destination_inode != inode {
+                Self::remove_name_locked(&mut state, &new_name);
+            }
+        }
+        state.name_to_inode.insert(new_name.clone(), inode);
+        let record = state
+            .inode_to_record
+            .get_mut(&inode)
+            .expect("checked inode record disappeared");
+        record.names.insert(new_name);
+        record.lookup_count = record.lookup_count.saturating_add(1);
+        Some(inode)
+    }
+
+    fn contains_name(&self, name: &Name) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .name_to_inode
+            .contains_key(name)
+    }
+
     fn get_parent_inode(&self, inode: Inode) -> Option<Inode> {
-        self.inode_to_names
+        self.state
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .inode_to_record
             .get(&inode)
-            .and_then(|names| names.iter().next().map(|n| n.parent))
+            .and_then(|record| record.names.iter().next().map(|name| name.parent))
+    }
+
+    #[cfg(test)]
+    fn lookup_count(&self, inode: Inode) -> Option<u64> {
+        self.state
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .inode_to_record
+            .get(&inode)
+            .map(|record| record.lookup_count)
+    }
+
+    #[cfg(test)]
+    fn inode_for_name(&self, name: &Name) -> Option<Inode> {
+        self.state
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .name_to_inode
+            .get(name)
+            .copied()
+    }
+
+    #[cfg(test)]
+    fn has_inode(&self, inode: Inode) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .inode_to_record
+            .contains_key(&inode)
+    }
+
+    fn insert_name(&self, name: Name) -> Inode {
+        self.get_or_insert_inode(name)
     }
 }
 
 pub struct InodePathBridge<FS> {
     path_filesystem: FS,
-    /// Concurrent inode-name manager using DashMap internally
     inode_name_manager: InodeNameManager,
 }
 
@@ -228,7 +444,7 @@ where
 
             Ok(entry) => {
                 let name = Name::new(parent, name.to_owned());
-                let inode = self.inode_name_manager.get_or_insert_inode(name);
+                let inode = self.inode_name_manager.lookup_inode(name);
 
                 Ok(ReplyEntry {
                     ttl: entry.ttl,
@@ -240,15 +456,12 @@ where
     }
 
     async fn forget(&self, req: Request, inode: u64, nlookup: u64) {
-        // TODO if kernel forget a dir which has children, it may break
-
         if let Some(path) = self.inode_name_manager.get_absolute_path(inode) {
             self.path_filesystem
                 .forget(req, path.as_ref(), nlookup)
                 .await;
-
-            self.inode_name_manager.remove_inode(inode);
         }
+        self.inode_name_manager.forget(inode, nlookup);
     }
 
     async fn getattr(
@@ -328,7 +541,7 @@ where
 
             Ok(entry) => {
                 let name = Name::new(parent, name.to_owned());
-                let inode = self.inode_name_manager.get_or_insert_inode(name);
+                let inode = self.inode_name_manager.lookup_inode(name);
 
                 Ok(ReplyEntry {
                     ttl: entry.ttl,
@@ -368,7 +581,7 @@ where
 
             Ok(entry) => {
                 let name = Name::new(parent, name.to_owned());
-                let inode = self.inode_name_manager.get_or_insert_inode(name);
+                let inode = self.inode_name_manager.lookup_inode(name);
 
                 Ok(ReplyEntry {
                     ttl: entry.ttl,
@@ -408,7 +621,7 @@ where
 
             Ok(entry) => {
                 let name = Name::new(parent, name.to_owned());
-                let inode = self.inode_name_manager.get_or_insert_inode(name);
+                let inode = self.inode_name_manager.lookup_inode(name);
 
                 Ok(ReplyEntry {
                     ttl: entry.ttl,
@@ -509,11 +722,9 @@ where
             )
             .await?;
 
-        self.inode_name_manager
-            .remove_name(&Name::new(parent, name.to_owned()));
-
+        let old_name = Name::new(parent, name.to_owned());
         let new_name = Name::new(new_parent, new_name.to_owned());
-        self.inode_name_manager.get_or_insert_inode(new_name);
+        self.inode_name_manager.rename(&old_name, new_name);
 
         Ok(())
     }
@@ -546,7 +757,10 @@ where
             .await?;
 
         let name = Name::new(new_parent, new_name.to_owned());
-        let inode = self.inode_name_manager.get_or_insert_inode(name);
+        let inode = self
+            .inode_name_manager
+            .add_link(inode, name.clone())
+            .unwrap_or_else(|| self.inode_name_manager.lookup_inode(name));
 
         Ok(ReplyEntry {
             ttl: entry.ttl,
@@ -897,7 +1111,7 @@ where
 
             Ok(created) => {
                 let name = Name::new(parent, name.to_owned());
-                let inode = self.inode_name_manager.get_or_insert_inode(name);
+                let inode = self.inode_name_manager.lookup_inode(name);
 
                 Ok(ReplyCreated {
                     ttl: created.ttl,
@@ -964,8 +1178,6 @@ where
     }
 
     async fn batch_forget(&self, req: Request, inodes: &[(u64, u64)]) {
-        // TODO if kernel forget a dir which has children, it may break
-
         let paths = inodes
             .iter()
             .copied()
@@ -975,10 +1187,9 @@ where
 
         self.path_filesystem.batch_forget(req, &paths).await;
 
-        inodes
-            .iter()
-            .copied()
-            .for_each(|inode| self.inode_name_manager.remove_inode(inode.0));
+        for &(inode, nlookup) in inodes {
+            self.inode_name_manager.forget(inode, nlookup);
+        }
     }
 
     async fn fallocate(
@@ -1040,6 +1251,9 @@ where
                     .unwrap_or(ROOT_INODE)
             } else {
                 let name = Name::new(parent, entry.name.clone());
+                // The raw reply layer may stop before this eagerly collected
+                // entry fits in the kernel buffer. Do not add a lookup count
+                // until the path API can report which entries were emitted.
                 self.inode_name_manager.get_or_insert_inode(name)
             };
 
@@ -1090,11 +1304,9 @@ where
             )
             .await?;
 
-        self.inode_name_manager
-            .remove_name(&Name::new(parent, name.to_owned()));
-
+        let old_name = Name::new(parent, name.to_owned());
         let new_name = Name::new(new_parent, new_name.to_owned());
-        self.inode_name_manager.get_or_insert_inode(new_name);
+        self.inode_name_manager.rename(&old_name, new_name);
 
         Ok(())
     }
