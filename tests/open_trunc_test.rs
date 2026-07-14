@@ -1,9 +1,9 @@
+use asyncfuse::path::PathFilesystem;
+use asyncfuse::path::Request;
 use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder; // Import FileDecoder
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use rfuse3::path::PathFilesystem;
-use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt; // For read_at

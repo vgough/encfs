@@ -1,3 +1,6 @@
+use asyncfuse::FileType;
+use asyncfuse::path::PathFilesystem;
+use asyncfuse::path::Request;
 /// Tests for: File and directory permission handling
 ///
 /// Verifies that mkdir, create (file), and symlink properly respect the mode
@@ -6,9 +9,6 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use rfuse3::FileType;
-use rfuse3::path::PathFilesystem;
-use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::MetadataExt;

@@ -1,3 +1,6 @@
+use asyncfuse::path::PathFilesystem;
+use asyncfuse::path::Request;
+use asyncfuse::path::reply::ReplyXAttr;
 /// Tests for: Extended attribute (xattr) support
 ///
 /// Verifies that xattr operations (set, get, list, remove) work correctly
@@ -6,9 +9,6 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use rfuse3::path::PathFilesystem;
-use rfuse3::path::Request;
-use rfuse3::path::reply::ReplyXAttr;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;

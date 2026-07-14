@@ -1,7 +1,7 @@
-//! Shared helpers for building rfuse3 file attributes from filesystem metadata.
+//! Shared helpers for building asyncfuse file attributes from filesystem metadata.
 
-use rfuse3::FileType;
-use rfuse3::path::reply::FileAttr;
+use asyncfuse::FileType;
+use asyncfuse::path::reply::FileAttr;
 use std::fs::Metadata;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::time::{Duration, SystemTime};
@@ -57,7 +57,7 @@ pub fn file_attr_from_metadata(metadata: &Metadata, size: u64) -> FileAttr {
         crtime: metadata.created().unwrap_or(SystemTime::UNIX_EPOCH),
         kind: file_type_from_metadata(metadata),
         // Mask to permission bits only; the file type is carried in `kind` and
-        // rfuse3 ORs them together when building the kernel reply.
+        // asyncfuse ORs them together when building the kernel reply.
         perm: (metadata.mode() & 0o7777) as u16,
         nlink: metadata.nlink() as u32,
         uid: metadata.uid(),

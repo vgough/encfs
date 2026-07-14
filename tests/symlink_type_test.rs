@@ -1,10 +1,10 @@
+use asyncfuse::FileType;
+use asyncfuse::path::PathFilesystem;
+use asyncfuse::path::Request;
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
 use futures_util::StreamExt;
-use rfuse3::FileType;
-use rfuse3::path::PathFilesystem;
-use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -2,16 +2,16 @@ use crate::attr::{file_attr_from_metadata, file_type_from_metadata, synthetic_fi
 use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
+use asyncfuse::path::Request;
+use asyncfuse::path::reply::{
+    DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyData, ReplyDirectory,
+    ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyLock, ReplyOpen, ReplyStatFs, ReplyXAttr,
+};
+use asyncfuse::{Errno, FileType, Result as FuseResult, SetAttr};
 use bytes::Bytes;
 use futures_util::stream::{self, Stream};
 use libc;
 use log::{debug, warn};
-use rfuse3::path::Request;
-use rfuse3::path::reply::{
-    DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyData, ReplyDirectory,
-    ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyLock, ReplyOpen, ReplyStatFs, ReplyXAttr,
-};
-use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::File;
@@ -281,7 +281,7 @@ impl ReverseFs {
     }
 }
 
-impl rfuse3::path::PathFilesystem for ReverseFs {
+impl asyncfuse::path::PathFilesystem for ReverseFs {
     async fn init(&self, _req: Request) -> FuseResult<ReplyInit> {
         debug!("ReverseFs::init");
         Ok(ReplyInit::default())
@@ -679,7 +679,7 @@ impl rfuse3::path::PathFilesystem for ReverseFs {
         _data: &[u8],
         _write_flags: u32,
         _flags: u32,
-    ) -> FuseResult<rfuse3::path::reply::ReplyWrite> {
+    ) -> FuseResult<asyncfuse::path::reply::ReplyWrite> {
         Err(Errno::from(libc::EROFS))
     }
 
@@ -690,7 +690,7 @@ impl rfuse3::path::PathFilesystem for ReverseFs {
         _name: &OsStr,
         _mode: u32,
         _flags: u32,
-    ) -> FuseResult<rfuse3::path::reply::ReplyCreated> {
+    ) -> FuseResult<asyncfuse::path::reply::ReplyCreated> {
         Err(Errno::from(libc::EROFS))
     }
 

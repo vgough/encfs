@@ -1,0 +1,22 @@
+# Changelog
+
+## 2026-02-24
+
+### Fixed
+- asyncfuse: gate `LoggingFileSystem::{getlk,setlk}` behind the `file-lock` feature to match the `Filesystem` trait.
+- asyncfuse: fix examples to construct `ReplyInit` via `ReplyInit::default()`.
+
+## 2026-02-07
+
+### Added
+- asyncfuse: buffer pool feature flag (buffer-pool).
+- asyncfuse: mount options for max_write and max_readahead.
+- asyncfuse: benchmark filesystem example and fio helper script.
+- asyncfuse: performance report (report.md).
+- asyncfuse: direct_io mount option to force FOPEN_DIRECT_IO on all file operations
+
+### Changed
+- asyncfuse: init reply is now empty; size tuning is via mount options.
+- asyncfuse: session uses aligned buffers and zero-copy request bodies for worker dispatch.
+- asyncfuse: inode name manager uses DashMap for concurrent access.
+- asyncfuse: cached bincode config uses OnceLock for MSRV compatibility.

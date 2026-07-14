@@ -1,6 +1,6 @@
 [workspace]
 members = ["."]
-exclude = ["fuzz", "vendor/rfuse3"]
+exclude = ["fuzz", "vendor/async-fuse"]
 
 [package]
 name = "encfs"
@@ -27,7 +27,7 @@ daemonize = "0.5"
 chrono = "0.4"
 clap = { version = "4.6.1", features = ["derive"] }
 env_logger = "0.11.10"
-rfuse3 = { version = "0.0.9", features = ["file-lock"] }
+asyncfuse = { version = "0.0.8", features = ["file-lock"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "signal", "macros"] }
 futures-util = "0.3"
 bytes = "1"
@@ -62,6 +62,5 @@ default-locale = "en"
 available-locales = ["en", "fr", "de"]
 
 [patch.crates-io]
-# rfuse3 0.0.9 omits alignment padding from directory-response bounds checks.
-# Remove this patch once crates.io publishes the corrected framing logic.
-rfuse3 = { path = "vendor/rfuse3" }
+# Keep asyncfuse vendored so EncFS builds against the moved upstream source.
+asyncfuse = { path = "vendor/async-fuse" }

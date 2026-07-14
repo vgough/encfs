@@ -1,13 +1,13 @@
 //! Shared FUSE mount plumbing for the encfs and encfsr binaries.
 //!
-//! Builds rfuse3 MountOptions from our CLI-level settings (with per-platform
-//! handling of options rfuse3 drops on macOS) and runs a mounted session until
+//! Builds asyncfuse MountOptions from our CLI-level settings (with per-platform
+//! handling of options asyncfuse drops on macOS) and runs a mounted session until
 //! unmount or a termination signal.
 
 use anyhow::{Context, Result};
+use asyncfuse::MountOptions;
+use asyncfuse::path::{PathFilesystem, Session};
 use log::info;
-use rfuse3::MountOptions;
-use rfuse3::path::{PathFilesystem, Session};
 use std::path::Path;
 
 /// Mount settings shared by both binaries.
@@ -53,7 +53,7 @@ pub fn build_mount_options(cfg: &MountConfig) -> MountOptions {
 
     #[cfg(target_os = "macos")]
     {
-        // rfuse3's macOS option builder only emits fsname/allow_root/allow_other;
+        // asyncfuse's macOS option builder only emits fsname/allow_root/allow_other;
         // read_only, default_permissions, and volname must ride in custom_options
         // as explicit "-o key" tokens for mount_macfuse.
         let mut tokens: Vec<String> = Vec::new();
@@ -95,7 +95,7 @@ where
 
     // macOS: Session::mount is already the mount_macfuse path (works unprivileged).
     // Linux: always mount via fusermount3 so fsname/ro/default_permissions are
-    // honored regardless of privilege (rfuse3's privileged option builder drops them).
+    // honored regardless of privilege (asyncfuse's privileged option builder drops them).
     #[cfg(target_os = "macos")]
     let mut handle = session.mount(fs, mount_point).await.with_context(|| {
         format!(

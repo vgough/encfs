@@ -1,4 +1,4 @@
-use rfuse3::path::reply::ReplyLock;
+use asyncfuse::path::reply::ReplyLock;
 use std::os::fd::RawFd;
 
 fn errno() -> libc::c_int {

@@ -2,19 +2,19 @@ use crate::attr::{file_attr_from_metadata, file_type_from_metadata, system_time_
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
+use asyncfuse::path::Request;
+use asyncfuse::path::reply::{
+    DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyCreated, ReplyData,
+    ReplyDirectory, ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyLock, ReplyOpen, ReplyStatFs,
+    ReplyWrite, ReplyXAttr,
+};
+use asyncfuse::{Errno, FileType, Result as FuseResult, SetAttr};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use bytes::Bytes;
 use futures_util::stream::{self, Stream};
 use libc;
 use log::{debug, error, warn};
-use rfuse3::path::Request;
-use rfuse3::path::reply::{
-    DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyCreated, ReplyData,
-    ReplyDirectory, ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyLock, ReplyOpen, ReplyStatFs,
-    ReplyWrite, ReplyXAttr,
-};
-use rfuse3::{Errno, FileType, Result as FuseResult, SetAttr};
 use std::collections::HashMap;
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, File};
@@ -37,7 +37,7 @@ fn is_apple_xattr(name: &str) -> bool {
 }
 
 /// Errors from internal helpers are raw errno values; trait methods convert
-/// them to rfuse3 Errno via `?`.
+/// them to asyncfuse Errno via `?`.
 type OpResult = Result<(), libc::c_int>;
 
 struct FileHandle {
@@ -161,7 +161,7 @@ pub struct EncFs {
     pub config: crate::config::EncfsConfig,
     /// Reject all mutating operations with EROFS. Enforced at the filesystem
     /// layer as well as at mount level because macFUSE does not reliably
-    /// receive the `ro` mount option through rfuse3.
+    /// receive the `ro` mount option through asyncfuse.
     read_only: bool,
 }
 
@@ -2028,7 +2028,7 @@ fn xattr_reply(data: Vec<u8>, size: u32) -> FuseResult<ReplyXAttr> {
     }
 }
 
-impl rfuse3::path::PathFilesystem for EncFs {
+impl asyncfuse::path::PathFilesystem for EncFs {
     async fn init(&self, _req: Request) -> FuseResult<ReplyInit> {
         debug!("init");
         Ok(ReplyInit::default())

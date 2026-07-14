@@ -235,7 +235,7 @@ fn main() -> Result<()> {
         ..Default::default()
     };
 
-    // Parse user-provided "-o option[,option...]" pairs: map the options rfuse3
+    // Parse user-provided "-o option[,option...]" pairs: map the options asyncfuse
     // knows about onto MountOptions setters, pass the rest through verbatim.
     let mut opts_iter = args.fuse_opts.iter();
     while let Some(token) = opts_iter.next() {

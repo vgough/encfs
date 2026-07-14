@@ -1,11 +1,11 @@
+use asyncfuse::FileType;
+use asyncfuse::path::PathFilesystem;
+use asyncfuse::path::Request;
+use asyncfuse::path::reply::{DirectoryEntry, DirectoryEntryPlus};
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
 use futures_util::StreamExt;
-use rfuse3::FileType;
-use rfuse3::path::PathFilesystem;
-use rfuse3::path::Request;
-use rfuse3::path::reply::{DirectoryEntry, DirectoryEntryPlus};
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs;
@@ -273,7 +273,7 @@ async fn directory_handle_validation_and_terminal_offsets() {
         Err(error) => error,
         Ok(_) => panic!("unknown readdir handle should fail"),
     };
-    assert_eq!(error, rfuse3::Errno::from(libc::EBADF));
+    assert_eq!(error, asyncfuse::Errno::from(libc::EBADF));
     let error = match encfs
         .readdirplus(req(), OsStr::new(""), invalid, 0, 0)
         .await
@@ -281,7 +281,7 @@ async fn directory_handle_validation_and_terminal_offsets() {
         Err(error) => error,
         Ok(_) => panic!("unknown readdirplus handle should fail"),
     };
-    assert_eq!(error, rfuse3::Errno::from(libc::EBADF));
+    assert_eq!(error, asyncfuse::Errno::from(libc::EBADF));
 
     let fh = encfs
         .opendir(req(), OsStr::new(""), 0)
@@ -306,12 +306,12 @@ async fn directory_handle_validation_and_terminal_offsets() {
         Err(error) => error,
         Ok(_) => panic!("released readdir handle should fail"),
     };
-    assert_eq!(error, rfuse3::Errno::from(libc::EBADF));
+    assert_eq!(error, asyncfuse::Errno::from(libc::EBADF));
     let error = match encfs.readdirplus(req(), OsStr::new(""), fh, 0, 0).await {
         Err(error) => error,
         Ok(_) => panic!("released readdirplus handle should fail"),
     };
-    assert_eq!(error, rfuse3::Errno::from(libc::EBADF));
+    assert_eq!(error, asyncfuse::Errno::from(libc::EBADF));
 
     fs::remove_dir_all(root).expect("cleanup");
 }

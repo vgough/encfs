@@ -1,13 +1,13 @@
 //! Tests for mknod/mkfifo support: creating FIFOs and special files on the EncFS mount,
 //! and that getattr/readdir return the correct file type.
 
+use asyncfuse::FileType;
+use asyncfuse::path::PathFilesystem;
+use asyncfuse::path::Request;
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
 use futures_util::StreamExt;
-use rfuse3::FileType;
-use rfuse3::path::PathFilesystem;
-use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileTypeExt;

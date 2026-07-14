@@ -1,3 +1,5 @@
+use asyncfuse::path::PathFilesystem;
+use asyncfuse::path::Request;
 /// Test for: Rename fails for directories containing symlinks with IV chaining
 ///
 /// When `chained_name_iv` is enabled and a directory containing symlinks is renamed,
@@ -8,8 +10,6 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use rfuse3::path::PathFilesystem;
-use rfuse3::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};

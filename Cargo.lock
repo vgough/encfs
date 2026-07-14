@@ -176,6 +176,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "asyncfuse"
+version = "0.0.8"
+dependencies = [
+ "aligned_box",
+ "async-notify",
+ "async-trait",
+ "bincode",
+ "bytes",
+ "dashmap",
+ "futures-channel",
+ "futures-util",
+ "libc",
+ "nix",
+ "serde",
+ "slab",
+ "tokio",
+ "tracing",
+ "trait-make",
+ "which",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,6 +625,7 @@ dependencies = [
  "aes-gcm-siv",
  "anyhow",
  "argon2",
+ "asyncfuse",
  "base64",
  "blowfish",
  "bytes",
@@ -622,7 +645,6 @@ dependencies = [
  "prost-build",
  "protoc-bin-vendored",
  "quick-xml",
- "rfuse3",
  "rpassword",
  "rust-i18n",
  "serde",
@@ -1464,28 +1486,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "rfuse3"
-version = "0.0.9"
-dependencies = [
- "aligned_box",
- "async-notify",
- "async-trait",
- "bincode",
- "bytes",
- "dashmap",
- "futures-channel",
- "futures-util",
- "libc",
- "nix",
- "serde",
- "slab",
- "tokio",
- "tracing",
- "trait-make",
- "which",
-]
 
 [[package]]
 name = "rpassword"
