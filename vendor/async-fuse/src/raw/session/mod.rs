@@ -13,7 +13,8 @@ pub(crate) use worker::WorkItem;
 
 // Internal types used across submodules
 use utils::{
-    apply_direct_io, is_forget_opcode, reply_error_in_place, spawn, InHeaderLite, ReadResult,
+    apply_direct_io, directory_entry_fits, is_forget_opcode, reply_error_in_place, spawn, InHeaderLite,
+    ReadResult,
 };
 use worker::{DispatchCtx, Workers};
 
@@ -3524,7 +3525,12 @@ impl<FS: Filesystem + Send + Sync + 'static> Session<FS> {
                 let padding_size = get_padding_size(dir_entry_size);
 
                 // Check against max_size (entry_data portion only)
-                if data.len() - FUSE_OUT_HEADER_SIZE + dir_entry_size > max_size {
+                if !directory_entry_fits(
+                    data.len() - FUSE_OUT_HEADER_SIZE,
+                    dir_entry_size,
+                    padding_size,
+                    max_size,
+                ) {
                     break;
                 }
 
@@ -4528,7 +4534,12 @@ impl<FS: Filesystem + Send + Sync + 'static> Session<FS> {
                 let padding_size = get_padding_size(dir_entry_size);
 
                 // Check against max_size (entry_data portion only)
-                if data.len() - FUSE_OUT_HEADER_SIZE + dir_entry_size > max_size {
+                if !directory_entry_fits(
+                    data.len() - FUSE_OUT_HEADER_SIZE,
+                    dir_entry_size,
+                    padding_size,
+                    max_size,
+                ) {
                     break;
                 }
 

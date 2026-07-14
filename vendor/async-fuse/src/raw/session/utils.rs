@@ -122,3 +122,21 @@ impl Debug for ReadResult {
         }
     }
 }
+
+/// Returns whether an aligned directory entry fits in the kernel-requested buffer.
+///
+/// Keep this calculation shared by the ordinary and worker response paths so every
+/// `readdir` variant accounts for the bytes appended as alignment padding. Treat
+/// arithmetic overflow as a non-fitting entry.
+pub(super) fn directory_entry_fits(
+    current_len: usize,
+    serialized_entry_size: usize,
+    alignment_padding: usize,
+    requested_size: usize,
+) -> bool {
+    current_len
+        .checked_add(serialized_entry_size)
+        .and_then(|len| len.checked_add(alignment_padding))
+        .is_some_and(|len| len <= requested_size)
+}
+
