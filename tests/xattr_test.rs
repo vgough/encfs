@@ -377,7 +377,7 @@ async fn test_xattr_on_disk_storage() {
 
     if size > 0 {
         let size_usize = size as usize;
-        let mut buf = vec![0i8; size_usize];
+        let mut buf = vec![0 as libc::c_char; size_usize];
         let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), buf.as_mut_ptr(), size_usize) };
 
         if ret > 0 {
