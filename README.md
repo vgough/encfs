@@ -28,7 +28,7 @@ looking into newer alternatives, such as the excellent
 [GoCryptFS](https://github.com/rfjakob/gocryptfs), or else use full-disk
 encryption when possible.
 
-## Status - Feb 2026
+## Status - Jul 2026
 
 Data has a long lifespan, and people still have data that was encrypted with EncFS.
 This project has been mostly dormant for years. I've recently begun porting EncFS
@@ -39,7 +39,7 @@ The old C++ code has been removed. The code can be found in old branches, or old
 releases, but is not being maintained.
 
 EncFS was a mature program, so while the new implementation is already functional 
-it is still considered a *alpha* release, and I would always have a separate backup
+it is still considered a *beta* release, and I would always have a separate backup
 for anything stored in it.
 
 Overall status
