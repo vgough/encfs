@@ -126,6 +126,47 @@ Options (same as encfs where applicable):
 
 Unmount when done: `fusermount -u <mount_point>` (Linux) or `umount <mount_point>` (macOS/FreeBSD).
 
+## Filesystem benchmark
+
+The repository includes an automated filesystem benchmark based on `mdtest`,
+which is distributed as part of IOR. It creates a fresh V7 EncFS filesystem,
+mounts it with the release binaries, runs all of mdtest's standard directory and
+file phases, unmounts it, and removes its temporary files. The benchmark requires:
+
+- a working FUSE installation and permission to mount a FUSE filesystem;
+- `mdtest` on `PATH` (or an explicit `MDTEST_BIN`);
+- `mpirun` only when running more than one rank.
+
+First save a baseline for the current machine, then compare later runs with it:
+
+```bash
+task benchmark-save-baseline
+task benchmark
+```
+
+The default workload uses one rank, 1,000 items per iteration, five iterations,
+and 4,096-byte writes and reads. Results are normalized as mean operations per
+second for every operation in mdtest's `SUMMARY rate` table. Comparisons print
+every baseline/current/delta value, but performance changes are informational and
+never fail the command. Command failures, invalid output, mount/unmount failures,
+and missing or incompatible baselines do fail with a diagnostic.
+
+Task variables can select another baseline or workload. For example:
+
+```bash
+task benchmark-save-baseline BENCH_ITEMS=100 BENCH_ITERATIONS=2
+task benchmark BENCH_ITEMS=100 BENCH_ITERATIONS=2
+task benchmark BENCH_PROCS=4 MPIRUN_BIN=/opt/mpi/bin/mpirun
+task benchmark BENCH_BASELINE=/path/to/shared-baseline.json MDTEST_BIN=/opt/ior/bin/mdtest
+```
+
+The supported variables are `BENCH_BASELINE`, `BENCH_ITEMS`,
+`BENCH_ITERATIONS`, `BENCH_PROCS`, `BENCH_BYTES`, `MDTEST_BIN`, `MPIRUN_BIN`,
+and `BENCH_MOUNT_TIMEOUT_SECS`. The default baseline is
+`.benchmarks/filesystem-baseline.json`, which is ignored by Git. Baselines are
+machine-specific: compare results on the same host under similar load. The tool
+warns if the recorded host context or mdtest version differs.
+
 ## FAQ
 
 ### What settings should I use for Dropbox?
