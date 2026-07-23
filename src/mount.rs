@@ -38,18 +38,11 @@ impl Default for MountConfig {
 
 pub fn build_mount_options(cfg: &MountConfig) -> Vec<MountOption> {
     let mut options = vec![MountOption::FsName(cfg.fs_name.clone())];
-    // macFUSE rejects the Linux `uid`/`gid` mount options. It already mounts
-    // as the calling user, matching the behavior of the previous macOS
-    // option builder.
-    #[cfg(not(target_os = "macos"))]
-    {
-        options.push(MountOption::Custom(format!("uid={}", unsafe {
-            libc::getuid()
-        })));
-        options.push(MountOption::Custom(format!("gid={}", unsafe {
-            libc::getgid()
-        })));
-    }
+    // `uid=`/`gid=` are high-level libfuse mount options (handled by
+    // `fuse_main`'s uid/gid translation layer); the low-level session API
+    // used here doesn't recognize them and libfuse rejects the mount with
+    // "unknown option(s)". They're also unnecessary: `getattr` already
+    // reports the backing filesystem's real ownership.
     if cfg.allow_other {
         options.push(MountOption::AllowOther);
     }
@@ -129,7 +122,6 @@ mod tests {
         assert!(options.contains(&MountOption::Custom("nonempty".to_string())));
         assert!(options.contains(&MountOption::Custom("volname=Encrypted Files".to_string())));
         assert!(options.contains(&MountOption::Custom("noatime".to_string())));
-        #[cfg(target_os = "macos")]
         assert!(!options.iter().any(|option| matches!(
             option,
             MountOption::Custom(value) if value.starts_with("uid=") || value.starts_with("gid=")
