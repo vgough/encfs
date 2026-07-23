@@ -756,7 +756,7 @@ fn live_non_utf8_names_and_symlink_targets() -> Result<()> {
     Ok(())
 }
 
-fn set_test_lock(file: &fs::File, kind: libc::c_short) -> std::io::Result<()> {
+fn set_test_lock(file: &fs::File, kind: libc::c_int) -> std::io::Result<()> {
     let mut lock: libc::flock = unsafe { std::mem::zeroed() };
     lock.l_type = kind as _;
     lock.l_whence = libc::SEEK_SET as _;
