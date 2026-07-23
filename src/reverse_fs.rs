@@ -11,7 +11,6 @@ use log::{debug, warn};
 use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
@@ -482,7 +481,7 @@ impl PathFilesystem for ReverseFs {
         let ReverseHandle::File { file, .. } = handle else {
             return Err(Errno::ENOSYS);
         };
-        Ok(crate::file_lock::getlk(file.as_raw_fd(), lock)?)
+        fuse3::file_lock::getlk(file, lock)
     }
 
     fn setlk(
@@ -497,7 +496,7 @@ impl PathFilesystem for ReverseFs {
         let ReverseHandle::File { file, .. } = handle else {
             return Err(Errno::ENOSYS);
         };
-        Ok(crate::file_lock::setlk(file.as_raw_fd(), lock, sleep)?)
+        fuse3::file_lock::setlk(file, lock, sleep)
     }
 
     fn setattr(

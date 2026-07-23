@@ -4,7 +4,6 @@ pub mod config_binary;
 pub mod config_proto;
 pub mod constants;
 pub mod crypto;
-mod file_lock;
 pub mod fs;
 pub mod mount;
 pub mod reverse_fs;

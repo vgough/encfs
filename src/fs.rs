@@ -2202,7 +2202,7 @@ impl PathFilesystem for EncFs {
         lock: FileLock,
         _caller: &Request,
     ) -> Result<FileLock, Errno> {
-        Ok(crate::file_lock::getlk(handle.file.as_raw_fd(), lock)?)
+        fuse3::file_lock::getlk(&handle.file, lock)
     }
 
     fn setlk(
@@ -2214,11 +2214,7 @@ impl PathFilesystem for EncFs {
         sleep: bool,
         _caller: &Request,
     ) -> Result<(), Errno> {
-        Ok(crate::file_lock::setlk(
-            handle.file.as_raw_fd(),
-            lock,
-            sleep,
-        )?)
+        fuse3::file_lock::setlk(&handle.file, lock, sleep)
     }
 
     fn create(

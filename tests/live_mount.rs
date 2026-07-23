@@ -2,6 +2,7 @@ mod live;
 
 use anyhow::{Context, Result};
 use encfs::crypto::file::FileEncoder;
+use fuse3::file_lock::{F_UNLCK, F_WRLCK, LockType, SEEK_SET};
 use live::{MountGuard, data_block_size, live_enabled, load_live_config, unique_temp_dir};
 use std::collections::BTreeSet;
 use std::ffi::{CString, OsString};
@@ -756,10 +757,10 @@ fn live_non_utf8_names_and_symlink_targets() -> Result<()> {
     Ok(())
 }
 
-fn set_test_lock(file: &fs::File, kind: libc::c_int) -> std::io::Result<()> {
+fn set_test_lock(file: &fs::File, kind: LockType) -> std::io::Result<()> {
     let mut lock: libc::flock = unsafe { std::mem::zeroed() };
-    lock.l_type = kind as _;
-    lock.l_whence = libc::SEEK_SET as _;
+    lock.l_type = kind;
+    lock.l_whence = SEEK_SET;
     lock.l_start = 0;
     lock.l_len = 0;
     let rc = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLK, &lock) };
@@ -778,10 +779,7 @@ fn live_posix_lock_child() -> Result<()> {
     };
     let expect_blocked = std::env::var_os("ENCFS_LOCK_EXPECT_BLOCKED").is_some();
     let file = OpenOptions::new().read(true).write(true).open(path)?;
-    match (
-        set_test_lock(&file, libc::F_WRLCK as libc::c_int),
-        expect_blocked,
-    ) {
+    match (set_test_lock(&file, F_WRLCK), expect_blocked) {
         (Err(error), true)
             if error.raw_os_error() == Some(libc::EACCES)
                 || error.raw_os_error() == Some(libc::EAGAIN) =>
@@ -807,7 +805,7 @@ fn live_cross_process_posix_locks() -> Result<()> {
     let path = mount.mount_point.join("locked.txt");
     fs::write(&path, b"locked")?;
     let file = OpenOptions::new().read(true).write(true).open(&path)?;
-    set_test_lock(&file, libc::F_WRLCK as libc::c_int)?;
+    set_test_lock(&file, F_WRLCK)?;
 
     let child = |expect_blocked: bool| -> Result<()> {
         let mut command = Command::new(std::env::current_exe()?);
@@ -826,7 +824,7 @@ fn live_cross_process_posix_locks() -> Result<()> {
     };
 
     child(true)?;
-    set_test_lock(&file, libc::F_UNLCK as libc::c_int)?;
+    set_test_lock(&file, F_UNLCK)?;
     child(false)?;
     Ok(())
 }
