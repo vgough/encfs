@@ -101,9 +101,9 @@ impl ReverseFs {
         Ok((source_path, iv))
     }
 
-    /// Compute the ciphertext size for a given plaintext file size (FUSE-03).
+    /// Compute the ciphertext size for a given plaintext file size.
     ///
-    /// header_size = 0 because unique_iv = false (enforced in Phase 1 by CONF-01).
+    /// header_size = 0 because unique_iv = false.
     fn ciphertext_size_for_plaintext(&self, plaintext_size: u64) -> Result<u64, libc::c_int> {
         let layout = BlockLayout::new(
             self.config.block_mode(),

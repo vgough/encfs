@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 const TEST_PASSWORD: &str = "encfsr_live_test";
 const TEST_PLAINTEXT_FILENAME: &str = "hello.txt";
 const TEST_PLAINTEXT_CONTENT: &[u8] =
-    b"Hello, encfsr! This is a test file for Phase 2 verification.";
+    b"Hello, encfsr! This is a test file for verification.";
 
 // ---------------------------------------------------------------------------
 // Fixture setup
@@ -506,7 +506,7 @@ fn test_encfsr_live_path_resolution_correct() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3 Round-trip Helpers
+// Round-trip Helpers
 // ---------------------------------------------------------------------------
 
 /// Create a V6 config with non-zero blockMACBytes for proper round-trip testing.
@@ -549,7 +549,7 @@ fn live_config_from_encfs(config: &EncfsConfig) -> live::LiveConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3 Round-trip tests (guarded by ENCFS_LIVE_TESTS=1)
+// Round-trip tests (guarded by ENCFS_LIVE_TESTS=1)
 // ---------------------------------------------------------------------------
 
 /// CRPT-01, CRPT-03: Round-trip test proving encfsr produces compatible ciphertext

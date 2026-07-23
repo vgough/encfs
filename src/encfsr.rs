@@ -80,7 +80,7 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    // Initialize logging (match main.rs pattern, no verbose flag in Phase 1)
+    // Initialize logging
     let mut builder = env_logger::Builder::from_default_env();
     if std::env::var("RUST_LOG").is_err() {
         builder.filter_level(log::LevelFilter::Info);
@@ -195,7 +195,7 @@ fn main() -> Result<()> {
 
     // CONF-02: chained_name_iv = true is explicitly allowed — no check here
 
-    // --- Phase 2: mount the reverse filesystem ---
+    // --- mount the reverse filesystem ---
     let config_bytes = std::fs::read(&config_path).unwrap_or_else(|e| {
         eprintln!(
             "{}",
@@ -263,6 +263,32 @@ fn main() -> Result<()> {
                 other => mount_config.extra_options.push(other.to_string()),
             }
         }
+    }
+
+    // Validate the mount point before handing off to libfuse. On macOS
+    // fuse_session_mount() dispatches to the macFUSE mount helper and returns
+    // success even when the mount point does not exist, leaving the session
+    // loop blocked forever instead of reporting the failure. Check here so a
+    // bad mount point is a fast, clear error on every platform.
+    if !args.mount_point.exists() {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.mount_point_not_found",
+                mount_point = args.mount_point.display()
+            )
+        );
+        std::process::exit(1);
+    }
+    if !args.mount_point.is_dir() {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.mount_point_not_dir",
+                mount_point = args.mount_point.display()
+            )
+        );
+        std::process::exit(1);
     }
 
     encfs::mount::mount_blocking(fs, &args.mount_point, &mount_config, false)?;

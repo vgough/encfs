@@ -335,7 +335,7 @@ The `EncfsConfig::validate()` method enforces:
 ## Dependencies
 
 ### Core Dependencies
-- **fuse3** (local sibling path): Typed libfuse3 bindings and path adapter
+- **fuse3** (git dependency from `vgough/libfuse-sys`): Typed libfuse3 bindings and path adapter
 
 - **clap** (4.5.57): CLI argument parsing
 - **anyhow** (1.0.101): Error handling

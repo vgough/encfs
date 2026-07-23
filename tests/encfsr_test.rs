@@ -418,9 +418,13 @@ fn test_encfsr_fuse_opts_accepted() {
 
 #[test]
 fn test_encfsr_proceeds_to_mount_attempt() {
-    // Phase 2 regression test: encfsr with a valid V7 uniqueIV=0 config should
-    // attempt to mount (and fail at libfuse's mount due to nonexistent mount point),
-    // rather than printing the Phase 1 "not yet implemented" placeholder.
+    // Regression test: encfsr with a valid V7 uniqueIV=0 config should
+    // proceed all the way to the mount step.
+    //
+    // The mount point is rejected by encfsr's own check rather than by libfuse:
+    // on macOS fuse_session_mount() reports success for a nonexistent mount
+    // point and then blocks in the session loop forever, so relying on libfuse
+    // to fail would hang this test.
     //
     // The critical assertion: stderr does NOT contain "not yet implemented".
     let dir =
@@ -446,6 +450,12 @@ fn test_encfsr_proceeds_to_mount_attempt() {
 
     assert!(
         !stderr.contains("not yet implemented"),
-        "encfsr should no longer print the Phase 1 placeholder. stderr: {stderr}"
+        "encfsr should no longer print the placeholder. stderr: {stderr}"
+    );
+    // Positive proof that config load, key decryption, and filesystem
+    // construction all succeeded and the mount step was reached.
+    assert!(
+        stderr.contains("mount point"),
+        "encfsr should reach the mount step and reject the missing mount point. stderr: {stderr}"
     );
 }
