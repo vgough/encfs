@@ -2,31 +2,24 @@ use crate::attr::{file_attr_from_metadata, file_type_from_metadata, synthetic_fi
 use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
-use asyncfuse::path::Request;
-use asyncfuse::path::reply::{
-    DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyData, ReplyDirectory,
-    ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyLock, ReplyOpen, ReplyStatFs, ReplyXAttr,
+use fuse3::{
+    Caller as Request, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr, Opened,
+    PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, XattrReply,
 };
-use asyncfuse::{Errno, FileType, Result as FuseResult, SetAttr};
-use bytes::Bytes;
-use futures_util::stream::{self, Stream};
 use libc;
 use log::{debug, warn};
-use std::collections::HashMap;
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
-const ATTR_TTL: Duration = Duration::from_secs(1);
 const CONFIG_FILE_NAME: &str = ".encfs7";
 
-enum ReverseHandle {
+pub enum ReverseHandle {
     /// Virtual config file served from in-memory bytes.
     Config,
     /// A real plaintext source file being encrypted on the fly.
@@ -43,8 +36,6 @@ pub struct ReverseFs {
     pub source: PathBuf,
     pub cipher: Box<dyn Cipher>,
     pub config: EncfsConfig,
-    handles: Mutex<HashMap<u64, Arc<ReverseHandle>>>,
-    next_fh: AtomicU64,
     config_bytes: Vec<u8>,
     config_mtime: SystemTime,
     config_uid: u32,
@@ -69,19 +60,11 @@ impl ReverseFs {
             source,
             cipher,
             config,
-            handles: Mutex::new(HashMap::new()),
-            next_fh: AtomicU64::new(1),
             config_bytes,
             config_mtime,
             config_uid,
             config_gid,
         }
-    }
-
-    // Guards are always dropped before any .await (the op bodies below contain
-    // no awaits), so a std::sync::Mutex is safe here.
-    fn handles_guard(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<ReverseHandle>>> {
-        self.handles.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn is_config_path(path: &Path) -> bool {
@@ -281,75 +264,66 @@ impl ReverseFs {
     }
 }
 
-impl asyncfuse::path::PathFilesystem for ReverseFs {
-    async fn init(&self, _req: Request) -> FuseResult<ReplyInit> {
+impl PathFilesystem for ReverseFs {
+    type Handle = ReverseHandle;
+    type DirHandle = ();
+
+    const SUPPORTS_POSIX_LOCKS: bool = true;
+    const SUPPORTS_READDIRPLUS: bool = true;
+
+    fn init(&self, _conn: &mut fuse3::ConnInfo) {
         debug!("ReverseFs::init");
-        Ok(ReplyInit::default())
     }
 
-    async fn destroy(&self, _req: Request) {
+    fn destroy(&self) {
         debug!("ReverseFs::destroy");
     }
 
-    async fn lookup(&self, _req: Request, parent: &OsStr, name: &OsStr) -> FuseResult<ReplyEntry> {
-        let path = Path::new(parent).join(name);
-        debug!("ReverseFs::lookup {:?}", path);
-        let attr = self.attr_for_fuse_path(&path)?;
-        Ok(ReplyEntry {
-            ttl: ATTR_TTL,
-            attr,
-        })
+    fn lookup(
+        &self,
+        parent: &Path,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<Option<FileAttr>, Errno> {
+        let path = parent.join(name);
+        match self.attr_for_fuse_path(&path) {
+            Ok(attr) => Ok(Some(attr)),
+            Err(error) if error == Errno::ENOENT => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
-    async fn getattr(
+    fn getattr(
         &self,
-        _req: Request,
-        path: Option<&OsStr>,
-        fh: Option<u64>,
-        _flags: u32,
-    ) -> FuseResult<ReplyAttr> {
-        debug!("ReverseFs::getattr {:?} fh={:?}", path, fh);
-
+        path: Option<&Path>,
+        handle: Option<&ReverseHandle>,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
         if let Some(path) = path {
-            let attr = self.attr_for_fuse_path(Path::new(path))?;
-            return Ok(ReplyAttr {
-                ttl: ATTR_TTL,
-                attr,
-            });
+            return self.attr_for_fuse_path(path);
         }
-
-        // Path unknown (possibly deleted): fall back to an open handle.
-        let handle = fh
-            .and_then(|fh| self.handles_guard().get(&fh).cloned())
-            .ok_or_else(|| Errno::from(libc::ESTALE))?;
-        let attr = match handle.as_ref() {
-            ReverseHandle::Config => self.config_file_attr(),
+        match handle.ok_or_else(|| Errno::from(libc::ESTALE))? {
+            ReverseHandle::Config => Ok(self.config_file_attr()),
             ReverseHandle::File { file, .. } => {
                 let metadata = file
                     .metadata()
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                    .map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))?;
                 let size = self.ciphertext_size_for_plaintext(metadata.len())?;
-                file_attr_from_metadata(&metadata, size)
+                Ok(file_attr_from_metadata(&metadata, size))
             }
-        };
-        Ok(ReplyAttr {
-            ttl: ATTR_TTL,
-            attr,
-        })
+        }
     }
 
-    async fn statfs(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyStatFs> {
+    fn statfs(&self, path: &Path, _caller: &Request) -> Result<ReplyStatFs, Errno> {
         debug!("ReverseFs::statfs {:?}", path);
         let c_path =
             std::ffi::CString::new(self.source.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
         let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-        let res = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
-        if res != 0 {
-            return Err(Errno::from(
-                std::io::Error::last_os_error()
-                    .raw_os_error()
-                    .unwrap_or(libc::EIO),
-            ));
+        if unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) } != 0 {
+            return Err(std::io::Error::last_os_error()
+                .raw_os_error()
+                .unwrap_or(libc::EIO)
+                .into());
         }
         Ok(ReplyStatFs {
             blocks: stat.f_blocks as u64,
@@ -363,411 +337,285 @@ impl asyncfuse::path::PathFilesystem for ReverseFs {
         })
     }
 
-    async fn opendir(&self, _req: Request, path: &OsStr, _flags: u32) -> FuseResult<ReplyOpen> {
-        debug!("ReverseFs::opendir {:?}", path);
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        Ok(ReplyOpen { fh, flags: 0 })
+    fn opendir(&self, path: &Path, _flags: i32, _caller: &Request) -> Result<Opened<()>, Errno> {
+        self.resolve_source_path(path)?;
+        Ok(Opened::new(()))
     }
 
-    async fn releasedir(
+    fn readdir(
         &self,
-        _req: Request,
-        _path: &OsStr,
-        _fh: u64,
-        _flags: u32,
-    ) -> FuseResult<()> {
+        path: &Path,
+        _handle: &(),
+        offset: u64,
+        sink: &mut dyn PathDirSink,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        for (index, (name, kind)) in self
+            .readdir_entries(path)?
+            .into_iter()
+            .enumerate()
+            .skip(usize::try_from(offset).unwrap_or(usize::MAX))
+        {
+            if !sink.add(&name, kind, index as u64 + 1) {
+                break;
+            }
+        }
         Ok(())
     }
 
-    async fn readdir<'a>(
-        &'a self,
-        _req: Request,
-        path: &'a OsStr,
-        _fh: u64,
-        offset: i64,
-    ) -> FuseResult<ReplyDirectory<impl Stream<Item = FuseResult<DirectoryEntry>> + Send + 'a>>
-    {
-        let path = Path::new(path);
-        debug!("ReverseFs::readdir {:?} offset={}", path, offset);
-        let result = self.readdir_entries(path)?;
-
-        // The kernel may issue multiple READDIR calls, resuming at `offset`;
-        // each entry's offset field is the offset of the *next* entry.
-        let entries = result
+    fn readdirplus(
+        &self,
+        path: &Path,
+        _handle: &(),
+        offset: u64,
+        sink: &mut dyn PathPlusDirSink,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        for (index, (name, _kind)) in self
+            .readdir_entries(path)?
             .into_iter()
             .enumerate()
-            .skip(offset.max(0) as usize)
-            .map(|(i, (name, kind))| {
-                Ok(DirectoryEntry {
-                    kind,
-                    name,
-                    offset: i as i64 + 1,
-                })
-            });
-
-        Ok(ReplyDirectory {
-            entries: stream::iter(entries),
-        })
-    }
-
-    async fn readdirplus<'a>(
-        &'a self,
-        _req: Request,
-        path: &'a OsStr,
-        _fh: u64,
-        offset: u64,
-        _lock_owner: u64,
-    ) -> FuseResult<
-        ReplyDirectoryPlus<impl Stream<Item = FuseResult<DirectoryEntryPlus>> + Send + 'a>,
-    > {
-        let dir = Path::new(path);
-        debug!("ReverseFs::readdirplus {:?} offset={}", dir, offset);
-        let result = self.readdir_entries(dir)?;
-
-        let entries =
-            result
-                .into_iter()
-                .enumerate()
-                .skip(offset as usize)
-                .map(|(i, (name, kind))| {
-                    let entry_path = if name.as_os_str() == "." {
-                        dir.to_path_buf()
-                    } else if name.as_os_str() == ".." {
-                        dir.parent()
-                            .filter(|p| !p.as_os_str().is_empty())
-                            .unwrap_or(dir)
-                            .to_path_buf()
-                    } else {
-                        dir.join(&name)
-                    };
-                    let attr = self.attr_for_fuse_path(&entry_path)?;
-                    Ok(DirectoryEntryPlus {
-                        kind,
-                        name,
-                        offset: i as i64 + 1,
-                        attr,
-                        entry_ttl: ATTR_TTL,
-                        attr_ttl: ATTR_TTL,
-                    })
-                });
-
-        Ok(ReplyDirectoryPlus {
-            entries: stream::iter(entries),
-        })
-    }
-
-    async fn open(&self, _req: Request, path: &OsStr, flags: u32) -> FuseResult<ReplyOpen> {
-        let path = Path::new(path);
-        debug!("ReverseFs::open {:?}", path);
-
-        // Special case: virtual .encfs7 config file at the FUSE root (CRPT-05).
-        // This file is backed by in-memory config bytes, not a real source file, so
-        // we must not run it through encrypted path resolution.
-        if Self::is_config_path(path) {
-            // Enforce read-only semantics for the virtual config file.
-            let write_flags = libc::O_WRONLY as u32
-                | libc::O_RDWR as u32
-                | libc::O_TRUNC as u32
-                | libc::O_CREAT as u32;
-            if flags & write_flags != 0 {
-                return Err(Errno::from(libc::EROFS));
+            .skip(usize::try_from(offset).unwrap_or(usize::MAX))
+        {
+            let entry_path = if name == OsStr::new(".") {
+                path.to_path_buf()
+            } else if name == OsStr::new("..") {
+                path.parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or(path)
+                    .to_path_buf()
+            } else {
+                path.join(&name)
+            };
+            let attr = self.attr_for_fuse_path(&entry_path)?;
+            if !sink.add(&name, attr, index as u64 + 1) {
+                break;
             }
-            let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-            self.handles_guard()
-                .insert(fh, Arc::new(ReverseHandle::Config));
-            return Ok(ReplyOpen { fh, flags });
         }
+        Ok(())
+    }
 
+    fn open(
+        &self,
+        path: &Path,
+        flags: i32,
+        _caller: &Request,
+    ) -> Result<Opened<ReverseHandle>, Errno> {
+        let write_flags = libc::O_WRONLY | libc::O_RDWR | libc::O_TRUNC | libc::O_CREAT;
+        if flags & write_flags != 0 {
+            return Err(Errno::EROFS);
+        }
+        if Self::is_config_path(path) {
+            return Ok(Opened::new(ReverseHandle::Config));
+        }
         let (source_path, dir_iv) = self.resolve_source_path(path)?;
         let file_iv = if self.config.external_iv_chaining {
             dir_iv
         } else {
-            0u64
+            0
         };
-        let file = File::open(&source_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        self.handles_guard()
-            .insert(fh, Arc::new(ReverseHandle::File { file, file_iv }));
-        Ok(ReplyOpen { fh, flags })
+        let file =
+            File::open(source_path).map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))?;
+        Ok(Opened::new(ReverseHandle::File { file, file_iv }))
     }
 
-    async fn release(
-        &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
-        _flags: u32,
-        _lock_owner: u64,
-        _flush: bool,
-    ) -> FuseResult<()> {
-        self.handles_guard().remove(&fh);
-        Ok(())
-    }
-
-    async fn read(
-        &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
+    fn read<'a>(
+        &'a self,
+        _path: Option<&Path>,
+        handle: &'a ReverseHandle,
         offset: u64,
-        size: u32,
-    ) -> FuseResult<ReplyData> {
-        let handle = {
-            let handles = self.handles_guard();
-            handles
-                .get(&fh)
-                .cloned()
-                .ok_or_else(|| Errno::from(libc::EBADF))?
-        };
-
-        match handle.as_ref() {
-            // Virtual .encfs7 config file (CRPT-05), served from memory.
+        size: usize,
+        _caller: &Request,
+    ) -> Result<Cow<'a, [u8]>, Errno> {
+        let size = u32::try_from(size).unwrap_or(u32::MAX);
+        match handle {
             ReverseHandle::Config => {
-                let data = &self.config_bytes;
-                let start = offset as usize;
-                if start >= data.len() {
-                    return Ok(ReplyData { data: Bytes::new() });
+                let start = usize::try_from(offset).unwrap_or(usize::MAX);
+                if start >= self.config_bytes.len() {
+                    return Ok(Cow::Borrowed(&[]));
                 }
-                let end = std::cmp::min(data.len(), start + size as usize);
-                Ok(ReplyData {
-                    data: Bytes::copy_from_slice(&data[start..end]),
-                })
+                let end = self
+                    .config_bytes
+                    .len()
+                    .min(start.saturating_add(size as usize));
+                Ok(Cow::Borrowed(&self.config_bytes[start..end]))
             }
             ReverseHandle::File { file, file_iv } => {
                 let plaintext_size = file
                     .metadata()
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
+                    .map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))?
                     .len();
                 let ciphertext_size = self.ciphertext_size_for_plaintext(plaintext_size)?;
                 if offset >= ciphertext_size {
-                    return Ok(ReplyData { data: Bytes::new() });
+                    return Ok(Cow::Borrowed(&[]));
                 }
-
-                let actual_size = std::cmp::min(size as u64, ciphertext_size - offset) as u32;
-                let data = self.read_encrypted(file, *file_iv, offset, actual_size)?;
-                Ok(ReplyData {
-                    data: Bytes::from(data),
-                })
+                let actual_size = (size as u64).min(ciphertext_size - offset) as u32;
+                Ok(Cow::Owned(self.read_encrypted(
+                    file,
+                    *file_iv,
+                    offset,
+                    actual_size,
+                )?))
             }
         }
     }
 
-    async fn getlk(
-        &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
-        _lock_owner: u64,
-        start: u64,
-        end: u64,
-        r#type: u32,
-        pid: u32,
-    ) -> FuseResult<ReplyLock> {
-        let handle = self.handles_guard().get(&fh).cloned().ok_or(libc::ESTALE)?;
-        let ReverseHandle::File { file, .. } = handle.as_ref() else {
-            return Err(Errno::from(libc::ENOSYS));
-        };
-        Ok(crate::file_lock::getlk(
-            file.as_raw_fd(),
-            start,
-            end,
-            r#type,
-            pid,
-        )?)
-    }
-
-    async fn setlk(
-        &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
-        _lock_owner: u64,
-        start: u64,
-        end: u64,
-        r#type: u32,
-        pid: u32,
-        block: bool,
-    ) -> FuseResult<()> {
-        let handle = self.handles_guard().get(&fh).cloned().ok_or(libc::ESTALE)?;
-        let ReverseHandle::File { file, .. } = handle.as_ref() else {
-            return Err(Errno::from(libc::ENOSYS));
-        };
-        crate::file_lock::setlk(file.as_raw_fd(), start, end, r#type, pid, block)?;
-        Ok(())
-    }
-
-    async fn readlink(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyData> {
-        let path = Path::new(path);
-        debug!("ReverseFs::readlink {:?}", path);
+    fn readlink(&self, path: &Path, _caller: &Request) -> Result<PathBuf, Errno> {
         let (source_path, dir_iv) = self.resolve_source_path(path)?;
-        let target =
-            std::fs::read_link(&source_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let plain_bytes = target.as_os_str().as_bytes();
-        // Encrypt the symlink target using the directory IV of the symlink's location (CRPT-04)
-        // This matches what forward encfs does in fs.rs::symlink() — same IV, same call
-        let (enc_target, _) = self
+        let target = std::fs::read_link(source_path)
+            .map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))?;
+        let (encrypted, _) = self
             .cipher
-            .encrypt_filename(plain_bytes, dir_iv)
+            .encrypt_filename(target.as_os_str().as_bytes(), dir_iv)
             .map_err(|_| libc::EIO)?;
-        Ok(ReplyData {
-            data: Bytes::from(enc_target.into_bytes()),
-        })
+        Ok(PathBuf::from(encrypted))
     }
 
-    async fn flush(
+    fn getlk(
         &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        _fh: u64,
-        _lock_owner: u64,
-    ) -> FuseResult<()> {
-        Ok(())
+        _path: Option<&Path>,
+        handle: &ReverseHandle,
+        _owner: u64,
+        lock: FileLock,
+        _caller: &Request,
+    ) -> Result<FileLock, Errno> {
+        let ReverseHandle::File { file, .. } = handle else {
+            return Err(Errno::ENOSYS);
+        };
+        Ok(crate::file_lock::getlk(file.as_raw_fd(), lock)?)
     }
 
-    async fn fsync(
+    fn setlk(
         &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        _fh: u64,
-        _datasync: bool,
-    ) -> FuseResult<()> {
-        Ok(())
+        _path: Option<&Path>,
+        handle: &ReverseHandle,
+        _owner: u64,
+        lock: FileLock,
+        sleep: bool,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        let ReverseHandle::File { file, .. } = handle else {
+            return Err(Errno::ENOSYS);
+        };
+        Ok(crate::file_lock::setlk(file.as_raw_fd(), lock, sleep)?)
     }
 
-    async fn fsyncdir(
+    fn setattr(
         &self,
-        _req: Request,
-        _path: &OsStr,
-        _fh: u64,
-        _datasync: bool,
-    ) -> FuseResult<()> {
-        Ok(())
+        _path: Option<&Path>,
+        _handle: Option<&ReverseHandle>,
+        _set: &SetAttr,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Err(Errno::EROFS)
     }
 
-    async fn getxattr(
+    fn write(
         &self,
-        _req: Request,
-        _path: &OsStr,
-        _name: &OsStr,
-        _size: u32,
-    ) -> FuseResult<ReplyXAttr> {
-        Err(Errno::from(libc::ENODATA))
-    }
-
-    async fn listxattr(&self, _req: Request, _path: &OsStr, _size: u32) -> FuseResult<ReplyXAttr> {
-        Err(Errno::from(libc::ENOSYS))
-    }
-
-    // All mutating operations return EROFS (FUSE-01)
-
-    async fn setattr(
-        &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        _fh: Option<u64>,
-        _set_attr: SetAttr,
-    ) -> FuseResult<ReplyAttr> {
-        Err(Errno::from(libc::EROFS))
-    }
-
-    async fn write(
-        &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        _fh: u64,
-        _offset: u64,
+        _path: Option<&Path>,
+        _handle: &ReverseHandle,
         _data: &[u8],
-        _write_flags: u32,
-        _flags: u32,
-    ) -> FuseResult<asyncfuse::path::reply::ReplyWrite> {
-        Err(Errno::from(libc::EROFS))
+        _offset: u64,
+        _caller: &Request,
+    ) -> Result<usize, Errno> {
+        Err(Errno::EROFS)
     }
 
-    async fn create(
+    fn create(
         &self,
-        _req: Request,
-        _parent: &OsStr,
-        _name: &OsStr,
-        _mode: u32,
-        _flags: u32,
-    ) -> FuseResult<asyncfuse::path::reply::ReplyCreated> {
-        Err(Errno::from(libc::EROFS))
-    }
-
-    async fn mkdir(
-        &self,
-        _req: Request,
-        _parent: &OsStr,
+        _parent: &Path,
         _name: &OsStr,
         _mode: u32,
         _umask: u32,
-    ) -> FuseResult<ReplyEntry> {
-        Err(Errno::from(libc::EROFS))
+        _flags: i32,
+        _caller: &Request,
+    ) -> Result<(FileAttr, Opened<ReverseHandle>), Errno> {
+        Err(Errno::EROFS)
     }
 
-    async fn unlink(&self, _req: Request, _parent: &OsStr, _name: &OsStr) -> FuseResult<()> {
-        Err(Errno::from(libc::EROFS))
-    }
-
-    async fn rmdir(&self, _req: Request, _parent: &OsStr, _name: &OsStr) -> FuseResult<()> {
-        Err(Errno::from(libc::EROFS))
-    }
-
-    async fn rename(
+    fn mkdir(
         &self,
-        _req: Request,
-        _origin_parent: &OsStr,
-        _origin_name: &OsStr,
-        _parent: &OsStr,
+        _parent: &Path,
         _name: &OsStr,
-    ) -> FuseResult<()> {
-        Err(Errno::from(libc::EROFS))
+        _mode: u32,
+        _umask: u32,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Err(Errno::EROFS)
     }
-
-    async fn symlink(
+    fn mknod(
         &self,
-        _req: Request,
-        _parent: &OsStr,
-        _name: &OsStr,
-        _link_path: &OsStr,
-    ) -> FuseResult<ReplyEntry> {
-        Err(Errno::from(libc::EROFS))
-    }
-
-    async fn link(
-        &self,
-        _req: Request,
-        _path: &OsStr,
-        _new_parent: &OsStr,
-        _new_name: &OsStr,
-    ) -> FuseResult<ReplyEntry> {
-        Err(Errno::from(libc::EROFS))
-    }
-
-    async fn mknod(
-        &self,
-        _req: Request,
-        _parent: &OsStr,
+        _parent: &Path,
         _name: &OsStr,
         _mode: u32,
         _rdev: u32,
-    ) -> FuseResult<ReplyEntry> {
-        Err(Errno::from(libc::EROFS))
+        _umask: u32,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Err(Errno::EROFS)
     }
-
-    async fn setxattr(
+    fn symlink(
         &self,
-        _req: Request,
-        _path: &OsStr,
+        _parent: &Path,
+        _name: &OsStr,
+        _target: &Path,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Err(Errno::EROFS)
+    }
+    fn link(
+        &self,
+        _path: &Path,
+        _new_parent: &Path,
+        _new_name: &OsStr,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Err(Errno::EROFS)
+    }
+    fn unlink(&self, _parent: &Path, _name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Err(Errno::EROFS)
+    }
+    fn rmdir(&self, _parent: &Path, _name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Err(Errno::EROFS)
+    }
+    fn rename(
+        &self,
+        _parent: &Path,
+        _name: &OsStr,
+        _new_parent: &Path,
+        _new_name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        Err(Errno::EROFS)
+    }
+    fn setxattr(
+        &self,
+        _path: &Path,
         _name: &OsStr,
         _value: &[u8],
-        _flags: u32,
-        _position: u32,
-    ) -> FuseResult<()> {
-        Err(Errno::from(libc::EROFS))
+        _flags: i32,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        Err(Errno::EROFS)
     }
-
-    async fn removexattr(&self, _req: Request, _path: &OsStr, _name: &OsStr) -> FuseResult<()> {
-        Err(Errno::from(libc::EROFS))
+    fn removexattr(&self, _path: &Path, _name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Err(Errno::EROFS)
+    }
+    fn getxattr(
+        &self,
+        _path: &Path,
+        _name: &OsStr,
+        _size: usize,
+        _caller: &Request,
+    ) -> Result<XattrReply, Errno> {
+        Err(Errno::ENODATA)
+    }
+    fn listxattr(
+        &self,
+        _path: &Path,
+        _size: usize,
+        _caller: &Request,
+    ) -> Result<XattrReply, Errno> {
+        Err(Errno::ENOSYS)
     }
 }

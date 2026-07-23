@@ -1,6 +1,6 @@
 [workspace]
 members = ["."]
-exclude = ["fuzz", "vendor/async-fuse"]
+exclude = ["fuzz"]
 
 [package]
 name = "encfs"
@@ -27,10 +27,7 @@ daemonize = "0.5"
 chrono = "0.4"
 clap = { version = "4.6.1", features = ["derive"] }
 env_logger = "0.11.10"
-asyncfuse = { path = "vendor/async-fuse", features = ["file-lock"] }
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "signal", "macros"] }
-futures-util = "0.3"
-bytes = "1"
+fuse3 = { path = "../libfuse-sys/fuse3" }
 libc = "0.2.186"
 log = "0.4.32"
 quick-xml = { version = "0.40.1", features = ["serialize"] }

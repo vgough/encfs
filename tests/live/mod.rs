@@ -306,7 +306,21 @@ impl MountGuard {
                 break;
             }
             if let Ok(Some(status)) = child.try_wait() {
-                return Err(anyhow!("encfs exited early with status {}", status));
+                // Give the drain threads a moment to consume the final pipe
+                // contents before reporting the failure.
+                thread::sleep(Duration::from_millis(20));
+                let out =
+                    String::from_utf8_lossy(&stdout_tail.lock().unwrap_or_else(|e| e.into_inner()))
+                        .to_string();
+                let err =
+                    String::from_utf8_lossy(&stderr_tail.lock().unwrap_or_else(|e| e.into_inner()))
+                        .to_string();
+                return Err(anyhow!(
+                    "encfs exited early with status {}; stdout tail:\n{}\nstderr tail:\n{}",
+                    status,
+                    out,
+                    err
+                ));
             }
             thread::sleep(Duration::from_millis(50));
         }

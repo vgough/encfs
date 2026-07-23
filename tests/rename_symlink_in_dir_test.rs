@@ -1,5 +1,3 @@
-use asyncfuse::path::PathFilesystem;
-use asyncfuse::path::Request;
 /// Test for: Rename fails for directories containing symlinks with IV chaining
 ///
 /// When `chained_name_iv` is enabled and a directory containing symlinks is renamed,
@@ -10,6 +8,7 @@ use asyncfuse::path::Request;
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
+use fuse3::{Caller, PathFilesystem};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,17 +31,17 @@ fn setup_fs(root: &Path) -> EncFs {
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
-fn req() -> Request {
-    Request {
-        unique: 1,
+fn req() -> Caller {
+    Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     }
 }
 
-#[tokio::test]
-async fn test_rename_directory_containing_symlink_with_chained_name_iv() {
+#[test]
+fn test_rename_directory_containing_symlink_with_chained_name_iv() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_rename_symlink_dir_test");
     if tmp.exists() {
@@ -55,70 +54,51 @@ async fn test_rename_directory_containing_symlink_with_chained_name_iv() {
 
     // Create a directory "parent"
     let parent_path = PathBuf::from("/parent");
-    fs.mkdir(r, OsStr::new("/"), OsStr::new("parent"), 0o755, 0)
-        .await
+    fs.mkdir(Path::new("/"), OsStr::new("parent"), 0o755, 0, &r)
         .expect("mkdir parent failed");
 
     // Create a symlink inside the directory
     let target = Path::new("some_target");
-    fs.symlink(
-        r,
-        parent_path.as_os_str(),
-        OsStr::new("link"),
-        target.as_os_str(),
-    )
-    .await
-    .expect("symlink inside dir failed");
+    fs.symlink(&parent_path, OsStr::new("link"), target, &r)
+        .expect("symlink inside dir failed");
 
     // Create a regular file inside the directory for comparison
     let created = fs
         .create(
-            r,
-            parent_path.as_os_str(),
+            &parent_path,
             OsStr::new("file.txt"),
             0o644,
-            (libc::O_CREAT | libc::O_RDWR) as u32,
+            0,
+            libc::O_CREAT | libc::O_RDWR,
+            &r,
         )
-        .await
         .expect("create file failed");
-    let _ = fs
-        .release(
-            r,
-            Some(PathBuf::from("/parent/file.txt").as_os_str()),
-            created.fh,
-            0,
-            0,
-            true,
-        )
-        .await;
+    let created_path = PathBuf::from("/parent/file.txt");
+    let _ = fs.release(Some(&created_path), created.1.handle, &r);
 
     // Verify the symlink can be read before rename
-    let readlink_result = fs
-        .readlink(r, PathBuf::from("/parent/link").as_os_str())
-        .await;
+    let readlink_result = fs.readlink(Path::new("/parent/link"), &r);
     assert!(
         readlink_result.is_ok(),
         "readlink before rename failed: {:?}",
         readlink_result.err()
     );
-    let target_bytes = readlink_result.unwrap().data;
+    let target_bytes = readlink_result.unwrap();
     assert_eq!(
-        String::from_utf8_lossy(&target_bytes),
-        "some_target",
+        target_bytes,
+        Path::new("some_target"),
         "symlink target mismatch before rename"
     );
 
     // Rename the directory containing the symlink
     // This is the operation that triggers the bug (ENOSYS due to symlink handling)
-    let rename_result = fs
-        .rename(
-            r,
-            OsStr::new("/"),
-            OsStr::new("parent"),
-            OsStr::new("/"),
-            OsStr::new("renamed_parent"),
-        )
-        .await;
+    let rename_result = fs.rename(
+        Path::new("/"),
+        OsStr::new("parent"),
+        Path::new("/"),
+        OsStr::new("renamed_parent"),
+        &r,
+    );
 
     assert!(
         rename_result.is_ok(),
@@ -127,40 +107,29 @@ async fn test_rename_directory_containing_symlink_with_chained_name_iv() {
     );
 
     // Verify the symlink target can still be read after rename
-    let readlink_after = fs
-        .readlink(r, PathBuf::from("/renamed_parent/link").as_os_str())
-        .await;
+    let readlink_after = fs.readlink(Path::new("/renamed_parent/link"), &r);
     assert!(
         readlink_after.is_ok(),
         "readlink after rename failed: {:?}",
         readlink_after.err()
     );
-    let target_after = readlink_after.unwrap().data;
+    let target_after = readlink_after.unwrap();
     assert_eq!(
-        String::from_utf8_lossy(&target_after),
-        "some_target",
+        target_after,
+        Path::new("some_target"),
         "symlink target should be 'some_target' after rename, but was '{}'",
-        String::from_utf8_lossy(&target_after)
+        target_after.display()
     );
 
     // Verify the old path no longer exists
-    let old_path_result = fs
-        .getattr(r, Some(PathBuf::from("/parent").as_os_str()), None, 0)
-        .await;
+    let old_path_result = fs.getattr(Some(Path::new("/parent")), None, &r);
     assert!(
         old_path_result.is_err(),
         "old path should not exist after rename"
     );
 
     // Verify the regular file also works after rename
-    let file_attr = fs
-        .getattr(
-            r,
-            Some(PathBuf::from("/renamed_parent/file.txt").as_os_str()),
-            None,
-            0,
-        )
-        .await;
+    let file_attr = fs.getattr(Some(Path::new("/renamed_parent/file.txt")), None, &r);
     assert!(
         file_attr.is_ok(),
         "regular file should exist after rename: {:?}",
@@ -171,8 +140,8 @@ async fn test_rename_directory_containing_symlink_with_chained_name_iv() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[tokio::test]
-async fn test_rename_nested_directory_with_symlinks_chained_name_iv() {
+#[test]
+fn test_rename_nested_directory_with_symlinks_chained_name_iv() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_rename_nested_symlink_test");
     if tmp.exists() {
@@ -184,55 +153,45 @@ async fn test_rename_nested_directory_with_symlinks_chained_name_iv() {
     let r = req();
 
     // Create nested directories: /outer/inner
-    fs.mkdir(r, OsStr::new("/"), OsStr::new("outer"), 0o755, 0)
-        .await
+    fs.mkdir(Path::new("/"), OsStr::new("outer"), 0o755, 0, &r)
         .expect("mkdir outer failed");
-    fs.mkdir(r, OsStr::new("/outer"), OsStr::new("inner"), 0o755, 0)
-        .await
+    fs.mkdir(Path::new("/outer"), OsStr::new("inner"), 0o755, 0, &r)
         .expect("mkdir inner failed");
 
     // Create symlinks at different levels
     fs.symlink(
-        r,
-        PathBuf::from("/outer").as_os_str(),
+        Path::new("/outer"),
         OsStr::new("link1"),
-        Path::new("../some_target").as_os_str(),
+        Path::new("../some_target"),
+        &r,
     )
-    .await
     .expect("symlink in outer failed");
     fs.symlink(
-        r,
-        PathBuf::from("/outer/inner").as_os_str(),
+        Path::new("/outer/inner"),
         OsStr::new("link2"),
-        Path::new("../../other_target").as_os_str(),
+        Path::new("../../other_target"),
+        &r,
     )
-    .await
     .expect("symlink in inner failed");
 
     // Verify symlinks before rename
     let link1_before = fs
-        .readlink(r, PathBuf::from("/outer/link1").as_os_str())
-        .await
-        .expect("readlink link1 before failed")
-        .data;
+        .readlink(Path::new("/outer/link1"), &r)
+        .expect("readlink link1 before failed");
     let link2_before = fs
-        .readlink(r, PathBuf::from("/outer/inner/link2").as_os_str())
-        .await
-        .expect("readlink link2 before failed")
-        .data;
-    assert_eq!(String::from_utf8_lossy(&link1_before), "../some_target");
-    assert_eq!(String::from_utf8_lossy(&link2_before), "../../other_target");
+        .readlink(Path::new("/outer/inner/link2"), &r)
+        .expect("readlink link2 before failed");
+    assert_eq!(link1_before, Path::new("../some_target"));
+    assert_eq!(link2_before, Path::new("../../other_target"));
 
     // Rename the outer directory
-    let rename_result = fs
-        .rename(
-            r,
-            OsStr::new("/"),
-            OsStr::new("outer"),
-            OsStr::new("/"),
-            OsStr::new("moved"),
-        )
-        .await;
+    let rename_result = fs.rename(
+        Path::new("/"),
+        OsStr::new("outer"),
+        Path::new("/"),
+        OsStr::new("moved"),
+        &r,
+    );
 
     assert!(
         rename_result.is_ok(),
@@ -241,31 +200,21 @@ async fn test_rename_nested_directory_with_symlinks_chained_name_iv() {
     );
 
     // Verify symlinks after rename
-    let link1_after = fs
-        .readlink(r, PathBuf::from("/moved/link1").as_os_str())
-        .await;
+    let link1_after = fs.readlink(Path::new("/moved/link1"), &r);
     assert!(
         link1_after.is_ok(),
         "readlink link1 after failed: {:?}",
         link1_after.err()
     );
-    assert_eq!(
-        String::from_utf8_lossy(&link1_after.unwrap().data),
-        "../some_target"
-    );
+    assert_eq!(link1_after.unwrap(), Path::new("../some_target"));
 
-    let link2_after = fs
-        .readlink(r, PathBuf::from("/moved/inner/link2").as_os_str())
-        .await;
+    let link2_after = fs.readlink(Path::new("/moved/inner/link2"), &r);
     assert!(
         link2_after.is_ok(),
         "readlink link2 after failed: {:?}",
         link2_after.err()
     );
-    assert_eq!(
-        String::from_utf8_lossy(&link2_after.unwrap().data),
-        "../../other_target"
-    );
+    assert_eq!(link2_after.unwrap(), Path::new("../../other_target"));
 
     // Cleanup
     fs::remove_dir_all(&tmp).unwrap();

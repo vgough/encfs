@@ -1,17 +1,15 @@
-use asyncfuse::SetAttr;
-use asyncfuse::path::PathFilesystem;
-use asyncfuse::path::Request;
 use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
+use fuse3::{Caller, PathFilesystem, SetAttr};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 
-#[tokio::test]
-async fn test_truncate_corrupts_partial_block() {
+#[test]
+fn test_truncate_corrupts_partial_block() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_truncate_corrupt_test");
     if tmp.exists() {
@@ -52,11 +50,11 @@ async fn test_truncate_corrupts_partial_block() {
     let config = encfs::config::EncfsConfig::test_default();
     let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
-    let req = Request {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
 
     let parent = PathBuf::from("");
@@ -65,11 +63,10 @@ async fn test_truncate_corrupts_partial_block() {
     let path = parent.join(filename);
 
     // 1. Create file
-    let create_res = fs
-        .create(req, parent.as_os_str(), name, 0o644, 0)
-        .await
+    let (_, create_res) = fs
+        .create(&parent, name, 0o644, 0, 0, &req)
         .expect("create failed");
-    let fh = create_res.fh;
+    let fh = create_res.handle;
 
     // 2. Write Data > 1 block (1024 bytes)
     // Write 1024 + 50 bytes.
@@ -78,16 +75,12 @@ async fn test_truncate_corrupts_partial_block() {
 
     // Write in one go
     let written = fs
-        .write(req, Some(path.as_os_str()), fh, 0, &data, 0, 0)
-        .await
-        .expect("write failed")
-        .written;
-    assert_eq!(written, data.len() as u32);
+        .write(Some(&path), &fh, &data, 0, &req)
+        .expect("write failed");
+    assert_eq!(written, data.len());
 
     // Release to flush
-    fs.release(req, Some(path.as_os_str()), fh, 0, 0, true)
-        .await
-        .unwrap();
+    fs.release(Some(&path), fh, &req).unwrap();
 
     // 3. Truncate to a partial block size (e.g. 500 bytes)
     // This will force the first block (which was full 1024) to be truncated to 500.
@@ -96,15 +89,14 @@ async fn test_truncate_corrupts_partial_block() {
     // and then write that garbage back.
     let target_size = 500;
     fs.setattr(
-        req,
-        Some(path.as_os_str()),
+        Some(&path),
         None,
-        SetAttr {
+        &SetAttr {
             size: Some(target_size),
             ..Default::default()
         },
+        &req,
     )
-    .await
     .unwrap();
 
     // 4. Verify content
@@ -160,8 +152,8 @@ async fn test_truncate_corrupts_partial_block() {
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-#[tokio::test]
-async fn test_truncate_extend_then_append_preserves_block0_tag() {
+#[test]
+fn test_truncate_extend_then_append_preserves_block0_tag() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_truncate_extend_append_test");
     if tmp.exists() {
@@ -191,11 +183,11 @@ async fn test_truncate_extend_then_append_preserves_block0_tag() {
     config.allow_holes = true;
     let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
-    let req = Request {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
 
     let parent = PathBuf::from("");
@@ -203,54 +195,38 @@ async fn test_truncate_extend_then_append_preserves_block0_tag() {
     let name = OsStr::new(filename);
     let path = parent.join(filename);
 
-    let create_res = fs
-        .create(req, parent.as_os_str(), name, 0o644, 0)
-        .await
+    let (_, create_res) = fs
+        .create(&parent, name, 0o644, 0, 0, &req)
         .expect("create failed");
-    let fh = create_res.fh;
+    let fh = create_res.handle;
 
     let payload1 = b"hello-partial-block".repeat(5);
     let written = fs
-        .write(req, Some(path.as_os_str()), fh, 0, &payload1, 0, 0)
-        .await
-        .expect("initial write failed")
-        .written;
-    assert_eq!(written as usize, payload1.len());
+        .write(Some(&path), &fh, &payload1, 0, &req)
+        .expect("initial write failed");
+    assert_eq!(written, payload1.len());
 
     let data_block_size = 1024u64 - 8u64;
     let extended_size = data_block_size * 2;
     fs.setattr(
-        req,
-        Some(path.as_os_str()),
-        Some(fh),
-        SetAttr {
+        Some(&path),
+        Some(&fh),
+        &SetAttr {
             size: Some(extended_size),
             ..Default::default()
         },
+        &req,
     )
-    .await
     .expect("truncate extend failed");
 
     let payload2 = b"-appended-after-extend-";
     let append_offset = extended_size;
     let appended = fs
-        .write(
-            req,
-            Some(path.as_os_str()),
-            fh,
-            append_offset,
-            payload2,
-            0,
-            0,
-        )
-        .await
-        .expect("append write failed")
-        .written;
-    assert_eq!(appended as usize, payload2.len());
+        .write(Some(&path), &fh, payload2, append_offset, &req)
+        .expect("append write failed");
+    assert_eq!(appended, payload2.len());
 
-    fs.release(req, Some(path.as_os_str()), fh, 0, 0, true)
-        .await
-        .unwrap();
+    fs.release(Some(&path), fh, &req).unwrap();
 
     let mut entries = fs::read_dir(&tmp).unwrap();
     let entry = entries.next().unwrap().unwrap();

@@ -13,11 +13,8 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use futures::executor::block_on;
+use fuse3::{Caller, PathFilesystem, SetAttr};
 use libfuzzer_sys::fuzz_target;
-use asyncfuse::SetAttr;
-use asyncfuse::path::PathFilesystem;
-use asyncfuse::path::Request;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
@@ -88,12 +85,12 @@ impl Drop for TempDir {
 // Setup helpers
 // ---------------------------------------------------------------------------
 
-fn make_request() -> Request {
-    Request {
-        unique: 1,
+fn make_request() -> Caller {
+    Caller {
         pid: 1,
         uid: 0,
         gid: 0,
+        umask: 0,
     }
 }
 
@@ -221,9 +218,10 @@ fuzz_target!(|input: FuzzInput| {
     let parent = PathBuf::from("");
     let path = parent.join(filename);
 
-    let create_res = block_on(fs.create(req, parent.as_os_str(), OsStr::new(filename), 0o644, 0))
+    let (_, create_res) = fs
+        .create(&parent, OsStr::new(filename), 0o644, 0, 0, &req)
         .unwrap_or_else(|e| panic!("create failed: errno={}", e));
-    let fh = create_res.fh;
+    let fh = create_res.handle;
 
     // The encrypted filename on disk is opaque; find it by scanning the dir.
     // Only one file exists at this point.
@@ -267,12 +265,9 @@ fuzz_target!(|input: FuzzInput| {
                     continue;
                 }
 
-                let written =
-                    block_on(fs.write(req, Some(path.as_os_str()), fh, offset as u64, &data, 0, 0))
-                        .unwrap_or_else(|e| {
-                            panic!("write at offset={} failed: errno={}", offset, e)
-                        })
-                        .written;
+                let written = fs
+                    .write(Some(&path), &fh, &data, offset as u64, &req)
+                    .unwrap_or_else(|e| panic!("write at offset={} failed: errno={}", offset, e));
                 assert_eq!(
                     written as usize,
                     data.len(),
@@ -328,15 +323,15 @@ fuzz_target!(|input: FuzzInput| {
                     continue;
                 }
 
-                block_on(fs.setattr(
-                    req,
-                    Some(path.as_os_str()),
-                    Some(fh),
-                    SetAttr {
+                fs.setattr(
+                    Some(&path),
+                    Some(&fh),
+                    &SetAttr {
                         size: Some(size as u64),
                         ..Default::default()
                     },
-                ))
+                    &req,
+                )
                 .unwrap_or_else(|e| panic!("truncate shrink to {} failed: errno={}", size, e));
 
                 reference.truncate(size);
@@ -355,15 +350,15 @@ fuzz_target!(|input: FuzzInput| {
                     continue;
                 }
 
-                block_on(fs.setattr(
-                    req,
-                    Some(path.as_os_str()),
-                    Some(fh),
-                    SetAttr {
+                fs.setattr(
+                    Some(&path),
+                    Some(&fh),
+                    &SetAttr {
                         size: Some(size as u64),
                         ..Default::default()
                     },
-                ))
+                    &req,
+                )
                 .unwrap_or_else(|e| panic!("truncate expand to {} failed: errno={}", size, e));
 
                 reference.resize(size, 0);
@@ -378,5 +373,5 @@ fuzz_target!(|input: FuzzInput| {
         }
     }
 
-    let _ = block_on(fs.release(req, Some(path.as_os_str()), fh, 0, 0, true));
+    let _ = fs.release(Some(&path), fh, &req);
 });

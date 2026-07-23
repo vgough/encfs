@@ -419,7 +419,7 @@ fn test_encfsr_fuse_opts_accepted() {
 #[test]
 fn test_encfsr_proceeds_to_mount_attempt() {
     // Phase 2 regression test: encfsr with a valid V7 uniqueIV=0 config should
-    // attempt to mount (and fail at asyncfuse's mount due to nonexistent mount point),
+    // attempt to mount (and fail at libfuse's mount due to nonexistent mount point),
     // rather than printing the Phase 1 "not yet implemented" placeholder.
     //
     // The critical assertion: stderr does NOT contain "not yet implemented".

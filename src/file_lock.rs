@@ -1,4 +1,4 @@
-use asyncfuse::path::reply::ReplyLock;
+use fuse3::{FileLock, LockKind};
 use std::os::fd::RawFd;
 
 fn errno() -> libc::c_int {
@@ -7,16 +7,21 @@ fn errno() -> libc::c_int {
         .unwrap_or(libc::EIO)
 }
 
-fn flock_for(start: u64, end: u64, lock_type: u32, pid: u32) -> Result<libc::flock, libc::c_int> {
+fn flock_for(lock: FileLock) -> Result<libc::flock, libc::c_int> {
+    let FileLock {
+        start,
+        end,
+        kind,
+        pid,
+    } = lock;
     if end < start {
         return Err(libc::EINVAL);
     }
-    if lock_type != libc::F_RDLCK as u32
-        && lock_type != libc::F_WRLCK as u32
-        && lock_type != libc::F_UNLCK as u32
-    {
-        return Err(libc::EINVAL);
-    }
+    let lock_type = match kind {
+        LockKind::Read => libc::F_RDLCK,
+        LockKind::Write => libc::F_WRLCK,
+        LockKind::Unlock => libc::F_UNLCK,
+    };
 
     let l_start = libc::off_t::try_from(start).map_err(|_| libc::EOVERFLOW)?;
     let l_len = if end == u64::MAX {
@@ -38,14 +43,8 @@ fn flock_for(start: u64, end: u64, lock_type: u32, pid: u32) -> Result<libc::flo
     })
 }
 
-pub(crate) fn getlk(
-    fd: RawFd,
-    start: u64,
-    end: u64,
-    lock_type: u32,
-    pid: u32,
-) -> Result<ReplyLock, libc::c_int> {
-    let mut lock = flock_for(start, end, lock_type, pid)?;
+pub(crate) fn getlk(fd: RawFd, requested: FileLock) -> Result<FileLock, libc::c_int> {
+    let mut lock = flock_for(requested)?;
     if unsafe { libc::fcntl(fd, libc::F_GETLK, &mut lock) } == -1 {
         return Err(errno());
     }
@@ -57,23 +56,22 @@ pub(crate) fn getlk(
         let length = u64::try_from(lock.l_len).map_err(|_| libc::EIO)?;
         reply_start.checked_add(length - 1).ok_or(libc::EOVERFLOW)?
     };
-    Ok(ReplyLock {
+    let kind = match lock.l_type {
+        libc::F_RDLCK => LockKind::Read,
+        libc::F_WRLCK => LockKind::Write,
+        libc::F_UNLCK => LockKind::Unlock,
+        _ => return Err(libc::EIO),
+    };
+    Ok(FileLock {
         start: reply_start,
         end: reply_end,
-        r#type: lock.l_type as u32,
+        kind,
         pid: u32::try_from(lock.l_pid).unwrap_or(0),
     })
 }
 
-pub(crate) fn setlk(
-    fd: RawFd,
-    start: u64,
-    end: u64,
-    lock_type: u32,
-    pid: u32,
-    block: bool,
-) -> Result<(), libc::c_int> {
-    let lock = flock_for(start, end, lock_type, pid)?;
+pub(crate) fn setlk(fd: RawFd, requested: FileLock, block: bool) -> Result<(), libc::c_int> {
+    let lock = flock_for(requested)?;
     let command = if block { libc::F_SETLKW } else { libc::F_SETLK };
     if unsafe { libc::fcntl(fd, command, &lock) } == -1 {
         Err(errno())
@@ -85,28 +83,37 @@ pub(crate) fn setlk(
 #[cfg(test)]
 mod tests {
     use super::flock_for;
+    use fuse3::{FileLock, LockKind};
+
+    fn lock(kind: LockKind, start: u64, end: u64, pid: u32) -> FileLock {
+        FileLock {
+            kind,
+            start,
+            end,
+            pid,
+        }
+    }
 
     #[test]
     fn converts_inclusive_ranges() {
-        let one = flock_for(7, 7, libc::F_RDLCK as u32, 12).unwrap();
+        let one = flock_for(lock(LockKind::Read, 7, 7, 12)).unwrap();
         assert_eq!((one.l_start, one.l_len), (7, 1));
 
-        let finite = flock_for(7, 16, libc::F_WRLCK as u32, 12).unwrap();
+        let finite = flock_for(lock(LockKind::Write, 7, 16, 12)).unwrap();
         assert_eq!((finite.l_start, finite.l_len), (7, 10));
 
-        let eof = flock_for(7, u64::MAX, libc::F_UNLCK as u32, 12).unwrap();
+        let eof = flock_for(lock(LockKind::Unlock, 7, u64::MAX, 12)).unwrap();
         assert_eq!((eof.l_start, eof.l_len), (7, 0));
     }
 
     #[test]
     fn rejects_invalid_ranges_and_types() {
         assert_eq!(
-            flock_for(8, 7, libc::F_RDLCK as u32, 0).unwrap_err(),
+            flock_for(lock(LockKind::Read, 8, 7, 0)).unwrap_err(),
             libc::EINVAL
         );
-        assert_eq!(flock_for(0, 1, u32::MAX, 0).unwrap_err(), libc::EINVAL);
         assert_eq!(
-            flock_for(u64::MAX, u64::MAX, libc::F_RDLCK as u32, 0).unwrap_err(),
+            flock_for(lock(LockKind::Read, u64::MAX, u64::MAX, 0)).unwrap_err(),
             libc::EOVERFLOW
         );
     }

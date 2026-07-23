@@ -1,16 +1,15 @@
-use asyncfuse::path::PathFilesystem;
-use asyncfuse::path::Request;
 use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
+use fuse3::{Caller, PathFilesystem};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 
-#[tokio::test]
-async fn test_virtual_driver_write() {
+#[test]
+fn test_virtual_driver_write() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_write_test");
     if tmp.exists() {
@@ -65,33 +64,30 @@ async fn test_virtual_driver_write() {
     let mut verify_cipher = verify_cipher;
     verify_cipher.set_key(&user_key, &user_iv);
 
-    let req = Request {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
 
     let parent = PathBuf::from("");
     let name = OsStr::new("test.txt");
 
     // Create
-    let create_res = fs
-        .create(req, parent.as_os_str(), name, 0o644, 0)
-        .await
+    let (_attr, create_res) = fs
+        .create(&parent, name, 0o644, 0, 0, &req)
         .expect("create failed");
-    let fh = create_res.fh;
+    let fh = create_res.handle;
 
     // Write "hello world"
     let data = b"hello world".to_vec();
     // Use proper path for logging
     let path = parent.join("test.txt");
     let written = fs
-        .write(req, Some(path.as_os_str()), fh, 0, &data, 0, 0)
-        .await
-        .expect("write failed")
-        .written;
-    assert_eq!(written, data.len() as u32);
+        .write(Some(&path), &fh, &data, 0, &req)
+        .expect("write failed");
+    assert_eq!(written, data.len());
 
     // Verify via FileDecoder (manually, since read is a separate FUSE call)
     // Find the encrypted file in the root directory
@@ -130,9 +126,7 @@ async fn test_virtual_driver_write() {
     assert_eq!(read_data, data);
 
     // Release (close)
-    fs.release(req, Some(path.as_os_str()), fh, 0, 0, true)
-        .await
-        .unwrap();
+    fs.release(Some(&path), fh, &req).unwrap();
 
     // Verify persistence by opening again
     // We didn't implement 'lookup' which FUSE uses to get FH?
@@ -140,11 +134,8 @@ async fn test_virtual_driver_write() {
     // But `EncFs::open` takes path.
     // EncFs `open`: `encrypt_path` -> `File::open`.
 
-    let open_res = fs
-        .open(req, path.as_os_str(), 0)
-        .await
-        .expect("open failed");
-    let _fh2 = open_res.fh;
+    let open_res = fs.open(&path, 0, &req).expect("open failed");
+    let _fh2 = open_res.handle;
 
     // Verify again after re-opening (persistence check)
     // We already verified on-disk content with FileDecoder.

@@ -464,7 +464,10 @@ fn print_comparison(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Re
         );
     }
 
-    println!("\nOperation                         Baseline      Current        Delta");
+    println!(
+        "\nValues are operations per second (ops/sec); higher is better, so a positive delta is an improvement."
+    );
+    println!("Operation                         Baseline      Current        Delta");
     println!("-------------------------------- ------------ ------------ ----------");
     for delta in calculate_deltas(baseline, current)? {
         let percent = if delta.percent.is_infinite() {

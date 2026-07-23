@@ -185,8 +185,8 @@ fn main() -> Result<()> {
                 .with_context(|| format!("invalid mount point {}", args.mount_point.display()))?;
 
             // Daemonize unless foreground mode is requested. This must happen
-            // before the tokio runtime is created (forking after runtime
-            // creation is unsafe).
+            // before the FUSE session is created (forking after libfuse has
+            // initialized process state is unsafe).
             if !foreground {
                 let daemonize = Daemonize::new();
                 match daemonize.start() {

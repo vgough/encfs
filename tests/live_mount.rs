@@ -4,9 +4,11 @@ use anyhow::{Context, Result};
 use encfs::crypto::file::FileEncoder;
 use live::{MountGuard, data_block_size, live_enabled, load_live_config, unique_temp_dir};
 use std::collections::BTreeSet;
-use std::ffi::CString;
-use std::fs;
+use std::ffi::{CString, OsString};
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::fd::AsRawFd;
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -729,6 +731,105 @@ fn live_unlink_while_open() -> Result<()> {
 
 #[test]
 #[ignore]
+fn live_non_utf8_names_and_symlink_targets() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+
+    let file_name = OsString::from_vec(b"file-\xff".to_vec());
+    let link_name = OsString::from_vec(b"link-\xfe".to_vec());
+    let file_path = mount.mount_point.join(&file_name);
+    let link_path = mount.mount_point.join(&link_name);
+    fs::write(&file_path, b"byte-safe")?;
+    std::os::unix::fs::symlink(&file_name, &link_path)?;
+
+    assert_eq!(fs::read(&file_path)?, b"byte-safe");
+    assert_eq!(fs::read_link(&link_path)?, PathBuf::from(&file_name));
+    let names = fs::read_dir(&mount.mount_point)?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<std::io::Result<BTreeSet<_>>>()?;
+    assert!(names.contains(&file_name));
+    assert!(names.contains(&link_name));
+    Ok(())
+}
+
+fn set_test_lock(file: &fs::File, kind: libc::c_short) -> std::io::Result<()> {
+    let mut lock: libc::flock = unsafe { std::mem::zeroed() };
+    lock.l_type = kind as _;
+    lock.l_whence = libc::SEEK_SET as _;
+    lock.l_start = 0;
+    lock.l_len = 0;
+    let rc = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLK, &lock) };
+    if rc == -1 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[test]
+#[ignore]
+fn live_posix_lock_child() -> Result<()> {
+    let Some(path) = std::env::var_os("ENCFS_LOCK_CHILD_PATH") else {
+        return Ok(());
+    };
+    let expect_blocked = std::env::var_os("ENCFS_LOCK_EXPECT_BLOCKED").is_some();
+    let file = OpenOptions::new().read(true).write(true).open(path)?;
+    match (set_test_lock(&file, libc::F_WRLCK), expect_blocked) {
+        (Err(error), true)
+            if error.raw_os_error() == Some(libc::EACCES)
+                || error.raw_os_error() == Some(libc::EAGAIN) =>
+        {
+            Ok(())
+        }
+        (Ok(()), false) => Ok(()),
+        (result, expected) => {
+            anyhow::bail!("unexpected child lock result {result:?}; expected blocked={expected}")
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn live_cross_process_posix_locks() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let path = mount.mount_point.join("locked.txt");
+    fs::write(&path, b"locked")?;
+    let file = OpenOptions::new().read(true).write(true).open(&path)?;
+    set_test_lock(&file, libc::F_WRLCK)?;
+
+    let child = |expect_blocked: bool| -> Result<()> {
+        let mut command = Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg("live_posix_lock_child")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .env("ENCFS_LOCK_CHILD_PATH", &path);
+        if expect_blocked {
+            command.env("ENCFS_LOCK_EXPECT_BLOCKED", "1");
+        }
+        let status = command.status()?;
+        anyhow::ensure!(status.success(), "lock-check child failed: {status}");
+        Ok(())
+    };
+
+    child(true)?;
+    set_test_lock(&file, libc::F_UNLCK)?;
+    child(false)?;
+    Ok(())
+}
+
+#[test]
+#[ignore]
 fn live_chmod_utimens_statfs() -> Result<()> {
     require_live();
     if !live_enabled() {
@@ -1120,7 +1221,12 @@ fn live_cargo_build_with_large_mounted_target_standard() -> Result<()> {
         String::from_utf8_lossy(&run_output.stdout),
         String::from_utf8_lossy(&run_output.stderr)
     );
-    assert_eq!(String::from_utf8(run_output.stdout)?.trim(), "42");
+    anyhow::ensure!(
+        String::from_utf8(run_output.stdout.clone())?.trim() == "42",
+        "mounted Cargo output produced unexpected output; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&run_output.stdout),
+        String::from_utf8_lossy(&run_output.stderr)
+    );
 
     fs::remove_dir_all(&source_root).context("remove offline Cargo source graph")?;
     Ok(())

@@ -61,7 +61,7 @@ cargo test -- --nocapture
 - `ENCFS_LIVE_TESTS=1` environment variable
 - FUSE kernel module loaded (`sudo modprobe fuse`)
 - Single-threaded execution (`--test-threads=1`)
-- Linux or FreeBSD (macOS support via fuse-t)
+- Linux or FreeBSD (macOS support via macFUSE)
 
 ### Code Quality Commands
 ```bash
@@ -157,9 +157,9 @@ encfs/
 
 5. **`fs.rs`**: FUSE filesystem implementation
    - `EncFs`: Main filesystem struct
-   - Implements `FilesystemMT` trait from `fuse_mt`
+   - Implements the synchronous `fuse3::PathFilesystem` trait
    - Path encryption/decryption with IV chaining
-   - File handle management
+   - Uses typed file and directory handles owned by the FUSE runtime
    - All FUSE operations (read, write, readdir, etc.)
 
 7. **`main.rs`**: Main encfs binary
@@ -293,10 +293,9 @@ Each block (if MACs enabled):
 - Help text functions must return `String` (evaluated at runtime after locale init)
 
 ### 7. FUSE Integration
-- Uses `fuse_mt` crate (multi-threaded FUSE)
-- Implements `FilesystemMT` trait
-- File handles stored in `HashMap<u64, Arc<FileHandle>>`
-- Thread-safe via `Mutex` guards
+- Uses the sibling `fuse3` crate and its synchronous `PathFilesystem` adapter
+- File and directory handles are typed values owned by the FUSE runtime
+- Multi-threaded by default, with a single-threaded mode for debugging
 - Single-threaded mode available via `-s` flag
 
 ### 8. Password Handling
@@ -336,7 +335,7 @@ The `EncfsConfig::validate()` method enforces:
 ## Dependencies
 
 ### Core Dependencies
-- **fuse_mt** (0.6.3): Multi-threaded FUSE bindings
+- **fuse3** (local sibling path): Typed libfuse3 bindings and path adapter
 
 - **clap** (4.5.57): CLI argument parsing
 - **anyhow** (1.0.101): Error handling
@@ -353,14 +352,14 @@ The `EncfsConfig::validate()` method enforces:
 - **prost** (0.14.3): Protobuf serialization support
 
 ### System Dependencies
-- **FUSE**: libfuse-dev (Linux), fusefs-libs (FreeBSD), fuse-t (macOS)
+- **FUSE 3.12+**: libfuse3-dev (Linux), a compatible fuse3 package (FreeBSD), macFUSE (macOS)
 
 ## CI/CD
 
 ### GitHub Actions (`.github/workflows/ci.yml`)
 Runs on: `ubuntu-latest`
 Steps:
-1. Install dependencies (fuse, libfuse-dev, pkg-config, libssl-dev)
+1. Install dependencies (fuse3, libfuse3-dev, pkg-config, libssl-dev)
 2. Load fuse module
 3. Run clippy (fails on warnings)
 4. Build release
@@ -535,11 +534,10 @@ task test-live           # Live mount tests
 ### Most Common Issues
 1. **Live tests fail**: Check `ENCFS_LIVE_TESTS=1` and FUSE module loaded
 
-3. **Build fails on FUSE**: Install libfuse-dev
+3. **Build fails on FUSE**: Install the FUSE 3 development package and ensure `fuse3.pc` is visible to pkg-config
 
 ---
 
 **Last Updated**: February 21, 2026
 **EncFS Version**: 2.0.0-alpha.3
 **Rust Edition**: 2024
-

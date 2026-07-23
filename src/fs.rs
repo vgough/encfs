@@ -1,21 +1,17 @@
-use crate::attr::{file_attr_from_metadata, file_type_from_metadata, system_time_from_secs};
+use crate::attr::{file_attr_from_metadata, file_type_from_metadata};
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
-use asyncfuse::path::Request;
-use asyncfuse::path::reply::{
-    DirectoryEntry, DirectoryEntryPlus, FileAttr, ReplyAttr, ReplyCreated, ReplyData,
-    ReplyDirectory, ReplyDirectoryPlus, ReplyEntry, ReplyInit, ReplyLock, ReplyOpen, ReplyStatFs,
-    ReplyWrite, ReplyXAttr,
-};
-use asyncfuse::{Errno, FileType, Result as FuseResult, SetAttr};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
-use bytes::Bytes;
-use futures_util::stream::{self, Stream};
+use fuse3::{
+    Caller as Request, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr, Opened,
+    PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
+    XattrReply as ReplyXAttr,
+};
 use libc;
 use log::{debug, error, warn};
-use std::collections::HashMap;
+use std::borrow::Cow;
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -23,11 +19,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
-
-const ATTR_TTL: Duration = Duration::from_secs(1);
 
 /// macOS may add these attributes to files in the encrypted directory. They
 /// are not managed by EncFS and are intentionally omitted from the mounted
@@ -37,10 +29,10 @@ fn is_apple_xattr(name: &str) -> bool {
 }
 
 /// Errors from internal helpers are raw errno values; trait methods convert
-/// them to asyncfuse Errno via `?`.
+/// them to typed FUSE errors via `?`.
 type OpResult = Result<(), libc::c_int>;
 
-struct FileHandle {
+pub struct FileHandle {
     file: File,
     file_iv: u64,
 }
@@ -57,7 +49,7 @@ struct DirectorySnapshotEntry {
 /// Mutations after the handle is opened are intentionally not visible through
 /// that handle. A later `opendir` captures a new view, and retained attributes
 /// allow `readdirplus` to finish even when an entry has since been removed.
-struct DirectoryHandle {
+pub struct DirectoryHandle {
     entries: Vec<DirectorySnapshotEntry>,
 }
 
@@ -155,13 +147,9 @@ unsafe fn removexattr_nofollow(
 pub struct EncFs {
     pub root: PathBuf,
     pub cipher: Box<dyn Cipher>,
-    handles: Mutex<HashMap<u64, Arc<FileHandle>>>,
-    directory_handles: Mutex<HashMap<u64, Arc<DirectoryHandle>>>,
-    next_fh: AtomicU64,
     pub config: crate::config::EncfsConfig,
     /// Reject all mutating operations with EROFS. Enforced at the filesystem
-    /// layer as well as at mount level because macFUSE does not reliably
-    /// receive the `ro` mount option through asyncfuse.
+    /// layer as well as at mount level as defense in depth.
     read_only: bool,
 }
 
@@ -170,9 +158,6 @@ impl EncFs {
         Self {
             root,
             cipher,
-            handles: Mutex::new(HashMap::new()),
-            directory_handles: Mutex::new(HashMap::new()),
-            next_fh: AtomicU64::new(1),
             config,
             read_only: false,
         }
@@ -181,18 +166,6 @@ impl EncFs {
     pub fn with_read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
         self
-    }
-
-    fn handles_guard(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<FileHandle>>> {
-        self.handles.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    fn directory_handles_guard(
-        &self,
-    ) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<DirectoryHandle>>> {
-        self.directory_handles
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
     }
 
     fn ensure_writable(&self) -> OpResult {
@@ -823,8 +796,7 @@ impl EncFs {
     }
 }
 
-/// Errno-based operation bodies shared by the PathFilesystem impl below.
-/// These contain no `.await`s; handle-table guards never cross await points.
+/// Errno-based operation bodies shared by the `PathFilesystem` impl below.
 impl EncFs {
     fn statfs_impl(&self, path: &Path) -> Result<ReplyStatFs, libc::c_int> {
         debug!("statfs: {:?}", path);
@@ -852,11 +824,7 @@ impl EncFs {
         })
     }
 
-    fn handle_for(&self, fh: Option<u64>) -> Option<Arc<FileHandle>> {
-        fh.and_then(|fh| self.handles_guard().get(&fh).cloned())
-    }
-
-    fn do_chmod(&self, path: Option<&Path>, fh: Option<u64>, mode: u32) -> OpResult {
+    fn do_chmod(&self, path: Option<&Path>, handle: Option<&FileHandle>, mode: u32) -> OpResult {
         debug!("chmod: {:?} mode={:o}", path, mode);
         self.ensure_writable()?;
 
@@ -869,7 +837,7 @@ impl EncFs {
         }
 
         // Path unknown (possibly deleted): fall back to the open handle.
-        let handle = self.handle_for(fh).ok_or(libc::ESTALE)?;
+        let handle = handle.ok_or(libc::ESTALE)?;
         let ret = unsafe { libc::fchmod(handle.file.as_raw_fd(), mode as libc::mode_t) };
         if ret == 0 {
             Ok(())
@@ -883,7 +851,7 @@ impl EncFs {
     fn do_chown(
         &self,
         path: Option<&Path>,
-        fh: Option<u64>,
+        handle: Option<&FileHandle>,
         uid: Option<u32>,
         gid: Option<u32>,
     ) -> OpResult {
@@ -893,7 +861,7 @@ impl EncFs {
         let path = match path {
             Some(path) => path,
             None => {
-                let handle = self.handle_for(fh).ok_or(libc::ESTALE)?;
+                let handle = handle.ok_or(libc::ESTALE)?;
                 let ret = unsafe {
                     libc::fchown(
                         handle.file.as_raw_fd(),
@@ -981,14 +949,9 @@ impl EncFs {
         }
     }
 
-    fn do_truncate(&self, path: Option<&Path>, fh: Option<u64>, size: u64) -> OpResult {
+    fn do_truncate(&self, path: Option<&Path>, handle: Option<&FileHandle>, size: u64) -> OpResult {
         debug!("truncate: {:?} size={}", path, size);
         self.ensure_writable()?;
-
-        let handle: Option<Arc<FileHandle>> = self.handle_for(fh);
-        if fh.is_some() && handle.is_none() {
-            return Err(libc::EBADF);
-        }
 
         let owned_file: Option<File> = if handle.is_none() {
             let path = path.ok_or(libc::ESTALE)?;
@@ -1004,7 +967,7 @@ impl EncFs {
             None
         };
 
-        let file_ref: &File = match (&handle, &owned_file) {
+        let file_ref: &File = match (handle, &owned_file) {
             (Some(h), _) => &h.file,
             (None, Some(f)) => f,
             (None, None) => return Err(libc::EIO),
@@ -1033,7 +996,7 @@ impl EncFs {
 
         // These branches only run without an open handle, where `path` was
         // already required to open the file above.
-        let file_iv = if let Some(h) = &handle {
+        let file_iv = if let Some(h) = handle {
             h.file_iv
         } else if header_size > 0 {
             let mut header = vec![0u8; header_size as usize];
@@ -1076,7 +1039,7 @@ impl EncFs {
         &self,
         req: Request,
         path: Option<&Path>,
-        fh: Option<u64>,
+        handle: Option<&FileHandle>,
         atime: Option<std::time::SystemTime>,
         mtime: Option<std::time::SystemTime>,
     ) -> OpResult {
@@ -1084,9 +1047,8 @@ impl EncFs {
         self.ensure_writable()?;
 
         // Get file metadata for permission check (owner/group/mode).
-        let metadata = if let Some(fh) = fh {
-            let handles = self.handles_guard();
-            handles.get(&fh).and_then(|h| h.file.metadata().ok())
+        let metadata = if let Some(handle) = handle {
+            handle.file.metadata().ok()
         } else {
             let path = path.ok_or(libc::ESTALE)?;
             let (real_path, _) = self.encrypt_path(path)?;
@@ -1103,8 +1065,8 @@ impl EncFs {
         // If metadata failed and we're root or not setting times, proceed and let utimensat/futimens return the error.
 
         // Map Option<SystemTime> to kernel timespec. None means UTIME_OMIT (leave timestamp
-        // unchanged). Some(t) is either an explicit time or UTIME_NOW (fuse_mt converts UTIME_NOW
-        // to Some(SystemTime::now()) before calling us).
+        // unchanged). Some(t) is either an explicit time or UTIME_NOW (the
+        // PathFilesystem wrapper resolves UTIME_NOW before calling us).
         let to_timespec = |t: Option<std::time::SystemTime>| -> libc::timespec {
             match t {
                 Some(ts) => {
@@ -1125,21 +1087,15 @@ impl EncFs {
 
         let times = [to_timespec(atime), to_timespec(mtime)];
 
-        if let Some(fh) = fh {
-            let handle = {
-                let handles = self.handles_guard();
-                handles.get(&fh).cloned()
-            };
-            if let Some(handle) = handle {
-                use std::os::fd::AsRawFd;
-                let ret = unsafe { libc::futimens(handle.file.as_raw_fd(), times.as_ptr()) };
-                if ret == 0 {
-                    return Ok(());
-                } else {
-                    return Err(std::io::Error::last_os_error()
-                        .raw_os_error()
-                        .unwrap_or(libc::EIO));
-                }
+        if let Some(handle) = handle {
+            use std::os::fd::AsRawFd;
+            let ret = unsafe { libc::futimens(handle.file.as_raw_fd(), times.as_ptr()) };
+            if ret == 0 {
+                return Ok(());
+            } else {
+                return Err(std::io::Error::last_os_error()
+                    .raw_os_error()
+                    .unwrap_or(libc::EIO));
             }
         }
 
@@ -1249,10 +1205,14 @@ impl EncFs {
         }
     }
 
-    fn attr_for_path(&self, path: Option<&Path>, fh: Option<u64>) -> Result<FileAttr, libc::c_int> {
-        debug!("getattr: {:?} fh={:?}", path, fh);
+    fn attr_for_path(
+        &self,
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
+    ) -> Result<FileAttr, libc::c_int> {
+        debug!("getattr: {:?} handle={}", path, handle.is_some());
 
-        let metadata = if let Some(handle) = self.handle_for(fh) {
+        let metadata = if let Some(handle) = handle {
             handle.file.metadata().ok()
         } else {
             None
@@ -1348,7 +1308,7 @@ impl EncFs {
         Ok(DirectoryHandle { entries: result })
     }
 
-    fn open_impl(&self, path: &Path, flags: u32) -> Result<u64, libc::c_int> {
+    fn open_impl(&self, path: &Path, flags: u32) -> Result<FileHandle, libc::c_int> {
         debug!("open: {:?}", path);
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1447,24 +1407,16 @@ impl EncFs {
             }
         }
 
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        let handle = Arc::new(FileHandle { file, file_iv });
-
-        self.handles_guard().insert(fh, handle);
-
-        Ok(fh)
+        Ok(FileHandle { file, file_iv })
     }
 
-    fn read_impl(&self, fh: u64, offset: u64, size: u32) -> Result<Vec<u8>, libc::c_int> {
-        debug!("read: fh={} offset={} size={}", fh, offset, size);
-
-        let handle = {
-            let handles = self.handles_guard();
-            match handles.get(&fh).cloned() {
-                Some(h) => h,
-                None => return Err(libc::EBADF),
-            }
-        };
+    fn read_impl(
+        &self,
+        handle: &FileHandle,
+        offset: u64,
+        size: u32,
+    ) -> Result<Vec<u8>, libc::c_int> {
+        debug!("read: offset={} size={}", offset, size);
 
         let decoder = FileDecoder::new_from_config(
             self.cipher.as_ref(),
@@ -1484,23 +1436,20 @@ impl EncFs {
                 Ok(result_data)
             }
             Err(e) => {
-                error!("Read failed on fh {}: {}", fh, e);
+                error!("Read failed: {}", e);
                 Err(e.raw_os_error().unwrap_or(libc::EIO))
             }
         }
     }
 
-    fn write_impl(&self, fh: u64, offset: u64, data: &[u8]) -> Result<u32, libc::c_int> {
-        debug!("write: fh={} offset={} size={}", fh, offset, data.len());
+    fn write_impl(
+        &self,
+        handle: &FileHandle,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<u32, libc::c_int> {
+        debug!("write: offset={} size={}", offset, data.len());
         self.ensure_writable()?;
-
-        let handle = {
-            let handles = self.handles_guard();
-            match handles.get(&fh).cloned() {
-                Some(h) => h,
-                None => return Err(libc::EBADF),
-            }
-        };
 
         let encoder = FileEncoder::new_from_config(
             self.cipher.as_ref(),
@@ -1525,7 +1474,7 @@ impl EncFs {
         name: &OsStr,
         mode: u32,
         flags: u32,
-    ) -> Result<(FileAttr, u64), libc::c_int> {
+    ) -> Result<(FileAttr, FileHandle), libc::c_int> {
         debug!(
             "create: {:?}/{:?} flags={} mode={}",
             parent, name, flags, mode
@@ -1585,12 +1534,7 @@ impl EncFs {
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         let attr = file_attr_from_metadata(&metadata, 0);
 
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        let handle = Arc::new(FileHandle { file, file_iv });
-
-        self.handles_guard().insert(fh, handle);
-
-        Ok((attr, fh))
+        Ok((attr, FileHandle { file, file_iv }))
     }
 
     fn unlink_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
@@ -2018,414 +1962,305 @@ impl EncFs {
 
 /// Apply FUSE getxattr/listxattr size semantics: a zero-size request probes
 /// the value length; otherwise the data must fit in the caller's buffer.
-fn xattr_reply(data: Vec<u8>, size: u32) -> FuseResult<ReplyXAttr> {
+fn xattr_reply(data: Vec<u8>, size: usize) -> Result<ReplyXAttr, Errno> {
     if size == 0 {
-        Ok(ReplyXAttr::Size(data.len() as u32))
-    } else if data.len() > size as usize {
+        Ok(ReplyXAttr::Size(data.len()))
+    } else if data.len() > size {
         Err(Errno::from(libc::ERANGE))
     } else {
-        Ok(ReplyXAttr::Data(Bytes::from(data)))
+        Ok(ReplyXAttr::Data(data))
     }
 }
 
-impl asyncfuse::path::PathFilesystem for EncFs {
-    async fn init(&self, _req: Request) -> FuseResult<ReplyInit> {
+impl PathFilesystem for EncFs {
+    type Handle = FileHandle;
+    type DirHandle = DirectoryHandle;
+
+    const SUPPORTS_POSIX_LOCKS: bool = true;
+    const SUPPORTS_READDIRPLUS: bool = true;
+
+    fn init(&self, _conn: &mut fuse3::ConnInfo) {
         debug!("init");
-        Ok(ReplyInit::default())
     }
 
-    async fn destroy(&self, _req: Request) {
+    fn destroy(&self) {
         debug!("destroy");
     }
 
-    async fn lookup(&self, _req: Request, parent: &OsStr, name: &OsStr) -> FuseResult<ReplyEntry> {
-        let path = Path::new(parent).join(name);
-        let attr = self.attr_for_path(Some(&path), None)?;
-        Ok(ReplyEntry {
-            ttl: ATTR_TTL,
-            attr,
-        })
+    fn lookup(
+        &self,
+        parent: &Path,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<Option<FileAttr>, Errno> {
+        let path = parent.join(name);
+        match self.attr_for_path(Some(&path), None) {
+            Ok(attr) => Ok(Some(attr)),
+            Err(libc::ENOENT) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
     }
 
-    async fn getattr(
+    fn getattr(
         &self,
-        _req: Request,
-        path: Option<&OsStr>,
-        fh: Option<u64>,
-        _flags: u32,
-    ) -> FuseResult<ReplyAttr> {
-        let attr = self.attr_for_path(path.map(Path::new), fh)?;
-        Ok(ReplyAttr {
-            ttl: ATTR_TTL,
-            attr,
-        })
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.attr_for_path(path, handle)?)
     }
 
-    async fn setattr(
+    fn setattr(
         &self,
-        req: Request,
-        path: Option<&OsStr>,
-        fh: Option<u64>,
-        set_attr: SetAttr,
-    ) -> FuseResult<ReplyAttr> {
-        debug!("setattr: {:?} fh={:?} {:?}", path, fh, set_attr);
-        let path = path.map(Path::new);
-
-        // One SETATTR request can carry several changes at once; apply them in
-        // a fixed order (size, then mode, then ownership, then times) and stop
-        // at the first error.
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
+        set_attr: &SetAttr,
+        caller: &Request,
+    ) -> Result<FileAttr, Errno> {
         if let Some(size) = set_attr.size {
-            self.do_truncate(path, fh, size)?;
+            self.do_truncate(path, handle, size)?;
         }
         if let Some(mode) = set_attr.mode {
-            self.do_chmod(path, fh, mode as u32)?;
+            self.do_chmod(path, handle, mode)?;
         }
         if set_attr.uid.is_some() || set_attr.gid.is_some() {
-            self.do_chown(path, fh, set_attr.uid, set_attr.gid)?;
+            self.do_chown(path, handle, set_attr.uid, set_attr.gid)?;
         }
         if set_attr.atime.is_some() || set_attr.mtime.is_some() {
-            let atime = set_attr
-                .atime
-                .map(|t| system_time_from_secs(t.sec, t.nsec as i64));
-            let mtime = set_attr
-                .mtime
-                .map(|t| system_time_from_secs(t.sec, t.nsec as i64));
-            self.do_utimens(req, path, fh, atime, mtime)?;
+            let resolve_time = |time: Option<TimeOrNow>| {
+                time.map(|time| match time {
+                    TimeOrNow::SpecificTime(time) => time,
+                    TimeOrNow::Now => SystemTime::now(),
+                })
+            };
+            self.do_utimens(
+                *caller,
+                path,
+                handle,
+                resolve_time(set_attr.atime),
+                resolve_time(set_attr.mtime),
+            )?;
         }
-
-        let attr = self.attr_for_path(path, fh)?;
-        Ok(ReplyAttr {
-            ttl: ATTR_TTL,
-            attr,
-        })
+        Ok(self.attr_for_path(path, handle)?)
     }
 
-    async fn access(&self, req: Request, path: &OsStr, mask: u32) -> FuseResult<()> {
-        self.access_impl(req, Path::new(path), mask)?;
-        Ok(())
+    fn access(&self, path: &Path, mask: i32, caller: &Request) -> Result<(), Errno> {
+        Ok(self.access_impl(*caller, path, mask as u32)?)
     }
 
-    async fn statfs(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyStatFs> {
-        Ok(self.statfs_impl(Path::new(path))?)
+    fn statfs(&self, path: &Path, _caller: &Request) -> Result<ReplyStatFs, Errno> {
+        Ok(self.statfs_impl(path)?)
     }
 
-    async fn readlink(&self, _req: Request, path: &OsStr) -> FuseResult<ReplyData> {
-        let target = self.readlink_impl(Path::new(path))?;
-        Ok(ReplyData {
-            data: Bytes::from(target),
-        })
+    fn readlink(&self, path: &Path, _caller: &Request) -> Result<PathBuf, Errno> {
+        use std::os::unix::ffi::OsStringExt;
+        Ok(PathBuf::from(OsString::from_vec(self.readlink_impl(path)?)))
     }
 
-    async fn symlink(
+    fn symlink(
         &self,
-        _req: Request,
-        parent: &OsStr,
+        parent: &Path,
         name: &OsStr,
-        link_path: &OsStr,
-    ) -> FuseResult<ReplyEntry> {
-        let attr = self.symlink_impl(Path::new(parent), name, Path::new(link_path))?;
-        Ok(ReplyEntry {
-            ttl: ATTR_TTL,
-            attr,
-        })
+        target: &Path,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.symlink_impl(parent, name, target)?)
     }
 
-    async fn link(
+    fn link(
         &self,
-        _req: Request,
-        path: &OsStr,
-        new_parent: &OsStr,
+        path: &Path,
+        new_parent: &Path,
         new_name: &OsStr,
-    ) -> FuseResult<ReplyEntry> {
-        let attr = self.link_impl(Path::new(path), Path::new(new_parent), new_name)?;
-        Ok(ReplyEntry {
-            ttl: ATTR_TTL,
-            attr,
-        })
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.link_impl(path, new_parent, new_name)?)
     }
 
-    async fn mknod(
+    fn mknod(
         &self,
-        req: Request,
-        parent: &OsStr,
+        parent: &Path,
         name: &OsStr,
         mode: u32,
         rdev: u32,
-    ) -> FuseResult<ReplyEntry> {
-        let attr = self.mknod_impl(req, Path::new(parent), name, mode, rdev)?;
-        Ok(ReplyEntry {
-            ttl: ATTR_TTL,
-            attr,
-        })
+        _umask: u32,
+        caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.mknod_impl(*caller, parent, name, mode, rdev)?)
     }
 
-    async fn mkdir(
+    fn mkdir(
         &self,
-        req: Request,
-        parent: &OsStr,
+        parent: &Path,
         name: &OsStr,
         mode: u32,
         _umask: u32,
-    ) -> FuseResult<ReplyEntry> {
-        // The kernel has already applied the umask to `mode` (we don't set
-        // MountOptions::dont_mask), so `_umask` is ignored.
-        let attr = self.mkdir_impl(req, Path::new(parent), name, mode)?;
-        Ok(ReplyEntry {
-            ttl: ATTR_TTL,
-            attr,
-        })
+        caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.mkdir_impl(*caller, parent, name, mode)?)
     }
 
-    async fn unlink(&self, _req: Request, parent: &OsStr, name: &OsStr) -> FuseResult<()> {
-        self.unlink_impl(Path::new(parent), name)?;
-        Ok(())
+    fn unlink(&self, parent: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Ok(self.unlink_impl(parent, name)?)
     }
 
-    async fn rmdir(&self, _req: Request, parent: &OsStr, name: &OsStr) -> FuseResult<()> {
-        self.rmdir_impl(Path::new(parent), name)?;
-        Ok(())
+    fn rmdir(&self, parent: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Ok(self.rmdir_impl(parent, name)?)
     }
 
-    async fn rename(
+    fn rename(
         &self,
-        _req: Request,
-        origin_parent: &OsStr,
-        origin_name: &OsStr,
-        parent: &OsStr,
+        parent: &Path,
         name: &OsStr,
-    ) -> FuseResult<()> {
-        self.rename_internal(
-            Path::new(origin_parent),
-            origin_name,
-            Path::new(parent),
-            name,
-        )?;
-        Ok(())
+        new_parent: &Path,
+        new_name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        Ok(self.rename_internal(parent, name, new_parent, new_name)?)
     }
 
-    async fn opendir(&self, _req: Request, path: &OsStr, _flags: u32) -> FuseResult<ReplyOpen> {
-        debug!("opendir: {:?}", path);
-        let handle = Arc::new(self.directory_snapshot(Path::new(path))?);
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        self.directory_handles_guard().insert(fh, handle);
-        Ok(ReplyOpen { fh, flags: 0 })
-    }
-
-    async fn releasedir(
+    fn opendir(
         &self,
-        _req: Request,
-        _path: &OsStr,
-        fh: u64,
-        _flags: u32,
-    ) -> FuseResult<()> {
-        debug!("releasedir: fh={}", fh);
-        self.directory_handles_guard().remove(&fh);
-        Ok(())
+        path: &Path,
+        _flags: i32,
+        _caller: &Request,
+    ) -> Result<Opened<DirectoryHandle>, Errno> {
+        Ok(Opened::new(self.directory_snapshot(path)?))
     }
 
-    async fn readdir<'a>(
-        &'a self,
-        _req: Request,
-        _path: &'a OsStr,
-        fh: u64,
-        offset: i64,
-    ) -> FuseResult<ReplyDirectory<impl Stream<Item = FuseResult<DirectoryEntry>> + Send + 'a>>
-    {
-        let handle = self
-            .directory_handles_guard()
-            .get(&fh)
-            .cloned()
-            .ok_or(libc::EBADF)?;
-        let start = usize::try_from(offset.max(0)).unwrap_or(usize::MAX);
-
-        // The kernel may issue multiple READDIR calls, resuming at `offset`;
-        // each entry's offset field is the offset of the *next* entry.
-        let entries = (start..handle.entries.len()).map(move |i| {
-            let entry = &handle.entries[i];
-            Ok(DirectoryEntry {
-                kind: entry.kind,
-                name: entry.name.clone(),
-                offset: i as i64 + 1,
-            })
-        });
-
-        Ok(ReplyDirectory {
-            entries: stream::iter(entries),
-        })
-    }
-
-    async fn readdirplus<'a>(
-        &'a self,
-        _req: Request,
-        _path: &'a OsStr,
-        fh: u64,
+    fn readdir(
+        &self,
+        _path: &Path,
+        handle: &DirectoryHandle,
         offset: u64,
-        _lock_owner: u64,
-    ) -> FuseResult<
-        ReplyDirectoryPlus<impl Stream<Item = FuseResult<DirectoryEntryPlus>> + Send + 'a>,
-    > {
-        debug!("readdirplus: fh={} offset={}", fh, offset);
-        let handle = self
-            .directory_handles_guard()
-            .get(&fh)
-            .cloned()
-            .ok_or(libc::EBADF)?;
+        sink: &mut dyn PathDirSink,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
         let start = usize::try_from(offset).unwrap_or(usize::MAX);
-
-        // Same offset semantics as readdir; attrs are filled so the kernel can
-        // skip separate lookup/getattr calls (FUSE_READDIRPLUS / AUTO).
-        let entries = (start..handle.entries.len()).map(move |i| {
-            let entry = &handle.entries[i];
-            Ok(DirectoryEntryPlus {
-                kind: entry.kind,
-                name: entry.name.clone(),
-                offset: i as i64 + 1,
-                attr: entry.attr,
-                entry_ttl: ATTR_TTL,
-                attr_ttl: ATTR_TTL,
-            })
-        });
-
-        Ok(ReplyDirectoryPlus {
-            entries: stream::iter(entries),
-        })
-    }
-
-    async fn open(&self, _req: Request, path: &OsStr, flags: u32) -> FuseResult<ReplyOpen> {
-        let fh = self.open_impl(Path::new(path), flags)?;
-        Ok(ReplyOpen { fh, flags: 0 })
-    }
-
-    async fn release(
-        &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
-        _flags: u32,
-        _lock_owner: u64,
-        _flush: bool,
-    ) -> FuseResult<()> {
-        debug!("release: fh={}", fh);
-        self.handles_guard().remove(&fh);
+        for (index, entry) in handle.entries.iter().enumerate().skip(start) {
+            if !sink.add(&entry.name, entry.kind, index as u64 + 1) {
+                break;
+            }
+        }
         Ok(())
     }
 
-    async fn read(
+    fn readdirplus(
         &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
+        _path: &Path,
+        handle: &DirectoryHandle,
         offset: u64,
-        size: u32,
-    ) -> FuseResult<ReplyData> {
-        let data = self.read_impl(fh, offset, size)?;
-        Ok(ReplyData {
-            data: Bytes::from(data),
-        })
+        sink: &mut dyn PathPlusDirSink,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        let start = usize::try_from(offset).unwrap_or(usize::MAX);
+        for (index, entry) in handle.entries.iter().enumerate().skip(start) {
+            if !sink.add(&entry.name, entry.attr, index as u64 + 1) {
+                break;
+            }
+        }
+        Ok(())
     }
 
-    async fn write(
+    fn open(
         &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
+        path: &Path,
+        flags: i32,
+        _caller: &Request,
+    ) -> Result<Opened<FileHandle>, Errno> {
+        Ok(Opened::new(self.open_impl(path, flags as u32)?))
+    }
+
+    fn read<'a>(
+        &'a self,
+        _path: Option<&Path>,
+        handle: &'a FileHandle,
         offset: u64,
+        size: usize,
+        _caller: &Request,
+    ) -> Result<Cow<'a, [u8]>, Errno> {
+        let size = u32::try_from(size).unwrap_or(u32::MAX);
+        Ok(Cow::Owned(self.read_impl(handle, offset, size)?))
+    }
+
+    fn write(
+        &self,
+        _path: Option<&Path>,
+        handle: &FileHandle,
         data: &[u8],
-        _write_flags: u32,
-        _flags: u32,
-    ) -> FuseResult<ReplyWrite> {
-        let written = self.write_impl(fh, offset, data)?;
-        Ok(ReplyWrite { written })
+        offset: u64,
+        _caller: &Request,
+    ) -> Result<usize, Errno> {
+        Ok(self.write_impl(handle, offset, data)? as usize)
     }
 
-    async fn getlk(
+    fn getlk(
         &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
-        _lock_owner: u64,
-        start: u64,
-        end: u64,
-        r#type: u32,
-        pid: u32,
-    ) -> FuseResult<ReplyLock> {
-        let handle = self.handle_for(Some(fh)).ok_or(libc::ESTALE)?;
-        Ok(crate::file_lock::getlk(
+        _path: Option<&Path>,
+        handle: &FileHandle,
+        _owner: u64,
+        lock: FileLock,
+        _caller: &Request,
+    ) -> Result<FileLock, Errno> {
+        Ok(crate::file_lock::getlk(handle.file.as_raw_fd(), lock)?)
+    }
+
+    fn setlk(
+        &self,
+        _path: Option<&Path>,
+        handle: &FileHandle,
+        _owner: u64,
+        lock: FileLock,
+        sleep: bool,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        Ok(crate::file_lock::setlk(
             handle.file.as_raw_fd(),
-            start,
-            end,
-            r#type,
-            pid,
+            lock,
+            sleep,
         )?)
     }
 
-    async fn setlk(
+    fn create(
         &self,
-        _req: Request,
-        _path: Option<&OsStr>,
-        fh: u64,
-        _lock_owner: u64,
-        start: u64,
-        end: u64,
-        r#type: u32,
-        pid: u32,
-        block: bool,
-    ) -> FuseResult<()> {
-        let handle = self.handle_for(Some(fh)).ok_or(libc::ESTALE)?;
-        crate::file_lock::setlk(handle.file.as_raw_fd(), start, end, r#type, pid, block)?;
-        Ok(())
-    }
-
-    async fn create(
-        &self,
-        req: Request,
-        parent: &OsStr,
+        parent: &Path,
         name: &OsStr,
         mode: u32,
-        flags: u32,
-    ) -> FuseResult<ReplyCreated> {
-        let (attr, fh) = self.create_impl(req, Path::new(parent), name, mode, flags)?;
-        Ok(ReplyCreated {
-            ttl: ATTR_TTL,
-            attr,
-            generation: 0,
-            fh,
-            flags: 0,
-        })
+        _umask: u32,
+        flags: i32,
+        caller: &Request,
+    ) -> Result<(FileAttr, Opened<FileHandle>), Errno> {
+        let (attr, handle) = self.create_impl(*caller, parent, name, mode, flags as u32)?;
+        Ok((attr, Opened::new(handle)))
     }
 
-    async fn setxattr(
+    fn setxattr(
         &self,
-        _req: Request,
-        path: &OsStr,
+        path: &Path,
         name: &OsStr,
         value: &[u8],
-        flags: u32,
-        position: u32,
-    ) -> FuseResult<()> {
-        self.setxattr_impl(Path::new(path), name, value, flags, position)?;
-        Ok(())
+        flags: i32,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        Ok(self.setxattr_impl(path, name, value, flags as u32, 0)?)
     }
 
-    async fn getxattr(
+    fn getxattr(
         &self,
-        _req: Request,
-        path: &OsStr,
+        path: &Path,
         name: &OsStr,
-        size: u32,
-    ) -> FuseResult<ReplyXAttr> {
-        let value = self.getxattr_impl(Path::new(path), name)?;
-        xattr_reply(value, size)
+        size: usize,
+        _caller: &Request,
+    ) -> Result<ReplyXAttr, Errno> {
+        xattr_reply(self.getxattr_impl(path, name)?, size)
     }
 
-    async fn listxattr(&self, _req: Request, path: &OsStr, size: u32) -> FuseResult<ReplyXAttr> {
-        let list = self.listxattr_impl(Path::new(path))?;
-        xattr_reply(list, size)
+    fn listxattr(&self, path: &Path, size: usize, _caller: &Request) -> Result<ReplyXAttr, Errno> {
+        xattr_reply(self.listxattr_impl(path)?, size)
     }
 
-    async fn removexattr(&self, _req: Request, path: &OsStr, name: &OsStr) -> FuseResult<()> {
-        self.removexattr_impl(Path::new(path), name)?;
-        Ok(())
+    fn removexattr(&self, path: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Ok(self.removexattr_impl(path, name)?)
     }
 }
 

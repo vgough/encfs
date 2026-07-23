@@ -20,7 +20,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y fuse libfuse-dev pkg-config
+        sudo apt-get install -y fuse3 libfuse3-dev pkg-config
     
     - name: Load fuse module
       run: sudo modprobe fuse

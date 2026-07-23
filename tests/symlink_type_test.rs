@@ -1,16 +1,21 @@
-use asyncfuse::FileType;
-use asyncfuse::path::PathFilesystem;
-use asyncfuse::path::Request;
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use futures_util::StreamExt;
-use std::ffi::OsStr;
+use fuse3::{Caller, FileKind as FileType, PathDirSink, PathFilesystem};
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[tokio::test]
-async fn test_symlink_type() {
+struct Entries(Vec<(OsString, FileType)>);
+impl PathDirSink for Entries {
+    fn add(&mut self, name: &OsStr, kind: FileType, _next_offset: u64) -> bool {
+        self.0.push((name.to_os_string(), kind));
+        true
+    }
+}
+
+#[test]
+fn test_symlink_type() {
     let _ = env_logger::builder().is_test(true).try_init();
     let tmp = std::env::temp_dir().join("encfs_symlink_test");
     if tmp.exists() {
@@ -36,11 +41,11 @@ async fn test_symlink_type() {
     let config = encfs::config::EncfsConfig::test_default();
     let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
-    let req = Request {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
 
     let parent = PathBuf::from("");
@@ -49,17 +54,12 @@ async fn test_symlink_type() {
 
     // Create Symlink
     let _ = fs
-        .symlink(req, parent.as_os_str(), name, target.as_os_str())
-        .await
+        .symlink(&parent, name, target, &req)
         .expect("symlink creation failed");
 
     // Check getattr
     let path = parent.join(name);
-    let attr = fs
-        .getattr(req, Some(path.as_os_str()), None, 0)
-        .await
-        .expect("getattr failed")
-        .attr;
+    let attr = fs.getattr(Some(&path), None, &req).expect("getattr failed");
 
     // Logic: attr.kind should be Symlink, but currently it is RegularFile (bug)
     println!("File kind: {:?}", attr.kind);
@@ -71,31 +71,21 @@ async fn test_symlink_type() {
     );
 
     // Check readdir
-    let fh = fs
-        .opendir(req, parent.as_os_str(), 0)
-        .await
-        .expect("opendir failed")
-        .fh;
-    let reply = fs
-        .readdir(req, parent.as_os_str(), fh, 0)
-        .await
+    let handle = fs.opendir(&parent, 0, &req).expect("opendir failed").handle;
+    let mut entries = Entries(Vec::new());
+    fs.readdir(&parent, &handle, 0, &mut entries, &req)
         .expect("readdir failed");
-    let entries_stream = reply.entries;
-    futures_util::pin_mut!(entries_stream);
-    let mut entries = Vec::new();
-    while let Some(entry) = entries_stream.next().await {
-        entries.push(entry.expect("readdir entry error"));
-    }
     let entry = entries
+        .0
         .iter()
-        .find(|e| e.name.to_str() == Some("mysymlink"))
+        .find(|e| e.0 == OsStr::new("mysymlink"))
         .expect("symlink not found in readdir");
-    println!("Readdir entry kind: {:?}", entry.kind);
+    println!("Readdir entry kind: {:?}", entry.1);
     assert_eq!(
-        entry.kind,
+        entry.1,
         FileType::Symlink,
         "readdir: Expected Symlink, got {:?}",
-        entry.kind
+        entry.1
     );
 
     // Cleanup

@@ -51,7 +51,7 @@ tasks:
       - "{{.CARGO}} nextest run --release"
 
   test-live:
-    desc: Run live-mount FUSE integration tests (requires Linux+FUSE); sets ENCFS_LIVE_TESTS=1
+    desc: Run live-mount integration tests (requires FUSE 3 or macFUSE); sets ENCFS_LIVE_TESTS=1
     cmds:
       - |
         set -euo pipefail
@@ -121,4 +121,3 @@ tasks:
     desc: Clean build artifacts
     cmds:
       - "{{.CARGO}} clean"
-
