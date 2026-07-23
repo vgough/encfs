@@ -56,11 +56,15 @@ pub(crate) fn getlk(fd: RawFd, requested: FileLock) -> Result<FileLock, libc::c_
         let length = u64::try_from(lock.l_len).map_err(|_| libc::EIO)?;
         reply_start.checked_add(length - 1).ok_or(libc::EOVERFLOW)?
     };
-    let kind = match lock.l_type as libc::c_int {
-        libc::F_RDLCK => LockKind::Read,
-        libc::F_WRLCK => LockKind::Write,
-        libc::F_UNLCK => LockKind::Unlock,
-        _ => return Err(libc::EIO),
+    let l_type = i64::from(lock.l_type);
+    let kind = if l_type == i64::from(libc::F_RDLCK) {
+        LockKind::Read
+    } else if l_type == i64::from(libc::F_WRLCK) {
+        LockKind::Write
+    } else if l_type == i64::from(libc::F_UNLCK) {
+        LockKind::Unlock
+    } else {
+        return Err(libc::EIO);
     };
     Ok(FileLock {
         start: reply_start,

@@ -778,7 +778,10 @@ fn live_posix_lock_child() -> Result<()> {
     };
     let expect_blocked = std::env::var_os("ENCFS_LOCK_EXPECT_BLOCKED").is_some();
     let file = OpenOptions::new().read(true).write(true).open(path)?;
-    match (set_test_lock(&file, libc::F_WRLCK), expect_blocked) {
+    match (
+        set_test_lock(&file, libc::F_WRLCK as libc::c_int),
+        expect_blocked,
+    ) {
         (Err(error), true)
             if error.raw_os_error() == Some(libc::EACCES)
                 || error.raw_os_error() == Some(libc::EAGAIN) =>
@@ -804,7 +807,7 @@ fn live_cross_process_posix_locks() -> Result<()> {
     let path = mount.mount_point.join("locked.txt");
     fs::write(&path, b"locked")?;
     let file = OpenOptions::new().read(true).write(true).open(&path)?;
-    set_test_lock(&file, libc::F_WRLCK)?;
+    set_test_lock(&file, libc::F_WRLCK as libc::c_int)?;
 
     let child = |expect_blocked: bool| -> Result<()> {
         let mut command = Command::new(std::env::current_exe()?);
@@ -823,7 +826,7 @@ fn live_cross_process_posix_locks() -> Result<()> {
     };
 
     child(true)?;
-    set_test_lock(&file, libc::F_UNLCK)?;
+    set_test_lock(&file, libc::F_UNLCK as libc::c_int)?;
     child(false)?;
     Ok(())
 }
