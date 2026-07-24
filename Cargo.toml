@@ -2,13 +2,6 @@
 members = ["."]
 exclude = ["fuzz"]
 
-# TEMPORARY: the fuse3 APIs this crate now depends on
-# (statfs_path/access_check/symlink/XattrReply::sized/DirBuffer/mount) only
-# exist in the local libfuse-sys checkout so far. Once that repo's commits
-# are pushed, remove this patch and run `cargo update -p fuse3`.
-[patch."https://github.com/vgough/libfuse-sys"]
-fuse3 = { path = "../libfuse-sys/fuse3" }
-
 [package]
 name = "encfs"
 version = "2.0.0-beta.4"
