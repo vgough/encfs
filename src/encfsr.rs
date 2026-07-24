@@ -228,15 +228,15 @@ fn main() -> Result<()> {
 
     // Build FUSE options: always mount read-only at kernel level (FUSE-01)
     // plus default_permissions, then pass through any user-provided fuse_opts.
-    let mut mount_config = encfs::mount::MountConfig {
-        fs_name: "encfsr".to_string(),
+    let mut mount_config = fuse3::mount::MountConfig {
         read_only: true,
         default_permissions: true,
-        ..Default::default()
+        ..fuse3::mount::MountConfig::new("encfsr")
     };
 
-    // Parse user-provided "-o option[,option...]" pairs: map the options the
-    // mount layer knows about and pass the rest through verbatim.
+    // Parse user-provided "-o option[,option...]" pairs into raw option
+    // words; MountConfig knows which words map to its fields and which pass
+    // through verbatim.
     let mut opts_iter = args.fuse_opts.iter();
     while let Some(token) = opts_iter.next() {
         let words: Vec<&str> = if token == "-o" {
@@ -253,45 +253,14 @@ fn main() -> Result<()> {
             eprintln!("error: unrecognized FUSE option argument: {token}");
             std::process::exit(1);
         };
-        for word in words {
-            match word {
-                "allow_other" => mount_config.allow_other = true,
-                "allow_root" => mount_config.allow_root = true,
-                "nonempty" => mount_config.nonempty = true,
-                "ro" => mount_config.read_only = true,
-                "default_permissions" => mount_config.default_permissions = true,
-                other => mount_config.extra_options.push(other.to_string()),
-            }
-        }
+        mount_config.parse_option_words(words);
     }
 
-    // Validate the mount point before handing off to libfuse. On macOS
-    // fuse_session_mount() dispatches to the macFUSE mount helper and returns
-    // success even when the mount point does not exist, leaving the session
-    // loop blocked forever instead of reporting the failure. Check here so a
-    // bad mount point is a fast, clear error on every platform.
-    if !args.mount_point.exists() {
-        eprintln!(
-            "{}",
-            t!(
-                "encfsr.mount_point_not_found",
-                mount_point = args.mount_point.display()
-            )
-        );
-        std::process::exit(1);
-    }
-    if !args.mount_point.is_dir() {
-        eprintln!(
-            "{}",
-            t!(
-                "encfsr.mount_point_not_dir",
-                mount_point = args.mount_point.display()
-            )
-        );
-        std::process::exit(1);
-    }
+    // Mount-point existence/directory validation happens inside
+    // `Session::mount` (which also works around the macOS macFUSE quirk of
+    // reporting success and hanging when the mount point doesn't exist).
 
-    encfs::mount::mount_blocking(fs, &args.mount_point, &mount_config, false)?;
+    fuse3::mount::mount_blocking(fs, &args.mount_point, &mount_config, false)?;
 
     Ok(())
 }

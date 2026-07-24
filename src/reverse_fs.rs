@@ -2,11 +2,13 @@ use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use fuse3::passthrough::{
-    file_attr_from_metadata, file_type_from_metadata, synthetic_file_attr, system_time_from_secs,
+    file_attr_from_metadata, file_type_from_metadata, statfs_path, synthetic_file_attr,
+    system_time_from_secs,
 };
 use fuse3::{
-    Caller as Request, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr, Opened,
-    PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, XattrReply,
+    Caller as Request, DirBuffer, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr,
+    Opened, PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs,
+    XattrReply,
 };
 use libc;
 use log::{debug, warn};
@@ -207,21 +209,34 @@ impl ReverseFs {
         Ok(file_attr_from_metadata(&metadata, reported_size))
     }
 
-    /// List encrypted directory entries for a FUSE path (including `.` / `..`
-    /// and the virtual root config file).
-    fn readdir_entries(
-        &self,
-        path: &Path,
-    ) -> Result<Vec<(std::ffi::OsString, FileType)>, libc::c_int> {
+    /// Snapshot encrypted directory entries (with attributes) for a FUSE
+    /// path, including `.` / `..` and the virtual root config file.
+    ///
+    /// The source tree's directory nesting mirrors the FUSE path nesting
+    /// (reverse mode presents an encrypted view of the same tree shape), so
+    /// `..`'s attributes come from `source_dir`'s real OS parent rather than
+    /// re-decrypting the FUSE path.
+    fn build_dir_buffer(&self, path: &Path) -> Result<DirBuffer, libc::c_int> {
         let (source_dir, dir_iv) = self.resolve_source_path(path)?;
 
         let read_dir =
             std::fs::read_dir(&source_dir).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        let mut result = vec![
-            (OsStr::new(".").to_os_string(), FileType::Directory),
-            (OsStr::new("..").to_os_string(), FileType::Directory),
-        ];
+        let self_meta = std::fs::symlink_metadata(&source_dir)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let self_attr = file_attr_from_metadata(&self_meta, self_meta.len());
+
+        let parent_attr = if source_dir == self.source {
+            self_attr
+        } else {
+            let parent_dir = source_dir.parent().unwrap_or(&source_dir);
+            let parent_meta = std::fs::symlink_metadata(parent_dir)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            file_attr_from_metadata(&parent_meta, parent_meta.len())
+        };
+
+        let mut result = DirBuffer::new();
+        result.push_dots(self_attr, parent_attr);
 
         for entry in read_dir {
             let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -238,10 +253,15 @@ impl ReverseFs {
                     let metadata = entry
                         .metadata()
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    result.push((
-                        OsStr::new(&encrypted_name).to_os_string(),
+                    let mut size = metadata.len();
+                    if metadata.is_file() {
+                        size = self.ciphertext_size_for_plaintext(size)?;
+                    }
+                    result.push(
+                        encrypted_name,
                         file_type_from_metadata(&metadata),
-                    ));
+                        file_attr_from_metadata(&metadata, size),
+                    );
                 }
                 Err(e) => {
                     warn!(
@@ -253,10 +273,11 @@ impl ReverseFs {
         }
 
         if path == Path::new("/") {
-            result.push((
-                OsStr::new(CONFIG_FILE_NAME).to_os_string(),
+            result.push(
+                CONFIG_FILE_NAME,
                 FileType::RegularFile,
-            ));
+                self.config_file_attr(),
+            );
         }
 
         Ok(result)
@@ -265,7 +286,7 @@ impl ReverseFs {
 
 impl PathFilesystem for ReverseFs {
     type Handle = ReverseHandle;
-    type DirHandle = ();
+    type DirHandle = DirBuffer;
 
     const SUPPORTS_POSIX_LOCKS: bool = true;
     const SUPPORTS_READDIRPLUS: bool = true;
@@ -315,82 +336,39 @@ impl PathFilesystem for ReverseFs {
 
     fn statfs(&self, path: &Path, _caller: &Request) -> Result<ReplyStatFs, Errno> {
         debug!("ReverseFs::statfs {:?}", path);
-        let c_path =
-            std::ffi::CString::new(self.source.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-        if unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) } != 0 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO)
-                .into());
-        }
-        Ok(ReplyStatFs {
-            blocks: stat.f_blocks as u64,
-            bfree: stat.f_bfree as u64,
-            bavail: stat.f_bavail as u64,
-            files: stat.f_files as u64,
-            ffree: stat.f_ffree as u64,
-            bsize: stat.f_bsize as u32,
-            namelen: stat.f_namemax as u32,
-            frsize: stat.f_frsize as u32,
-        })
+        statfs_path(&self.source)
     }
 
-    fn opendir(&self, path: &Path, _flags: i32, _caller: &Request) -> Result<Opened<()>, Errno> {
-        self.resolve_source_path(path)?;
-        Ok(Opened::new(()))
+    fn opendir(
+        &self,
+        path: &Path,
+        _flags: i32,
+        _caller: &Request,
+    ) -> Result<Opened<DirBuffer>, Errno> {
+        Ok(Opened::new(self.build_dir_buffer(path)?))
     }
 
     fn readdir(
         &self,
-        path: &Path,
-        _handle: &(),
+        _path: &Path,
+        handle: &DirBuffer,
         offset: u64,
         sink: &mut dyn PathDirSink,
         _caller: &Request,
     ) -> Result<(), Errno> {
-        for (index, (name, kind)) in self
-            .readdir_entries(path)?
-            .into_iter()
-            .enumerate()
-            .skip(usize::try_from(offset).unwrap_or(usize::MAX))
-        {
-            if !sink.add(&name, kind, index as u64 + 1) {
-                break;
-            }
-        }
+        handle.fill(offset, sink);
         Ok(())
     }
 
     fn readdirplus(
         &self,
-        path: &Path,
-        _handle: &(),
+        _path: &Path,
+        handle: &DirBuffer,
         offset: u64,
         sink: &mut dyn PathPlusDirSink,
         _caller: &Request,
     ) -> Result<(), Errno> {
-        for (index, (name, _kind)) in self
-            .readdir_entries(path)?
-            .into_iter()
-            .enumerate()
-            .skip(usize::try_from(offset).unwrap_or(usize::MAX))
-        {
-            let entry_path = if name == OsStr::new(".") {
-                path.to_path_buf()
-            } else if name == OsStr::new("..") {
-                path.parent()
-                    .filter(|parent| !parent.as_os_str().is_empty())
-                    .unwrap_or(path)
-                    .to_path_buf()
-            } else {
-                path.join(&name)
-            };
-            let attr = self.attr_for_fuse_path(&entry_path)?;
-            if !sink.add(&name, attr, index as u64 + 1) {
-                break;
-            }
-        }
+        handle.fill_plus(offset, sink);
         Ok(())
     }
 

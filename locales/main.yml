@@ -64,14 +64,6 @@ encfsr.source_not_dir:
   en: "error: source path %{source} is not a directory"
   fr: "erreur : le chemin source %{source} n'est pas un répertoire"
   de: "Fehler: Quellpfad %{source} ist kein Verzeichnis"
-encfsr.mount_point_not_found:
-  en: "error: mount point %{mount_point} does not exist or is not accessible"
-  fr: "erreur : le point de montage %{mount_point} n'existe pas ou n'est pas accessible"
-  de: "Fehler: Einhängepunkt %{mount_point} existiert nicht oder ist nicht zugänglich"
-encfsr.mount_point_not_dir:
-  en: "error: mount point %{mount_point} is not a directory"
-  fr: "erreur : le point de montage %{mount_point} n'est pas un répertoire"
-  de: "Fehler: Einhängepunkt %{mount_point} ist kein Verzeichnis"
 encfsr.unique_iv_rejected:
   en: "error: unique_iv = true is not supported; set unique_iv = false to use encfsr"
   fr: "erreur : unique_iv = true n'est pas pris en charge ; définissez unique_iv = false pour utiliser encfsr"

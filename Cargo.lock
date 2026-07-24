@@ -731,7 +731,6 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 [[package]]
 name = "fuse3"
 version = "0.1.0"
-source = "git+https://github.com/vgough/libfuse-sys#c93a938aeada9ff082dc35caf23e836cdb051844"
 dependencies = [
  "libc",
  "libfuse-sys",
@@ -1053,7 +1052,6 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 [[package]]
 name = "libfuse-sys"
 version = "0.4.0"
-source = "git+https://github.com/vgough/libfuse-sys#c93a938aeada9ff082dc35caf23e836cdb051844"
 dependencies = [
  "bindgen",
  "libc",
@@ -1832,7 +1830,6 @@ dependencies = [
 [[package]]
 name = "typed_fuse_core"
 version = "0.1.0"
-source = "git+https://github.com/vgough/libfuse-sys#c93a938aeada9ff082dc35caf23e836cdb051844"
 dependencies = [
  "libc",
 ]

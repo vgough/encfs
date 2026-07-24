@@ -5,7 +5,8 @@ use log::{error, info};
 use rust_i18n::t;
 use std::path::PathBuf;
 
-use encfs::{config, fs::EncFs, mount};
+use encfs::{config, fs::EncFs};
+use fuse3::mount;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
@@ -202,11 +203,10 @@ fn main() -> Result<()> {
             let fs = EncFs::new(root, cipher, config).with_read_only(args.read_only);
 
             let mount_config = mount::MountConfig {
-                fs_name: "encfs".to_string(),
                 allow_other: args.public,
                 default_permissions: !args.no_default_permissions,
                 read_only: args.read_only,
-                ..Default::default()
+                ..mount::MountConfig::new("encfs")
             };
 
             mount::mount_blocking(fs, &mount_point, &mount_config, args.single_thread)?;

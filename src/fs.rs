@@ -4,12 +4,13 @@ use crate::crypto::file::{FileDecoder, FileEncoder};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use fuse3::passthrough::{
-    self, c_path, file_attr_from_metadata, file_type_from_metadata, is_apple_xattr,
-    set_ownership_fd, set_ownership_path, utimens_permission_check,
+    self, access_check, c_path, file_attr_from_metadata, file_type_from_metadata, is_apple_xattr,
+    set_ownership_fd, set_ownership_path, statfs_path, symlink as passthrough_symlink,
+    utimens_permission_check,
 };
 use fuse3::{
-    Caller as Request, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr, Opened,
-    PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
+    Caller as Request, DirBuffer, Errno, FileLock, NodeAttr as FileAttr, Opened, PathDirSink,
+    PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
     XattrReply as ReplyXAttr,
 };
 use libc;
@@ -31,22 +32,6 @@ type OpResult = Result<(), libc::c_int>;
 pub struct FileHandle {
     file: File,
     file_iv: u64,
-}
-
-#[derive(Clone)]
-struct DirectorySnapshotEntry {
-    name: OsString,
-    kind: FileType,
-    attr: FileAttr,
-}
-
-/// An immutable view of a directory captured by `opendir`.
-///
-/// Mutations after the handle is opened are intentionally not visible through
-/// that handle. A later `opendir` captures a new view, and retained attributes
-/// allow `readdirplus` to finish even when an entry has since been removed.
-pub struct DirectoryHandle {
-    entries: Vec<DirectorySnapshotEntry>,
 }
 
 struct PathInfo<'a> {
@@ -249,8 +234,7 @@ impl EncFs {
                     Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
                 }
 
-                std::os::unix::fs::symlink(Path::new(&enc_target), &real_dest)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                passthrough_symlink(OsStr::new(&enc_target), &real_dest).map_err(|e| e.raw())?;
 
                 // Remove source symlink.
                 fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -387,14 +371,12 @@ impl EncFs {
                     Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
                 }
 
-                std::os::unix::fs::symlink(Path::new(&enc_target), dest.physical)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                passthrough_symlink(OsStr::new(&enc_target), dest.physical).map_err(|e| e.raw())?;
             } else {
                 // No IV chaining - just copy the symlink as-is
                 let target = fs::read_link(source.physical)
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                std::os::unix::fs::symlink(&target, dest.physical)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                passthrough_symlink(target.as_os_str(), dest.physical).map_err(|e| e.raw())?;
             }
         } else {
             // Standard copy for regular files without external IV chaining
@@ -624,27 +606,9 @@ impl EncFs {
     fn statfs_impl(&self, path: &Path) -> Result<ReplyStatFs, libc::c_int> {
         debug!("statfs: {:?}", path);
         // Check underlying filesystem of the root
-        let c_path =
-            std::ffi::CString::new(self.root.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
-
-        let res = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
-        if res != 0 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
-        }
-
-        Ok(ReplyStatFs {
-            blocks: stat.f_blocks as u64,
-            bfree: stat.f_bfree as u64,
-            bavail: stat.f_bavail as u64,
-            files: stat.f_files as u64,
-            ffree: stat.f_ffree as u64,
-            bsize: stat.f_bsize as u32,
-            namelen: self.cipher.max_plaintext_name_len(stat.f_namemax as u32),
-            frsize: stat.f_frsize as u32,
-        })
+        let mut stat = statfs_path(&self.root).map_err(|e| e.raw())?;
+        stat.namelen = self.cipher.max_plaintext_name_len(stat.namelen);
+        Ok(stat)
     }
 
     fn do_chmod(&self, path: Option<&Path>, handle: Option<&FileHandle>, mode: u32) -> OpResult {
@@ -686,8 +650,6 @@ impl EncFs {
 
     /// Check if the requesting process has the requested access to the path.
     ///
-    /// Uses the file's stored uid, gid, and mode from the backend and the request's
-    /// uid/gid to apply standard Unix permission checks. Root (uid 0) is always allowed.
     /// Only the primary gid is considered (no supplementary groups).
     fn access_impl(&self, req: Request, path: &Path, mask: u32) -> OpResult {
         debug!(
@@ -699,36 +661,8 @@ impl EncFs {
         let metadata =
             fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // F_OK (0): existence only
-        if mask == 0 {
-            return Ok(());
-        }
-
-        // Superuser bypasses permission checks
-        if req.uid == 0 {
-            return Ok(());
-        }
-
-        let mode = metadata.mode();
-        let file_uid = metadata.uid();
-        let file_gid = metadata.gid();
-
-        // Pick the applicable mode triplet: owner (7-5), group (4-2), other (1-0)
-        let effective = if req.uid == file_uid {
-            (mode >> 6) & 0o7
-        } else if req.gid == file_gid {
-            (mode >> 3) & 0o7
-        } else {
-            mode & 0o7
-        };
-
-        // Map R_OK=4, W_OK=2, X_OK=1 to mode bits: read=4, write=2, execute=1
-        let need = mask & 0o7;
-        if (effective & need) == need {
-            Ok(())
-        } else {
-            Err(libc::EACCES)
-        }
+        access_check(&req, metadata.uid(), metadata.gid(), metadata.mode(), mask)
+            .map_err(|e| e.raw())
     }
 
     fn do_truncate(&self, path: Option<&Path>, handle: Option<&FileHandle>, size: u64) -> OpResult {
@@ -923,23 +857,10 @@ impl EncFs {
                 libc::EIO
             })?;
 
-        let enc_target_path = Path::new(&enc_target);
+        passthrough_symlink(OsStr::new(&enc_target), &real_path).map_err(|e| e.raw())?;
 
-        let c_target = std::ffi::CString::new(enc_target_path.as_os_str().as_bytes())
-            .map_err(|_| libc::EINVAL)?;
-        let c_linkpath =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-
-        let ret = unsafe { libc::symlink(c_target.as_ptr(), c_linkpath.as_ptr()) };
-
-        if ret == 0 {
-            // Return the attributes of the entry we just created.
-            self.attr_for_path(Some(&path), None)
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        // Return the attributes of the entry we just created.
+        self.attr_for_path(Some(&path), None)
     }
 
     fn attr_for_path(
@@ -984,7 +905,7 @@ impl EncFs {
         file_attr_from_metadata(metadata, size)
     }
 
-    fn directory_snapshot(&self, path: &Path) -> Result<DirectoryHandle, libc::c_int> {
+    fn directory_snapshot(&self, path: &Path) -> Result<DirBuffer, libc::c_int> {
         let (real_path, dir_iv) = self.encrypt_path(path)?;
 
         let entries =
@@ -995,19 +916,8 @@ impl EncFs {
         let parent = path.parent().unwrap_or(path);
         let parent_attr = self.attr_for_path(Some(parent), None)?;
 
-        // Rust's fs::read_dir doesn't include . and .. entries, so add them explicitly
-        let mut result = vec![
-            DirectorySnapshotEntry {
-                name: OsString::from("."),
-                kind: FileType::Directory,
-                attr: self.attr_from_metadata(&directory_metadata),
-            },
-            DirectorySnapshotEntry {
-                name: OsString::from(".."),
-                kind: FileType::Directory,
-                attr: parent_attr,
-            },
-        ];
+        let mut result = DirBuffer::new();
+        result.push_dots(self.attr_from_metadata(&directory_metadata), parent_attr);
 
         for entry in entries {
             let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -1030,11 +940,11 @@ impl EncFs {
                 Ok((decrypted_name, _)) => {
                     let metadata = fs::symlink_metadata(entry.path())
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    result.push(DirectorySnapshotEntry {
-                        name: OsStr::from_bytes(&decrypted_name).to_os_string(),
-                        kind: file_type_from_metadata(&metadata),
-                        attr: self.attr_from_metadata(&metadata),
-                    });
+                    result.push(
+                        OsStr::from_bytes(&decrypted_name),
+                        file_type_from_metadata(&metadata),
+                        self.attr_from_metadata(&metadata),
+                    );
                 }
                 Err(e) => {
                     warn!("Failed to decrypt filename {}: {}", name_str, e);
@@ -1042,7 +952,7 @@ impl EncFs {
             }
         }
 
-        Ok(DirectoryHandle { entries: result })
+        Ok(result)
     }
 
     fn open_impl(&self, path: &Path, flags: u32) -> Result<FileHandle, libc::c_int> {
@@ -1545,21 +1455,9 @@ impl EncFs {
     }
 }
 
-/// Apply FUSE getxattr/listxattr size semantics: a zero-size request probes
-/// the value length; otherwise the data must fit in the caller's buffer.
-fn xattr_reply(data: Vec<u8>, size: usize) -> Result<ReplyXAttr, Errno> {
-    if size == 0 {
-        Ok(ReplyXAttr::Size(data.len()))
-    } else if data.len() > size {
-        Err(Errno::from(libc::ERANGE))
-    } else {
-        Ok(ReplyXAttr::Data(data))
-    }
-}
-
 impl PathFilesystem for EncFs {
     type Handle = FileHandle;
-    type DirHandle = DirectoryHandle;
+    type DirHandle = DirBuffer;
 
     const SUPPORTS_POSIX_LOCKS: bool = true;
     const SUPPORTS_READDIRPLUS: bool = true;
@@ -1709,41 +1607,31 @@ impl PathFilesystem for EncFs {
         path: &Path,
         _flags: i32,
         _caller: &Request,
-    ) -> Result<Opened<DirectoryHandle>, Errno> {
+    ) -> Result<Opened<DirBuffer>, Errno> {
         Ok(Opened::new(self.directory_snapshot(path)?))
     }
 
     fn readdir(
         &self,
         _path: &Path,
-        handle: &DirectoryHandle,
+        handle: &DirBuffer,
         offset: u64,
         sink: &mut dyn PathDirSink,
         _caller: &Request,
     ) -> Result<(), Errno> {
-        let start = usize::try_from(offset).unwrap_or(usize::MAX);
-        for (index, entry) in handle.entries.iter().enumerate().skip(start) {
-            if !sink.add(&entry.name, entry.kind, index as u64 + 1) {
-                break;
-            }
-        }
+        handle.fill(offset, sink);
         Ok(())
     }
 
     fn readdirplus(
         &self,
         _path: &Path,
-        handle: &DirectoryHandle,
+        handle: &DirBuffer,
         offset: u64,
         sink: &mut dyn PathPlusDirSink,
         _caller: &Request,
     ) -> Result<(), Errno> {
-        let start = usize::try_from(offset).unwrap_or(usize::MAX);
-        for (index, entry) in handle.entries.iter().enumerate().skip(start) {
-            if !sink.add(&entry.name, entry.attr, index as u64 + 1) {
-                break;
-            }
-        }
+        handle.fill_plus(offset, sink);
         Ok(())
     }
 
@@ -1833,11 +1721,11 @@ impl PathFilesystem for EncFs {
         size: usize,
         _caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
-        xattr_reply(self.getxattr_impl(path, name)?, size)
+        ReplyXAttr::sized(self.getxattr_impl(path, name)?, size)
     }
 
     fn listxattr(&self, path: &Path, size: usize, _caller: &Request) -> Result<ReplyXAttr, Errno> {
-        xattr_reply(self.listxattr_impl(path)?, size)
+        ReplyXAttr::sized(self.listxattr_impl(path)?, size)
     }
 
     fn removexattr(&self, path: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {

@@ -1,7 +1,7 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
-use encfs::fs::{DirectoryHandle, EncFs};
-use fuse3::{Caller, FileKind, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink};
+use encfs::fs::EncFs;
+use fuse3::{Caller, DirBuffer, FileKind, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink};
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -101,7 +101,7 @@ impl PathPlusDirSink for PlusEntries {
     }
 }
 
-fn read_entries(encfs: &EncFs, handle: &DirectoryHandle, offset: u64) -> Vec<Entry> {
+fn read_entries(encfs: &EncFs, handle: &DirBuffer, offset: u64) -> Vec<Entry> {
     let mut sink = Entries {
         values: Vec::new(),
         limit: usize::MAX,
@@ -112,7 +112,7 @@ fn read_entries(encfs: &EncFs, handle: &DirectoryHandle, offset: u64) -> Vec<Ent
     sink.values
 }
 
-fn read_prefix(encfs: &EncFs, handle: &DirectoryHandle, count: usize) -> Vec<Entry> {
+fn read_prefix(encfs: &EncFs, handle: &DirBuffer, count: usize) -> Vec<Entry> {
     let mut sink = Entries {
         values: Vec::new(),
         limit: count,
@@ -123,7 +123,7 @@ fn read_prefix(encfs: &EncFs, handle: &DirectoryHandle, count: usize) -> Vec<Ent
     sink.values
 }
 
-fn read_entries_plus(encfs: &EncFs, handle: &DirectoryHandle, offset: u64) -> Vec<PlusEntry> {
+fn read_entries_plus(encfs: &EncFs, handle: &DirBuffer, offset: u64) -> Vec<PlusEntry> {
     let mut sink = PlusEntries {
         values: Vec::new(),
         limit: usize::MAX,
@@ -134,7 +134,7 @@ fn read_entries_plus(encfs: &EncFs, handle: &DirectoryHandle, offset: u64) -> Ve
     sink.values
 }
 
-fn read_prefix_plus(encfs: &EncFs, handle: &DirectoryHandle, count: usize) -> Vec<PlusEntry> {
+fn read_prefix_plus(encfs: &EncFs, handle: &DirBuffer, count: usize) -> Vec<PlusEntry> {
     let mut sink = PlusEntries {
         values: Vec::new(),
         limit: count,
