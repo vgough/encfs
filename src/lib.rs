@@ -1,4 +1,3 @@
-pub mod attr;
 pub mod config;
 pub mod config_binary;
 pub mod config_proto;

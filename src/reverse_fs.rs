@@ -1,7 +1,9 @@
-use crate::attr::{file_attr_from_metadata, file_type_from_metadata, synthetic_file_attr};
 use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
+use fuse3::passthrough::{
+    file_attr_from_metadata, file_type_from_metadata, synthetic_file_attr, system_time_from_secs,
+};
 use fuse3::{
     Caller as Request, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr, Opened,
     PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, XattrReply,
@@ -49,10 +51,8 @@ impl ReverseFs {
         config_bytes: Vec<u8>,
         config_metadata: std::fs::Metadata,
     ) -> Self {
-        let config_mtime = crate::attr::system_time_from_secs(
-            config_metadata.mtime(),
-            config_metadata.mtime_nsec(),
-        );
+        let config_mtime =
+            system_time_from_secs(config_metadata.mtime(), config_metadata.mtime_nsec());
         let config_uid = config_metadata.uid();
         let config_gid = config_metadata.gid();
         Self {

@@ -1,9 +1,12 @@
-use crate::attr::{file_attr_from_metadata, file_type_from_metadata};
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
+use fuse3::passthrough::{
+    self, c_path, file_attr_from_metadata, file_type_from_metadata, is_apple_xattr,
+    set_ownership_fd, set_ownership_path, utimens_permission_check,
+};
 use fuse3::{
     Caller as Request, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr, Opened,
     PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
@@ -12,21 +15,14 @@ use fuse3::{
 use libc;
 use log::{debug, error, warn};
 use std::borrow::Cow;
-use std::ffi::{CString, OsStr, OsString};
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
-
-/// macOS may add these attributes to files in the encrypted directory. They
-/// are not managed by EncFS and are intentionally omitted from the mounted
-/// filesystem's xattr list.
-fn is_apple_xattr(name: &str) -> bool {
-    name.starts_with("com.apple.")
-}
+use std::time::SystemTime;
 
 /// Errors from internal helpers are raw errno values; trait methods convert
 /// them to typed FUSE errors via `?`.
@@ -57,87 +53,6 @@ struct PathInfo<'a> {
     logical: &'a Path,
     physical: &'a Path,
     iv: u64,
-}
-
-#[cfg(target_os = "macos")]
-fn xattr_nofollow_flags() -> libc::c_int {
-    libc::XATTR_NOFOLLOW
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn setxattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-    value: *const libc::c_void,
-    size: usize,
-    flags: libc::c_int,
-) -> libc::c_int {
-    unsafe { libc::setxattr(path, name, value, size, 0, flags | xattr_nofollow_flags()) }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe fn setxattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-    value: *const libc::c_void,
-    size: usize,
-    flags: libc::c_int,
-) -> libc::c_int {
-    unsafe { libc::lsetxattr(path, name, value, size, flags) }
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn getxattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-    value: *mut libc::c_void,
-    size: usize,
-) -> libc::ssize_t {
-    unsafe { libc::getxattr(path, name, value, size, 0, xattr_nofollow_flags()) }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe fn getxattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-    value: *mut libc::c_void,
-    size: usize,
-) -> libc::ssize_t {
-    unsafe { libc::lgetxattr(path, name, value, size) }
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn listxattr_nofollow(
-    path: *const libc::c_char,
-    value: *mut libc::c_char,
-    size: usize,
-) -> libc::ssize_t {
-    unsafe { libc::listxattr(path, value, size, xattr_nofollow_flags()) }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe fn listxattr_nofollow(
-    path: *const libc::c_char,
-    value: *mut libc::c_char,
-    size: usize,
-) -> libc::ssize_t {
-    unsafe { libc::llistxattr(path, value, size) }
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn removexattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-) -> libc::c_int {
-    unsafe { libc::removexattr(path, name, xattr_nofollow_flags()) }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe fn removexattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-) -> libc::c_int {
-    unsafe { libc::lremovexattr(path, name) }
 }
 
 /// The main FUSE filesystem implementation.
@@ -573,71 +488,6 @@ fn headerless_file_iv(header_size: u64, external_iv: u64) -> u64 {
 }
 
 impl EncFs {
-    /// POSIX utime permission check: owner and root may always set; others may set to
-    /// current time only if they have write access; setting explicit time requires owner or root.
-    fn utimens_permission_check(
-        &self,
-        req: &Request,
-        file_uid: u32,
-        file_gid: u32,
-        mode: u32,
-        atime: Option<SystemTime>,
-        mtime: Option<SystemTime>,
-    ) -> Result<(), libc::c_int> {
-        if req.uid == 0 {
-            return Ok(());
-        }
-        if req.uid == file_uid {
-            return Ok(());
-        }
-        let setting_atime = atime.is_some();
-        let setting_mtime = mtime.is_some();
-        if !setting_atime && !setting_mtime {
-            return Ok(());
-        }
-        let now = SystemTime::now();
-        // FUSE passes UTIME_NOW as SystemTime::now() at callback time; explicit times (e.g.
-        // utime $now $now) can be tens of ms in the past. Use 10ms to distinguish.
-        let near_now = |t: SystemTime| {
-            now.duration_since(t).unwrap_or(Duration::MAX) < Duration::from_millis(10)
-                || t.duration_since(now).unwrap_or(Duration::MAX) < Duration::from_millis(10)
-        };
-        let setting_to_current = atime.is_none_or(near_now) && mtime.is_none_or(near_now);
-        if setting_to_current {
-            let has_write = (req.uid == file_uid && (mode & 0o200) != 0)
-                || (req.gid == file_gid && (mode & 0o020) != 0)
-                || (mode & 0o002) != 0;
-            if has_write {
-                return Ok(());
-            }
-            return Err(libc::EACCES);
-        }
-        Err(libc::EPERM)
-    }
-
-    /// Sets ownership to req.uid/req.gid if different from current process.
-    /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
-    fn set_ownership_fd(
-        &self,
-        fd: std::os::unix::io::RawFd,
-        req: &Request,
-    ) -> Result<(), libc::c_int> {
-        let uid = unsafe { libc::getuid() };
-        let gid = unsafe { libc::getgid() };
-        if req.uid == uid && req.gid == gid {
-            return Ok(());
-        }
-        if unsafe { libc::fchown(fd, req.uid as libc::uid_t, req.gid as libc::gid_t) } == -1 {
-            let errno = std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO);
-            if errno != libc::EPERM {
-                return Err(errno);
-            }
-        }
-        Ok(())
-    }
-
     fn physical_size_for_logical(&self, logical_size: u64, header_size: u64) -> u64 {
         FileEncoder::<File>::calculate_physical_size_with_mode(
             logical_size,
@@ -767,33 +617,6 @@ impl EncFs {
 
         Ok(())
     }
-
-    /// Sets ownership to req.uid/req.gid if different from current process.
-    /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
-    fn set_ownership_path(&self, path: &Path, req: &Request) -> Result<(), libc::c_int> {
-        let uid = unsafe { libc::getuid() };
-        let gid = unsafe { libc::getgid() };
-        if req.uid == uid && req.gid == gid {
-            return Ok(());
-        }
-        let c_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-        if unsafe {
-            libc::chown(
-                c_path.as_ptr(),
-                req.uid as libc::uid_t,
-                req.gid as libc::gid_t,
-            )
-        } == -1
-        {
-            let errno = std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO);
-            if errno != libc::EPERM {
-                return Err(errno);
-            }
-        }
-        Ok(())
-    }
 }
 
 /// Errno-based operation bodies shared by the `PathFilesystem` impl below.
@@ -830,22 +653,12 @@ impl EncFs {
 
         if let Some(path) = path {
             let (real_path, _) = self.encrypt_path(path)?;
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(mode);
-            return fs::set_permissions(real_path, perms)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO));
+            return passthrough::chmod_path(&real_path, mode).map_err(|e| e.raw());
         }
 
         // Path unknown (possibly deleted): fall back to the open handle.
         let handle = handle.ok_or(libc::ESTALE)?;
-        let ret = unsafe { libc::fchmod(handle.file.as_raw_fd(), mode as libc::mode_t) };
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        passthrough::chmod_fd(handle.file.as_raw_fd(), mode).map_err(|e| e.raw())
     }
 
     fn do_chown(
@@ -862,44 +675,13 @@ impl EncFs {
             Some(path) => path,
             None => {
                 let handle = handle.ok_or(libc::ESTALE)?;
-                let ret = unsafe {
-                    libc::fchown(
-                        handle.file.as_raw_fd(),
-                        uid.unwrap_or(u32::MAX),
-                        gid.unwrap_or(u32::MAX),
-                    )
-                };
-                if ret == 0 {
-                    return Ok(());
-                }
-                return Err(std::io::Error::last_os_error()
-                    .raw_os_error()
-                    .unwrap_or(libc::EIO));
+                return passthrough::chown_fd(handle.file.as_raw_fd(), uid, gid)
+                    .map_err(|e| e.raw());
             }
         };
 
         let (real_path, _) = self.encrypt_path(path)?;
-
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-
-        let ret = unsafe {
-            libc::lchown(
-                c_path.as_ptr(),
-                uid.unwrap_or(u32::MAX), // -1 in u32 is u32::MAX? No, lchown takes uid_t (u32).
-                // chown(2): "If the owner or group is specified as -1, then that ID is not changed."
-                // uid_t is u32. -1 is casting.
-                gid.unwrap_or(u32::MAX),
-            )
-        };
-
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        passthrough::chown_path(&real_path, uid, gid).map_err(|e| e.raw())
     }
 
     /// Check if the requesting process has the requested access to the path.
@@ -1058,67 +840,22 @@ impl EncFs {
         let setting_times = atime.is_some() || mtime.is_some();
         if setting_times && req.uid != 0 {
             let meta = metadata.as_ref().ok_or(libc::EACCES)?;
-            self.utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)?
+            utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)
+                .map_err(|e| e.raw())?
         } else if let Some(ref meta) = metadata {
-            self.utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)?;
+            utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)
+                .map_err(|e| e.raw())?;
         }
         // If metadata failed and we're root or not setting times, proceed and let utimensat/futimens return the error.
 
-        // Map Option<SystemTime> to kernel timespec. None means UTIME_OMIT (leave timestamp
-        // unchanged). Some(t) is either an explicit time or UTIME_NOW (the
-        // PathFilesystem wrapper resolves UTIME_NOW before calling us).
-        let to_timespec = |t: Option<std::time::SystemTime>| -> libc::timespec {
-            match t {
-                Some(ts) => {
-                    let d = ts
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or(Duration::ZERO);
-                    libc::timespec {
-                        tv_sec: d.as_secs() as i64,
-                        tv_nsec: d.subsec_nanos() as i64,
-                    }
-                }
-                None => libc::timespec {
-                    tv_sec: 0,
-                    tv_nsec: libc::UTIME_OMIT,
-                },
-            }
-        };
-
-        let times = [to_timespec(atime), to_timespec(mtime)];
-
         if let Some(handle) = handle {
             use std::os::fd::AsRawFd;
-            let ret = unsafe { libc::futimens(handle.file.as_raw_fd(), times.as_ptr()) };
-            if ret == 0 {
-                return Ok(());
-            } else {
-                return Err(std::io::Error::last_os_error()
-                    .raw_os_error()
-                    .unwrap_or(libc::EIO));
-            }
+            return passthrough::utimens_fd(handle.file.as_raw_fd(), atime, mtime)
+                .map_err(|e| e.raw());
         }
 
         let (real_path, _) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-
-        let ret = unsafe {
-            libc::utimensat(
-                libc::AT_FDCWD,
-                c_path.as_ptr(),
-                times.as_ptr(),
-                libc::AT_SYMLINK_NOFOLLOW,
-            )
-        };
-
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        passthrough::utimens_path(&real_path, atime, mtime).map_err(|e| e.raw())
     }
 
     fn readlink_impl(&self, path: &Path) -> Result<Vec<u8>, libc::c_int> {
@@ -1525,7 +1262,7 @@ impl EncFs {
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         }
 
-        self.set_ownership_fd(file.as_raw_fd(), &req)?;
+        set_ownership_fd(file.as_raw_fd(), &req).map_err(|e| e.raw())?;
 
         // Build the reply attributes from the freshly created backing file
         // (ownership was just set above); logical size of a new file is 0.
@@ -1563,7 +1300,7 @@ impl EncFs {
             .create(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        self.set_ownership_path(&real_path, &req)?;
+        set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
 
         self.attr_for_path(Some(&path), None)
     }
@@ -1581,18 +1318,11 @@ impl EncFs {
         self.ensure_writable()?;
         let (real_path, path_iv) = self.encrypt_path(&path)?;
 
-        let c_path = CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-
         let mode_t = mode as libc::mode_t;
         let mode_bits = mode_t & libc::S_IFMT;
-        let res = if mode_bits == libc::S_IFIFO {
-            unsafe { libc::mkfifo(c_path.as_ptr(), mode_t) }
-        } else if mode_bits == libc::S_IFCHR
-            || mode_bits == libc::S_IFBLK
-            || mode_bits == libc::S_IFSOCK
-        {
-            unsafe { libc::mknod(c_path.as_ptr(), mode_t, rdev as libc::dev_t) }
-        } else if mode_bits == libc::S_IFREG {
+        if mode_bits != libc::S_IFREG {
+            passthrough::mknod(&real_path, mode, rdev).map_err(|e| e.raw())?;
+        } else {
             use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
             let header_size = self.config.header_size();
@@ -1601,40 +1331,23 @@ impl EncFs {
             } else {
                 0
             };
-            match fs::OpenOptions::new()
+            let mut f = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .mode(mode)
                 .open(&real_path)
-            {
-                Ok(mut f) => {
-                    if header_size > 0 {
-                        let (header, _iv) =
-                            self.cipher.encrypt_header(external_iv).map_err(|e| {
-                                error!("Failed to generate header for mknod: {}", e);
-                                libc::EIO
-                            })?;
-                        f.write_all(&header)
-                            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    }
-                    drop(f);
-                    0
-                }
-                Err(e) => {
-                    return Err(e.raw_os_error().unwrap_or(libc::EIO));
-                }
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            if header_size > 0 {
+                let (header, _iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
+                    error!("Failed to generate header for mknod: {}", e);
+                    libc::EIO
+                })?;
+                f.write_all(&header)
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             }
-        } else {
-            return Err(libc::EINVAL);
-        };
-
-        if res == -1 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
         }
 
-        self.set_ownership_path(&real_path, &req)?;
+        set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
 
         self.attr_for_path(Some(&path), None)
     }
@@ -1695,27 +1408,11 @@ impl EncFs {
         let final_name = format!("user.encfs.{}", encoded_name);
 
         let c_name = std::ffi::CString::new(final_name).map_err(|_| libc::EINVAL)?;
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
         // Set xattr on underlying filesystem
-        let ret = unsafe {
-            setxattr_nofollow(
-                c_path.as_ptr(),
-                c_name.as_ptr(),
-                encrypted_value.as_ptr() as *const libc::c_void,
-                encrypted_value.len(),
-                flags as i32,
-            )
-        };
-
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        passthrough::setxattr_nofollow(&c_path, &c_name, &encrypted_value, flags as i32)
+            .map_err(|e| e.raw())
     }
 
     fn getxattr_impl(&self, path: &Path, name: &OsStr) -> Result<Vec<u8>, libc::c_int> {
@@ -1741,41 +1438,12 @@ impl EncFs {
         let lookup_name = format!("user.encfs.{}", encoded_name);
 
         let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
-        // Probe the on-disk (encrypted) value size; the caller's size limit is
+        // Read the on-disk (encrypted) value; the caller's size limit is
         // applied by the trait wrapper against the decrypted length.
-        let buf_size = {
-            let ret = unsafe {
-                getxattr_nofollow(c_path.as_ptr(), c_name.as_ptr(), std::ptr::null_mut(), 0)
-            };
-            if ret < 0 {
-                return Err(std::io::Error::last_os_error()
-                    .raw_os_error()
-                    .unwrap_or(libc::EIO));
-            }
-            ret as usize
-        };
-
-        // Read encrypted value
-        let mut encrypted_value = vec![0u8; buf_size];
-        let ret = unsafe {
-            getxattr_nofollow(
-                c_path.as_ptr(),
-                c_name.as_ptr(),
-                encrypted_value.as_mut_ptr() as *mut libc::c_void,
-                buf_size,
-            )
-        };
-
-        if ret < 0 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
-        }
-
-        encrypted_value.truncate(ret as usize);
+        let encrypted_value =
+            passthrough::getxattr_value_nofollow(&c_path, &c_name).map_err(|e| e.raw())?;
 
         // Decrypt value
         let decrypted_value = self
@@ -1794,104 +1462,25 @@ impl EncFs {
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
-        // Probe the on-disk list size; the caller's size limit is applied by
-        // the trait wrapper against the decrypted list length.
-        let buf_size = {
-            let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), std::ptr::null_mut(), 0) };
-            if ret < 0 {
-                return Err(std::io::Error::last_os_error()
-                    .raw_os_error()
-                    .unwrap_or(libc::EIO));
-            }
-            ret as usize
-        };
-
-        // Read xattr names list
-        // llistxattr expects *mut c_char, whose signedness is platform-dependent
-        // (i8 on x86_64, u8 on aarch64), so we allocate a Vec<libc::c_char>.
-        let mut list = vec![0 as libc::c_char; buf_size];
-        let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), list.as_mut_ptr(), buf_size) };
-
-        if ret < 0 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
-        }
-
-        list.truncate(ret as usize);
+        // Read the on-disk list of xattr names; the caller's size limit is
+        // applied by the trait wrapper against the decrypted list length.
+        let names = passthrough::listxattr_names_nofollow(&c_path).map_err(|e| e.raw())?;
 
         // Process all xattr names in the list
-        // xattr lists are null-separated strings (c_char, convert to u8)
-        let list_u8: Vec<u8> = list.iter().map(|&b| b as u8).collect();
         let mut decrypted_list = Vec::new();
-        let mut current_name = Vec::new();
 
-        for &byte in &list_u8 {
-            if byte == 0 {
-                // End of current name, process it
-                if !current_name.is_empty() {
-                    let name_str = match std::str::from_utf8(&current_name) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            // Invalid UTF-8, skip
-                            current_name.clear();
-                            continue;
-                        }
-                    };
-
-                    if let Some(encoded_part) = name_str.strip_prefix("user.encfs.") {
-                        // This is an encrypted encfs attribute stored on disk
-                        // Extract the base64-encoded encrypted name
-                        match STANDARD_NO_PAD.decode(encoded_part) {
-                            Ok(encrypted_name_bytes) => {
-                                match self
-                                    .cipher
-                                    .decrypt_xattr_name(&encrypted_name_bytes, path_iv)
-                                {
-                                    Ok(decrypted_name) => {
-                                        // Return the decrypted name without the "user.encfs." prefix
-                                        decrypted_list.extend_from_slice(&decrypted_name);
-                                        decrypted_list.push(0); // null separator
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to decrypt xattr name: {}", e);
-                                        // Skip this name but continue
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                warn!("Failed to decode base64 xattr name: {}", name_str);
-                                // Skip this name but continue
-                            }
-                        }
-                    } else {
-                        // Non-encfs attribute (shouldn't happen if we encrypt all), skip it
-                        // or pass through if there are any legacy unencrypted attributes
-                        if !is_apple_xattr(name_str) {
-                            warn!("Found non-encfs xattr on disk: {}, skipping", name_str);
-                        }
-                    }
-                    current_name.clear();
-                }
-            } else {
-                current_name.push(byte);
-            }
-        }
-
-        // Handle last name if list doesn't end with null
-        if !current_name.is_empty() {
-            let name_str = match std::str::from_utf8(&current_name) {
+        for name_bytes in names {
+            let name_str = match std::str::from_utf8(&name_bytes) {
                 Ok(s) => s,
-                Err(_) => {
-                    return Ok(decrypted_list);
-                }
+                Err(_) => continue, // Invalid UTF-8, skip
             };
 
             if let Some(encoded_part) = name_str.strip_prefix("user.encfs.") {
-                match base64::engine::general_purpose::STANDARD_NO_PAD.decode(encoded_part) {
+                // This is an encrypted encfs attribute stored on disk
+                // Extract the base64-encoded encrypted name
+                match STANDARD_NO_PAD.decode(encoded_part) {
                     Ok(encrypted_name_bytes) => {
                         match self
                             .cipher
@@ -1900,20 +1489,25 @@ impl EncFs {
                             Ok(decrypted_name) => {
                                 // Return the decrypted name without the "user.encfs." prefix
                                 decrypted_list.extend_from_slice(&decrypted_name);
-                                decrypted_list.push(0);
+                                decrypted_list.push(0); // null separator
                             }
                             Err(e) => {
                                 warn!("Failed to decrypt xattr name: {}", e);
+                                // Skip this name but continue
                             }
                         }
                     }
                     Err(_) => {
                         warn!("Failed to decode base64 xattr name: {}", name_str);
+                        // Skip this name but continue
                     }
                 }
             } else {
-                decrypted_list.extend_from_slice(&current_name);
-                decrypted_list.push(0);
+                // Non-encfs attribute (shouldn't happen if we encrypt all), skip it
+                // or pass through if there are any legacy unencrypted attributes
+                if !is_apple_xattr(name_str) {
+                    warn!("Found non-encfs xattr on disk: {}, skipping", name_str);
+                }
             }
         }
 
@@ -1944,19 +1538,10 @@ impl EncFs {
         let lookup_name = format!("user.encfs.{}", encoded_name);
 
         let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
         // Remove xattr from underlying filesystem
-        let ret = unsafe { removexattr_nofollow(c_path.as_ptr(), c_name.as_ptr()) };
-
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        passthrough::removexattr_nofollow(&c_path, &c_name).map_err(|e| e.raw())
     }
 }
 

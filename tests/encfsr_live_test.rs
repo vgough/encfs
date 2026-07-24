@@ -20,8 +20,7 @@ use std::time::{Duration, Instant};
 
 const TEST_PASSWORD: &str = "encfsr_live_test";
 const TEST_PLAINTEXT_FILENAME: &str = "hello.txt";
-const TEST_PLAINTEXT_CONTENT: &[u8] =
-    b"Hello, encfsr! This is a test file for verification.";
+const TEST_PLAINTEXT_CONTENT: &[u8] = b"Hello, encfsr! This is a test file for verification.";
 
 // ---------------------------------------------------------------------------
 // Fixture setup
