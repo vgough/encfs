@@ -734,6 +734,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "libfuse-sys",
+ "log",
  "pkg-config",
  "typed_fuse_core",
 ]

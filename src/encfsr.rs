@@ -256,9 +256,30 @@ fn main() -> Result<()> {
         mount_config.parse_option_words(words);
     }
 
-    // Mount-point existence/directory validation happens inside
-    // `Session::mount` (which also works around the macOS macFUSE quirk of
-    // reporting success and hanging when the mount point doesn't exist).
+    // Pre-check the mount point so a bad one is reported in the user's
+    // locale; `Session::mount` repeats the check (and works around the macOS
+    // macFUSE quirk of reporting success and hanging when the mount point
+    // doesn't exist), so this is presentation only, not the safety net.
+    if !args.mount_point.exists() {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.mount_point_not_found",
+                mount_point = args.mount_point.display()
+            )
+        );
+        std::process::exit(1);
+    }
+    if !args.mount_point.is_dir() {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.mount_point_not_dir",
+                mount_point = args.mount_point.display()
+            )
+        );
+        std::process::exit(1);
+    }
 
     fuse3::mount::mount_blocking(fs, &args.mount_point, &mount_config, false)?;
 
