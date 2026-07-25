@@ -16,6 +16,7 @@ use fuse3::{
 use libc;
 use log::{debug, error, warn};
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -23,15 +24,173 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use std::time::SystemTime;
 
 /// Errors from internal helpers are raw errno values; trait methods convert
 /// them to typed FUSE errors via `?`.
 type OpResult = Result<(), libc::c_int>;
 
+/// Key identifying a backing file.
+///
+/// Two `FileHandle`s referring to the same on-disk file (same device + inode)
+/// share one [`FileState`], even when opened through different plaintext paths.
+type FileKey = (u64, u64); // (st_dev, st_ino)
+
+/// Mutable per-file state, guarded by [`FileState::meta`].
+#[derive(Debug, Default, Clone, Copy)]
+struct FileMeta {
+    /// IV read from (or written to) the file header, shared by every handle on
+    /// the inode. `None` for headerless configurations (`header_size == 0`),
+    /// where the IV is derived from the path instead and lives on the handle;
+    /// see [`FileHandle::headerless_iv`].
+    header_iv: Option<u64>,
+}
+
+/// State shared by every handle on one backing inode.
+///
+/// The lock serializes two things that are not atomic at the syscall level:
+///
+/// * A partial-block write in [`crate::crypto::file::FileEncoder`] is a
+///   read-decrypt-modify-encrypt-write sequence spanning two syscalls, and a
+///   truncate is a read/set_len/re-encrypt sequence. Without serialization two
+///   writers to the same block lose each other's updates, and a truncate
+///   racing a write resurrects stale data or breaks a block's MAC.
+/// * The per-file IV. Opening with `O_TRUNC` (and `create`) resets the file and
+///   installs a header carrying a *newly generated* IV. Since the IV lives here
+///   rather than on each handle, handles opened earlier pick up the new one at
+///   the same instant the contents are reset; otherwise they would keep
+///   encrypting blocks under an IV the header no longer names, and nothing
+///   could ever decrypt them again.
+#[derive(Debug)]
+struct FileState {
+    key: FileKey,
+    meta: RwLock<FileMeta>,
+}
+
+impl FileState {
+    fn new(key: FileKey) -> Self {
+        Self {
+            key,
+            meta: RwLock::new(FileMeta::default()),
+        }
+    }
+
+    /// Shared access, for operations that only read the file.
+    ///
+    /// Lock poisoning is recovered from rather than propagated: a writer that
+    /// panicked mid-RMW may have left the *file* inconsistent, but that is not
+    /// improved by failing every later operation on the mount, and [`FileMeta`]
+    /// itself is plain `Copy` data that cannot be torn.
+    fn read(&self) -> RwLockReadGuard<'_, FileMeta> {
+        self.meta.read().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Exclusive access, required for any read-modify-write, truncate, or
+    /// header rewrite. See [`FileState::read`] on poisoning.
+    fn write(&self) -> RwLockWriteGuard<'_, FileMeta> {
+        self.meta.write().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+/// Smallest table size worth sweeping for dead entries.
+const FILE_STATE_SWEEP_FLOOR: usize = 64;
+
+/// Table of live [`FileState`]s, keyed by backing device + inode.
+///
+/// Entries are weak, so the state disappears once the last handle (or transient
+/// operation) drops its `Arc`; dead entries are swept out on insert. A
+/// long-lived mount therefore does not accumulate one entry per file it has
+/// ever touched.
+#[derive(Default)]
+struct FileStates {
+    table: Mutex<FileStateTable>,
+}
+
+#[derive(Default)]
+struct FileStateTable {
+    entries: HashMap<FileKey, Weak<FileState>>,
+    /// Sweep once `entries` grows past this, then reset it to twice the
+    /// surviving size. Sweeping is thus amortized O(1) per insert and the table
+    /// stays within twice the live set (plus [`FILE_STATE_SWEEP_FLOOR`]).
+    sweep_at: usize,
+}
+
+impl FileStates {
+    /// Returns the shared state for `file`, creating it if this is the first
+    /// live reference to that inode.
+    ///
+    /// Failing to stat an already-open fd is reported rather than papered over:
+    /// a fallback key would silently stop two handles on the same inode from
+    /// serializing, which is exactly the bug this table exists to prevent.
+    fn get(&self, file: &File) -> Result<Arc<FileState>, libc::c_int> {
+        let metadata = file.metadata().map_err(|e| {
+            error!("stat of open backing file failed: {}", e);
+            e.raw_os_error().unwrap_or(libc::EIO)
+        })?;
+        Ok(self.get_by_key((metadata.dev(), metadata.ino())))
+    }
+
+    fn get_by_key(&self, key: FileKey) -> Arc<FileState> {
+        let mut table = self.table.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(existing) = table.entries.get(&key).and_then(Weak::upgrade) {
+            return existing;
+        }
+
+        if table.entries.len() >= table.sweep_at.max(FILE_STATE_SWEEP_FLOOR) {
+            table.entries.retain(|_, state| state.strong_count() > 0);
+            table.sweep_at = table.entries.len().saturating_mul(2);
+        }
+
+        let state = Arc::new(FileState::new(key));
+        table.entries.insert(key, Arc::downgrade(&state));
+        state
+    }
+}
+
+/// Takes the write lock on both ends of a copy.
+///
+/// Locks in ascending key order, so a copy running the other way over the same
+/// pair (a rename back) cannot deadlock against this one. When both names
+/// resolve to the same inode there is only one lock to take and the returned
+/// source guard is `None` — the destination guard covers both.
+fn lock_source_and_dest<'a>(
+    src: &'a FileState,
+    dest: &'a FileState,
+) -> (
+    Option<RwLockWriteGuard<'a, FileMeta>>,
+    RwLockWriteGuard<'a, FileMeta>,
+) {
+    match src.key.cmp(&dest.key) {
+        std::cmp::Ordering::Equal => (None, dest.write()),
+        std::cmp::Ordering::Less => {
+            let src_guard = src.write();
+            let dest_guard = dest.write();
+            (Some(src_guard), dest_guard)
+        }
+        std::cmp::Ordering::Greater => {
+            let dest_guard = dest.write();
+            let src_guard = src.write();
+            (Some(src_guard), dest_guard)
+        }
+    }
+}
+
 pub struct FileHandle {
     file: File,
-    file_iv: u64,
+    /// IV for headerless configurations, derived from the path at open time.
+    /// Truncation cannot change it, so unlike the header IV it is safe to cache
+    /// per handle. Zero (and unused) when the config stores a per-file header.
+    headerless_iv: u64,
+    /// Shared state for the backing inode; guards every RMW on this file.
+    state: Arc<FileState>,
+}
+
+impl FileHandle {
+    /// The IV this file's blocks are encrypted under, as of `meta`.
+    fn file_iv(&self, meta: &FileMeta) -> u64 {
+        meta.header_iv.unwrap_or(self.headerless_iv)
+    }
 }
 
 struct PathInfo<'a> {
@@ -51,6 +210,8 @@ pub struct EncFs {
     /// Reject all mutating operations with EROFS. Enforced at the filesystem
     /// layer as well as at mount level as defense in depth.
     read_only: bool,
+    /// Per-backing-inode state serializing read-modify-write I/O.
+    file_states: FileStates,
 }
 
 impl EncFs {
@@ -60,6 +221,7 @@ impl EncFs {
             cipher,
             config,
             read_only: false,
+            file_states: FileStates::default(),
         }
     }
 
@@ -395,41 +557,61 @@ impl EncFs {
         src_iv: u64,
         dst_iv: u64,
     ) -> OpResult {
-        // 1. Open source
+        // 1. Open both ends. The destination is opened without O_TRUNC so that,
+        //    as in `open_impl`, it is reset under the lock rather than by
+        //    open(2) — otherwise the reset lands on top of an in-flight
+        //    read-modify-write by whoever already has it open.
         let mut src_f = File::open(real_src).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let mut dst_f = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(real_dest)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+        // Serialize against concurrent writes at both ends: a write landing
+        // mid-copy on the source would produce a torn destination block, and a
+        // write to the destination would be silently overwritten by the body
+        // copy.
+        let src_state = self.file_states.get(&src_f)?;
+        let dst_state = self.file_states.get(&dst_f)?;
+        let (_src_guard, mut dst_meta) = lock_source_and_dest(&src_state, &dst_state);
 
         let metadata = src_f.metadata().ok();
 
-        // 2. Read header
         let header_size = self.config.header_size();
         let mut header = vec![0u8; header_size as usize];
         if header_size > 0 {
+            // 2. Read and decrypt the source header. Done before touching the
+            //    destination so a source we can't decrypt leaves it intact.
             src_f
                 .read_exact(&mut header)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-            // 3. Decrypt header
             let file_iv = self
                 .cipher
                 .decrypt_header(&mut header, src_iv)
                 .map_err(|_| libc::EIO)?;
 
-            // 4. Encrypt header with new path IV
+            // 3. Re-encrypt the header under the destination's path IV. The
+            //    file IV itself carries over, so anyone holding the destination
+            //    open switches to the copied file's IV here.
             let new_header = self
                 .cipher
                 .encrypt_header_with_iv(file_iv, dst_iv)
                 .map_err(|_| libc::EIO)?;
 
-            // 5. Create dest
-            let mut dst_f =
-                File::create(real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            // 4. Reset the destination, now that it is locked, and refill it.
+            dst_f
+                .set_len(0)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            dst_meta.header_iv = Some(file_iv);
 
-            // 6. Write new header
             dst_f
                 .write_all(&new_header)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-            // 7. Copy body
             let mut reader = BufReader::new(src_f);
             let mut writer = BufWriter::new(dst_f);
 
@@ -440,11 +622,13 @@ impl EncFs {
                 .flush()
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         } else {
-            // 5. Create dest
-            let dst_f =
-                File::create(real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            // No header to rewrite: the IV is path-derived, so handles already
+            // open on the destination keep using their own.
+            dst_f
+                .set_len(0)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            dst_meta.header_iv = None;
 
-            // 7. Copy body (no header to copy/rewrite)
             let mut reader = BufReader::new(src_f);
             let mut writer = BufWriter::new(dst_f);
 
@@ -470,6 +654,45 @@ fn headerless_file_iv(header_size: u64, external_iv: u64) -> u64 {
 }
 
 impl EncFs {
+    /// Generates a fresh per-file IV and writes its header at offset 0.
+    ///
+    /// Callers must hold the file's write lock: this replaces the IV every
+    /// existing handle on the inode encrypts under.
+    fn write_file_header(&self, file: &File, external_iv: u64) -> Result<u64, libc::c_int> {
+        let (header, file_iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
+            error!("Failed to generate header: {}", e);
+            libc::EIO
+        })?;
+        file.write_all_at(&header, 0)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        Ok(file_iv)
+    }
+
+    /// Reads and decrypts the per-file header, returning `None` when the file
+    /// is too short to hold one (e.g. freshly created via `mknod`).
+    fn read_file_header(
+        &self,
+        file: &File,
+        path: &Path,
+        external_iv: u64,
+    ) -> Result<Option<u64>, libc::c_int> {
+        let header_size = self.config.header_size() as usize;
+        let mut header = vec![0u8; header_size];
+        let bytes_read = file
+            .read_at(&mut header, 0)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        if bytes_read != header_size {
+            return Ok(None);
+        }
+        match self.cipher.decrypt_header(&mut header, external_iv) {
+            Ok(file_iv) => Ok(Some(file_iv)),
+            Err(_) => {
+                warn!("Failed to decrypt file header for {:?}", path);
+                Err(libc::EIO)
+            }
+        }
+    }
+
     fn physical_size_for_logical(&self, logical_size: u64, header_size: u64) -> u64 {
         FileEncoder::<File>::calculate_physical_size_with_mode(
             logical_size,
@@ -480,9 +703,11 @@ impl EncFs {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn truncate_expand(
         &self,
         file_ref: &File,
+        _guard: &RwLockWriteGuard<'_, FileMeta>,
         file_iv: u64,
         header_size: u64,
         current_logical_size: u64,
@@ -548,6 +773,7 @@ impl EncFs {
     fn truncate_shrink(
         &self,
         file_ref: &File,
+        _guard: &RwLockWriteGuard<'_, FileMeta>,
         file_iv: u64,
         header_size: u64,
         new_logical_size: u64,
@@ -689,6 +915,15 @@ impl EncFs {
             (None, None) => return Err(libc::EIO),
         };
 
+        // Hold the per-file write lock across the whole read-length / RMW /
+        // set_len sequence so a concurrent write can't interleave and lose
+        // data or resurrect truncated blocks.
+        let state = match handle {
+            Some(h) => h.state.clone(),
+            None => self.file_states.get(file_ref)?,
+        };
+        let mut guard = state.write();
+
         let header_size = self.config.header_size();
         let metadata = file_ref
             .metadata()
@@ -710,24 +945,28 @@ impl EncFs {
             return Ok(());
         }
 
-        // These branches only run without an open handle, where `path` was
+        // Truncation keeps the existing header, so the IV does not change here;
+        // it only has to be *known*. With a handle it is already in the shared
+        // state. The remaining branches only run without one, where `path` was
         // already required to open the file above.
         let file_iv = if let Some(h) = handle {
-            h.file_iv
+            h.file_iv(&guard)
+        } else if let Some(file_iv) = guard.header_iv {
+            file_iv
         } else if header_size > 0 {
-            let mut header = vec![0u8; header_size as usize];
-            file_ref
-                .read_exact_at(&mut header, 0)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            let (_, path_iv) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
+            let path = path.ok_or(libc::ESTALE)?;
+            let (_, path_iv) = self.encrypt_path(path)?;
             let external_iv = if self.config.external_iv_chaining {
                 path_iv
             } else {
                 0
             };
-            self.cipher
-                .decrypt_header(&mut header, external_iv)
-                .map_err(|_| libc::EIO)?
+            // Cache it for handles opened later, as `open_impl` would have.
+            let file_iv = self
+                .read_file_header(file_ref, path, external_iv)?
+                .ok_or(libc::EIO)?;
+            guard.header_iv = Some(file_iv);
+            file_iv
         } else if self.config.external_iv_chaining {
             let (_, path_iv) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
             path_iv
@@ -738,6 +977,7 @@ impl EncFs {
         if size > current_logical_size {
             self.truncate_expand(
                 file_ref,
+                &guard,
                 file_iv,
                 header_size,
                 current_logical_size,
@@ -745,7 +985,7 @@ impl EncFs {
                 block_layout,
             )?;
         } else {
-            self.truncate_shrink(file_ref, file_iv, header_size, size, block_layout)?;
+            self.truncate_shrink(file_ref, &guard, file_iv, header_size, size, block_layout)?;
         }
 
         Ok(())
@@ -973,10 +1213,10 @@ impl EncFs {
         if want_write {
             opts.write(true);
         }
-        if want_trunc && want_write {
-            opts.truncate(true);
-        }
-
+        // O_TRUNC is deliberately *not* passed to open(2). Truncating as a side
+        // effect of open would reset the file and its IV before we hold the
+        // per-file lock, on top of another handle's in-flight
+        // read-modify-write. The reset happens below instead, under the lock.
         let file = opts
             .open(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -987,74 +1227,55 @@ impl EncFs {
         } else {
             0
         };
-        let mut file_iv = headerless_file_iv(header_size, external_iv);
+        let headerless_iv = headerless_file_iv(header_size, external_iv);
+
+        let state = self.file_states.get(&file)?;
+        // Exclusive for the whole open: this path may reset the file and install
+        // a new header, and even a read-only open must not observe a header
+        // that a concurrent truncate is midway through replacing.
+        let mut meta = state.write();
 
         if want_trunc && want_write {
-            // If the file was truncated, we must generate and write a new header (if header_size > 0).
-            if header_size > 0 {
-                let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-                    error!("Failed to generate header: {}", e);
-                    libc::EIO
-                })?;
-
-                use std::io::Write;
-                let mut file_ref = &file;
-                file_ref
-                    .write_all(&header)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                file_iv = iv;
+            file.set_len(0)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            meta.header_iv = if header_size > 0 {
+                Some(self.write_file_header(&file, external_iv)?)
             } else {
-                // Ensure physical file is truncated to 0 if header_size is 0
-                let file_ref = &file;
-                file_ref
-                    .set_len(0)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            }
-        } else {
-            // Read header if exists, or initialize empty file (e.g. created via mknod)
+                None
+            };
+        } else if header_size > 0 {
             let physical_size = file
                 .metadata()
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
                 .len();
 
-            if header_size > 0 && physical_size < header_size {
-                // Empty or undersized backing file (e.g. from mknod). Write header so
-                // subsequent writes use correct physical offset and file format.
-                if want_write {
-                    let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-                        error!("Failed to generate header: {}", e);
-                        libc::EIO
-                    })?;
-
-                    use std::io::Write;
-                    let mut file_ref = &file;
-                    file_ref
-                        .write_all(&header)
-                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    file_iv = iv;
-                } else {
-                    // Opening for read but file too small to have valid header
+            meta.header_iv = if physical_size < header_size {
+                // Empty or undersized backing file (e.g. from mknod). Write a
+                // header so subsequent writes use the correct physical offset
+                // and file format.
+                if !want_write {
+                    // Opening for read but the file is too small to hold a header.
                     return Err(libc::EIO);
                 }
-            } else if header_size > 0 {
-                let mut header = vec![0u8; header_size as usize];
-                let bytes_read = file
-                    .read_at(&mut header, 0)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-                if bytes_read == header_size as usize {
-                    // Decrypt header
-                    if let Ok(iv) = self.cipher.decrypt_header(&mut header, external_iv) {
-                        file_iv = iv;
-                    } else {
-                        warn!("Failed to decrypt file header for {:?}", path);
-                        return Err(libc::EIO);
-                    }
-                }
-            }
+                Some(self.write_file_header(&file, external_iv)?)
+            } else {
+                // A short read here leaves the IV at zero, matching the
+                // pre-header-cache behaviour for partially written files.
+                Some(
+                    self.read_file_header(&file, path, external_iv)?
+                        .unwrap_or(0),
+                )
+            };
+        } else {
+            meta.header_iv = None;
         }
+        drop(meta);
 
-        Ok(FileHandle { file, file_iv })
+        Ok(FileHandle {
+            file,
+            headerless_iv,
+            state,
+        })
     }
 
     fn read_impl(
@@ -1064,11 +1285,14 @@ impl EncFs {
         size: u32,
     ) -> Result<Vec<u8>, libc::c_int> {
         debug!("read: offset={} size={}", offset, size);
+        // Shared: concurrent reads are fine, but a read must not observe a
+        // block halfway through someone else's read-modify-write.
+        let meta = handle.state.read();
 
         let decoder = FileDecoder::new_from_config(
             self.cipher.as_ref(),
             &handle.file,
-            handle.file_iv,
+            handle.file_iv(&meta),
             &self.config.file_codec_params(),
             false,
         );
@@ -1097,11 +1321,13 @@ impl EncFs {
     ) -> Result<u32, libc::c_int> {
         debug!("write: offset={} size={}", offset, data.len());
         self.ensure_writable()?;
+        // Exclusive across the whole read-decrypt-modify-encrypt-write cycle.
+        let meta = handle.state.write();
 
         let encoder = FileEncoder::new_from_config(
             self.cipher.as_ref(),
             &handle.file,
-            handle.file_iv,
+            handle.file_iv(&meta),
             &self.config.file_codec_params(),
         );
 
@@ -1136,41 +1362,36 @@ impl EncFs {
         }
 
         use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
+        // Not `.truncate(true)`: as in `open_impl`, resetting an existing file
+        // has to happen under the per-file lock rather than inside open(2).
+        let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .truncate(true)
+            .truncate(false)
             .mode(mode)
             .open(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // Encrypt and write header if header_size > 0
         let header_size = self.config.header_size();
         let external_iv = if self.config.external_iv_chaining {
             path_iv
         } else {
             0
         };
-        let mut file_iv = headerless_file_iv(header_size, external_iv);
+        let headerless_iv = headerless_file_iv(header_size, external_iv);
 
-        if header_size > 0 {
-            let external_iv = if self.config.external_iv_chaining {
-                path_iv
-            } else {
-                0
-            };
+        let state = self.file_states.get(&file)?;
+        let mut meta = state.write();
 
-            let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-                error!("Failed to generate header: {}", e);
-                libc::EIO
-            })?;
-            file_iv = iv;
-
-            use std::io::Write;
-            file.write_all(&header)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        }
+        file.set_len(0)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        meta.header_iv = if header_size > 0 {
+            Some(self.write_file_header(&file, external_iv)?)
+        } else {
+            None
+        };
+        drop(meta);
 
         set_ownership_fd(file.as_raw_fd(), &req).map_err(|e| e.raw())?;
 
@@ -1181,7 +1402,14 @@ impl EncFs {
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         let attr = file_attr_from_metadata(&metadata, 0);
 
-        Ok((attr, FileHandle { file, file_iv }))
+        Ok((
+            attr,
+            FileHandle {
+                file,
+                headerless_iv,
+                state,
+            },
+        ))
     }
 
     fn unlink_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
@@ -1735,7 +1963,97 @@ impl PathFilesystem for EncFs {
 
 #[cfg(test)]
 mod tests {
-    use super::{headerless_file_iv, is_apple_xattr};
+    use super::{
+        FILE_STATE_SWEEP_FLOOR, FileStates, headerless_file_iv, is_apple_xattr,
+        lock_source_and_dest,
+    };
+
+    fn table_len(states: &FileStates) -> usize {
+        states.table.lock().unwrap().entries.len()
+    }
+
+    #[test]
+    fn same_inode_shares_one_state() {
+        let states = FileStates::default();
+        let a = states.get_by_key((1, 42));
+        let b = states.get_by_key((1, 42));
+        assert!(std::sync::Arc::ptr_eq(&a, &b));
+
+        // Same inode number on a different device is a different file.
+        let c = states.get_by_key((2, 42));
+        assert!(!std::sync::Arc::ptr_eq(&a, &c));
+    }
+
+    #[test]
+    fn state_is_recreated_after_last_reference_drops() {
+        let states = FileStates::default();
+        let first = states.get_by_key((1, 7));
+        drop(first);
+        let second = states.get_by_key((1, 7));
+        assert_eq!(second.key, (1, 7));
+    }
+
+    #[test]
+    fn dead_entries_are_swept() {
+        let states = FileStates::default();
+
+        // Churn well past the sweep floor with no live references.
+        for ino in 0..(FILE_STATE_SWEEP_FLOOR as u64 * 8) {
+            drop(states.get_by_key((1, ino)));
+        }
+        assert!(
+            table_len(&states) <= FILE_STATE_SWEEP_FLOOR + 1,
+            "dead entries accumulated: {}",
+            table_len(&states)
+        );
+
+        // Live references must survive a sweep.
+        let live: Vec<_> = (0..10).map(|ino| states.get_by_key((2, ino))).collect();
+        for ino in 0..(FILE_STATE_SWEEP_FLOOR as u64 * 8) {
+            drop(states.get_by_key((3, ino)));
+        }
+        for (ino, state) in live.iter().enumerate() {
+            assert!(std::sync::Arc::ptr_eq(
+                state,
+                &states.get_by_key((2, ino as u64))
+            ));
+        }
+    }
+
+    #[test]
+    fn pair_locking_is_deadlock_free_in_both_directions() {
+        let states = FileStates::default();
+        let low = states.get_by_key((1, 1));
+        let high = states.get_by_key((1, 2));
+
+        // Same inode: one lock, taken once. Taking it twice would self-deadlock.
+        {
+            let (src, _dest) = lock_source_and_dest(&low, &low);
+            assert!(src.is_none());
+        }
+
+        // Copies contending in opposite directions over the same pair. An
+        // implementation that locked in argument order rather than key order
+        // would wedge here.
+        let (tx, rx) = std::sync::mpsc::channel();
+        for (first, second) in [(low.clone(), high.clone()), (high.clone(), low.clone())] {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                for _ in 0..5000 {
+                    let (src, dest) = lock_source_and_dest(&first, &second);
+                    assert!(src.is_some());
+                    drop((src, dest));
+                }
+                let _ = tx.send(());
+            });
+        }
+        drop(tx);
+
+        for _ in 0..2 {
+            rx.recv_timeout(std::time::Duration::from_secs(60))
+                .expect("pair locking deadlocked");
+        }
+    }
 
     #[test]
     fn headerless_files_use_external_iv() {
