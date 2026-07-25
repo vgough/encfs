@@ -374,7 +374,7 @@ fn mount_is_visible(mount_point: &Path) -> Result<bool> {
             .unwrap_or_else(|_| mount_point.to_path_buf());
         let expected = mount_point.to_string_lossy();
         let mountinfo = fs::read_to_string("/proc/self/mountinfo")?;
-        return Ok(mountinfo.lines().any(|line| {
+        Ok(mountinfo.lines().any(|line| {
             let fields: Vec<_> = line.split_whitespace().collect();
             fields.get(4).is_some_and(|field| *field == expected)
                 && line
