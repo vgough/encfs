@@ -17,6 +17,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    
     - name: Install system dependencies
       run: |
         sudo apt-get update
