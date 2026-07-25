@@ -211,35 +211,29 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
             // Ensure buffer is sized correctly for max possible read
             block_data.resize(block_size_usize, 0);
 
-            match self.file.read_at(&mut block_data, read_offset) {
-                Ok(bytes_read) => {
-                    if bytes_read == 0 {
-                        break; // EOF
-                    }
-                    block_data.truncate(bytes_read);
+            let bytes_read = self.file.read_at(&mut block_data, read_offset)?;
+            if bytes_read == 0 {
+                break; // EOF
+            }
+            block_data.truncate(bytes_read);
 
-                    let plaintext =
-                        codec.decrypt_block(block_num, self.file_iv, &mut block_data)?;
+            let plaintext = codec.decrypt_block(block_num, self.file_iv, &mut block_data)?;
 
-                    // Copy requested part
-                    let start = block_offset as usize;
-                    let end =
-                        std::cmp::min(start + bytes_to_read_in_block as usize, plaintext.len());
+            // Copy requested part
+            let start = block_offset as usize;
+            let end = std::cmp::min(start + bytes_to_read_in_block as usize, plaintext.len());
 
-                    if start < plaintext.len() {
-                        let dest_start = total_read;
-                        let dest_end = total_read + (end - start);
-                        buf[dest_start..dest_end].copy_from_slice(&plaintext[start..end]);
+            if start < plaintext.len() {
+                let dest_start = total_read;
+                let dest_end = total_read + (end - start);
+                buf[dest_start..dest_end].copy_from_slice(&plaintext[start..end]);
 
-                        let copied = end - start;
-                        total_read += copied;
-                        current_offset += copied as u64;
-                        bytes_remaining -= copied as u64;
-                    } else {
-                        break; // EOF reached within block
-                    }
-                }
-                Err(e) => return Err(e),
+                let copied = end - start;
+                total_read += copied;
+                current_offset += copied as u64;
+                bytes_remaining -= copied as u64;
+            } else {
+                break; // EOF reached within block
             }
         }
 
@@ -435,24 +429,19 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
         let is_full_write = block_offset == 0 && bytes_to_write == data_block_size;
         if !is_full_write {
             let mut on_disk_block = vec![0u8; physical_block_size_usize];
-            match self.file.read_at(&mut on_disk_block, disk_offset) {
-                Ok(n) => {
-                    if n > 0 {
-                        let existing_payload_len =
-                            n.saturating_sub(layout.overhead_bytes() as usize);
-                        if block_offset == 0 && (bytes_to_write as usize) >= existing_payload_len {
-                            plaintext_block.clear();
-                        } else {
-                            on_disk_block.truncate(n);
-                            plaintext_block = codec
-                                .decrypt_block(block_num, self.file_iv, &mut on_disk_block)
-                                .map_err(|e| {
-                                    io::Error::other(format!("Decrypt failed during RMW: {}", e))
-                                })?;
-                        }
-                    }
+            let n = self.file.read_at(&mut on_disk_block, disk_offset)?;
+            if n > 0 {
+                let existing_payload_len = n.saturating_sub(layout.overhead_bytes() as usize);
+                if block_offset == 0 && (bytes_to_write as usize) >= existing_payload_len {
+                    plaintext_block.clear();
+                } else {
+                    on_disk_block.truncate(n);
+                    plaintext_block = codec
+                        .decrypt_block(block_num, self.file_iv, &mut on_disk_block)
+                        .map_err(|e| {
+                            io::Error::other(format!("Decrypt failed during RMW: {}", e))
+                        })?;
                 }
-                Err(e) => return Err(e),
             }
         }
 

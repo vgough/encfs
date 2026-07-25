@@ -425,18 +425,27 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
                 version = config.version
             );
             println!("{}", paint(&line, Highlight::Default, color));
-            println!("{}", paint(&t!("ctl.v7_format_info"), Highlight::Default, color));
+            println!(
+                "{}",
+                paint(&t!("ctl.v7_format_info"), Highlight::Default, color)
+            );
         }
         ConfigType::V3 => {
             // V3 configs are detected but not supported
-            println!("{}", paint(&t!("ctl.version3_config"), Highlight::Deprecated, color));
+            println!(
+                "{}",
+                paint(&t!("ctl.version3_config"), Highlight::Deprecated, color)
+            );
             return Err(anyhow::anyhow!(
                 "{}",
                 t!("ctl.error_version3_not_supported")
             ));
         }
         ConfigType::Prehistoric => {
-            println!("{}", paint(&t!("ctl.prehistoric_config"), Highlight::Deprecated, color));
+            println!(
+                "{}",
+                paint(&t!("ctl.prehistoric_config"), Highlight::Deprecated, color)
+            );
             return Err(anyhow::anyhow!(
                 "{}",
                 t!("ctl.error_old_format_not_supported"),
@@ -575,7 +584,11 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         KdfAlgorithm::Pbkdf2 => {
             println!(
                 "{}",
-                paint(&t!("ctl.kdf_algorithm_pbkdf2"), Highlight::Deprecated, color)
+                paint(
+                    &t!("ctl.kdf_algorithm_pbkdf2"),
+                    Highlight::Deprecated,
+                    color
+                )
             );
             if config.kdf_iterations > 0 && !config.salt.is_empty() {
                 println!(
@@ -642,7 +655,10 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
             paint(&t!("ctl.upgrade_unavailable"), Highlight::Deprecated, color)
         );
     } else {
-        println!("{}", paint(&t!("ctl.up_to_date"), Highlight::Default, color));
+        println!(
+            "{}",
+            paint(&t!("ctl.up_to_date"), Highlight::Default, color)
+        );
     }
 
     Ok(())
@@ -2754,7 +2770,14 @@ mod tests {
         };
 
         // Run find_undecodable_files
-        find_undecodable_files(&temp_dir, &temp_dir, cipher.as_ref(), false, dir_iv, &mut stats)?;
+        find_undecodable_files(
+            &temp_dir,
+            &temp_dir,
+            cipher.as_ref(),
+            false,
+            dir_iv,
+            &mut stats,
+        )?;
 
         // Cleanup
         let _ = fs::remove_dir_all(&temp_dir);

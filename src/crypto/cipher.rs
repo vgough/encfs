@@ -101,7 +101,8 @@ pub trait Cipher: Send + Sync {
     // --- volume-key wrapping (used by config + encfsctl) ---
 
     fn encrypt_key(&self, volume_key: &[u8], user_key: &[u8], user_iv: &[u8]) -> Result<Vec<u8>>;
-    fn decrypt_key(&self, encrypted_key: &[u8], user_key: &[u8], user_iv: &[u8]) -> Result<Vec<u8>>;
+    fn decrypt_key(&self, encrypted_key: &[u8], user_key: &[u8], user_iv: &[u8])
+    -> Result<Vec<u8>>;
     fn decrypt_key_legacy(
         &self,
         encrypted_key: &[u8],
@@ -224,7 +225,12 @@ impl Cipher for SslCipher {
         SslCipher::encrypt_key(self, volume_key, user_key, user_iv)
     }
 
-    fn decrypt_key(&self, encrypted_key: &[u8], user_key: &[u8], user_iv: &[u8]) -> Result<Vec<u8>> {
+    fn decrypt_key(
+        &self,
+        encrypted_key: &[u8],
+        user_key: &[u8],
+        user_iv: &[u8],
+    ) -> Result<Vec<u8>> {
         SslCipher::decrypt_key(self, encrypted_key, user_key, user_iv)
     }
 

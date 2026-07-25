@@ -2,7 +2,7 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo};
+use typed_fuse::{Caller, PathFilesystem, SetAttr};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
@@ -50,11 +50,11 @@ fn test_truncate_corrupts_partial_block() {
     let config = encfs::config::EncfsConfig::test_default();
     let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
-    let req = RequestInfo {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
 
     let parent = PathBuf::from("");
@@ -63,10 +63,10 @@ fn test_truncate_corrupts_partial_block() {
     let path = parent.join(filename);
 
     // 1. Create file
-    let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+    let (_, create_res) = fs
+        .create(&parent, name, 0o644, 0, 0, &req)
         .expect("create failed");
-    let fh = create_res.fh;
+    let fh = create_res.handle;
 
     // 2. Write Data > 1 block (1024 bytes)
     // Write 1024 + 50 bytes.
@@ -75,12 +75,12 @@ fn test_truncate_corrupts_partial_block() {
 
     // Write in one go
     let written = fs
-        .write(req, &path, fh, 0, data.clone(), 0)
+        .write(Some(&path), &fh, &data, 0, &req)
         .expect("write failed");
-    assert_eq!(written, data.len() as u32);
+    assert_eq!(written, data.len());
 
     // Release to flush
-    fs.release(req, &path, fh, 0, 0, true).unwrap();
+    fs.release(Some(&path), fh, &req).unwrap();
 
     // 3. Truncate to a partial block size (e.g. 500 bytes)
     // This will force the first block (which was full 1024) to be truncated to 500.
@@ -88,7 +88,16 @@ fn test_truncate_corrupts_partial_block() {
     // Due to the bug, it might decrypt the first 500 bytes of the CBC block using CFB, resulting in garbage,
     // and then write that garbage back.
     let target_size = 500;
-    fs.truncate(req, &path, None, target_size).unwrap();
+    fs.setattr(
+        Some(&path),
+        None,
+        &SetAttr {
+            size: Some(target_size),
+            ..Default::default()
+        },
+        &req,
+    )
+    .unwrap();
 
     // 4. Verify content
     // We need to read the physical file and decrypt it.
@@ -174,11 +183,11 @@ fn test_truncate_extend_then_append_preserves_block0_tag() {
     config.allow_holes = true;
     let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
-    let req = RequestInfo {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
 
     let parent = PathBuf::from("");
@@ -186,30 +195,38 @@ fn test_truncate_extend_then_append_preserves_block0_tag() {
     let name = OsStr::new(filename);
     let path = parent.join(filename);
 
-    let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+    let (_, create_res) = fs
+        .create(&parent, name, 0o644, 0, 0, &req)
         .expect("create failed");
-    let fh = create_res.fh;
+    let fh = create_res.handle;
 
     let payload1 = b"hello-partial-block".repeat(5);
     let written = fs
-        .write(req, &path, fh, 0, payload1.clone(), 0)
+        .write(Some(&path), &fh, &payload1, 0, &req)
         .expect("initial write failed");
-    assert_eq!(written as usize, payload1.len());
+    assert_eq!(written, payload1.len());
 
     let data_block_size = 1024u64 - 8u64;
     let extended_size = data_block_size * 2;
-    fs.truncate(req, &path, Some(fh), extended_size)
-        .expect("truncate extend failed");
+    fs.setattr(
+        Some(&path),
+        Some(&fh),
+        &SetAttr {
+            size: Some(extended_size),
+            ..Default::default()
+        },
+        &req,
+    )
+    .expect("truncate extend failed");
 
     let payload2 = b"-appended-after-extend-";
     let append_offset = extended_size;
     let appended = fs
-        .write(req, &path, fh, append_offset, payload2.to_vec(), 0)
+        .write(Some(&path), &fh, payload2, append_offset, &req)
         .expect("append write failed");
-    assert_eq!(appended as usize, payload2.len());
+    assert_eq!(appended, payload2.len());
 
-    fs.release(req, &path, fh, 0, 0, true).unwrap();
+    fs.release(Some(&path), fh, &req).unwrap();
 
     let mut entries = fs::read_dir(&tmp).unwrap();
     let entry = entries.next().unwrap().unwrap();

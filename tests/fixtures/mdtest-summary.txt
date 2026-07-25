@@ -1,0 +1,20 @@
+-- started at 07/15/2026 21:20:38 --
+
+mdtest-4.1.0+dev was launched with 1 total task(s) on 1 node(s)
+Command line used: mdtest '-d' '/tmp/example' '-n' '2' '-i' '1' '-w' '4096' '-e' '4096'
+1 tasks, 2 files/directories
+
+SUMMARY rate (in ops/sec): (of 1 iterations)
+   Operation                     Max            Min           Mean        Std Dev
+   ---------                     ---            ---           ----        -------
+   Directory creation           8264.638       8264.638       8264.638          0.000
+   Directory stat              74235.469      74235.469      74235.469          0.000
+   Directory rename             4454.917       4454.917       4454.917          0.000
+   Directory removal           10686.125      10686.125      10686.125          0.000
+   File creation                3053.734       3053.734       3053.734          0.000
+   File stat                   64527.754      64527.754      64527.754          0.000
+   File read                   13231.243      13231.243      13231.243          0.000
+   File removal                 9765.551       9765.551       9765.551          0.000
+   Tree creation                6626.073       6626.073       6626.073          0.000
+   Tree removal                10433.592      10433.592      10433.592          0.000
+-- finished at 07/15/2026 21:20:39 --

@@ -20,8 +20,7 @@ use std::time::{Duration, Instant};
 
 const TEST_PASSWORD: &str = "encfsr_live_test";
 const TEST_PLAINTEXT_FILENAME: &str = "hello.txt";
-const TEST_PLAINTEXT_CONTENT: &[u8] =
-    b"Hello, encfsr! This is a test file for Phase 2 verification.";
+const TEST_PLAINTEXT_CONTENT: &[u8] = b"Hello, encfsr! This is a test file for verification.";
 
 // ---------------------------------------------------------------------------
 // Fixture setup
@@ -132,42 +131,7 @@ fn encfsr_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_encfsr"))
 }
 
-fn mountinfo_has_mount(mount_point: &std::path::Path) -> std::io::Result<bool> {
-    let mp = if let Ok(c) = fs::canonicalize(mount_point) {
-        c
-    } else {
-        mount_point.to_path_buf()
-    };
-    let mp_str = mp.to_string_lossy();
-    let data = fs::read_to_string("/proc/self/mountinfo")?;
-    for line in data.lines() {
-        let mut parts = line.split_whitespace();
-        let _id = parts.next();
-        let _parent = parts.next();
-        let _majmin = parts.next();
-        let _root = parts.next();
-        let mp_field = match parts.next() {
-            Some(v) => v,
-            None => continue,
-        };
-
-        if mp_field != mp_str {
-            // println!("  [debug] mismatch: {} != {}", mp_field, mp_str);
-            continue;
-        }
-        println!("  [debug] MATCH: {}", mp_field);
-        if let Some((_pre, post)) = line.split_once(" - ") {
-            let mut post_parts = post.split_whitespace();
-            let fstype = post_parts.next().unwrap_or("");
-            // In mountinfo, after " - " the fields are: fstype, mount_source, mount_options
-            // For FUSE, fstype is often "fuse" or "fuse.encfs"
-            if fstype.starts_with("fuse") {
-                return Ok(true);
-            }
-        }
-    }
-    Ok(false)
-}
+use live::mountinfo_has_mount;
 
 fn run_quiet(cmd: &mut Command) -> std::io::Result<std::process::ExitStatus> {
     cmd.stdin(Stdio::null())
@@ -178,7 +142,7 @@ fn run_quiet(cmd: &mut Command) -> std::io::Result<std::process::ExitStatus> {
 
 #[allow(dead_code)]
 struct EncfsrMountGuard {
-    _lock: MutexGuard<'static, ()>,
+    lock: Option<MutexGuard<'static, ()>>,
     source: PathBuf,
     pub mount_point: PathBuf,
     child: Child,
@@ -294,13 +258,20 @@ impl EncfsrMountGuard {
         }
 
         Ok(Self {
-            _lock: lock,
+            lock: Some(lock),
             source,
             mount_point,
             child,
             mounted: true,
             stderr_tail,
         })
+    }
+
+    /// Releases the suite-wide serialization lock before a second, nested
+    /// mount is created. Ignored live tests are run with `--test-threads=1`,
+    /// so the outer mount remains isolated for the rest of the test.
+    fn allow_nested_mount(&mut self) {
+        self.lock.take();
     }
 }
 
@@ -534,7 +505,7 @@ fn test_encfsr_live_path_resolution_correct() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3 Round-trip Helpers
+// Round-trip Helpers
 // ---------------------------------------------------------------------------
 
 /// Create a V6 config with non-zero blockMACBytes for proper round-trip testing.
@@ -577,7 +548,7 @@ fn live_config_from_encfs(config: &EncfsConfig) -> live::LiveConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3 Round-trip tests (guarded by ENCFS_LIVE_TESTS=1)
+// Round-trip tests (guarded by ENCFS_LIVE_TESTS=1)
 // ---------------------------------------------------------------------------
 
 /// CRPT-01, CRPT-03: Round-trip test proving encfsr produces compatible ciphertext
@@ -611,9 +582,10 @@ fn test_encfsr_v6_round_trip_block_boundaries() -> Result<()> {
 
     // Step 1: Mount encfsr on source dir
     let config_path = source_dir.join(".encfs6.xml");
-    let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    let mut encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
 
     // Step 2: Mount standard encfs on top of the encfsr mount (to decrypt)
+    encfsr_mount.allow_nested_mount();
     let live_cfg = live_config_from_encfs(&config);
     let decrypt_mount = live::MountGuard::mount_existing_backing_root(
         live_cfg,
@@ -658,7 +630,8 @@ fn test_encfsr_virtual_config_file_present() -> Result<()> {
     let dir = unique_temp_dir("encfsr_virtual_config")?;
     let source_dir = setup_source_dir(&dir)?;
     let config_path = source_dir.join(".encfs6.xml");
-    let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    let mut encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    encfsr_mount.allow_nested_mount();
 
     // 1. Verify it appears in directory listing
     let entries: Vec<String> = fs::read_dir(&encfsr_mount.mount_point)?
@@ -723,7 +696,8 @@ fn test_encfsr_v6_external_iv_chaining_round_trip() -> Result<()> {
     fs::write(subdir.join("nested.txt"), b"nested file content in subdir")?;
 
     let config_path = source_dir.join(".encfs6.xml");
-    let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    let mut encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    encfsr_mount.allow_nested_mount();
     let live_cfg = live_config_from_encfs(&config);
     let decrypt_mount = live::MountGuard::mount_existing_backing_root(
         live_cfg,
@@ -774,12 +748,13 @@ fn test_encfsr_v7_aes_gcm_siv_round_trip() -> Result<()> {
     fs::write(source_dir.join("hello.txt"), b"v7 encrypted content test")?;
 
     let config_path = source_dir.join(".encfs7");
-    let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    let mut encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
 
     // live::MountGuard needs to know it's a V7 config to pass correct flags to encfs binary
     let mut live_cfg = live_config_from_encfs(&config);
     live_cfg.kind = live::LiveConfigKind::V7;
 
+    encfsr_mount.allow_nested_mount();
     let decrypt_mount = live::MountGuard::mount_existing_backing_root(
         live_cfg,
         true,
@@ -814,7 +789,8 @@ fn test_encfsr_symlink_encryption_round_trip() -> Result<()> {
     #[cfg(unix)]
     std::os::unix::fs::symlink("hello.txt", source_dir.join("link.txt"))?;
 
-    let encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    let mut encfsr_mount = EncfsrMountGuard::mount(source_dir.clone(), config_path, TEST_PASSWORD)?;
+    encfsr_mount.allow_nested_mount();
     let live_cfg = live_config_from_encfs(&config);
     let decrypt_mount = live::MountGuard::mount_existing_backing_root(
         live_cfg,

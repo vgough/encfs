@@ -3,10 +3,10 @@ use clap::Parser;
 use daemonize::Daemonize;
 use log::{error, info};
 use rust_i18n::t;
-use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use encfs::{config, fs::EncFs};
+use typed_fuse::mount;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
@@ -174,7 +174,20 @@ fn main() -> Result<()> {
         Ok(cipher) => {
             info!("{}", t!("main.successfully_decrypted"));
 
-            // Daemonize unless foreground mode is requested
+            // Resolve paths before daemonizing: Daemonize chdirs to "/", which
+            // would break relative root/mount_point paths.
+            let root = args
+                .root
+                .canonicalize()
+                .with_context(|| format!("invalid root directory {}", args.root.display()))?;
+            let mount_point = args
+                .mount_point
+                .canonicalize()
+                .with_context(|| format!("invalid mount point {}", args.mount_point.display()))?;
+
+            // Daemonize unless foreground mode is requested. This must happen
+            // before the FUSE session is created (forking after libfuse has
+            // initialized process state is unsafe).
             if !foreground {
                 let daemonize = Daemonize::new();
                 match daemonize.start() {
@@ -187,36 +200,16 @@ fn main() -> Result<()> {
                 }
             }
 
-            let fs = EncFs::new(args.root, cipher, config);
+            let fs = EncFs::new(root, cipher, config).with_read_only(args.read_only);
 
-            let mut check_opts = vec![];
-            if args.public {
-                check_opts.push(OsStr::new("-o"));
-                check_opts.push(OsStr::new("allow_other"));
-            }
+            let mount_config = mount::MountConfig {
+                allow_other: args.public,
+                default_permissions: !args.no_default_permissions,
+                read_only: args.read_only,
+                ..mount::MountConfig::new("encfs")
+            };
 
-            if !args.no_default_permissions {
-                check_opts.push(OsStr::new("-o"));
-                check_opts.push(OsStr::new("default_permissions"));
-            }
-
-            if args.read_only {
-                check_opts.push(OsStr::new("-o"));
-                check_opts.push(OsStr::new("ro"));
-            }
-
-            // If we want to support full FUSE args, checking clap's handling of unknown args would be better,
-            // but for now we construct what we support.
-
-            // fuse-mt default threads logic:
-            // 0 means default (usually num_cpus). 1 means single threaded.
-            let threads = if args.single_thread { 1 } else { 0 };
-
-            fuse_mt::mount(
-                fuse_mt::FuseMT::new(fs, threads),
-                &args.mount_point,
-                &check_opts,
-            )?;
+            mount::mount_blocking(fs, &mount_point, &mount_config, args.single_thread)?;
         }
         Err(e) => {
             error!("{}", t!("main.failed_to_decrypt_key", error = e));

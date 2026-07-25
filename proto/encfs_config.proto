@@ -32,36 +32,36 @@ message Config {
 
 message Argon2Kdf {
   bytes salt = 1;
-  uint32 memory_cost_kib = 2;  // Argon2 memory cost in KiB
-  uint32 time_cost = 3;         // iterations
+  uint32 memory_cost_kib = 2; // Argon2 memory cost in KiB
+  uint32 time_cost = 3; // iterations
   uint32 parallelism = 4;
 }
 
 enum BlockCipherAlgorithm {
   BLOCK_CIPHER_ALGORITHM_UNSPECIFIED = 0;
-  AES = 1;
-  BLOWFISH = 2;
+  BLOCK_CIPHER_ALGORITHM_AES = 1;
+  BLOCK_CIPHER_ALGORITHM_BLOWFISH = 2;
 }
 
 message BasicBlockCipher {
   BlockCipherAlgorithm algorithm = 1;
-  int32 key_size = 2;              // e.g. 128, 192, 256 for AES
+  int32 key_size = 2; // e.g. 128, 192, 256 for AES
   int32 block_size = 3;
   int32 block_mac_bytes = 4;
-  int32 block_mac_rand_bytes = 5;   // must be 0 for current implementation
+  int32 block_mac_rand_bytes = 5; // must be 0 for current implementation
   bool unique_iv = 6;
 }
 
 message AesGcmSivBlockCipher {
-  int32 key_size = 1;   // AES key size in bits (128 or 256)
+  int32 key_size = 1; // AES key size in bits (128 or 256)
   int32 block_size = 2;
   bool unique_iv = 3;
 }
 
 enum NameEncodingMode {
   NAME_ENCODING_MODE_UNSPECIFIED = 0;
-  STREAM = 1;
-  BLOCK = 2;
+  NAME_ENCODING_MODE_STREAM = 1;
+  NAME_ENCODING_MODE_BLOCK = 2;
 }
 
 message NameEncoding {

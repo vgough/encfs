@@ -40,8 +40,9 @@ Usage
 Technology
 ----------
 
- - Encfs uses algorithms from third-party libraries (OpenSSL is the default) to
-   encrypt data and filenames.
+ - Encfs uses RustCrypto-based implementations for legacy-compatible data and
+   filename encryption, plus dedicated crates for V7 AEAD and Argon2 key
+   derivation.
 
  - A user supplied password is used to decrypt a volume key, and the volume key
    is used for encrypting all file names and contents.  This makes it possible
@@ -151,18 +152,8 @@ Utility
 Dependencies
 ------------
 
-   Encfs uses the OpenSSL toolkit (http://www.openssl.org) for legacy
-   cryptographic operations and for AEAD key wrapping in V7. The Rust port
-   additionally uses AES-GCM-SIV (aes-gcm-siv crate) for V7 block encryption
-   and Argon2 (argon2 crate) for key derivation in V7 configs.
-
-   OpenSSL is not covered by the GPL, and some people are concerned about the
-   licenses being incompatible.  Although I believe it should be clear that I
-   intended to allow linking encfs with OpenSSL, I will make it more explicit:
-
-   As a special exception to encfs's GPL license, the copyright holders give
-   permission to link the code or portions of this program with the OpenSSL
-   library, and distribute linked combinations including the two.  This
-   exception should be construed as narrowly as possible to allow OpenSSL to be
-   used and distributed as part of encfs.
+  The Rust port uses RustCrypto crates for legacy-compatible cryptographic
+  operations, AES-GCM for V7 AEAD key wrapping, AES-GCM-SIV (aes-gcm-siv
+  crate) for V7 block encryption, and Argon2 (argon2 crate) for key
+  derivation in V7 configs.
 

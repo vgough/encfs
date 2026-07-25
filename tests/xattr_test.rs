@@ -6,11 +6,15 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo, Xattr};
+use typed_fuse::{Caller, PathFilesystem, XattrReply as ReplyXAttr};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+
+/// Generous buffer size passed to getxattr/listxattr so the reply is always
+/// `ReplyXAttr::Data` rather than a `Size` probe.
+const XATTR_BUF_SIZE: usize = 65536;
 
 fn setup_fs(root: &Path) -> EncFs {
     let iface = Interface {
@@ -29,13 +33,22 @@ fn setup_fs(root: &Path) -> EncFs {
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
-fn req() -> RequestInfo {
-    RequestInfo {
-        unique: 1,
+fn req() -> Caller {
+    Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     }
+}
+
+fn create_test_file(encfs: &EncFs, caller: &Caller) -> PathBuf {
+    let path = PathBuf::from("/test.txt");
+    let (_, created) = encfs
+        .create(Path::new("/"), OsStr::new("test.txt"), 0o644, 0, 0, caller)
+        .expect("create failed");
+    encfs.release(Some(&path), created.handle, caller).unwrap();
+    path
 }
 
 #[cfg(target_os = "macos")]
@@ -68,15 +81,7 @@ fn test_xattr_set_get() {
     let encfs = setup_fs(&tmp);
     let r = req();
 
-    // Create a file
-    let parent = Path::new("/");
-    let name = OsStr::new("test.txt");
-    let created = encfs
-        .create(r, parent, name, 0o644, 0)
-        .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
-
-    let path = PathBuf::from("/test.txt");
+    let path = create_test_file(&encfs, &r);
 
     // Test setting and getting various xattr names
     let test_cases = vec![
@@ -94,23 +99,23 @@ fn test_xattr_set_get() {
     for (attr_name, attr_value) in &test_cases {
         // Set xattr
         encfs
-            .setxattr(r, &path, OsStr::new(attr_name), attr_value, 0, 0)
+            .setxattr(&path, OsStr::new(attr_name), attr_value, 0, &r)
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
 
         // Get xattr
         let result = encfs
-            .getxattr(r, &path, OsStr::new(attr_name), 0)
+            .getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
             .unwrap_or_else(|_| panic!("getxattr failed for {}", attr_name));
 
         match result {
-            Xattr::Data(data) => {
+            ReplyXAttr::Data(data) => {
                 assert_eq!(
                     data, *attr_value,
                     "xattr value mismatch for {}: expected {:?}, got {:?}",
                     attr_name, attr_value, data
                 );
             }
-            Xattr::Size(_) => {
+            ReplyXAttr::Size(_) => {
                 panic!("getxattr returned Size instead of Data for {}", attr_name);
             }
         }
@@ -132,15 +137,7 @@ fn test_xattr_list() {
     let encfs = setup_fs(&tmp);
     let r = req();
 
-    // Create a file
-    let parent = Path::new("/");
-    let name = OsStr::new("test.txt");
-    let created = encfs
-        .create(r, parent, name, 0o644, 0)
-        .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
-
-    let path = PathBuf::from("/test.txt");
+    let path = create_test_file(&encfs, &r);
 
     // Set multiple xattrs
     let attrs = vec![
@@ -152,19 +149,21 @@ fn test_xattr_list() {
 
     for (attr_name, attr_value) in &attrs {
         encfs
-            .setxattr(r, &path, OsStr::new(attr_name), attr_value, 0, 0)
+            .setxattr(&path, OsStr::new(attr_name), attr_value, 0, &r)
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
     }
 
     // List xattrs
-    let result = encfs.listxattr(r, &path, 0).expect("listxattr failed");
+    let result = encfs
+        .listxattr(&path, XATTR_BUF_SIZE, &r)
+        .expect("listxattr failed");
 
     let mut listed_attrs = Vec::new();
     match result {
-        Xattr::Data(data) => {
+        ReplyXAttr::Data(data) => {
             // Parse null-separated list
             let mut current = Vec::new();
-            for &byte in &data {
+            for &byte in data.iter() {
                 if byte == 0 {
                     if !current.is_empty() {
                         listed_attrs.push(String::from_utf8(current.clone()).unwrap());
@@ -178,7 +177,7 @@ fn test_xattr_list() {
                 listed_attrs.push(String::from_utf8(current).unwrap());
             }
         }
-        Xattr::Size(_) => {
+        ReplyXAttr::Size(_) => {
             panic!("listxattr returned Size instead of Data");
         }
     }
@@ -218,39 +217,31 @@ fn test_xattr_remove() {
     let encfs = setup_fs(&tmp);
     let r = req();
 
-    // Create a file
-    let parent = Path::new("/");
-    let name = OsStr::new("test.txt");
-    let created = encfs
-        .create(r, parent, name, 0o644, 0)
-        .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
-
-    let path = PathBuf::from("/test.txt");
+    let path = create_test_file(&encfs, &r);
 
     // Set an xattr
     let attr_name = "user.foo";
     let attr_value = b"test_value".to_vec();
     encfs
-        .setxattr(r, &path, OsStr::new(attr_name), &attr_value, 0, 0)
+        .setxattr(&path, OsStr::new(attr_name), &attr_value, 0, &r)
         .expect("setxattr failed");
 
     // Verify it exists
     let result = encfs
-        .getxattr(r, &path, OsStr::new(attr_name), 0)
+        .getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
         .expect("getxattr failed");
     match result {
-        Xattr::Data(data) => assert_eq!(data, attr_value),
-        Xattr::Size(_) => panic!("getxattr returned Size instead of Data"),
+        ReplyXAttr::Data(data) => assert_eq!(data, attr_value),
+        ReplyXAttr::Size(_) => panic!("getxattr returned Size instead of Data"),
     }
 
     // Remove it
     encfs
-        .removexattr(r, &path, OsStr::new(attr_name))
+        .removexattr(&path, OsStr::new(attr_name), &r)
         .expect("removexattr failed");
 
     // Verify it's gone
-    let result = encfs.getxattr(r, &path, OsStr::new(attr_name), 0);
+    let result = encfs.getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r);
     assert!(result.is_err(), "getxattr should fail after removexattr");
 
     // Cleanup
@@ -269,21 +260,13 @@ fn test_xattr_on_disk_storage() {
     let encfs = setup_fs(&tmp);
     let r = req();
 
-    // Create a file
-    let parent = Path::new("/");
-    let name = OsStr::new("test.txt");
-    let created = encfs
-        .create(r, parent, name, 0o644, 0)
-        .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
-
-    let path = PathBuf::from("/test.txt");
+    let path = create_test_file(&encfs, &r);
 
     // Set an xattr
     let attr_name = "user.foo";
     let attr_value = b"test_value".to_vec();
     encfs
-        .setxattr(r, &path, OsStr::new(attr_name), &attr_value, 0, 0)
+        .setxattr(&path, OsStr::new(attr_name), &attr_value, 0, &r)
         .expect("setxattr failed");
 
     // Find the encrypted file on disk
@@ -305,7 +288,7 @@ fn test_xattr_on_disk_storage() {
 
     if size > 0 {
         let size_usize = size as usize;
-        let mut buf = vec![0i8; size_usize];
+        let mut buf = vec![0 as libc::c_char; size_usize];
         let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), buf.as_mut_ptr(), size_usize) };
 
         if ret > 0 {
@@ -345,15 +328,7 @@ fn test_xattr_round_trip() {
     let encfs = setup_fs(&tmp);
     let r = req();
 
-    // Create a file
-    let parent = Path::new("/");
-    let name = OsStr::new("test.txt");
-    let created = encfs
-        .create(r, parent, name, 0o644, 0)
-        .expect("create failed");
-    let _ = encfs.release(r, &PathBuf::from("/test.txt"), created.fh, 0, 0, true);
-
-    let path = PathBuf::from("/test.txt");
+    let path = create_test_file(&encfs, &r);
 
     // Test various attribute names and values
     let test_cases = vec![
@@ -370,35 +345,37 @@ fn test_xattr_round_trip() {
     for (attr_name, attr_value) in &test_cases {
         // Set
         encfs
-            .setxattr(r, &path, OsStr::new(attr_name), attr_value, 0, 0)
+            .setxattr(&path, OsStr::new(attr_name), attr_value, 0, &r)
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
 
         // Get
         let result = encfs
-            .getxattr(r, &path, OsStr::new(attr_name), 0)
+            .getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
             .unwrap_or_else(|_| panic!("getxattr failed for {}", attr_name));
 
         match result {
-            Xattr::Data(data) => {
+            ReplyXAttr::Data(data) => {
                 assert_eq!(
                     data, *attr_value,
                     "Round-trip failed for {}: expected {:?}, got {:?}",
                     attr_name, attr_value, data
                 );
             }
-            Xattr::Size(_) => {
+            ReplyXAttr::Size(_) => {
                 panic!("getxattr returned Size instead of Data for {}", attr_name);
             }
         }
 
         // Remove
         encfs
-            .removexattr(r, &path, OsStr::new(attr_name))
+            .removexattr(&path, OsStr::new(attr_name), &r)
             .unwrap_or_else(|_| panic!("removexattr failed for {}", attr_name));
 
         // Verify it's gone
         assert!(
-            encfs.getxattr(r, &path, OsStr::new(attr_name), 0).is_err(),
+            encfs
+                .getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
+                .is_err(),
             "xattr should be removed: {}",
             attr_name
         );

@@ -1,10 +1,18 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FileType, FilesystemMT, RequestInfo};
-use std::ffi::OsStr;
+use typed_fuse::{Caller, FileKind as FileType, PathDirSink, PathFilesystem};
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
+
+struct Entries(Vec<(OsString, FileType)>);
+impl PathDirSink for Entries {
+    fn add(&mut self, name: &OsStr, kind: FileType, _next_offset: u64) -> bool {
+        self.0.push((name.to_os_string(), kind));
+        true
+    }
+}
 
 #[test]
 fn test_symlink_type() {
@@ -33,11 +41,11 @@ fn test_symlink_type() {
     let config = encfs::config::EncfsConfig::test_default();
     let fs = EncFs::new(root.clone(), Box::new(cipher), config);
 
-    let req = RequestInfo {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
 
     let parent = PathBuf::from("");
@@ -46,12 +54,12 @@ fn test_symlink_type() {
 
     // Create Symlink
     let _ = fs
-        .symlink(req, &parent, name, target)
+        .symlink(&parent, name, target, &req)
         .expect("symlink creation failed");
 
     // Check getattr
     let path = parent.join(name);
-    let (_ttl, attr) = fs.getattr(req, &path, None).expect("getattr failed");
+    let attr = fs.getattr(Some(&path), None, &req).expect("getattr failed");
 
     // Logic: attr.kind should be Symlink, but currently it is RegularFile (bug)
     println!("File kind: {:?}", attr.kind);
@@ -63,17 +71,21 @@ fn test_symlink_type() {
     );
 
     // Check readdir
-    let entries = fs.readdir(req, &parent, 0).expect("readdir failed");
+    let handle = fs.opendir(&parent, 0, &req).expect("opendir failed").handle;
+    let mut entries = Entries(Vec::new());
+    fs.readdir(&parent, &handle, 0, &mut entries, &req)
+        .expect("readdir failed");
     let entry = entries
+        .0
         .iter()
-        .find(|e| e.name.to_str() == Some("mysymlink"))
+        .find(|e| e.0 == OsStr::new("mysymlink"))
         .expect("symlink not found in readdir");
-    println!("Readdir entry kind: {:?}", entry.kind);
+    println!("Readdir entry kind: {:?}", entry.1);
     assert_eq!(
-        entry.kind,
+        entry.1,
         FileType::Symlink,
         "readdir: Expected Symlink, got {:?}",
-        entry.kind
+        entry.1
     );
 
     // Cleanup

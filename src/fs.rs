@@ -3,115 +3,199 @@ use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
-use fuse_mt::{
-    CallbackResult, CreatedEntry, DirectoryEntry, FileAttr, FileType, FilesystemMT, RequestInfo,
-    ResultCreate, ResultEmpty, ResultEntry, ResultOpen, ResultReaddir, ResultSlice, ResultStatfs,
-    ResultWrite, Statfs, Xattr,
+use typed_fuse::passthrough::{
+    self, access_check, c_path, file_attr_from_metadata, file_type_from_metadata, is_apple_xattr,
+    set_ownership_fd, set_ownership_path, statfs_path, symlink as passthrough_symlink,
+    utimens_permission_check,
+};
+use typed_fuse::{
+    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathDirSink, PathFilesystem,
+    PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
 };
 use libc;
 use log::{debug, error, warn};
+use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ffi::{CString, OsStr};
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileExt, FileTypeExt, MetadataExt};
+use std::os::unix::fs::{FileExt, MetadataExt};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+use std::time::SystemTime;
 
-struct FileHandle {
+/// Errors from internal helpers are raw errno values; trait methods convert
+/// them to typed FUSE errors via `?`.
+type OpResult = Result<(), libc::c_int>;
+
+/// Key identifying a backing file.
+///
+/// Two `FileHandle`s referring to the same on-disk file (same device + inode)
+/// share one [`FileState`], even when opened through different plaintext paths.
+type FileKey = (u64, u64); // (st_dev, st_ino)
+
+/// Mutable per-file state, guarded by [`FileState::meta`].
+#[derive(Debug, Default, Clone, Copy)]
+struct FileMeta {
+    /// IV read from (or written to) the file header, shared by every handle on
+    /// the inode. `None` for headerless configurations (`header_size == 0`),
+    /// where the IV is derived from the path instead and lives on the handle;
+    /// see [`FileHandle::headerless_iv`].
+    header_iv: Option<u64>,
+}
+
+/// State shared by every handle on one backing inode.
+///
+/// The lock serializes two things that are not atomic at the syscall level:
+///
+/// * A partial-block write in [`crate::crypto::file::FileEncoder`] is a
+///   read-decrypt-modify-encrypt-write sequence spanning two syscalls, and a
+///   truncate is a read/set_len/re-encrypt sequence. Without serialization two
+///   writers to the same block lose each other's updates, and a truncate
+///   racing a write resurrects stale data or breaks a block's MAC.
+/// * The per-file IV. Opening with `O_TRUNC` (and `create`) resets the file and
+///   installs a header carrying a *newly generated* IV. Since the IV lives here
+///   rather than on each handle, handles opened earlier pick up the new one at
+///   the same instant the contents are reset; otherwise they would keep
+///   encrypting blocks under an IV the header no longer names, and nothing
+///   could ever decrypt them again.
+#[derive(Debug)]
+struct FileState {
+    key: FileKey,
+    meta: RwLock<FileMeta>,
+}
+
+impl FileState {
+    fn new(key: FileKey) -> Self {
+        Self {
+            key,
+            meta: RwLock::new(FileMeta::default()),
+        }
+    }
+
+    /// Shared access, for operations that only read the file.
+    ///
+    /// Lock poisoning is recovered from rather than propagated: a writer that
+    /// panicked mid-RMW may have left the *file* inconsistent, but that is not
+    /// improved by failing every later operation on the mount, and [`FileMeta`]
+    /// itself is plain `Copy` data that cannot be torn.
+    fn read(&self) -> RwLockReadGuard<'_, FileMeta> {
+        self.meta.read().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Exclusive access, required for any read-modify-write, truncate, or
+    /// header rewrite. See [`FileState::read`] on poisoning.
+    fn write(&self) -> RwLockWriteGuard<'_, FileMeta> {
+        self.meta.write().unwrap_or_else(|p| p.into_inner())
+    }
+}
+
+/// Smallest table size worth sweeping for dead entries.
+const FILE_STATE_SWEEP_FLOOR: usize = 64;
+
+/// Table of live [`FileState`]s, keyed by backing device + inode.
+///
+/// Entries are weak, so the state disappears once the last handle (or transient
+/// operation) drops its `Arc`; dead entries are swept out on insert. A
+/// long-lived mount therefore does not accumulate one entry per file it has
+/// ever touched.
+#[derive(Default)]
+struct FileStates {
+    table: Mutex<FileStateTable>,
+}
+
+#[derive(Default)]
+struct FileStateTable {
+    entries: HashMap<FileKey, Weak<FileState>>,
+    /// Sweep once `entries` grows past this, then reset it to twice the
+    /// surviving size. Sweeping is thus amortized O(1) per insert and the table
+    /// stays within twice the live set (plus [`FILE_STATE_SWEEP_FLOOR`]).
+    sweep_at: usize,
+}
+
+impl FileStates {
+    /// Returns the shared state for `file`, creating it if this is the first
+    /// live reference to that inode.
+    ///
+    /// Failing to stat an already-open fd is reported rather than papered over:
+    /// a fallback key would silently stop two handles on the same inode from
+    /// serializing, which is exactly the bug this table exists to prevent.
+    fn get(&self, file: &File) -> Result<Arc<FileState>, libc::c_int> {
+        let metadata = file.metadata().map_err(|e| {
+            error!("stat of open backing file failed: {}", e);
+            e.raw_os_error().unwrap_or(libc::EIO)
+        })?;
+        Ok(self.get_by_key((metadata.dev(), metadata.ino())))
+    }
+
+    fn get_by_key(&self, key: FileKey) -> Arc<FileState> {
+        let mut table = self.table.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(existing) = table.entries.get(&key).and_then(Weak::upgrade) {
+            return existing;
+        }
+
+        if table.entries.len() >= table.sweep_at.max(FILE_STATE_SWEEP_FLOOR) {
+            table.entries.retain(|_, state| state.strong_count() > 0);
+            table.sweep_at = table.entries.len().saturating_mul(2);
+        }
+
+        let state = Arc::new(FileState::new(key));
+        table.entries.insert(key, Arc::downgrade(&state));
+        state
+    }
+}
+
+/// Takes the write lock on both ends of a copy.
+///
+/// Locks in ascending key order, so a copy running the other way over the same
+/// pair (a rename back) cannot deadlock against this one. When both names
+/// resolve to the same inode there is only one lock to take and the returned
+/// source guard is `None` — the destination guard covers both.
+fn lock_source_and_dest<'a>(
+    src: &'a FileState,
+    dest: &'a FileState,
+) -> (
+    Option<RwLockWriteGuard<'a, FileMeta>>,
+    RwLockWriteGuard<'a, FileMeta>,
+) {
+    match src.key.cmp(&dest.key) {
+        std::cmp::Ordering::Equal => (None, dest.write()),
+        std::cmp::Ordering::Less => {
+            let src_guard = src.write();
+            let dest_guard = dest.write();
+            (Some(src_guard), dest_guard)
+        }
+        std::cmp::Ordering::Greater => {
+            let dest_guard = dest.write();
+            let src_guard = src.write();
+            (Some(src_guard), dest_guard)
+        }
+    }
+}
+
+pub struct FileHandle {
     file: File,
-    file_iv: u64,
+    /// IV for headerless configurations, derived from the path at open time.
+    /// Truncation cannot change it, so unlike the header IV it is safe to cache
+    /// per handle. Zero (and unused) when the config stores a per-file header.
+    headerless_iv: u64,
+    /// Shared state for the backing inode; guards every RMW on this file.
+    state: Arc<FileState>,
+}
+
+impl FileHandle {
+    /// The IV this file's blocks are encrypted under, as of `meta`.
+    fn file_iv(&self, meta: &FileMeta) -> u64 {
+        meta.header_iv.unwrap_or(self.headerless_iv)
+    }
 }
 
 struct PathInfo<'a> {
     logical: &'a Path,
     physical: &'a Path,
     iv: u64,
-}
-
-#[cfg(target_os = "macos")]
-fn xattr_nofollow_flags() -> libc::c_int {
-    libc::XATTR_NOFOLLOW
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn setxattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-    value: *const libc::c_void,
-    size: usize,
-    flags: libc::c_int,
-) -> libc::c_int {
-    unsafe { libc::setxattr(path, name, value, size, 0, flags | xattr_nofollow_flags()) }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe fn setxattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-    value: *const libc::c_void,
-    size: usize,
-    flags: libc::c_int,
-) -> libc::c_int {
-    unsafe { libc::lsetxattr(path, name, value, size, flags) }
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn getxattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-    value: *mut libc::c_void,
-    size: usize,
-) -> libc::ssize_t {
-    unsafe { libc::getxattr(path, name, value, size, 0, xattr_nofollow_flags()) }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe fn getxattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-    value: *mut libc::c_void,
-    size: usize,
-) -> libc::ssize_t {
-    unsafe { libc::lgetxattr(path, name, value, size) }
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn listxattr_nofollow(
-    path: *const libc::c_char,
-    value: *mut libc::c_char,
-    size: usize,
-) -> libc::ssize_t {
-    unsafe { libc::listxattr(path, value, size, xattr_nofollow_flags()) }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe fn listxattr_nofollow(
-    path: *const libc::c_char,
-    value: *mut libc::c_char,
-    size: usize,
-) -> libc::ssize_t {
-    unsafe { libc::llistxattr(path, value, size) }
-}
-
-#[cfg(target_os = "macos")]
-unsafe fn removexattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-) -> libc::c_int {
-    unsafe { libc::removexattr(path, name, xattr_nofollow_flags()) }
-}
-
-#[cfg(not(target_os = "macos"))]
-unsafe fn removexattr_nofollow(
-    path: *const libc::c_char,
-    name: *const libc::c_char,
-) -> libc::c_int {
-    unsafe { libc::lremovexattr(path, name) }
 }
 
 /// The main FUSE filesystem implementation.
@@ -121,9 +205,12 @@ unsafe fn removexattr_nofollow(
 pub struct EncFs {
     pub root: PathBuf,
     pub cipher: Box<dyn Cipher>,
-    handles: Mutex<HashMap<u64, Arc<FileHandle>>>,
-    next_fh: AtomicU64,
     pub config: crate::config::EncfsConfig,
+    /// Reject all mutating operations with EROFS. Enforced at the filesystem
+    /// layer as well as at mount level as defense in depth.
+    read_only: bool,
+    /// Per-backing-inode state serializing read-modify-write I/O.
+    file_states: FileStates,
 }
 
 impl EncFs {
@@ -131,14 +218,23 @@ impl EncFs {
         Self {
             root,
             cipher,
-            handles: Mutex::new(HashMap::new()),
-            next_fh: AtomicU64::new(1),
             config,
+            read_only: false,
+            file_states: FileStates::default(),
         }
     }
 
-    fn handles_guard(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Arc<FileHandle>>> {
-        self.handles.lock().unwrap_or_else(|e| e.into_inner())
+    pub fn with_read_only(mut self, read_only: bool) -> Self {
+        self.read_only = read_only;
+        self
+    }
+
+    fn ensure_writable(&self) -> OpResult {
+        if self.read_only {
+            Err(libc::EROFS)
+        } else {
+            Ok(())
+        }
     }
 
     /// Encrypts a plaintext path (from FUSE request) to an encrypted path (on disk).
@@ -202,16 +298,16 @@ impl EncFs {
 
     fn rename_internal(
         &self,
-        _req: RequestInfo,
         parent: &Path,
         name: &OsStr,
         newparent: &Path,
         newname: &OsStr,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         debug!(
             "rename: {:?}/{:?} -> {:?}/{:?}",
             parent, name, newparent, newname
         );
+        self.ensure_writable()?;
         let source = parent.join(name);
         let dest = newparent.join(newname);
 
@@ -299,8 +395,7 @@ impl EncFs {
                     Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
                 }
 
-                std::os::unix::fs::symlink(Path::new(&enc_target), &real_dest)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                passthrough_symlink(OsStr::new(&enc_target), &real_dest).map_err(|e| e.raw())?;
 
                 // Remove source symlink.
                 fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -317,7 +412,7 @@ impl EncFs {
         source: PathInfo,
         dest: PathInfo,
         meta: &std::fs::Metadata,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         if meta.is_dir() {
             // Create dest dir
             if let Err(e) = fs::create_dir(dest.physical) {
@@ -437,14 +532,12 @@ impl EncFs {
                     Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
                 }
 
-                std::os::unix::fs::symlink(Path::new(&enc_target), dest.physical)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                passthrough_symlink(OsStr::new(&enc_target), dest.physical).map_err(|e| e.raw())?;
             } else {
                 // No IV chaining - just copy the symlink as-is
                 let target = fs::read_link(source.physical)
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                std::os::unix::fs::symlink(&target, dest.physical)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                passthrough_symlink(target.as_os_str(), dest.physical).map_err(|e| e.raw())?;
             }
         } else {
             // Standard copy for regular files without external IV chaining
@@ -462,42 +555,62 @@ impl EncFs {
         real_dest: &Path,
         src_iv: u64,
         dst_iv: u64,
-    ) -> ResultEmpty {
-        // 1. Open source
+    ) -> OpResult {
+        // 1. Open both ends. The destination is opened without O_TRUNC so that,
+        //    as in `open_impl`, it is reset under the lock rather than by
+        //    open(2) — otherwise the reset lands on top of an in-flight
+        //    read-modify-write by whoever already has it open.
         let mut src_f = File::open(real_src).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let mut dst_f = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(real_dest)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+        // Serialize against concurrent writes at both ends: a write landing
+        // mid-copy on the source would produce a torn destination block, and a
+        // write to the destination would be silently overwritten by the body
+        // copy.
+        let src_state = self.file_states.get(&src_f)?;
+        let dst_state = self.file_states.get(&dst_f)?;
+        let (_src_guard, mut dst_meta) = lock_source_and_dest(&src_state, &dst_state);
 
         let metadata = src_f.metadata().ok();
 
-        // 2. Read header
         let header_size = self.config.header_size();
         let mut header = vec![0u8; header_size as usize];
         if header_size > 0 {
+            // 2. Read and decrypt the source header. Done before touching the
+            //    destination so a source we can't decrypt leaves it intact.
             src_f
                 .read_exact(&mut header)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-            // 3. Decrypt header
             let file_iv = self
                 .cipher
                 .decrypt_header(&mut header, src_iv)
                 .map_err(|_| libc::EIO)?;
 
-            // 4. Encrypt header with new path IV
+            // 3. Re-encrypt the header under the destination's path IV. The
+            //    file IV itself carries over, so anyone holding the destination
+            //    open switches to the copied file's IV here.
             let new_header = self
                 .cipher
                 .encrypt_header_with_iv(file_iv, dst_iv)
                 .map_err(|_| libc::EIO)?;
 
-            // 5. Create dest
-            let mut dst_f =
-                File::create(real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            // 4. Reset the destination, now that it is locked, and refill it.
+            dst_f
+                .set_len(0)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            dst_meta.header_iv = Some(file_iv);
 
-            // 6. Write new header
             dst_f
                 .write_all(&new_header)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-            // 7. Copy body
             let mut reader = BufReader::new(src_f);
             let mut writer = BufWriter::new(dst_f);
 
@@ -508,11 +621,13 @@ impl EncFs {
                 .flush()
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         } else {
-            // 5. Create dest
-            let dst_f =
-                File::create(real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            // No header to rewrite: the IV is path-derived, so handles already
+            // open on the destination keep using their own.
+            dst_f
+                .set_len(0)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            dst_meta.header_iv = None;
 
-            // 7. Copy body (no header to copy/rewrite)
             let mut reader = BufReader::new(src_f);
             let mut writer = BufWriter::new(dst_f);
 
@@ -533,96 +648,48 @@ impl EncFs {
     }
 }
 
-/// Map std::fs::Metadata file type to FUSE FileType (for getattr/readdir).
-fn metadata_to_file_type(metadata: &std::fs::Metadata) -> FileType {
-    if metadata.is_dir() {
-        FileType::Directory
-    } else if metadata.is_symlink() {
-        FileType::Symlink
-    } else {
-        let ft = metadata.file_type();
-        if ft.is_fifo() {
-            FileType::NamedPipe
-        } else if ft.is_char_device() {
-            FileType::CharDevice
-        } else if ft.is_block_device() {
-            FileType::BlockDevice
-        } else if ft.is_socket() {
-            FileType::Socket
-        } else {
-            FileType::RegularFile
-        }
-    }
-}
-
 fn headerless_file_iv(header_size: u64, external_iv: u64) -> u64 {
     if header_size == 0 { external_iv } else { 0 }
 }
 
 impl EncFs {
-    /// POSIX utime permission check: owner and root may always set; others may set to
-    /// current time only if they have write access; setting explicit time requires owner or root.
-    fn utimens_permission_check(
-        &self,
-        req: &RequestInfo,
-        file_uid: u32,
-        file_gid: u32,
-        mode: u32,
-        atime: Option<SystemTime>,
-        mtime: Option<SystemTime>,
-    ) -> Result<(), libc::c_int> {
-        if req.uid == 0 {
-            return Ok(());
-        }
-        if req.uid == file_uid {
-            return Ok(());
-        }
-        let setting_atime = atime.is_some();
-        let setting_mtime = mtime.is_some();
-        if !setting_atime && !setting_mtime {
-            return Ok(());
-        }
-        let now = SystemTime::now();
-        // FUSE passes UTIME_NOW as SystemTime::now() at callback time; explicit times (e.g.
-        // utime $now $now) can be tens of ms in the past. Use 10ms to distinguish.
-        let near_now = |t: SystemTime| {
-            now.duration_since(t).unwrap_or(Duration::MAX) < Duration::from_millis(10)
-                || t.duration_since(now).unwrap_or(Duration::MAX) < Duration::from_millis(10)
-        };
-        let setting_to_current = atime.is_none_or(near_now) && mtime.is_none_or(near_now);
-        if setting_to_current {
-            let has_write = (req.uid == file_uid && (mode & 0o200) != 0)
-                || (req.gid == file_gid && (mode & 0o020) != 0)
-                || (mode & 0o002) != 0;
-            if has_write {
-                return Ok(());
-            }
-            return Err(libc::EACCES);
-        }
-        Err(libc::EPERM)
+    /// Generates a fresh per-file IV and writes its header at offset 0.
+    ///
+    /// Callers must hold the file's write lock: this replaces the IV every
+    /// existing handle on the inode encrypts under.
+    fn write_file_header(&self, file: &File, external_iv: u64) -> Result<u64, libc::c_int> {
+        let (header, file_iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
+            error!("Failed to generate header: {}", e);
+            libc::EIO
+        })?;
+        file.write_all_at(&header, 0)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        Ok(file_iv)
     }
 
-    /// Sets ownership to req.uid/req.gid if different from current process.
-    /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
-    fn set_ownership_fd(
+    /// Reads and decrypts the per-file header, returning `None` when the file
+    /// is too short to hold one (e.g. freshly created via `mknod`).
+    fn read_file_header(
         &self,
-        fd: std::os::unix::io::RawFd,
-        req: &RequestInfo,
-    ) -> Result<(), libc::c_int> {
-        let uid = unsafe { libc::getuid() };
-        let gid = unsafe { libc::getgid() };
-        if req.uid == uid && req.gid == gid {
-            return Ok(());
+        file: &File,
+        path: &Path,
+        external_iv: u64,
+    ) -> Result<Option<u64>, libc::c_int> {
+        let header_size = self.config.header_size() as usize;
+        let mut header = vec![0u8; header_size];
+        let bytes_read = file
+            .read_at(&mut header, 0)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        if bytes_read != header_size {
+            return Ok(None);
         }
-        if unsafe { libc::fchown(fd, req.uid as libc::uid_t, req.gid as libc::gid_t) } == -1 {
-            let errno = std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO);
-            if errno != libc::EPERM {
-                return Err(errno);
+        match self.cipher.decrypt_header(&mut header, external_iv) {
+            Ok(file_iv) => Ok(Some(file_iv)),
+            Err(_) => {
+                warn!("Failed to decrypt file header for {:?}", path);
+                Err(libc::EIO)
             }
         }
-        Ok(())
     }
 
     fn physical_size_for_logical(&self, logical_size: u64, header_size: u64) -> u64 {
@@ -635,15 +702,17 @@ impl EncFs {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn truncate_expand(
         &self,
         file_ref: &File,
+        _guard: &RwLockWriteGuard<'_, FileMeta>,
         file_iv: u64,
         header_size: u64,
         current_logical_size: u64,
         new_logical_size: u64,
         block_layout: BlockLayout,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         if new_logical_size <= current_logical_size {
             return Ok(());
         }
@@ -703,11 +772,12 @@ impl EncFs {
     fn truncate_shrink(
         &self,
         file_ref: &File,
+        _guard: &RwLockWriteGuard<'_, FileMeta>,
         file_iv: u64,
         header_size: u64,
         new_logical_size: u64,
         block_layout: BlockLayout,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         let physical_size = self.physical_size_for_logical(new_logical_size, header_size);
         let data_block_size = block_layout.data_size_per_block();
         let offset_in_block = new_logical_size % data_block_size;
@@ -754,119 +824,59 @@ impl EncFs {
 
         Ok(())
     }
-
-    /// Sets ownership to req.uid/req.gid if different from current process.
-    /// Skips chown when already correct; ignores EPERM for unprivileged mounts.
-    fn set_ownership_path(&self, path: &Path, req: &RequestInfo) -> Result<(), libc::c_int> {
-        let uid = unsafe { libc::getuid() };
-        let gid = unsafe { libc::getgid() };
-        if req.uid == uid && req.gid == gid {
-            return Ok(());
-        }
-        let c_path = CString::new(path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-        if unsafe {
-            libc::chown(
-                c_path.as_ptr(),
-                req.uid as libc::uid_t,
-                req.gid as libc::gid_t,
-            )
-        } == -1
-        {
-            let errno = std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO);
-            if errno != libc::EPERM {
-                return Err(errno);
-            }
-        }
-        Ok(())
-    }
 }
 
-impl FilesystemMT for EncFs {
-    fn init(&self, _req: RequestInfo) -> Result<(), libc::c_int> {
-        debug!("init");
-        Ok(())
-    }
-
-    fn statfs(&self, _req: RequestInfo, path: &Path) -> ResultStatfs {
+/// Errno-based operation bodies shared by the `PathFilesystem` impl below.
+impl EncFs {
+    fn statfs_impl(&self, path: &Path) -> Result<ReplyStatFs, libc::c_int> {
         debug!("statfs: {:?}", path);
         // Check underlying filesystem of the root
-        let c_path =
-            std::ffi::CString::new(self.root.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        let mut stat = statfs_path(&self.root).map_err(|e| e.raw())?;
+        stat.namelen = self.cipher.max_plaintext_name_len(stat.namelen);
+        Ok(stat)
+    }
 
-        let res = unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) };
-        if res != 0 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
+    fn do_chmod(&self, path: Option<&Path>, handle: Option<&FileHandle>, mode: u32) -> OpResult {
+        debug!("chmod: {:?} mode={:o}", path, mode);
+        self.ensure_writable()?;
+
+        if let Some(path) = path {
+            let (real_path, _) = self.encrypt_path(path)?;
+            return passthrough::chmod_path(&real_path, mode).map_err(|e| e.raw());
         }
 
-        Ok(Statfs {
-            blocks: stat.f_blocks as u64,
-            bfree: stat.f_bfree as u64,
-            bavail: stat.f_bavail as u64,
-            files: stat.f_files as u64,
-            ffree: stat.f_ffree as u64,
-            bsize: stat.f_bsize as u32,
-            namelen: self.cipher.max_plaintext_name_len(stat.f_namemax as u32),
-            frsize: stat.f_frsize as u32,
-        })
+        // Path unknown (possibly deleted): fall back to the open handle.
+        let handle = handle.ok_or(libc::ESTALE)?;
+        passthrough::chmod_fd(handle.file.as_raw_fd(), mode).map_err(|e| e.raw())
     }
 
-    fn chmod(&self, _req: RequestInfo, path: &Path, _fh: Option<u64>, mode: u32) -> ResultEmpty {
-        debug!("chmod: {:?} mode={:o}", path, mode);
-        let (real_path, _) = self.encrypt_path(path)?;
-
-        // Convert mode to Permissions.
-        // Note: fs::set_permissions takes std::fs::Permissions.
-        // We use PermissionsExt to construct it from u32 mode.
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(mode);
-
-        fs::set_permissions(real_path, perms).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
-    }
-
-    fn chown(
+    fn do_chown(
         &self,
-        _req: RequestInfo,
-        path: &Path,
-        _fh: Option<u64>,
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
         uid: Option<u32>,
         gid: Option<u32>,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         debug!("chown: {:?} uid={:?} gid={:?}", path, uid, gid);
-        let (real_path, _) = self.encrypt_path(path)?;
+        self.ensure_writable()?;
 
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-
-        let ret = unsafe {
-            libc::lchown(
-                c_path.as_ptr(),
-                uid.unwrap_or(u32::MAX), // -1 in u32 is u32::MAX? No, lchown takes uid_t (u32).
-                // chown(2): "If the owner or group is specified as -1, then that ID is not changed."
-                // uid_t is u32. -1 is casting.
-                gid.unwrap_or(u32::MAX),
-            )
+        let path = match path {
+            Some(path) => path,
+            None => {
+                let handle = handle.ok_or(libc::ESTALE)?;
+                return passthrough::chown_fd(handle.file.as_raw_fd(), uid, gid)
+                    .map_err(|e| e.raw());
+            }
         };
 
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        let (real_path, _) = self.encrypt_path(path)?;
+        passthrough::chown_path(&real_path, uid, gid).map_err(|e| e.raw())
     }
 
     /// Check if the requesting process has the requested access to the path.
     ///
-    /// Uses the file's stored uid, gid, and mode from the backend and the request's
-    /// uid/gid to apply standard Unix permission checks. Root (uid 0) is always allowed.
     /// Only the primary gid is considered (no supplementary groups).
-    fn access(&self, req: RequestInfo, path: &Path, mask: u32) -> ResultEmpty {
+    fn access_impl(&self, req: Request, path: &Path, mask: u32) -> OpResult {
         debug!(
             "access: {:?} mask={:#o} uid={} gid={}",
             path, mask, req.uid, req.gid
@@ -876,48 +886,16 @@ impl FilesystemMT for EncFs {
         let metadata =
             fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // F_OK (0): existence only
-        if mask == 0 {
-            return Ok(());
-        }
-
-        // Superuser bypasses permission checks
-        if req.uid == 0 {
-            return Ok(());
-        }
-
-        let mode = metadata.mode();
-        let file_uid = metadata.uid();
-        let file_gid = metadata.gid();
-
-        // Pick the applicable mode triplet: owner (7-5), group (4-2), other (1-0)
-        let effective = if req.uid == file_uid {
-            (mode >> 6) & 0o7
-        } else if req.gid == file_gid {
-            (mode >> 3) & 0o7
-        } else {
-            mode & 0o7
-        };
-
-        // Map R_OK=4, W_OK=2, X_OK=1 to mode bits: read=4, write=2, execute=1
-        let need = mask & 0o7;
-        if (effective & need) == need {
-            Ok(())
-        } else {
-            Err(libc::EACCES)
-        }
+        access_check(&req, metadata.uid(), metadata.gid(), metadata.mode(), mask)
+            .map_err(|e| e.raw())
     }
 
-    fn truncate(&self, _req: RequestInfo, path: &Path, fh: Option<u64>, size: u64) -> ResultEmpty {
+    fn do_truncate(&self, path: Option<&Path>, handle: Option<&FileHandle>, size: u64) -> OpResult {
         debug!("truncate: {:?} size={}", path, size);
-
-        let handle: Option<Arc<FileHandle>> =
-            fh.and_then(|fh| self.handles_guard().get(&fh).cloned());
-        if fh.is_some() && handle.is_none() {
-            return Err(libc::EBADF);
-        }
+        self.ensure_writable()?;
 
         let owned_file: Option<File> = if handle.is_none() {
+            let path = path.ok_or(libc::ESTALE)?;
             let (real_path, _) = self.encrypt_path(path)?;
             Some(
                 fs::OpenOptions::new()
@@ -930,11 +908,20 @@ impl FilesystemMT for EncFs {
             None
         };
 
-        let file_ref: &File = match (&handle, &owned_file) {
+        let file_ref: &File = match (handle, &owned_file) {
             (Some(h), _) => &h.file,
             (None, Some(f)) => f,
             (None, None) => return Err(libc::EIO),
         };
+
+        // Hold the per-file write lock across the whole read-length / RMW /
+        // set_len sequence so a concurrent write can't interleave and lose
+        // data or resurrect truncated blocks.
+        let state = match handle {
+            Some(h) => h.state.clone(),
+            None => self.file_states.get(file_ref)?,
+        };
+        let mut guard = state.write();
 
         let header_size = self.config.header_size();
         let metadata = file_ref
@@ -957,24 +944,30 @@ impl FilesystemMT for EncFs {
             return Ok(());
         }
 
-        let file_iv = if let Some(h) = &handle {
-            h.file_iv
+        // Truncation keeps the existing header, so the IV does not change here;
+        // it only has to be *known*. With a handle it is already in the shared
+        // state. The remaining branches only run without one, where `path` was
+        // already required to open the file above.
+        let file_iv = if let Some(h) = handle {
+            h.file_iv(&guard)
+        } else if let Some(file_iv) = guard.header_iv {
+            file_iv
         } else if header_size > 0 {
-            let mut header = vec![0u8; header_size as usize];
-            file_ref
-                .read_exact_at(&mut header, 0)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            let path = path.ok_or(libc::ESTALE)?;
             let (_, path_iv) = self.encrypt_path(path)?;
             let external_iv = if self.config.external_iv_chaining {
                 path_iv
             } else {
                 0
             };
-            self.cipher
-                .decrypt_header(&mut header, external_iv)
-                .map_err(|_| libc::EIO)?
+            // Cache it for handles opened later, as `open_impl` would have.
+            let file_iv = self
+                .read_file_header(file_ref, path, external_iv)?
+                .ok_or(libc::EIO)?;
+            guard.header_iv = Some(file_iv);
+            file_iv
         } else if self.config.external_iv_chaining {
-            let (_, path_iv) = self.encrypt_path(path)?;
+            let (_, path_iv) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
             path_iv
         } else {
             0
@@ -983,6 +976,7 @@ impl FilesystemMT for EncFs {
         if size > current_logical_size {
             self.truncate_expand(
                 file_ref,
+                &guard,
                 file_iv,
                 header_size,
                 current_logical_size,
@@ -990,27 +984,28 @@ impl FilesystemMT for EncFs {
                 block_layout,
             )?;
         } else {
-            self.truncate_shrink(file_ref, file_iv, header_size, size, block_layout)?;
+            self.truncate_shrink(file_ref, &guard, file_iv, header_size, size, block_layout)?;
         }
 
         Ok(())
     }
 
-    fn utimens(
+    fn do_utimens(
         &self,
-        req: RequestInfo,
-        path: &Path,
-        fh: Option<u64>,
+        req: Request,
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
         atime: Option<std::time::SystemTime>,
         mtime: Option<std::time::SystemTime>,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         debug!("utimens: {:?} atime={:?} mtime={:?}", path, atime, mtime);
+        self.ensure_writable()?;
 
         // Get file metadata for permission check (owner/group/mode).
-        let metadata = if let Some(fh) = fh {
-            let handles = self.handles_guard();
-            handles.get(&fh).and_then(|h| h.file.metadata().ok())
+        let metadata = if let Some(handle) = handle {
+            handle.file.metadata().ok()
         } else {
+            let path = path.ok_or(libc::ESTALE)?;
             let (real_path, _) = self.encrypt_path(path)?;
             fs::symlink_metadata(real_path).ok()
         };
@@ -1018,76 +1013,25 @@ impl FilesystemMT for EncFs {
         let setting_times = atime.is_some() || mtime.is_some();
         if setting_times && req.uid != 0 {
             let meta = metadata.as_ref().ok_or(libc::EACCES)?;
-            self.utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)?
+            utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)
+                .map_err(|e| e.raw())?
         } else if let Some(ref meta) = metadata {
-            self.utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)?;
+            utimens_permission_check(&req, meta.uid(), meta.gid(), meta.mode(), atime, mtime)
+                .map_err(|e| e.raw())?;
         }
         // If metadata failed and we're root or not setting times, proceed and let utimensat/futimens return the error.
 
-        // Map Option<SystemTime> to kernel timespec. None means UTIME_OMIT (leave timestamp
-        // unchanged). Some(t) is either an explicit time or UTIME_NOW (fuse_mt converts UTIME_NOW
-        // to Some(SystemTime::now()) before calling us).
-        let to_timespec = |t: Option<std::time::SystemTime>| -> libc::timespec {
-            match t {
-                Some(ts) => {
-                    let d = ts
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or(Duration::ZERO);
-                    libc::timespec {
-                        tv_sec: d.as_secs() as i64,
-                        tv_nsec: d.subsec_nanos() as i64,
-                    }
-                }
-                None => libc::timespec {
-                    tv_sec: 0,
-                    tv_nsec: libc::UTIME_OMIT,
-                },
-            }
-        };
-
-        let times = [to_timespec(atime), to_timespec(mtime)];
-
-        if let Some(fh) = fh {
-            let handle = {
-                let handles = self.handles_guard();
-                handles.get(&fh).cloned()
-            };
-            if let Some(handle) = handle {
-                use std::os::fd::AsRawFd;
-                let ret = unsafe { libc::futimens(handle.file.as_raw_fd(), times.as_ptr()) };
-                if ret == 0 {
-                    return Ok(());
-                } else {
-                    return Err(std::io::Error::last_os_error()
-                        .raw_os_error()
-                        .unwrap_or(libc::EIO));
-                }
-            }
+        if let Some(handle) = handle {
+            use std::os::fd::AsRawFd;
+            return passthrough::utimens_fd(handle.file.as_raw_fd(), atime, mtime)
+                .map_err(|e| e.raw());
         }
 
-        let (real_path, _) = self.encrypt_path(path)?;
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-
-        let ret = unsafe {
-            libc::utimensat(
-                libc::AT_FDCWD,
-                c_path.as_ptr(),
-                times.as_ptr(),
-                libc::AT_SYMLINK_NOFOLLOW,
-            )
-        };
-
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        let (real_path, _) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
+        passthrough::utimens_path(&real_path, atime, mtime).map_err(|e| e.raw())
     }
 
-    fn readlink(&self, _req: RequestInfo, path: &Path) -> Result<Vec<u8>, libc::c_int> {
+    fn readlink_impl(&self, path: &Path) -> Result<Vec<u8>, libc::c_int> {
         debug!("readlink: {:?}", path);
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1107,14 +1051,14 @@ impl FilesystemMT for EncFs {
         Ok(plain_target_bytes)
     }
 
-    fn link(
+    fn link_impl(
         &self,
-        req: RequestInfo,
         path: &Path,
         newparent: &Path,
         newname: &OsStr,
-    ) -> ResultEntry {
+    ) -> Result<FileAttr, libc::c_int> {
         debug!("link: {:?} -> {:?}/{:?}", path, newparent, newname);
+        self.ensure_writable()?;
 
         if self.config.external_iv_chaining {
             return Err(libc::EPERM);
@@ -1128,17 +1072,17 @@ impl FilesystemMT for EncFs {
             return Err(e.raw_os_error().unwrap_or(libc::EIO));
         }
 
-        self.getattr(req, &new_path, None)
+        self.attr_for_path(Some(&new_path), None)
     }
 
-    fn symlink(
+    fn symlink_impl(
         &self,
-        req: RequestInfo,
         parent: &Path,
         name: &std::ffi::OsStr,
         target: &std::path::Path,
-    ) -> ResultEntry {
+    ) -> Result<FileAttr, libc::c_int> {
         debug!("symlink: {:?}/{:?} -> {:?}", parent, name, target);
+        self.ensure_writable()?;
 
         let path = parent.join(name);
         let (real_path, path_iv) = self.encrypt_path(&path)?;
@@ -1152,44 +1096,21 @@ impl FilesystemMT for EncFs {
                 libc::EIO
             })?;
 
-        let enc_target_path = Path::new(&enc_target);
+        passthrough_symlink(OsStr::new(&enc_target), &real_path).map_err(|e| e.raw())?;
 
-        let c_target = std::ffi::CString::new(enc_target_path.as_os_str().as_bytes())
-            .map_err(|_| libc::EINVAL)?;
-        let c_linkpath =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-
-        let ret = unsafe { libc::symlink(c_target.as_ptr(), c_linkpath.as_ptr()) };
-
-        if ret == 0 {
-            // Need to return lookup of new entry.
-            // But fuse_mt::ResultEntry expects a DirectoryEntry.
-            // We can reuse lookup or construct it.
-            // For simplicity, let's just lookup what we created.
-            // Actually fuse_mt requires we return the entry.
-            // Let's do a lookup.
-            self.getattr(req, &path, None)
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        // Return the attributes of the entry we just created.
+        self.attr_for_path(Some(&path), None)
     }
 
-    fn getattr(&self, _req: RequestInfo, path: &Path, fh: Option<u64>) -> ResultEntry {
-        debug!("getattr: {:?} fh={:?}", path, fh);
+    fn attr_for_path(
+        &self,
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
+    ) -> Result<FileAttr, libc::c_int> {
+        debug!("getattr: {:?} handle={}", path, handle.is_some());
 
-        let metadata = if let Some(fh) = fh {
-            let handle = {
-                let handles = self.handles_guard();
-                handles.get(&fh).cloned()
-            };
-
-            if let Some(handle) = handle {
-                handle.file.metadata().ok()
-            } else {
-                None
-            }
+        let metadata = if let Some(handle) = handle {
+            handle.file.metadata().ok()
         } else {
             None
         };
@@ -1197,11 +1118,16 @@ impl FilesystemMT for EncFs {
         let metadata = if let Some(m) = metadata {
             m
         } else {
+            let path = path.ok_or(libc::ESTALE)?;
             let (real_path, _) = self.encrypt_path(path)?;
             debug!("real_path: {:?}", real_path);
             fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
         };
 
+        Ok(self.attr_from_metadata(&metadata))
+    }
+
+    fn attr_from_metadata(&self, metadata: &fs::Metadata) -> FileAttr {
         let mut size = metadata.len();
         // Adjust size for header and MAC
         let header_size = self.config.header_size();
@@ -1215,50 +1141,33 @@ impl FilesystemMT for EncFs {
             );
         }
 
-        let attr = FileAttr {
-            size,
-            blocks: metadata.blocks(),
-            atime: SystemTime::UNIX_EPOCH
-                + Duration::new(metadata.atime() as u64, metadata.atime_nsec() as u32),
-            mtime: SystemTime::UNIX_EPOCH
-                + Duration::new(metadata.mtime() as u64, metadata.mtime_nsec() as u32),
-            ctime: SystemTime::UNIX_EPOCH
-                + Duration::new(metadata.ctime() as u64, metadata.ctime_nsec() as u32),
-            crtime: SystemTime::UNIX_EPOCH,
-            kind: metadata_to_file_type(&metadata),
-            perm: metadata.mode() as u16,
-            nlink: metadata.nlink() as u32,
-            uid: metadata.uid(),
-            gid: metadata.gid(),
-            rdev: metadata.rdev() as u32,
-            flags: 0,
-        };
-
-        Ok((Duration::from_secs(1), attr))
+        file_attr_from_metadata(metadata, size)
     }
 
-    fn readdir(&self, _req: RequestInfo, path: &Path, _fh: u64) -> ResultReaddir {
-        debug!("readdir: {:?}", path);
+    fn directory_snapshot(&self, path: &Path) -> Result<DirBuffer, libc::c_int> {
         let (real_path, dir_iv) = self.encrypt_path(path)?;
 
-        let entries = fs::read_dir(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let entries =
+            fs::read_dir(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        let mut result = Vec::new();
+        let directory_metadata =
+            fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let parent = path.parent().unwrap_or(path);
+        let parent_attr = self.attr_for_path(Some(parent), None)?;
 
-        // Rust's fs::read_dir doesn't include . and .. entries, so add them explicitly
-        result.push(DirectoryEntry {
-            name: OsStr::new(".").to_os_string(),
-            kind: FileType::Directory,
-        });
-        result.push(DirectoryEntry {
-            name: OsStr::new("..").to_os_string(),
-            kind: FileType::Directory,
-        });
+        let mut result = DirBuffer::new();
+        result.push_dots(self.attr_from_metadata(&directory_metadata), parent_attr);
 
         for entry in entries {
             let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             let file_name = entry.file_name();
-            let name_str = file_name.to_str().ok_or(libc::EILSEQ)?;
+            let Some(name_str) = file_name.to_str() else {
+                warn!(
+                    "Skipping non-UTF-8 backing filename {:?} while opening {:?}",
+                    file_name, path
+                );
+                continue;
+            };
 
             // Skip filenames starting with ".", since it isn't a valid encrypted filename.
             // Allows skipping over config files.
@@ -1268,13 +1177,13 @@ impl FilesystemMT for EncFs {
 
             match self.cipher.decrypt_filename(name_str, dir_iv) {
                 Ok((decrypted_name, _)) => {
-                    let metadata = entry
-                        .metadata()
+                    let metadata = fs::symlink_metadata(entry.path())
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    result.push(DirectoryEntry {
-                        name: OsStr::from_bytes(&decrypted_name).to_os_string(),
-                        kind: metadata_to_file_type(&metadata),
-                    });
+                    result.push(
+                        OsStr::from_bytes(&decrypted_name),
+                        file_type_from_metadata(&metadata),
+                        self.attr_from_metadata(&metadata),
+                    );
                 }
                 Err(e) => {
                     warn!("Failed to decrypt filename {}: {}", name_str, e);
@@ -1285,24 +1194,7 @@ impl FilesystemMT for EncFs {
         Ok(result)
     }
 
-    fn opendir(&self, _req: RequestInfo, path: &Path, _flags: u32) -> ResultOpen {
-        debug!("opendir: {:?}", path);
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        Ok((fh, 0))
-    }
-
-    fn releasedir(
-        &self,
-        _req: RequestInfo,
-        _path: &Path,
-        fh: u64,
-        _flags: u32,
-    ) -> Result<(), libc::c_int> {
-        debug!("releasedir: fh={}", fh);
-        Ok(())
-    }
-
-    fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
+    fn open_impl(&self, path: &Path, flags: u32) -> Result<FileHandle, libc::c_int> {
         debug!("open: {:?}", path);
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1311,15 +1203,19 @@ impl FilesystemMT for EncFs {
         let want_write = (flags as i32 & libc::O_WRONLY) != 0 || (flags as i32 & libc::O_RDWR) != 0;
         let want_trunc = (flags as i32 & libc::O_TRUNC) != 0;
 
+        if want_write || want_trunc {
+            self.ensure_writable()?;
+        }
+
         let mut opts = fs::OpenOptions::new();
         opts.read(true);
         if want_write {
             opts.write(true);
         }
-        if want_trunc && want_write {
-            opts.truncate(true);
-        }
-
+        // O_TRUNC is deliberately *not* passed to open(2). Truncating as a side
+        // effect of open would reset the file and its IV before we hold the
+        // per-file lock, on top of another handle's in-flight
+        // read-modify-write. The reset happens below instead, under the lock.
         let file = opts
             .open(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -1330,104 +1226,72 @@ impl FilesystemMT for EncFs {
         } else {
             0
         };
-        let mut file_iv = headerless_file_iv(header_size, external_iv);
+        let headerless_iv = headerless_file_iv(header_size, external_iv);
+
+        let state = self.file_states.get(&file)?;
+        // Exclusive for the whole open: this path may reset the file and install
+        // a new header, and even a read-only open must not observe a header
+        // that a concurrent truncate is midway through replacing.
+        let mut meta = state.write();
 
         if want_trunc && want_write {
-            // If the file was truncated, we must generate and write a new header (if header_size > 0).
-            if header_size > 0 {
-                let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-                    error!("Failed to generate header: {}", e);
-                    libc::EIO
-                })?;
-
-                use std::io::Write;
-                let mut file_ref = &file;
-                file_ref
-                    .write_all(&header)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                file_iv = iv;
+            file.set_len(0)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            meta.header_iv = if header_size > 0 {
+                Some(self.write_file_header(&file, external_iv)?)
             } else {
-                // Ensure physical file is truncated to 0 if header_size is 0
-                let file_ref = &file;
-                file_ref
-                    .set_len(0)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            }
-        } else {
-            // Read header if exists, or initialize empty file (e.g. created via mknod)
+                None
+            };
+        } else if header_size > 0 {
             let physical_size = file
                 .metadata()
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
                 .len();
 
-            if header_size > 0 && physical_size < header_size {
-                // Empty or undersized backing file (e.g. from mknod). Write header so
-                // subsequent writes use correct physical offset and file format.
-                if want_write {
-                    let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-                        error!("Failed to generate header: {}", e);
-                        libc::EIO
-                    })?;
-
-                    use std::io::Write;
-                    let mut file_ref = &file;
-                    file_ref
-                        .write_all(&header)
-                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    file_iv = iv;
-                } else {
-                    // Opening for read but file too small to have valid header
+            meta.header_iv = if physical_size < header_size {
+                // Empty or undersized backing file (e.g. from mknod). Write a
+                // header so subsequent writes use the correct physical offset
+                // and file format.
+                if !want_write {
+                    // Opening for read but the file is too small to hold a header.
                     return Err(libc::EIO);
                 }
-            } else if header_size > 0 {
-                let mut header = vec![0u8; header_size as usize];
-                let bytes_read = file
-                    .read_at(&mut header, 0)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-                if bytes_read == header_size as usize {
-                    // Decrypt header
-                    if let Ok(iv) = self.cipher.decrypt_header(&mut header, external_iv) {
-                        file_iv = iv;
-                    } else {
-                        warn!("Failed to decrypt file header for {:?}", path);
-                        return Err(libc::EIO);
-                    }
-                }
-            }
+                Some(self.write_file_header(&file, external_iv)?)
+            } else {
+                // A short read here leaves the IV at zero, matching the
+                // pre-header-cache behaviour for partially written files.
+                Some(
+                    self.read_file_header(&file, path, external_iv)?
+                        .unwrap_or(0),
+                )
+            };
+        } else {
+            meta.header_iv = None;
         }
+        drop(meta);
 
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        let handle = Arc::new(FileHandle { file, file_iv });
-
-        self.handles_guard().insert(fh, handle);
-
-        Ok((fh, 0))
+        Ok(FileHandle {
+            file,
+            headerless_iv,
+            state,
+        })
     }
 
-    fn read(
+    fn read_impl(
         &self,
-        _req: RequestInfo,
-        path: &Path,
-        fh: u64,
+        handle: &FileHandle,
         offset: u64,
         size: u32,
-        callback: impl FnOnce(ResultSlice<'_>) -> CallbackResult,
-    ) -> CallbackResult {
-        debug!("read: {:?} offset={} size={}", path, offset, size);
-
-        let handle = {
-            let handles = self.handles_guard();
-            match handles.get(&fh).cloned() {
-                Some(h) => h,
-                None => return callback(Err(libc::EBADF)),
-            }
-        };
+    ) -> Result<Vec<u8>, libc::c_int> {
+        debug!("read: offset={} size={}", offset, size);
+        // Shared: concurrent reads are fine, but a read must not observe a
+        // block halfway through someone else's read-modify-write.
+        let meta = handle.state.read();
 
         let decoder = FileDecoder::new_from_config(
             self.cipher.as_ref(),
             &handle.file,
-            handle.file_iv,
+            handle.file_iv(&meta),
             &self.config.file_codec_params(),
             false,
         );
@@ -1439,57 +1303,34 @@ impl FilesystemMT for EncFs {
         match decoder.read_at(&mut result_data, offset) {
             Ok(bytes_read) => {
                 result_data.truncate(bytes_read);
-                callback(Ok(&result_data))
+                Ok(result_data)
             }
             Err(e) => {
-                error!("Read failed on {:?}: {}", path, e);
-                let err = e.raw_os_error().unwrap_or(libc::EIO);
-                callback(Err(err))
+                error!("Read failed: {}", e);
+                Err(e.raw_os_error().unwrap_or(libc::EIO))
             }
         }
     }
 
-    fn release(
+    fn write_impl(
         &self,
-        _req: RequestInfo,
-        _path: &Path,
-        fh: u64,
-        _flags: u32,
-        _lock_owner: u64,
-        _flush: bool,
-    ) -> Result<(), libc::c_int> {
-        debug!("release: fh={}", fh);
-        self.handles_guard().remove(&fh);
-        Ok(())
-    }
-
-    fn write(
-        &self,
-        _req: RequestInfo,
-        path: &Path,
-        fh: u64,
+        handle: &FileHandle,
         offset: u64,
-        data: Vec<u8>,
-        _flags: u32,
-    ) -> ResultWrite {
-        debug!("write: {:?} offset={} size={}", path, offset, data.len());
-
-        let handle = {
-            let handles = self.handles_guard();
-            match handles.get(&fh).cloned() {
-                Some(h) => h,
-                None => return Err(libc::EBADF),
-            }
-        };
+        data: &[u8],
+    ) -> Result<u32, libc::c_int> {
+        debug!("write: offset={} size={}", offset, data.len());
+        self.ensure_writable()?;
+        // Exclusive across the whole read-decrypt-modify-encrypt-write cycle.
+        let meta = handle.state.write();
 
         let encoder = FileEncoder::new_from_config(
             self.cipher.as_ref(),
             &handle.file,
-            handle.file_iv,
+            handle.file_iv(&meta),
             &self.config.file_codec_params(),
         );
 
-        match encoder.write_at(&data, offset) {
+        match encoder.write_at(data, offset) {
             Ok(written) => Ok(written as u32),
             Err(e) => {
                 error!("Write failed: {}", e);
@@ -1498,18 +1339,19 @@ impl FilesystemMT for EncFs {
         }
     }
 
-    fn create(
+    fn create_impl(
         &self,
-        req: RequestInfo,
+        req: Request,
         parent: &Path,
         name: &OsStr,
         mode: u32,
         flags: u32,
-    ) -> ResultCreate {
+    ) -> Result<(FileAttr, FileHandle), libc::c_int> {
         debug!(
             "create: {:?}/{:?} flags={} mode={}",
             parent, name, flags, mode
         );
+        self.ensure_writable()?;
         let path = parent.join(name);
         let (real_path, path_iv) = self.encrypt_path(&path)?;
 
@@ -1519,85 +1361,74 @@ impl FilesystemMT for EncFs {
         }
 
         use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
+        // Not `.truncate(true)`: as in `open_impl`, resetting an existing file
+        // has to happen under the per-file lock rather than inside open(2).
+        let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .truncate(true)
+            .truncate(false)
             .mode(mode)
             .open(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // Encrypt and write header if header_size > 0
         let header_size = self.config.header_size();
         let external_iv = if self.config.external_iv_chaining {
             path_iv
         } else {
             0
         };
-        let mut file_iv = headerless_file_iv(header_size, external_iv);
+        let headerless_iv = headerless_file_iv(header_size, external_iv);
 
-        if header_size > 0 {
-            let external_iv = if self.config.external_iv_chaining {
-                path_iv
-            } else {
-                0
-            };
+        let state = self.file_states.get(&file)?;
+        let mut meta = state.write();
 
-            let (header, iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
-                error!("Failed to generate header: {}", e);
-                libc::EIO
-            })?;
-            file_iv = iv;
-
-            use std::io::Write;
-            file.write_all(&header)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        }
-
-        self.set_ownership_fd(file.as_raw_fd(), &req)?;
-
-        let fh = self.next_fh.fetch_add(1, Ordering::SeqCst);
-        let handle = Arc::new(FileHandle { file, file_iv });
-
-        self.handles_guard().insert(fh, handle);
-
-        // We need to return CreatedEntry which includes FileAttr
-        // We can get attributes from the open file or construct them
-        let attr = FileAttr {
-            size: 0,
-            blocks: 1, // Header block
-            atime: SystemTime::now(),
-            mtime: SystemTime::now(),
-            ctime: SystemTime::now(),
-            crtime: SystemTime::now(),
-            kind: FileType::RegularFile,
-            perm: mode as u16,
-            nlink: 1,
-            uid: req.uid,
-            gid: req.gid,
-            rdev: 0,
-            flags: 0,
+        file.set_len(0)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        meta.header_iv = if header_size > 0 {
+            Some(self.write_file_header(&file, external_iv)?)
+        } else {
+            None
         };
+        drop(meta);
 
-        Ok(CreatedEntry {
-            ttl: Duration::from_secs(1),
+        set_ownership_fd(file.as_raw_fd(), &req).map_err(|e| e.raw())?;
+
+        // Build the reply attributes from the freshly created backing file
+        // (ownership was just set above); logical size of a new file is 0.
+        let metadata = file
+            .metadata()
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let attr = file_attr_from_metadata(&metadata, 0);
+
+        Ok((
             attr,
-            fh,
-            flags: 0,
-        })
+            FileHandle {
+                file,
+                headerless_iv,
+                state,
+            },
+        ))
     }
 
-    fn unlink(&self, _req: RequestInfo, parent: &Path, name: &OsStr) -> ResultEmpty {
+    fn unlink_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
         let path = parent.join(name);
         debug!("unlink: {:?}", path);
+        self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
         fs::remove_file(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
     }
 
-    fn mkdir(&self, req: RequestInfo, parent: &Path, name: &OsStr, mode: u32) -> ResultEntry {
+    fn mkdir_impl(
+        &self,
+        req: Request,
+        parent: &Path,
+        name: &OsStr,
+        mode: u32,
+    ) -> Result<FileAttr, libc::c_int> {
         let path = parent.join(name);
         debug!("mkdir: {:?} mode={:o}", path, mode);
+        self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
 
         use std::os::unix::fs::DirBuilderExt;
@@ -1606,35 +1437,29 @@ impl FilesystemMT for EncFs {
             .create(&real_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        self.set_ownership_path(&real_path, &req)?;
+        set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
 
-        self.getattr(req, &path, None)
+        self.attr_for_path(Some(&path), None)
     }
 
-    fn mknod(
+    fn mknod_impl(
         &self,
-        req: RequestInfo,
+        req: Request,
         parent: &Path,
         name: &OsStr,
         mode: u32,
         rdev: u32,
-    ) -> ResultEntry {
+    ) -> Result<FileAttr, libc::c_int> {
         let path = parent.join(name);
         debug!("mknod: {:?} mode={:o} rdev={}", path, mode, rdev);
+        self.ensure_writable()?;
         let (real_path, path_iv) = self.encrypt_path(&path)?;
-
-        let c_path = CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
 
         let mode_t = mode as libc::mode_t;
         let mode_bits = mode_t & libc::S_IFMT;
-        let res = if mode_bits == libc::S_IFIFO {
-            unsafe { libc::mkfifo(c_path.as_ptr(), mode_t) }
-        } else if mode_bits == libc::S_IFCHR
-            || mode_bits == libc::S_IFBLK
-            || mode_bits == libc::S_IFSOCK
-        {
-            unsafe { libc::mknod(c_path.as_ptr(), mode_t, rdev as libc::dev_t) }
-        } else if mode_bits == libc::S_IFREG {
+        if mode_bits != libc::S_IFREG {
+            passthrough::mknod(&real_path, mode, rdev).map_err(|e| e.raw())?;
+        } else {
             use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
             let header_size = self.config.header_size();
@@ -1643,71 +1468,43 @@ impl FilesystemMT for EncFs {
             } else {
                 0
             };
-            match fs::OpenOptions::new()
+            let mut f = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .mode(mode)
                 .open(&real_path)
-            {
-                Ok(mut f) => {
-                    if header_size > 0 {
-                        let (header, _iv) =
-                            self.cipher.encrypt_header(external_iv).map_err(|e| {
-                                error!("Failed to generate header for mknod: {}", e);
-                                libc::EIO
-                            })?;
-                        f.write_all(&header)
-                            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    }
-                    drop(f);
-                    0
-                }
-                Err(e) => {
-                    return Err(e.raw_os_error().unwrap_or(libc::EIO));
-                }
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            if header_size > 0 {
+                let (header, _iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
+                    error!("Failed to generate header for mknod: {}", e);
+                    libc::EIO
+                })?;
+                f.write_all(&header)
+                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             }
-        } else {
-            return Err(libc::EINVAL);
-        };
-
-        if res == -1 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
         }
 
-        self.set_ownership_path(&real_path, &req)?;
+        set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
 
-        self.getattr(req, &path, None)
+        self.attr_for_path(Some(&path), None)
     }
 
-    fn rmdir(&self, _req: RequestInfo, parent: &Path, name: &OsStr) -> ResultEmpty {
+    fn rmdir_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
         let path = parent.join(name);
         debug!("rmdir: {:?}", path);
+        self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
         fs::remove_dir(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
     }
 
-    fn rename(
+    fn setxattr_impl(
         &self,
-        req: RequestInfo,
-        parent: &Path,
-        name: &OsStr,
-        newparent: &Path,
-        newname: &OsStr,
-    ) -> ResultEmpty {
-        self.rename_internal(req, parent, name, newparent, newname)
-    }
-
-    fn setxattr(
-        &self,
-        _req: RequestInfo,
         path: &Path,
         name: &OsStr,
         value: &[u8],
         flags: u32,
         position: u32,
-    ) -> ResultEmpty {
+    ) -> OpResult {
         debug!(
             "setxattr: {:?} name={:?} value_len={} flags={} position={}",
             path,
@@ -1716,6 +1513,7 @@ impl FilesystemMT for EncFs {
             flags,
             position
         );
+        self.ensure_writable()?;
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1747,37 +1545,15 @@ impl FilesystemMT for EncFs {
         let final_name = format!("user.encfs.{}", encoded_name);
 
         let c_name = std::ffi::CString::new(final_name).map_err(|_| libc::EINVAL)?;
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
         // Set xattr on underlying filesystem
-        let ret = unsafe {
-            setxattr_nofollow(
-                c_path.as_ptr(),
-                c_name.as_ptr(),
-                encrypted_value.as_ptr() as *const libc::c_void,
-                encrypted_value.len(),
-                flags as i32,
-            )
-        };
-
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
-        }
+        passthrough::setxattr_nofollow(&c_path, &c_name, &encrypted_value, flags as i32)
+            .map_err(|e| e.raw())
     }
 
-    fn getxattr(
-        &self,
-        _req: RequestInfo,
-        path: &Path,
-        name: &OsStr,
-        size: u32,
-    ) -> Result<Xattr, libc::c_int> {
-        debug!("getxattr: {:?} name={:?} size={}", path, name, size);
+    fn getxattr_impl(&self, path: &Path, name: &OsStr) -> Result<Vec<u8>, libc::c_int> {
+        debug!("getxattr: {:?} name={:?}", path, name);
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -1799,42 +1575,12 @@ impl FilesystemMT for EncFs {
         let lookup_name = format!("user.encfs.{}", encoded_name);
 
         let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
-        // Get xattr size first if size is 0
-        let buf_size = if size == 0 {
-            let ret = unsafe {
-                getxattr_nofollow(c_path.as_ptr(), c_name.as_ptr(), std::ptr::null_mut(), 0)
-            };
-            if ret < 0 {
-                return Err(std::io::Error::last_os_error()
-                    .raw_os_error()
-                    .unwrap_or(libc::EIO));
-            }
-            ret as usize
-        } else {
-            size as usize
-        };
-
-        // Read encrypted value
-        let mut encrypted_value = vec![0u8; buf_size];
-        let ret = unsafe {
-            getxattr_nofollow(
-                c_path.as_ptr(),
-                c_name.as_ptr(),
-                encrypted_value.as_mut_ptr() as *mut libc::c_void,
-                buf_size,
-            )
-        };
-
-        if ret < 0 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
-        }
-
-        encrypted_value.truncate(ret as usize);
+        // Read the on-disk (encrypted) value; the caller's size limit is
+        // applied by the trait wrapper against the decrypted length.
+        let encrypted_value =
+            passthrough::getxattr_value_nofollow(&c_path, &c_name).map_err(|e| e.raw())?;
 
         // Decrypt value
         let decrypted_value = self
@@ -1845,111 +1591,33 @@ impl FilesystemMT for EncFs {
                 libc::EIO
             })?;
 
-        Ok(Xattr::Data(decrypted_value))
+        Ok(decrypted_value)
     }
 
-    fn listxattr(&self, _req: RequestInfo, path: &Path, size: u32) -> Result<Xattr, libc::c_int> {
-        debug!("listxattr: {:?} size={}", path, size);
+    fn listxattr_impl(&self, path: &Path) -> Result<Vec<u8>, libc::c_int> {
+        debug!("listxattr: {:?}", path);
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
-        // Get list size first if size is 0
-        let buf_size = if size == 0 {
-            let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), std::ptr::null_mut(), 0) };
-            if ret < 0 {
-                return Err(std::io::Error::last_os_error()
-                    .raw_os_error()
-                    .unwrap_or(libc::EIO));
-            }
-            ret as usize
-        } else {
-            size as usize
-        };
-
-        // Read xattr names list
-        // llistxattr expects *mut c_char, whose signedness is platform-dependent
-        // (i8 on x86_64, u8 on aarch64), so we allocate a Vec<libc::c_char>.
-        let mut list = vec![0 as libc::c_char; buf_size];
-        let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), list.as_mut_ptr(), buf_size) };
-
-        if ret < 0 {
-            return Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO));
-        }
-
-        list.truncate(ret as usize);
+        // Read the on-disk list of xattr names; the caller's size limit is
+        // applied by the trait wrapper against the decrypted list length.
+        let names = passthrough::listxattr_names_nofollow(&c_path).map_err(|e| e.raw())?;
 
         // Process all xattr names in the list
-        // xattr lists are null-separated strings (c_char, convert to u8)
-        let list_u8: Vec<u8> = list.iter().map(|&b| b as u8).collect();
         let mut decrypted_list = Vec::new();
-        let mut current_name = Vec::new();
 
-        for &byte in &list_u8 {
-            if byte == 0 {
-                // End of current name, process it
-                if !current_name.is_empty() {
-                    let name_str = match std::str::from_utf8(&current_name) {
-                        Ok(s) => s,
-                        Err(_) => {
-                            // Invalid UTF-8, skip
-                            current_name.clear();
-                            continue;
-                        }
-                    };
-
-                    if let Some(encoded_part) = name_str.strip_prefix("user.encfs.") {
-                        // This is an encrypted encfs attribute stored on disk
-                        // Extract the base64-encoded encrypted name
-                        match STANDARD_NO_PAD.decode(encoded_part) {
-                            Ok(encrypted_name_bytes) => {
-                                match self
-                                    .cipher
-                                    .decrypt_xattr_name(&encrypted_name_bytes, path_iv)
-                                {
-                                    Ok(decrypted_name) => {
-                                        // Return the decrypted name without the "user.encfs." prefix
-                                        decrypted_list.extend_from_slice(&decrypted_name);
-                                        decrypted_list.push(0); // null separator
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to decrypt xattr name: {}", e);
-                                        // Skip this name but continue
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                warn!("Failed to decode base64 xattr name: {}", name_str);
-                                // Skip this name but continue
-                            }
-                        }
-                    } else {
-                        // Non-encfs attribute (shouldn't happen if we encrypt all), skip it
-                        // or pass through if there are any legacy unencrypted attributes
-                        warn!("Found non-encfs xattr on disk: {}, skipping", name_str);
-                    }
-                    current_name.clear();
-                }
-            } else {
-                current_name.push(byte);
-            }
-        }
-
-        // Handle last name if list doesn't end with null
-        if !current_name.is_empty() {
-            let name_str = match std::str::from_utf8(&current_name) {
+        for name_bytes in names {
+            let name_str = match std::str::from_utf8(&name_bytes) {
                 Ok(s) => s,
-                Err(_) => {
-                    return Ok(Xattr::Data(decrypted_list));
-                }
+                Err(_) => continue, // Invalid UTF-8, skip
             };
 
             if let Some(encoded_part) = name_str.strip_prefix("user.encfs.") {
-                match base64::engine::general_purpose::STANDARD_NO_PAD.decode(encoded_part) {
+                // This is an encrypted encfs attribute stored on disk
+                // Extract the base64-encoded encrypted name
+                match STANDARD_NO_PAD.decode(encoded_part) {
                     Ok(encrypted_name_bytes) => {
                         match self
                             .cipher
@@ -1958,28 +1626,34 @@ impl FilesystemMT for EncFs {
                             Ok(decrypted_name) => {
                                 // Return the decrypted name without the "user.encfs." prefix
                                 decrypted_list.extend_from_slice(&decrypted_name);
-                                decrypted_list.push(0);
+                                decrypted_list.push(0); // null separator
                             }
                             Err(e) => {
                                 warn!("Failed to decrypt xattr name: {}", e);
+                                // Skip this name but continue
                             }
                         }
                     }
                     Err(_) => {
                         warn!("Failed to decode base64 xattr name: {}", name_str);
+                        // Skip this name but continue
                     }
                 }
             } else {
-                decrypted_list.extend_from_slice(&current_name);
-                decrypted_list.push(0);
+                // Non-encfs attribute (shouldn't happen if we encrypt all), skip it
+                // or pass through if there are any legacy unencrypted attributes
+                if !is_apple_xattr(name_str) {
+                    warn!("Found non-encfs xattr on disk: {}, skipping", name_str);
+                }
             }
         }
 
-        Ok(Xattr::Data(decrypted_list))
+        Ok(decrypted_list)
     }
 
-    fn removexattr(&self, _req: RequestInfo, path: &Path, name: &OsStr) -> ResultEmpty {
+    fn removexattr_impl(&self, path: &Path, name: &OsStr) -> OpResult {
         debug!("removexattr: {:?} name={:?}", path, name);
+        self.ensure_writable()?;
 
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
@@ -2001,25 +1675,368 @@ impl FilesystemMT for EncFs {
         let lookup_name = format!("user.encfs.{}", encoded_name);
 
         let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
-        let c_path =
-            std::ffi::CString::new(real_path.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
         // Remove xattr from underlying filesystem
-        let ret = unsafe { removexattr_nofollow(c_path.as_ptr(), c_name.as_ptr()) };
+        passthrough::removexattr_nofollow(&c_path, &c_name).map_err(|e| e.raw())
+    }
+}
 
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error()
-                .raw_os_error()
-                .unwrap_or(libc::EIO))
+impl PathFilesystem for EncFs {
+    type Handle = FileHandle;
+    type DirHandle = DirBuffer;
+
+    // POSIX record locks are deliberately left to the kernel. Forwarding them
+    // would mean taking every client's lock with `fcntl` in this one daemon
+    // process, and POSIX locks are keyed by (process, inode): two clients could
+    // never conflict, and either one closing a handle would drop the other's
+    // locks. Leaving `getlk`/`setlk` unimplemented keeps `FUSE_POSIX_LOCKS` out
+    // of the INIT reply, so the kernel enforces locks locally with the right
+    // per-process semantics.
+    const SUPPORTS_POSIX_LOCKS: bool = false;
+    const SUPPORTS_READDIRPLUS: bool = true;
+
+    fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
+        debug!("init");
+    }
+
+    fn destroy(&self) {
+        debug!("destroy");
+    }
+
+    fn lookup(
+        &self,
+        parent: &Path,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<Option<FileAttr>, Errno> {
+        let path = parent.join(name);
+        match self.attr_for_path(Some(&path), None) {
+            Ok(attr) => Ok(Some(attr)),
+            Err(libc::ENOENT) => Ok(None),
+            Err(error) => Err(error.into()),
         }
+    }
+
+    fn getattr(
+        &self,
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.attr_for_path(path, handle)?)
+    }
+
+    fn setattr(
+        &self,
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
+        set_attr: &SetAttr,
+        caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        if let Some(size) = set_attr.size {
+            self.do_truncate(path, handle, size)?;
+        }
+        if let Some(mode) = set_attr.mode {
+            self.do_chmod(path, handle, mode)?;
+        }
+        if set_attr.uid.is_some() || set_attr.gid.is_some() {
+            self.do_chown(path, handle, set_attr.uid, set_attr.gid)?;
+        }
+        if set_attr.atime.is_some() || set_attr.mtime.is_some() {
+            let resolve_time = |time: Option<TimeOrNow>| {
+                time.map(|time| match time {
+                    TimeOrNow::SpecificTime(time) => time,
+                    TimeOrNow::Now => SystemTime::now(),
+                })
+            };
+            self.do_utimens(
+                *caller,
+                path,
+                handle,
+                resolve_time(set_attr.atime),
+                resolve_time(set_attr.mtime),
+            )?;
+        }
+        Ok(self.attr_for_path(path, handle)?)
+    }
+
+    fn access(&self, path: &Path, mask: i32, caller: &Request) -> Result<(), Errno> {
+        Ok(self.access_impl(*caller, path, mask as u32)?)
+    }
+
+    fn statfs(&self, path: &Path, _caller: &Request) -> Result<ReplyStatFs, Errno> {
+        Ok(self.statfs_impl(path)?)
+    }
+
+    fn readlink(&self, path: &Path, _caller: &Request) -> Result<PathBuf, Errno> {
+        use std::os::unix::ffi::OsStringExt;
+        Ok(PathBuf::from(OsString::from_vec(self.readlink_impl(path)?)))
+    }
+
+    fn symlink(
+        &self,
+        parent: &Path,
+        name: &OsStr,
+        target: &Path,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.symlink_impl(parent, name, target)?)
+    }
+
+    fn link(
+        &self,
+        path: &Path,
+        new_parent: &Path,
+        new_name: &OsStr,
+        _caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.link_impl(path, new_parent, new_name)?)
+    }
+
+    fn mknod(
+        &self,
+        parent: &Path,
+        name: &OsStr,
+        mode: u32,
+        rdev: u32,
+        _umask: u32,
+        caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.mknod_impl(*caller, parent, name, mode, rdev)?)
+    }
+
+    fn mkdir(
+        &self,
+        parent: &Path,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32,
+        caller: &Request,
+    ) -> Result<FileAttr, Errno> {
+        Ok(self.mkdir_impl(*caller, parent, name, mode)?)
+    }
+
+    fn unlink(&self, parent: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Ok(self.unlink_impl(parent, name)?)
+    }
+
+    fn rmdir(&self, parent: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Ok(self.rmdir_impl(parent, name)?)
+    }
+
+    fn rename(
+        &self,
+        parent: &Path,
+        name: &OsStr,
+        new_parent: &Path,
+        new_name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        Ok(self.rename_internal(parent, name, new_parent, new_name)?)
+    }
+
+    fn opendir(
+        &self,
+        path: &Path,
+        _flags: i32,
+        _caller: &Request,
+    ) -> Result<Opened<DirBuffer>, Errno> {
+        Ok(Opened::new(self.directory_snapshot(path)?))
+    }
+
+    fn readdir(
+        &self,
+        _path: &Path,
+        handle: &DirBuffer,
+        offset: u64,
+        sink: &mut dyn PathDirSink,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        handle.fill(offset, sink);
+        Ok(())
+    }
+
+    fn readdirplus(
+        &self,
+        _path: &Path,
+        handle: &DirBuffer,
+        offset: u64,
+        sink: &mut dyn PathPlusDirSink,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        handle.fill_plus(offset, sink);
+        Ok(())
+    }
+
+    fn open(
+        &self,
+        path: &Path,
+        flags: i32,
+        _caller: &Request,
+    ) -> Result<Opened<FileHandle>, Errno> {
+        Ok(Opened::new(self.open_impl(path, flags as u32)?))
+    }
+
+    fn read<'a>(
+        &'a self,
+        _path: Option<&Path>,
+        handle: &'a FileHandle,
+        offset: u64,
+        size: usize,
+        _caller: &Request,
+    ) -> Result<Cow<'a, [u8]>, Errno> {
+        let size = u32::try_from(size).unwrap_or(u32::MAX);
+        Ok(Cow::Owned(self.read_impl(handle, offset, size)?))
+    }
+
+    fn write(
+        &self,
+        _path: Option<&Path>,
+        handle: &FileHandle,
+        data: &[u8],
+        offset: u64,
+        _caller: &Request,
+    ) -> Result<usize, Errno> {
+        Ok(self.write_impl(handle, offset, data)? as usize)
+    }
+
+    fn create(
+        &self,
+        parent: &Path,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32,
+        flags: i32,
+        caller: &Request,
+    ) -> Result<(FileAttr, Opened<FileHandle>), Errno> {
+        let (attr, handle) = self.create_impl(*caller, parent, name, mode, flags as u32)?;
+        Ok((attr, Opened::new(handle)))
+    }
+
+    fn setxattr(
+        &self,
+        path: &Path,
+        name: &OsStr,
+        value: &[u8],
+        flags: i32,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        Ok(self.setxattr_impl(path, name, value, flags as u32, 0)?)
+    }
+
+    fn getxattr(
+        &self,
+        path: &Path,
+        name: &OsStr,
+        size: usize,
+        _caller: &Request,
+    ) -> Result<ReplyXAttr, Errno> {
+        ReplyXAttr::sized(self.getxattr_impl(path, name)?, size)
+    }
+
+    fn listxattr(&self, path: &Path, size: usize, _caller: &Request) -> Result<ReplyXAttr, Errno> {
+        ReplyXAttr::sized(self.listxattr_impl(path)?, size)
+    }
+
+    fn removexattr(&self, path: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+        Ok(self.removexattr_impl(path, name)?)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::headerless_file_iv;
+    use super::{
+        FILE_STATE_SWEEP_FLOOR, FileStates, headerless_file_iv, is_apple_xattr,
+        lock_source_and_dest,
+    };
+
+    fn table_len(states: &FileStates) -> usize {
+        states.table.lock().unwrap().entries.len()
+    }
+
+    #[test]
+    fn same_inode_shares_one_state() {
+        let states = FileStates::default();
+        let a = states.get_by_key((1, 42));
+        let b = states.get_by_key((1, 42));
+        assert!(std::sync::Arc::ptr_eq(&a, &b));
+
+        // Same inode number on a different device is a different file.
+        let c = states.get_by_key((2, 42));
+        assert!(!std::sync::Arc::ptr_eq(&a, &c));
+    }
+
+    #[test]
+    fn state_is_recreated_after_last_reference_drops() {
+        let states = FileStates::default();
+        let first = states.get_by_key((1, 7));
+        drop(first);
+        let second = states.get_by_key((1, 7));
+        assert_eq!(second.key, (1, 7));
+    }
+
+    #[test]
+    fn dead_entries_are_swept() {
+        let states = FileStates::default();
+
+        // Churn well past the sweep floor with no live references.
+        for ino in 0..(FILE_STATE_SWEEP_FLOOR as u64 * 8) {
+            drop(states.get_by_key((1, ino)));
+        }
+        assert!(
+            table_len(&states) <= FILE_STATE_SWEEP_FLOOR + 1,
+            "dead entries accumulated: {}",
+            table_len(&states)
+        );
+
+        // Live references must survive a sweep.
+        let live: Vec<_> = (0..10).map(|ino| states.get_by_key((2, ino))).collect();
+        for ino in 0..(FILE_STATE_SWEEP_FLOOR as u64 * 8) {
+            drop(states.get_by_key((3, ino)));
+        }
+        for (ino, state) in live.iter().enumerate() {
+            assert!(std::sync::Arc::ptr_eq(
+                state,
+                &states.get_by_key((2, ino as u64))
+            ));
+        }
+    }
+
+    #[test]
+    fn pair_locking_is_deadlock_free_in_both_directions() {
+        let states = FileStates::default();
+        let low = states.get_by_key((1, 1));
+        let high = states.get_by_key((1, 2));
+
+        // Same inode: one lock, taken once. Taking it twice would self-deadlock.
+        {
+            let (src, _dest) = lock_source_and_dest(&low, &low);
+            assert!(src.is_none());
+        }
+
+        // Copies contending in opposite directions over the same pair. An
+        // implementation that locked in argument order rather than key order
+        // would wedge here.
+        let (tx, rx) = std::sync::mpsc::channel();
+        for (first, second) in [(low.clone(), high.clone()), (high.clone(), low.clone())] {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                for _ in 0..5000 {
+                    let (src, dest) = lock_source_and_dest(&first, &second);
+                    assert!(src.is_some());
+                    drop((src, dest));
+                }
+                let _ = tx.send(());
+            });
+        }
+        drop(tx);
+
+        for _ in 0..2 {
+            rx.recv_timeout(std::time::Duration::from_secs(60))
+                .expect("pair locking deadlocked");
+        }
+    }
 
     #[test]
     fn headerless_files_use_external_iv() {
@@ -2032,5 +2049,12 @@ mod tests {
     #[test]
     fn headered_files_ignore_external_iv() {
         assert_eq!(headerless_file_iv(8, 0x1234_5678_9abc_def0), 0);
+    }
+
+    #[test]
+    fn recognizes_apple_xattrs() {
+        assert!(is_apple_xattr("com.apple.provenance"));
+        assert!(!is_apple_xattr("user.encfs.attribute"));
+        assert!(!is_apple_xattr("com.example.attribute"));
     }
 }

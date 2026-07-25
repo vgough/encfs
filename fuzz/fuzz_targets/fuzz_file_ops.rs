@@ -13,7 +13,7 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo};
+use typed_fuse::{Caller, PathFilesystem, SetAttr};
 use libfuzzer_sys::fuzz_target;
 use std::ffi::OsStr;
 use std::fs;
@@ -85,12 +85,12 @@ impl Drop for TempDir {
 // Setup helpers
 // ---------------------------------------------------------------------------
 
-fn make_request() -> RequestInfo {
-    RequestInfo {
-        unique: 1,
+fn make_request() -> Caller {
+    Caller {
         pid: 1,
         uid: 0,
         gid: 0,
+        umask: 0,
     }
 }
 
@@ -218,10 +218,10 @@ fuzz_target!(|input: FuzzInput| {
     let parent = PathBuf::from("");
     let path = parent.join(filename);
 
-    let create_res = fs
-        .create(req, &parent, OsStr::new(filename), 0o644, 0)
+    let (_, create_res) = fs
+        .create(&parent, OsStr::new(filename), 0o644, 0, 0, &req)
         .unwrap_or_else(|e| panic!("create failed: errno={}", e));
-    let fh = create_res.fh;
+    let fh = create_res.handle;
 
     // The encrypted filename on disk is opaque; find it by scanning the dir.
     // Only one file exists at this point.
@@ -266,7 +266,7 @@ fuzz_target!(|input: FuzzInput| {
                 }
 
                 let written = fs
-                    .write(req, &path, fh, offset as u64, data.clone(), 0)
+                    .write(Some(&path), &fh, &data, offset as u64, &req)
                     .unwrap_or_else(|e| panic!("write at offset={} failed: errno={}", offset, e));
                 assert_eq!(
                     written as usize,
@@ -295,7 +295,8 @@ fuzz_target!(|input: FuzzInput| {
 
                 // Re-read the full file from EncFS and compare the requested
                 // slice against the reference.  This is equivalent to issuing
-                // a ranged read but avoids the fuse_mt callback-result type.
+                // a ranged read via `PathFilesystem::read`, which returns a
+                // `ReplyData` directly, but avoids the async round trip here.
                 let encfs_all =
                     read_encfs_full(&physical_path, &verify_cipher, file_iv, reference.len());
                 let encfs_slice = if offset < encfs_all.len() {
@@ -322,10 +323,16 @@ fuzz_target!(|input: FuzzInput| {
                     continue;
                 }
 
-                fs.truncate(req, &path, Some(fh), size as u64)
-                    .unwrap_or_else(|e| {
-                        panic!("truncate shrink to {} failed: errno={}", size, e)
-                    });
+                fs.setattr(
+                    Some(&path),
+                    Some(&fh),
+                    &SetAttr {
+                        size: Some(size as u64),
+                        ..Default::default()
+                    },
+                    &req,
+                )
+                .unwrap_or_else(|e| panic!("truncate shrink to {} failed: errno={}", size, e));
 
                 reference.truncate(size);
                 verify_full(
@@ -343,10 +350,16 @@ fuzz_target!(|input: FuzzInput| {
                     continue;
                 }
 
-                fs.truncate(req, &path, Some(fh), size as u64)
-                    .unwrap_or_else(|e| {
-                        panic!("truncate expand to {} failed: errno={}", size, e)
-                    });
+                fs.setattr(
+                    Some(&path),
+                    Some(&fh),
+                    &SetAttr {
+                        size: Some(size as u64),
+                        ..Default::default()
+                    },
+                    &req,
+                )
+                .unwrap_or_else(|e| panic!("truncate expand to {} failed: errno={}", size, e));
 
                 reference.resize(size, 0);
                 verify_full(
@@ -360,5 +373,5 @@ fuzz_target!(|input: FuzzInput| {
         }
     }
 
-    let _ = fs.release(req, &path, fh, 0, 0, true);
+    let _ = fs.release(Some(&path), fh, &req);
 });

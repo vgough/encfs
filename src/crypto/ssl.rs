@@ -11,12 +11,12 @@ use cbc::cipher::{
     KeyIvInit as BlockKeyIvInit,
 };
 use cfb_mode::cipher::AsyncStreamCipher;
-use std::marker::PhantomData;
 use hmac::digest::KeyInit as HmacKeyInit;
 use hmac::{Hmac, Mac};
 use pbkdf2::pbkdf2_hmac;
 use rust_i18n::t;
 use sha1::{Digest, Sha1};
+use std::marker::PhantomData;
 use zeroize::Zeroize;
 
 type HmacSha1 = Hmac<Sha1>;
@@ -2041,7 +2041,10 @@ mod tests {
     }
 
     fn golden_hex(b: &[u8]) -> String {
-        b.iter().map(|x| format!("{:02x}", x)).collect::<Vec<_>>().join("")
+        b.iter()
+            .map(|x| format!("{:02x}", x))
+            .collect::<Vec<_>>()
+            .join("")
     }
 
     /// Frozen byte-exact output of every cipher primitive, per algorithm.
@@ -2155,7 +2158,9 @@ mod tests {
             let mut cipher = SslCipher::new(&iface, v.key_size).expect("new");
             let key_len = (v.key_size / 8) as usize;
             let key: Vec<u8> = (0..key_len).map(|i| (i as u8).wrapping_mul(0x11)).collect();
-            let iv: Vec<u8> = (0..v.iv_size).map(|i| (i as u8).wrapping_mul(0x22)).collect();
+            let iv: Vec<u8> = (0..v.iv_size)
+                .map(|i| (i as u8).wrapping_mul(0x22))
+                .collect();
             cipher.set_key(&key, &iv);
             let tag = format!("{}-{}", v.name, v.key_size);
 
@@ -2193,12 +2198,22 @@ mod tests {
             let xv = cipher
                 .encrypt_xattr_value(b"golden-xattr-value", 0x1122334455667788)
                 .expect("xattr");
-            assert_eq!(golden_hex(&xv), v.xattr, "{}: encrypt_xattr_value drift", tag);
+            assert_eq!(
+                golden_hex(&xv),
+                v.xattr,
+                "{}: encrypt_xattr_value drift",
+                tag
+            );
 
             let hdr = cipher
                 .encrypt_header_with_iv(0x0f1e2d3c4b5a6978, 0x8877665544332211)
                 .expect("header");
-            assert_eq!(golden_hex(&hdr), v.header, "{}: encrypt_header_with_iv drift", tag);
+            assert_eq!(
+                golden_hex(&hdr),
+                v.header,
+                "{}: encrypt_header_with_iv drift",
+                tag
+            );
 
             let (fn_s, fiv_s) = cipher
                 .encrypt_filename(b"golden-name.txt", 0x0102030405060708)
@@ -2234,7 +2249,12 @@ mod tests {
                 let t = cipher
                     .encrypt_block_aes_gcm_siv_inplace(&mut g, 7, 0x1020304050607080)
                     .expect("gcmsiv");
-                assert_eq!(golden_hex(&g), exp_data, "{}: gcm-siv ciphertext drift", tag);
+                assert_eq!(
+                    golden_hex(&g),
+                    exp_data,
+                    "{}: gcm-siv ciphertext drift",
+                    tag
+                );
                 assert_eq!(golden_hex(&t), exp_tag, "{}: gcm-siv tag drift", tag);
             }
         }

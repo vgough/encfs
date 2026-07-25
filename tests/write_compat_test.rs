@@ -2,7 +2,7 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse_mt::{FilesystemMT, RequestInfo};
+use typed_fuse::{Caller, PathFilesystem};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
@@ -75,21 +75,21 @@ fn test_write_legacy_v2() {
     );
 
     // Need to reconstruct decoder properly
-    let req = RequestInfo {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
     let parent = PathBuf::from("");
     let name = OsStr::new("test.txt");
-    let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+    let (_, create_res) = fs
+        .create(&parent, name, 0o644, 0, 0, &req)
         .expect("create failed");
-    let fh = create_res.fh;
+    let fh = create_res.handle;
     let data = b"legacy hello".to_vec();
     let path = parent.join("test.txt");
-    fs.write(req, &path, fh, 0, data.clone(), 0)
+    fs.write(Some(&path), &fh, &data, 0, &req)
         .expect("write failed");
 
     // Verification
@@ -131,21 +131,21 @@ fn test_write_paranoia() {
         true, // external_iv_chaining
     );
 
-    let req = RequestInfo {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
     let parent = PathBuf::from("");
     let name = OsStr::new("test_paranoia.txt");
-    let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+    let (_, create_res) = fs
+        .create(&parent, name, 0o644, 0, 0, &req)
         .expect("create failed");
-    let fh = create_res.fh;
+    let fh = create_res.handle;
     let data = b"paranoia hello".to_vec();
     let path = parent.join("test_paranoia.txt");
-    fs.write(req, &path, fh, 0, data.clone(), 0)
+    fs.write(Some(&path), &fh, &data, 0, &req)
         .expect("write failed");
 
     // Verification
@@ -183,56 +183,56 @@ fn test_fstat_support() {
     // Setup standardized FS
     let (fs, tmp, _, _, _, _) = setup_test_fs("encfs_fstat", 3, 256, 1024, 8, true, true);
 
-    let req = RequestInfo {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
     let parent = PathBuf::from("");
     let name = OsStr::new("fstat_test.txt");
 
     // Create file
-    let create_res = fs
-        .create(req, &parent, name, 0o644, 0)
+    let (_, create_res) = fs
+        .create(&parent, name, 0o644, 0, 0, &req)
         .expect("create failed");
-    let fh = create_res.fh;
+    let fh = create_res.handle;
 
     let logical_data = b"fstat testing";
     let path = parent.join("fstat_test.txt");
 
     // Write data
-    fs.write(req, &path, fh, 0, logical_data.to_vec(), 0)
+    fs.write(Some(&path), &fh, logical_data, 0, &req)
         .expect("write failed");
 
     // 1. Getattr with FH (fstat)
-    let (_, attr_fh) = fs
-        .getattr(req, &path, Some(fh))
+    let attr_fh = fs
+        .getattr(Some(&path), Some(&fh), &req)
         .expect("getattr with fh failed");
     assert_eq!(attr_fh.size, logical_data.len() as u64);
 
     // 2. Getattr without FH (stat/lstat)
-    let (_, attr_path) = fs
-        .getattr(req, &path, None)
+    let attr_path = fs
+        .getattr(Some(&path), None, &req)
         .expect("getattr without fh failed");
     assert_eq!(attr_path.size, logical_data.len() as u64);
 
     // 3. Unlink file but keep open
-    fs.unlink(req, &parent, name).expect("unlink failed");
+    fs.unlink(&parent, name, &req).expect("unlink failed");
 
     // 4. Getattr without FH should fail now
-    let res = fs.getattr(req, &path, None);
+    let res = fs.getattr(Some(&path), None, &req);
     assert!(res.is_err(), "getattr path should fail after unlink");
 
     // 5. Getattr with FH (fstat) should still work on unlinked open file
-    let (_, attr_fh_unlinked) = fs
-        .getattr(req, &path, Some(fh))
+    let attr_fh_unlinked = fs
+        .getattr(Some(&path), Some(&fh), &req)
         .expect("getattr with fh failed after unlink");
     assert_eq!(attr_fh_unlinked.size, logical_data.len() as u64);
 
     // Cleanup
     // Close checks valid handle, though release implementation is simple removal
-    fs.release(req, &path, fh, 0, 0, false).unwrap();
+    fs.release(Some(&path), fh, &req).unwrap();
 
     // Verify directory is empty (file was unlinked)
     let count = std::fs::read_dir(&tmp).unwrap().count();
@@ -244,16 +244,16 @@ fn test_fstat_support() {
 #[test]
 fn test_statfs_support() {
     let (fs, tmp, _, _, _, _) = setup_test_fs("encfs_statfs", 3, 256, 1024, 8, true, true);
-    let req = RequestInfo {
-        unique: 1,
+    let req = Caller {
         pid: 1,
         gid: 0,
         uid: 0,
+        umask: 0,
     };
 
     // Check statfs on root
     let stat = fs
-        .statfs(req, std::path::Path::new("/"))
+        .statfs(std::path::Path::new("/"), &req)
         .expect("statfs failed");
 
     // Check reasonable values (should match tmp dir filesystem)

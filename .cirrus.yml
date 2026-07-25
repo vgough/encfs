@@ -17,16 +17,11 @@ task:
 #   macos_instance:
 #     image: ghcr.io/cirruslabs/macos-runner:sonoma
 #   install_script:
-#     - brew tap macos-fuse-t/homebrew-cask
-#     - brew install --cask fuse-t
+#     - brew install --cask macfuse
 #     - brew install pkg-config
 #     - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 #   script:
-#     - export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/opt/homebrew/lib/pkgconfig:$PKG_CONFIG_PATH"
-#     - mkdir -p $HOME/pkgconfig_shim
-#     - if [ -e /usr/local/lib/pkgconfig/fuse-t.pc ]; then ln -s /usr/local/lib/pkgconfig/fuse-t.pc $HOME/pkgconfig_shim/fuse.pc; fi
-#     - if [ -e /opt/homebrew/lib/pkgconfig/fuse-t.pc ]; then ln -s /opt/homebrew/lib/pkgconfig/fuse-t.pc $HOME/pkgconfig_shim/fuse.pc; fi
-#     - export PKG_CONFIG_PATH="$HOME/pkgconfig_shim:$PKG_CONFIG_PATH"
+#     - export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/opt/homebrew/lib/pkgconfig:/Library/Filesystems/macfuse.fs/Contents/Resources/lib/pkgconfig:$PKG_CONFIG_PATH"
 #     - source $HOME/.cargo/env
 #     - cargo build --release
 #     - cargo test

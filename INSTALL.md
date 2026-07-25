@@ -19,4 +19,14 @@ To install:
 
 Dependencies:
     * Rust toolchain (stable or nightly)
-    * FUSE library (libfuse or OSXFUSE on macOS)
+    * FUSE 3.12 or newer (libfuse3 on Linux, macFUSE on macOS, or a
+      compatible fuse3 pkg-config package on FreeBSD)
+
+On macOS, install macFUSE and make its `fuse3.pc` visible to pkg-config, for
+example:
+
+    brew install --cask macfuse
+    export PKG_CONFIG_PATH="/Library/Filesystems/macfuse.fs/Contents/Resources/lib/pkgconfig:$PKG_CONFIG_PATH"
+
+Cross builds need a target FUSE 3 sysroot and matching `PKG_CONFIG_*`
+configuration; a host installation cannot satisfy the target link.

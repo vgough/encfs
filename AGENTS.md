@@ -8,7 +8,7 @@ This document provides comprehensive information for AI agents working in the En
 
 - **Language**: Rust (Edition 2024)
 - **Primary Goal**: Read/write compatibility with legacy EncFS filesystems
-- **Status**: Alpha (v2.0.0-alpha.3) - functional for read/write but still maturing
+- **Status**: Beta (v2.0.0-beta.4) - functional for read/write but still maturing
 
 ### Key Characteristics
 - Encrypts individual files (not block devices)
@@ -61,7 +61,7 @@ cargo test -- --nocapture
 - `ENCFS_LIVE_TESTS=1` environment variable
 - FUSE kernel module loaded (`sudo modprobe fuse`)
 - Single-threaded execution (`--test-threads=1`)
-- Linux or FreeBSD (macOS support via fuse-t)
+- Linux or FreeBSD (macOS support via macFUSE)
 
 ### Code Quality Commands
 ```bash
@@ -157,18 +157,18 @@ encfs/
 
 5. **`fs.rs`**: FUSE filesystem implementation
    - `EncFs`: Main filesystem struct
-   - Implements `FilesystemMT` trait from `fuse_mt`
+   - Implements the synchronous `typed_fuse::PathFilesystem` trait
    - Path encryption/decryption with IV chaining
-   - File handle management
+   - Uses typed file and directory handles owned by the FUSE runtime
    - All FUSE operations (read, write, readdir, etc.)
 
-7. **`main.rs`**: Main encfs binary
+6. **`main.rs`**: Main encfs binary
    - CLI argument parsing with `clap`
    - Password handling (prompt, stdin, extpass)
    - Daemonization support
    - FUSE mount setup
 
-8. **`encfsctl.rs`**: Control utility
+7. **`encfsctl.rs`**: Control utility
    - Subcommands: info, passwd, decode, encode, cat, ls, showkey, export
    - Standalone utility for inspecting/manipulating encrypted filesystems
 
@@ -293,10 +293,9 @@ Each block (if MACs enabled):
 - Help text functions must return `String` (evaluated at runtime after locale init)
 
 ### 7. FUSE Integration
-- Uses `fuse_mt` crate (multi-threaded FUSE)
-- Implements `FilesystemMT` trait
-- File handles stored in `HashMap<u64, Arc<FileHandle>>`
-- Thread-safe via `Mutex` guards
+- Uses the sibling `typed-fuse` crate and its synchronous `PathFilesystem` adapter
+- File and directory handles are typed values owned by the FUSE runtime
+- Multi-threaded by default, with a single-threaded mode for debugging
 - Single-threaded mode available via `-s` flag
 
 ### 8. Password Handling
@@ -315,20 +314,13 @@ The `EncfsConfig::validate()` method enforces:
 - `block_mac_bytes` must be 0-8
 - Block size must be larger than MAC overhead
 
-### 10. Legacy C++ Code
-- Located in `legacy/` directory
-- Uses CMake build system
-- May be removed in future
-- Useful for reference but not actively maintained
-- Do NOT modify legacy code unless explicitly requested
-
-### 11. Logging
+### 10. Logging
 - Uses `env_logger` crate
 - Controlled by `RUST_LOG` environment variable
 - `-v` flag sets debug level
 - `-d` flag sets debug + foreground mode
 
-### 12. Daemonization
+### 11. Daemonization
 - Uses `daemonize` crate
 - Automatic unless `-f` (foreground) or `-d` (debug) flag
 - Happens after password validation, before FUSE mount
@@ -336,31 +328,31 @@ The `EncfsConfig::validate()` method enforces:
 ## Dependencies
 
 ### Core Dependencies
-- **fuse_mt** (0.6.3): Multi-threaded FUSE bindings
+- **typed-fuse** (git dependency from `vgough/typed-fuse`): Typed libfuse3 bindings and path adapter
 
-- **clap** (4.5.57): CLI argument parsing
-- **anyhow** (1.0.101): Error handling
+- **clap** (4.6.1): CLI argument parsing
+- **anyhow** (1.0.102): Error handling
 - **serde** (1.0.228): Serialization/deserialization
-- **quick-xml** (0.39.0): XML parsing for V6 configs
+- **quick-xml** (0.40.1): XML parsing for V6 configs
 - **base64** (0.22.1): Base64 encoding for filenames
-- **rust-i18n** (3): Internationalization
-- **log** (0.4.29) + **env_logger** (0.11.8): Logging
-- **rpassword** (7.4.0): Password prompts
+- **rust-i18n** (4): Internationalization
+- **log** (0.4.32) + **env_logger** (0.11.10): Logging
+- **rpassword** (7.5.4): Password prompts
 - **daemonize** (0.5): Background daemon support
-- **libc** (0.2.180): POSIX system calls
+- **libc** (0.2.186): POSIX system calls
 - **chrono** (0.4): Date/time handling
-- **argon2** (0.5) / **aes-gcm-siv** (0.11.1) / **sha2** (0.10): Modern cryptography
-- **prost** (0.14.3): Protobuf serialization support
+- **argon2** (0.5) / **aes-gcm-siv** (0.11.1) / **sha2** (0.11): Modern cryptography
+- **prost** (0.14.4): Protobuf serialization support
 
 ### System Dependencies
-- **FUSE**: libfuse-dev (Linux), fusefs-libs (FreeBSD), fuse-t (macOS)
+- **FUSE 3.12+**: libfuse3-dev (Linux), a compatible fuse3 package (FreeBSD), macFUSE (macOS)
 
 ## CI/CD
 
 ### GitHub Actions (`.github/workflows/ci.yml`)
 Runs on: `ubuntu-latest`
 Steps:
-1. Install dependencies (fuse, libfuse-dev, pkg-config, libssl-dev)
+1. Install dependencies (fuse3, libfuse3-dev, pkg-config, libssl-dev)
 2. Load fuse module
 3. Run clippy (fails on warnings)
 4. Build release
@@ -534,12 +526,10 @@ task test-live           # Live mount tests
 
 ### Most Common Issues
 1. **Live tests fail**: Check `ENCFS_LIVE_TESTS=1` and FUSE module loaded
-
-3. **Build fails on FUSE**: Install libfuse-dev
+2. **Build fails on FUSE**: Install the FUSE 3 development package and ensure `fuse3.pc` is visible to pkg-config
 
 ---
 
-**Last Updated**: February 21, 2026
-**EncFS Version**: 2.0.0-alpha.3
+**Last Updated**: July 22, 2026
+**EncFS Version**: 2.0.0-beta.4
 **Rust Edition**: 2024
-

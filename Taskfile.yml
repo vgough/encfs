@@ -5,6 +5,14 @@ vars:
   LIVE_TIMEOUT_SECS: '{{default "30" .LIVE_TIMEOUT_SECS}}'
   MACOS_TARGET: '{{default "aarch64-apple-darwin" .MACOS_TARGET}}'
   ARM_TARGET: '{{default "aarch64-unknown-linux-gnu" .ARM_TARGET}}'
+  BENCH_BASELINE: '{{default ".benchmarks/filesystem-baseline.json" .BENCH_BASELINE}}'
+  BENCH_ITEMS: '{{default "1000" .BENCH_ITEMS}}'
+  BENCH_ITERATIONS: '{{default "5" .BENCH_ITERATIONS}}'
+  BENCH_PROCS: '{{default "1" .BENCH_PROCS}}'
+  BENCH_BYTES: '{{default "4096" .BENCH_BYTES}}'
+  MDTEST_BIN: '{{default "mdtest" .MDTEST_BIN}}'
+  MPIRUN_BIN: '{{default "mpirun" .MPIRUN_BIN}}'
+  BENCH_MOUNT_TIMEOUT_SECS: '{{default "30" .BENCH_MOUNT_TIMEOUT_SECS}}'
 
 tasks:
   dev-deps:
@@ -43,7 +51,7 @@ tasks:
       - "{{.CARGO}} nextest run --release"
 
   test-live:
-    desc: Run live-mount FUSE integration tests (requires Linux+FUSE); sets ENCFS_LIVE_TESTS=1
+    desc: Run live-mount integration tests (requires FUSE 3 or macFUSE); sets ENCFS_LIVE_TESTS=1
     cmds:
       - |
         set -euo pipefail
@@ -64,6 +72,33 @@ tasks:
     desc: Run clippy (lints)
     cmds:
       - "{{.CARGO}} clippy --all-targets --all-features -- -D warnings"
+
+  benchmark:
+    desc: Run the EncFS filesystem benchmark and compare it with the local baseline
+    deps: [build-release]
+    preconditions:
+      - sh: test -f '{{.BENCH_BASELINE}}'
+        msg: "Benchmark baseline {{.BENCH_BASELINE}} is missing; run `task benchmark-save-baseline` first"
+    cmds:
+      - |
+        BENCH_BASELINE='{{.BENCH_BASELINE}}' BENCH_ITEMS='{{.BENCH_ITEMS}}' \
+          BENCH_ITERATIONS='{{.BENCH_ITERATIONS}}' BENCH_PROCS='{{.BENCH_PROCS}}' \
+          BENCH_BYTES='{{.BENCH_BYTES}}' MDTEST_BIN='{{.MDTEST_BIN}}' \
+          MPIRUN_BIN='{{.MPIRUN_BIN}}' \
+          BENCH_MOUNT_TIMEOUT_SECS='{{.BENCH_MOUNT_TIMEOUT_SECS}}' \
+          {{.CARGO}} bench --bench filesystem
+
+  benchmark-save-baseline:
+    desc: Run the EncFS filesystem benchmark and atomically replace the local baseline
+    deps: [build-release]
+    cmds:
+      - |
+        BENCH_SAVE_BASELINE=1 BENCH_BASELINE='{{.BENCH_BASELINE}}' \
+          BENCH_ITEMS='{{.BENCH_ITEMS}}' BENCH_ITERATIONS='{{.BENCH_ITERATIONS}}' \
+          BENCH_PROCS='{{.BENCH_PROCS}}' BENCH_BYTES='{{.BENCH_BYTES}}' \
+          MDTEST_BIN='{{.MDTEST_BIN}}' MPIRUN_BIN='{{.MPIRUN_BIN}}' \
+          BENCH_MOUNT_TIMEOUT_SECS='{{.BENCH_MOUNT_TIMEOUT_SECS}}' \
+          {{.CARGO}} bench --bench filesystem
 
   coverage:
     desc: Run coverage tests
@@ -86,5 +121,3 @@ tasks:
     desc: Clean build artifacts
     cmds:
       - "{{.CARGO}} clean"
-
-

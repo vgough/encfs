@@ -1,3 +1,15 @@
+v2.0.0-beta.4 / 2026-07-22
+==================
+	* Replace async-fuse with libfuse-sys for improved Linux and macOS performance
+	* Enable stable multi-threaded filesystem operation
+	* Add filesystem performance benchmarks
+
+v2.0.0-beta.3 / 2026-07-14
+==================
+	* Port the FUSE layer to async-fuse/rfuse3, enabling OSX support
+	* Add readdirplus and filesystem locking support
+	* Fix Apple xattr warnings on macOS
+
 v2.0.0-beta.1 / 2026-06-14
 ==================
 	* Implement `encfsr` for a virtual encrypted read-only filesystem (reverse mode)
@@ -1566,4 +1578,3 @@ Tue Apr 19 2005  Valient Gough <vgough@pobox.com>
 	* add README
 
 	* Initial repository create
-

@@ -4,7 +4,6 @@ extern crate rust_i18n;
 use anyhow::{Context, Result};
 use clap::Parser;
 use encfs::config;
-use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 i18n!("locales", fallback = "en");
@@ -81,7 +80,7 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    // Initialize logging (match main.rs pattern, no verbose flag in Phase 1)
+    // Initialize logging
     let mut builder = env_logger::Builder::from_default_env();
     if std::env::var("RUST_LOG").is_err() {
         builder.filter_level(log::LevelFilter::Info);
@@ -196,7 +195,7 @@ fn main() -> Result<()> {
 
     // CONF-02: chained_name_iv = true is explicitly allowed — no check here
 
-    // --- Phase 2: mount the reverse filesystem ---
+    // --- mount the reverse filesystem ---
     let config_bytes = std::fs::read(&config_path).unwrap_or_else(|e| {
         eprintln!(
             "{}",
@@ -229,23 +228,60 @@ fn main() -> Result<()> {
 
     // Build FUSE options: always mount read-only at kernel level (FUSE-01)
     // plus default_permissions, then pass through any user-provided fuse_opts.
-    let mut fuse_options: Vec<&OsStr> = vec![
-        OsStr::new("-o"),
-        OsStr::new("ro"),
-        OsStr::new("-o"),
-        OsStr::new("default_permissions"),
-    ];
-    let user_opts: Vec<OsString> = args.fuse_opts.iter().map(OsString::from).collect();
-    for opt in &user_opts {
-        fuse_options.push(opt.as_os_str());
+    let mut mount_config = typed_fuse::mount::MountConfig {
+        read_only: true,
+        default_permissions: true,
+        ..typed_fuse::mount::MountConfig::new("encfsr")
+    };
+
+    // Parse user-provided "-o option[,option...]" pairs into raw option
+    // words; MountConfig knows which words map to its fields and which pass
+    // through verbatim.
+    let mut opts_iter = args.fuse_opts.iter();
+    while let Some(token) = opts_iter.next() {
+        let words: Vec<&str> = if token == "-o" {
+            match opts_iter.next() {
+                Some(value) => value.split(',').collect(),
+                None => {
+                    eprintln!("error: -o requires an argument");
+                    std::process::exit(1);
+                }
+            }
+        } else if let Some(value) = token.strip_prefix("-o") {
+            value.split(',').collect()
+        } else {
+            eprintln!("error: unrecognized FUSE option argument: {token}");
+            std::process::exit(1);
+        };
+        mount_config.parse_option_words(words);
     }
 
-    let threads = 0; // fuse_mt default (num_cpus)
-    fuse_mt::mount(
-        fuse_mt::FuseMT::new(fs, threads),
-        &args.mount_point,
-        &fuse_options,
-    )?;
+    // Pre-check the mount point so a bad one is reported in the user's
+    // locale; `Session::mount` repeats the check (and works around the macOS
+    // macFUSE quirk of reporting success and hanging when the mount point
+    // doesn't exist), so this is presentation only, not the safety net.
+    if !args.mount_point.exists() {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.mount_point_not_found",
+                mount_point = args.mount_point.display()
+            )
+        );
+        std::process::exit(1);
+    }
+    if !args.mount_point.is_dir() {
+        eprintln!(
+            "{}",
+            t!(
+                "encfsr.mount_point_not_dir",
+                mount_point = args.mount_point.display()
+            )
+        );
+        std::process::exit(1);
+    }
+
+    typed_fuse::mount::mount_blocking(fs, &args.mount_point, &mount_config, false)?;
 
     Ok(())
 }
