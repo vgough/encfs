@@ -6,9 +6,8 @@ use typed_fuse::passthrough::{
     system_time_from_secs,
 };
 use typed_fuse::{
-    Caller as Request, DirBuffer, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr,
-    Opened, PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs,
-    XattrReply,
+    Caller as Request, DirBuffer, Errno, FileKind as FileType, NodeAttr as FileAttr, Opened,
+    PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, XattrReply,
 };
 use libc;
 use log::{debug, warn};
@@ -288,7 +287,11 @@ impl PathFilesystem for ReverseFs {
     type Handle = ReverseHandle;
     type DirHandle = DirBuffer;
 
-    const SUPPORTS_POSIX_LOCKS: bool = true;
+    // Left to the kernel, as in the forward filesystem: a passthrough would
+    // apply every client's lock in this one process (where POSIX locks cannot
+    // conflict with each other), and here it would place those locks on the
+    // plaintext source files rather than the ciphertext view being read.
+    const SUPPORTS_POSIX_LOCKS: bool = false;
     const SUPPORTS_READDIRPLUS: bool = true;
 
     fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
@@ -446,35 +449,6 @@ impl PathFilesystem for ReverseFs {
             .encrypt_filename(target.as_os_str().as_bytes(), dir_iv)
             .map_err(|_| libc::EIO)?;
         Ok(PathBuf::from(encrypted))
-    }
-
-    fn getlk(
-        &self,
-        _path: Option<&Path>,
-        handle: &ReverseHandle,
-        _owner: u64,
-        lock: FileLock,
-        _caller: &Request,
-    ) -> Result<FileLock, Errno> {
-        let ReverseHandle::File { file, .. } = handle else {
-            return Err(Errno::ENOSYS);
-        };
-        typed_fuse::file_lock::getlk(file, lock)
-    }
-
-    fn setlk(
-        &self,
-        _path: Option<&Path>,
-        handle: &ReverseHandle,
-        _owner: u64,
-        lock: FileLock,
-        sleep: bool,
-        _caller: &Request,
-    ) -> Result<(), Errno> {
-        let ReverseHandle::File { file, .. } = handle else {
-            return Err(Errno::ENOSYS);
-        };
-        typed_fuse::file_lock::setlk(file, lock, sleep)
     }
 
     fn setattr(

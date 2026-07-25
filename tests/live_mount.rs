@@ -818,8 +818,14 @@ fn live_cross_process_posix_locks() -> Result<()> {
         if expect_blocked {
             command.env("ENCFS_LOCK_EXPECT_BLOCKED", "1");
         }
-        let status = command.status()?;
-        anyhow::ensure!(status.success(), "lock-check child failed: {status}");
+        let output = command.output()?;
+        anyhow::ensure!(
+            output.status.success(),
+            "lock-check child failed (expect_blocked={expect_blocked}): {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         Ok(())
     };
 

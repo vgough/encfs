@@ -9,9 +9,8 @@ use typed_fuse::passthrough::{
     utimens_permission_check,
 };
 use typed_fuse::{
-    Caller as Request, DirBuffer, Errno, FileLock, NodeAttr as FileAttr, Opened, PathDirSink,
-    PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
-    XattrReply as ReplyXAttr,
+    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathDirSink, PathFilesystem,
+    PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
 };
 use libc;
 use log::{debug, error, warn};
@@ -1687,7 +1686,14 @@ impl PathFilesystem for EncFs {
     type Handle = FileHandle;
     type DirHandle = DirBuffer;
 
-    const SUPPORTS_POSIX_LOCKS: bool = true;
+    // POSIX record locks are deliberately left to the kernel. Forwarding them
+    // would mean taking every client's lock with `fcntl` in this one daemon
+    // process, and POSIX locks are keyed by (process, inode): two clients could
+    // never conflict, and either one closing a handle would drop the other's
+    // locks. Leaving `getlk`/`setlk` unimplemented keeps `FUSE_POSIX_LOCKS` out
+    // of the INIT reply, so the kernel enforces locks locally with the right
+    // per-process semantics.
+    const SUPPORTS_POSIX_LOCKS: bool = false;
     const SUPPORTS_READDIRPLUS: bool = true;
 
     fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
@@ -1893,29 +1899,6 @@ impl PathFilesystem for EncFs {
         _caller: &Request,
     ) -> Result<usize, Errno> {
         Ok(self.write_impl(handle, offset, data)? as usize)
-    }
-
-    fn getlk(
-        &self,
-        _path: Option<&Path>,
-        handle: &FileHandle,
-        _owner: u64,
-        lock: FileLock,
-        _caller: &Request,
-    ) -> Result<FileLock, Errno> {
-        typed_fuse::file_lock::getlk(&handle.file, lock)
-    }
-
-    fn setlk(
-        &self,
-        _path: Option<&Path>,
-        handle: &FileHandle,
-        _owner: u64,
-        lock: FileLock,
-        sleep: bool,
-        _caller: &Request,
-    ) -> Result<(), Errno> {
-        typed_fuse::file_lock::setlk(&handle.file, lock, sleep)
     }
 
     fn create(
