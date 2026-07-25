@@ -1,11 +1,11 @@
 use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
-use fuse3::passthrough::{
+use typed_fuse::passthrough::{
     file_attr_from_metadata, file_type_from_metadata, statfs_path, synthetic_file_attr,
     system_time_from_secs,
 };
-use fuse3::{
+use typed_fuse::{
     Caller as Request, DirBuffer, Errno, FileKind as FileType, FileLock, NodeAttr as FileAttr,
     Opened, PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs,
     XattrReply,
@@ -291,7 +291,7 @@ impl PathFilesystem for ReverseFs {
     const SUPPORTS_POSIX_LOCKS: bool = true;
     const SUPPORTS_READDIRPLUS: bool = true;
 
-    fn init(&self, _conn: &mut fuse3::ConnInfo) {
+    fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
         debug!("ReverseFs::init");
     }
 
@@ -459,7 +459,7 @@ impl PathFilesystem for ReverseFs {
         let ReverseHandle::File { file, .. } = handle else {
             return Err(Errno::ENOSYS);
         };
-        fuse3::file_lock::getlk(file, lock)
+        typed_fuse::file_lock::getlk(file, lock)
     }
 
     fn setlk(
@@ -474,7 +474,7 @@ impl PathFilesystem for ReverseFs {
         let ReverseHandle::File { file, .. } = handle else {
             return Err(Errno::ENOSYS);
         };
-        fuse3::file_lock::setlk(file, lock, sleep)
+        typed_fuse::file_lock::setlk(file, lock, sleep)
     }
 
     fn setattr(

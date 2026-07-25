@@ -1,7 +1,7 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse3::{Caller, DirBuffer, FileKind, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink};
+use typed_fuse::{Caller, DirBuffer, FileKind, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink};
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::fs;

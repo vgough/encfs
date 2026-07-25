@@ -6,7 +6,7 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse3::{Caller, FileKind as FileType, PathFilesystem};
+use typed_fuse::{Caller, FileKind as FileType, PathFilesystem};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::MetadataExt;

@@ -4,7 +4,7 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse3::{Caller, FileKind as FileType, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink};
+use typed_fuse::{Caller, FileKind as FileType, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::os::unix::fs::FileTypeExt;

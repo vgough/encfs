@@ -2,7 +2,7 @@ mod live;
 
 use anyhow::{Context, Result};
 use encfs::crypto::file::FileEncoder;
-use fuse3::file_lock::{F_UNLCK, F_WRLCK, LockType, SEEK_SET};
+use typed_fuse::file_lock::{F_UNLCK, F_WRLCK, LockType, SEEK_SET};
 use live::{MountGuard, data_block_size, live_enabled, load_live_config, unique_temp_dir};
 use std::collections::BTreeSet;
 use std::ffi::{CString, OsString};

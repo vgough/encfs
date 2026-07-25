@@ -41,10 +41,10 @@ reference workload that fails.
   `copy_file_with_header_rewrite` (read lock for `read_impl`).
 
 - [ ] **2. POSIX/BSD locks don't actually lock.**
-  `flock(2)` is never forwarded (fuse3 leaves `ops.flock` unset), so `flock()`
+  `flock(2)` is never forwarded (typed-fuse leaves `ops.flock` unset), so `flock()`
   is a no-op success and two cargos can hold the registry cache lock
   "simultaneously". `fcntl` locks are forwarded (src/fs.rs:1670-1691) but each
-  `open` creates a new backing fd. Fix: implement `flock` in the fuse3 fork and
+  `open` creates a new backing fd. Fix: implement `flock` in the typed-fuse fork and
   pass through to the backing fd.
 
 - [ ] **3. `fsync`/`flush`/`fdatasync` are silent no-ops.**

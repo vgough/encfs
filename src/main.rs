@@ -6,7 +6,7 @@ use rust_i18n::t;
 use std::path::PathBuf;
 
 use encfs::{config, fs::EncFs};
-use fuse3::mount;
+use typed_fuse::mount;
 
 rust_i18n::i18n!("locales", fallback = "en");
 

@@ -3,12 +3,12 @@ use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
-use fuse3::passthrough::{
+use typed_fuse::passthrough::{
     self, access_check, c_path, file_attr_from_metadata, file_type_from_metadata, is_apple_xattr,
     set_ownership_fd, set_ownership_path, statfs_path, symlink as passthrough_symlink,
     utimens_permission_check,
 };
-use fuse3::{
+use typed_fuse::{
     Caller as Request, DirBuffer, Errno, FileLock, NodeAttr as FileAttr, Opened, PathDirSink,
     PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
     XattrReply as ReplyXAttr,
@@ -1690,7 +1690,7 @@ impl PathFilesystem for EncFs {
     const SUPPORTS_POSIX_LOCKS: bool = true;
     const SUPPORTS_READDIRPLUS: bool = true;
 
-    fn init(&self, _conn: &mut fuse3::ConnInfo) {
+    fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
         debug!("init");
     }
 
@@ -1903,7 +1903,7 @@ impl PathFilesystem for EncFs {
         lock: FileLock,
         _caller: &Request,
     ) -> Result<FileLock, Errno> {
-        fuse3::file_lock::getlk(&handle.file, lock)
+        typed_fuse::file_lock::getlk(&handle.file, lock)
     }
 
     fn setlk(
@@ -1915,7 +1915,7 @@ impl PathFilesystem for EncFs {
         sleep: bool,
         _caller: &Request,
     ) -> Result<(), Errno> {
-        fuse3::file_lock::setlk(&handle.file, lock, sleep)
+        typed_fuse::file_lock::setlk(&handle.file, lock, sleep)
     }
 
     fn create(

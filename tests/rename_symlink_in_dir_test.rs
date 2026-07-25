@@ -8,7 +8,7 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse3::{Caller, PathFilesystem};
+use typed_fuse::{Caller, PathFilesystem};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};

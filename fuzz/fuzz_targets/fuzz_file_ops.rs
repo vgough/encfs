@@ -13,7 +13,7 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse3::{Caller, PathFilesystem, SetAttr};
+use typed_fuse::{Caller, PathFilesystem, SetAttr};
 use libfuzzer_sys::fuzz_target;
 use std::ffi::OsStr;
 use std::fs;

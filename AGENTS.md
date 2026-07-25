@@ -157,7 +157,7 @@ encfs/
 
 5. **`fs.rs`**: FUSE filesystem implementation
    - `EncFs`: Main filesystem struct
-   - Implements the synchronous `fuse3::PathFilesystem` trait
+   - Implements the synchronous `typed_fuse::PathFilesystem` trait
    - Path encryption/decryption with IV chaining
    - Uses typed file and directory handles owned by the FUSE runtime
    - All FUSE operations (read, write, readdir, etc.)
@@ -293,7 +293,7 @@ Each block (if MACs enabled):
 - Help text functions must return `String` (evaluated at runtime after locale init)
 
 ### 7. FUSE Integration
-- Uses the sibling `fuse3` crate and its synchronous `PathFilesystem` adapter
+- Uses the sibling `typed-fuse` crate and its synchronous `PathFilesystem` adapter
 - File and directory handles are typed values owned by the FUSE runtime
 - Multi-threaded by default, with a single-threaded mode for debugging
 - Single-threaded mode available via `-s` flag
@@ -328,7 +328,7 @@ The `EncfsConfig::validate()` method enforces:
 ## Dependencies
 
 ### Core Dependencies
-- **fuse3** (git dependency from `vgough/libfuse-sys`): Typed libfuse3 bindings and path adapter
+- **typed-fuse** (git dependency from `vgough/typed-fuse`): Typed libfuse3 bindings and path adapter
 
 - **clap** (4.6.1): CLI argument parsing
 - **anyhow** (1.0.102): Error handling

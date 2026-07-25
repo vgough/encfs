@@ -228,10 +228,10 @@ fn main() -> Result<()> {
 
     // Build FUSE options: always mount read-only at kernel level (FUSE-01)
     // plus default_permissions, then pass through any user-provided fuse_opts.
-    let mut mount_config = fuse3::mount::MountConfig {
+    let mut mount_config = typed_fuse::mount::MountConfig {
         read_only: true,
         default_permissions: true,
-        ..fuse3::mount::MountConfig::new("encfsr")
+        ..typed_fuse::mount::MountConfig::new("encfsr")
     };
 
     // Parse user-provided "-o option[,option...]" pairs into raw option
@@ -281,7 +281,7 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    fuse3::mount::mount_blocking(fs, &args.mount_point, &mount_config, false)?;
+    typed_fuse::mount::mount_blocking(fs, &args.mount_point, &mount_config, false)?;
 
     Ok(())
 }

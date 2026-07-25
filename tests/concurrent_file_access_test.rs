@@ -3,14 +3,14 @@
 //! Every operation on an encrypted file is a multi-syscall sequence: a partial
 //! block write is read-decrypt-modify-encrypt-write, a truncate is
 //! read/set_len/re-encrypt, and a truncating open resets the file *and* its IV.
-//! fuse3 runs read/write/setattr concurrently, so `EncFs` has to serialize
+//! typed_fuse runs read/write/setattr concurrently, so `EncFs` has to serialize
 //! these per backing inode. These tests fail (lost updates, or EIO from a
 //! failed block MAC) if that serialization is missing or is taken too late.
 
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use fuse3::{Caller, PathFilesystem};
+use typed_fuse::{Caller, PathFilesystem};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -146,7 +146,7 @@ fn concurrent_write_and_truncate_same_file() {
     let fst = Arc::clone(&fs);
     let pt = path.clone();
     let tt = std::thread::spawn(move || {
-        let mut sa = fuse3::SetAttr::default();
+        let mut sa = typed_fuse::SetAttr::default();
         let mut errors = Vec::new();
         for i in 0..200u64 {
             sa.size = Some(1024 + (i % 4) * 256);
