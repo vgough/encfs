@@ -45,6 +45,7 @@ fn create_file(encfs: &EncFs, name: &str) {
         .mknod(
             Path::new(""),
             OsStr::new(name),
+            #[allow(clippy::useless_conversion)]
             u32::from(libc::S_IFREG | 0o600),
             0,
             0,
