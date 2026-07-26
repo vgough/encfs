@@ -2,7 +2,6 @@ mod live;
 
 use anyhow::{Context, Result};
 use encfs::crypto::file::FileEncoder;
-use typed_fuse::file_lock::{F_UNLCK, F_WRLCK, LockType, SEEK_SET};
 use live::{MountGuard, data_block_size, live_enabled, load_live_config, unique_temp_dir};
 use std::collections::BTreeSet;
 use std::ffi::{CString, OsString};
@@ -15,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, UNIX_EPOCH};
+use typed_fuse::file_lock::{F_UNLCK, F_WRLCK, LockType, SEEK_SET};
 
 fn require_live() {
     if !live_enabled() {

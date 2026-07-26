@@ -2,11 +2,11 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use typed_fuse::{Caller, PathFilesystem};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
+use typed_fuse::{Caller, PathFilesystem};
 
 #[test]
 fn test_virtual_driver_write() {

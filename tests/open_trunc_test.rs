@@ -2,11 +2,11 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder; // Import FileDecoder
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use typed_fuse::{Caller, PathFilesystem};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt; // For read_at
 use std::path::PathBuf;
+use typed_fuse::{Caller, PathFilesystem};
 
 #[test]
 fn test_open_trunc_header_regeneration() {

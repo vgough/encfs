@@ -6,11 +6,11 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use typed_fuse::{Caller, FileKind as FileType, PathFilesystem};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use typed_fuse::{Caller, FileKind as FileType, PathFilesystem};
 
 fn setup_fs(root: &Path) -> EncFs {
     let iface = Interface {

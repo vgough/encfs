@@ -6,11 +6,11 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use typed_fuse::{Caller, PathFilesystem, XattrReply as ReplyXAttr};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use typed_fuse::{Caller, PathFilesystem, XattrReply as ReplyXAttr};
 
 /// Generous buffer size passed to getxattr/listxattr so the reply is always
 /// `ReplyXAttr::Data` rather than a `Size` probe.

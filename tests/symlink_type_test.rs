@@ -1,10 +1,10 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use typed_fuse::{Caller, FileKind as FileType, PathDirSink, PathFilesystem};
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
+use typed_fuse::{Caller, FileKind as FileType, PathDirSink, PathFilesystem};
 
 struct Entries(Vec<(OsString, FileType)>);
 impl PathDirSink for Entries {

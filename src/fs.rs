@@ -3,15 +3,6 @@ use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
-use typed_fuse::passthrough::{
-    self, access_check, c_path, file_attr_from_metadata, file_type_from_metadata, is_apple_xattr,
-    set_ownership_fd, set_ownership_path, statfs_path, symlink as passthrough_symlink,
-    utimens_permission_check,
-};
-use typed_fuse::{
-    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathDirSink, PathFilesystem,
-    PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
-};
 use libc;
 use log::{debug, error, warn};
 use std::borrow::Cow;
@@ -25,6 +16,15 @@ use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use std::time::SystemTime;
+use typed_fuse::passthrough::{
+    self, access_check, c_path, file_attr_from_metadata, file_type_from_metadata, is_apple_xattr,
+    set_ownership_fd, set_ownership_path, statfs_path, symlink as passthrough_symlink,
+    utimens_permission_check,
+};
+use typed_fuse::{
+    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathDirSink, PathFilesystem,
+    PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
+};
 
 /// Errors from internal helpers are raw errno values; trait methods convert
 /// them to typed FUSE errors via `?`.
@@ -396,6 +396,9 @@ impl EncFs {
                 }
 
                 passthrough_symlink(OsStr::new(&enc_target), &real_dest).map_err(|e| e.raw())?;
+                let atime = meta.accessed().ok();
+                let mtime = meta.modified().ok();
+                let _ = passthrough::utimens_path(&real_dest, atime, mtime);
 
                 // Remove source symlink.
                 fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -485,6 +488,10 @@ impl EncFs {
                     &child_meta,
                 )?;
             }
+            let _ = fs::set_permissions(dest.physical, meta.permissions());
+            let atime = meta.accessed().ok();
+            let mtime = meta.modified().ok();
+            let _ = passthrough::utimens_path(dest.physical, atime, mtime);
         } else if self.config.external_iv_chaining && meta.is_file() {
             self.copy_file_with_header_rewrite(source.physical, dest.physical, source.iv, dest.iv)?;
         } else if meta.is_symlink() {
@@ -539,12 +546,18 @@ impl EncFs {
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
                 passthrough_symlink(target.as_os_str(), dest.physical).map_err(|e| e.raw())?;
             }
+            let atime = meta.accessed().ok();
+            let mtime = meta.modified().ok();
+            let _ = passthrough::utimens_path(dest.physical, atime, mtime);
         } else {
             // Standard copy for regular files without external IV chaining
             fs::copy(source.physical, dest.physical)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             // Best effort metadata copy
             let _ = fs::set_permissions(dest.physical, meta.permissions());
+            let atime = meta.accessed().ok();
+            let mtime = meta.modified().ok();
+            let _ = passthrough::utimens_path(dest.physical, atime, mtime);
         }
         Ok(())
     }
@@ -639,9 +652,12 @@ impl EncFs {
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         }
 
-        // 8. Copy permissions
+        // 8. Copy permissions and timestamps
         if let Some(meta) = metadata {
             let _ = fs::set_permissions(real_dest, meta.permissions());
+            let atime = meta.accessed().ok();
+            let mtime = meta.modified().ok();
+            let _ = passthrough::utimens_path(real_dest, atime, mtime);
         }
 
         Ok(())

@@ -1,12 +1,14 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use typed_fuse::{Caller, DirBuffer, FileKind, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink};
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use typed_fuse::{
+    Caller, DirBuffer, FileKind, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink,
+};
 
 fn req() -> Caller {
     Caller {

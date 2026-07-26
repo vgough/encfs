@@ -10,11 +10,11 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use typed_fuse::{Caller, PathFilesystem};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
+use typed_fuse::{Caller, PathFilesystem};
 
 /// One block of `test_default` holds 1024 - 8 MAC bytes of plaintext.
 const BLOCK_DATA: usize = 1016;

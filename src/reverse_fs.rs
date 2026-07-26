@@ -1,14 +1,6 @@
 use crate::config::EncfsConfig;
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
-use typed_fuse::passthrough::{
-    file_attr_from_metadata, file_type_from_metadata, statfs_path, synthetic_file_attr,
-    system_time_from_secs,
-};
-use typed_fuse::{
-    Caller as Request, DirBuffer, Errno, FileKind as FileType, NodeAttr as FileAttr, Opened,
-    PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, XattrReply,
-};
 use libc;
 use log::{debug, warn};
 use std::borrow::Cow;
@@ -18,6 +10,14 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
 use std::time::SystemTime;
+use typed_fuse::passthrough::{
+    file_attr_from_metadata, file_type_from_metadata, statfs_path, synthetic_file_attr,
+    system_time_from_secs,
+};
+use typed_fuse::{
+    Caller as Request, DirBuffer, Errno, FileKind as FileType, NodeAttr as FileAttr, Opened,
+    PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, XattrReply,
+};
 
 const CONFIG_FILE_NAME: &str = ".encfs7";
 
