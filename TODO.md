@@ -40,12 +40,19 @@ reference workload that fails.
   RMW in `write_impl`, `do_truncate`, `truncate_expand`, `truncate_shrink`, and
   `copy_file_with_header_rewrite` (read lock for `read_impl`).
 
-- [ ] **2. POSIX/BSD locks don't actually lock.**
-  `flock(2)` is never forwarded (typed-fuse leaves `ops.flock` unset), so `flock()`
-  is a no-op success and two cargos can hold the registry cache lock
-  "simultaneously". `fcntl` locks are forwarded (src/fs.rs:1670-1691) but each
-  `open` creates a new backing fd. Fix: implement `flock` in the typed-fuse fork and
-  pass through to the backing fd.
+- [x] **2. POSIX/BSD locks don't actually lock.**
+  Fixed: the typed-fuse fork now has an opt-in `flock` callback, wired through
+  its session, runtime, node trait, and path adapter. `EncFs` opts in and passes
+  each operation through to `flock(2)` on that open handle's backing fd, so the
+  backing filesystem preserves BSD open-file-description lock semantics.
+
+  POSIX record locks remain kernel-managed: EncFS deliberately does not enable
+  `FUSE_POSIX_LOCKS`, because forwarding every client's `fcntl` locks from the
+  daemon process would merge their process identities and produce incorrect
+  close/unlock behavior.
+
+  Regression coverage includes a mountless two-handle test and a live,
+  cross-process FUSE test in `tests/flock_test.rs` and `tests/live_mount.rs`.
 
 - [ ] **3. `fsync`/`flush`/`fdatasync` are silent no-ops.**
   The `PathFilesystem` defaults return `Ok(())` and `EncFs` doesn't override

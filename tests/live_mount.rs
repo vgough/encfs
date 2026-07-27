@@ -837,6 +837,82 @@ fn live_cross_process_posix_locks() -> Result<()> {
 
 #[test]
 #[ignore]
+fn live_flock_child() -> Result<()> {
+    let Some(path) = std::env::var_os("ENCFS_FLOCK_CHILD_PATH") else {
+        return Ok(());
+    };
+    let expect_blocked = std::env::var_os("ENCFS_FLOCK_EXPECT_BLOCKED").is_some();
+    let file = OpenOptions::new().read(true).write(true).open(path)?;
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    let result = if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    };
+    match (result, expect_blocked) {
+        (Err(error), true)
+            if error.raw_os_error() == Some(libc::EAGAIN)
+                || error.raw_os_error() == Some(libc::EWOULDBLOCK) =>
+        {
+            Ok(())
+        }
+        (Ok(()), false) => Ok(()),
+        (result, expected) => {
+            anyhow::bail!("unexpected child flock result {result:?}; expected blocked={expected}")
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn live_cross_process_flock() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let path = mount.mount_point.join("flocked.txt");
+    fs::write(&path, b"locked")?;
+    let file = OpenOptions::new().read(true).write(true).open(&path)?;
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if result == -1 {
+        return Err(std::io::Error::last_os_error()).context("parent flock failed");
+    }
+
+    let child = |expect_blocked: bool| -> Result<()> {
+        let mut command = Command::new(std::env::current_exe()?);
+        command
+            .arg("--exact")
+            .arg("live_flock_child")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .env("ENCFS_FLOCK_CHILD_PATH", &path);
+        if expect_blocked {
+            command.env("ENCFS_FLOCK_EXPECT_BLOCKED", "1");
+        }
+        let output = command.output()?;
+        anyhow::ensure!(
+            output.status.success(),
+            "flock-check child failed (expect_blocked={expect_blocked}): {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Ok(())
+    };
+
+    child(true)?;
+    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+    if result == -1 {
+        return Err(std::io::Error::last_os_error()).context("parent flock unlock failed");
+    }
+    child(false)?;
+    Ok(())
+}
+
+#[test]
+#[ignore]
 fn live_chmod_utimens_statfs() -> Result<()> {
     require_live();
     if !live_enabled() {

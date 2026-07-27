@@ -1710,6 +1710,7 @@ impl PathFilesystem for EncFs {
     // of the INIT reply, so the kernel enforces locks locally with the right
     // per-process semantics.
     const SUPPORTS_POSIX_LOCKS: bool = false;
+    const SUPPORTS_FLOCK: bool = true;
     const SUPPORTS_READDIRPLUS: bool = true;
 
     fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
@@ -1915,6 +1916,21 @@ impl PathFilesystem for EncFs {
         _caller: &Request,
     ) -> Result<usize, Errno> {
         Ok(self.write_impl(handle, offset, data)? as usize)
+    }
+
+    fn flock(
+        &self,
+        _path: Option<&Path>,
+        handle: &FileHandle,
+        operation: i32,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        let result = unsafe { libc::flock(handle.file.as_raw_fd(), operation) };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error().into())
+        }
     }
 
     fn create(
