@@ -58,6 +58,36 @@ Overall status
   - [ ] translations beyond auto-generated FR and DE strings
 
 
+## Cryptography: legacy (EncFS 1.9.x) vs. new filesystems
+
+This implementation reads and writes both legacy EncFS filesystems (created
+with EncFS 1.9.x, config formats V4/V5/V6) and newly created filesystems
+(V7 config). The cryptographic differences are:
+
+| Aspect | Legacy (EncFS 1.9.x, V4–V6) | New (V7, current default) |
+|---|---|---|
+| Config file | `.encfs6.xml` / `.encfs5` / `.encfs4` (unsigned; tampering undetected) | `.encfs7` (authenticated; tamper-safe via `config_hash`) |
+| Password KDF | PBKDF2-HMAC-SHA1 (configurable iterations) | Argon2id (memory-hard, GPU/ASIC-resistant; 64 MiB, 3 iterations, 4 lanes by default) |
+| Block encryption | AES or Blowfish in CBC mode with an optional per-block MAC of at most 8 bytes (encrypt-then-MAC, 64-bit MACs) | AES-256-GCM-SIV authenticated encryption with a 16-byte tag per block (misuse-resistant AEAD) |
+| Confidentiality + integrity | Separate cipher + weak MAC; integrity optional and truncated | Integrated AEAD; every block is authenticated |
+| Block overhead | Up to 8-byte MAC header per block | 16-byte tag per block (default block size 4080 of 4096 bytes) |
+| Filenames | Stream (CFB, multi-pass) or block mode, IV from HMAC of the name | Unchanged — still legacy stream/block filename modes for compatibility |
+| Volume key wrap | Encrypted with the PBKDF2-derived user key | Wrapped with a 32-byte Argon2id-derived AEAD key |
+
+In short: legacy filesystems use PBKDF2-HMAC-SHA1 + CBC with an optional
+64-bit per-block MAC, while new V7 filesystems use Argon2id + AES-GCM-SIV,
+giving memory-hard password hashing, authenticated per-block encryption with
+128-bit tags, and a tamper-evident config file. Some protocol-level
+weaknesses of the legacy EncFS design remain for compatibility, but the V7
+mode addresses the most significant ones (weak MACs, unauthenticated config,
+fast KDF).
+
+Existing legacy filesystems can be partially upgraded in place with
+`encfsctl passwd --upgrade <rootdir>` (moves to the V7 config and Argon2id);
+the file data encryption mode of an existing filesystem is not changed by
+this. Full migration to AES-GCM-SIV block encryption requires creating a
+new filesystem and copying the data.
+
 ## Getting started
 
 ### Upgrading from a previous config (V4/V5/V6):
