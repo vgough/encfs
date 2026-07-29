@@ -54,10 +54,12 @@ reference workload that fails.
   Regression coverage includes a mountless two-handle test and a live,
   cross-process FUSE test in `tests/flock_test.rs` and `tests/live_mount.rs`.
 
-- [ ] **3. `fsync`/`flush`/`fdatasync` are silent no-ops.**
-  The `PathFilesystem` defaults return `Ok(())` and `EncFs` doesn't override
-  them, so write→fsync→rename publishing isn't durable. Fix: `fsync` →
-  `File::sync_all`/`sync_data` on `handle.file`; `flush` likewise.
+- [x] **3. `fsync`/`flush`/`fdatasync` are silent no-ops.**
+  Fixed: `EncFs::flush` calls `File::sync_all` on the open backing handle, and
+  `EncFs::fsync` calls `File::sync_all` or `File::sync_data` according to the
+  `datasync` flag. Backing I/O errors are returned to FUSE. Regression coverage
+  in `src/fs.rs` uses a pipe that rejects synchronization, proving all three
+  callbacks are no longer successful no-ops.
 
 - [ ] **4. Directory rename under IV chaining is a non-atomic copy+delete that
   races readers/writers.**
