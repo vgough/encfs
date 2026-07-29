@@ -73,6 +73,10 @@ tasks:
     cmds:
       - "{{.CARGO}} clippy --all-targets --all-features -- -D warnings"
 
+  clippy-linux:
+    cmds:
+      - "{{.CARGO}} clippy --target aarch64-unknown-linux-gnu --all-targets --all-features -- -D warnings"
+
   benchmark:
     desc: Run the EncFS filesystem benchmark and compare it with the local baseline
     deps: [build-release]

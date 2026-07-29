@@ -1182,7 +1182,7 @@ impl PathFilesystem for ReverseFs {
             return Err(Errno::EROFS);
         }
         let (source, _) = self.resolve_source_path(&path)?;
-        if mode & libc::S_IFMT as u32 != libc::S_IFREG as u32 {
+        if mode & u32::from(libc::S_IFMT) != u32::from(libc::S_IFREG) {
             return Err(Errno::ENOSYS);
         }
         OpenOptions::new()
