@@ -1918,6 +1918,33 @@ impl PathFilesystem for EncFs {
         Ok(self.write_impl(handle, offset, data)? as usize)
     }
 
+    fn flush(
+        &self,
+        _path: Option<&Path>,
+        handle: &FileHandle,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        handle
+            .file
+            .sync_all()
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO).into())
+    }
+
+    fn fsync(
+        &self,
+        _path: Option<&Path>,
+        handle: &FileHandle,
+        datasync: bool,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        let sync_result = if datasync {
+            handle.file.sync_data()
+        } else {
+            handle.file.sync_all()
+        };
+        sync_result.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO).into())
+    }
+
     fn flock(
         &self,
         _path: Option<&Path>,
@@ -1979,9 +2006,16 @@ impl PathFilesystem for EncFs {
 #[cfg(test)]
 mod tests {
     use super::{
-        FILE_STATE_SWEEP_FLOOR, FileStates, headerless_file_iv, is_apple_xattr,
-        lock_source_and_dest,
+        EncFs, FILE_STATE_SWEEP_FLOOR, FileHandle, FileState, FileStates, headerless_file_iv,
+        is_apple_xattr, lock_source_and_dest,
     };
+    use crate::config::{EncfsConfig, Interface};
+    use crate::crypto::ssl::SslCipher;
+    use std::fs::File;
+    use std::os::fd::FromRawFd;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use typed_fuse::{Caller, PathFilesystem};
 
     fn table_len(states: &FileStates) -> usize {
         states.table.lock().unwrap().entries.len()
@@ -2088,5 +2122,54 @@ mod tests {
         assert!(is_apple_xattr("com.apple.provenance"));
         assert!(!is_apple_xattr("user.encfs.attribute"));
         assert!(!is_apple_xattr("com.example.attribute"));
+    }
+
+    fn test_fs() -> EncFs {
+        let interface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&interface, 192).unwrap();
+        cipher.set_key(&[1u8; 24], &[2u8; 16]);
+        EncFs::new(
+            PathBuf::new(),
+            Box::new(cipher),
+            EncfsConfig::test_default(),
+        )
+    }
+
+    fn test_caller() -> Caller {
+        Caller {
+            pid: 1,
+            gid: 0,
+            uid: 0,
+            umask: 0,
+        }
+    }
+
+    #[test]
+    fn sync_callbacks_forward_backing_file_errors() {
+        let mut fds = [0; 2];
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
+        assert_eq!(unsafe { libc::close(fds[0]) }, 0);
+
+        // A pipe does not support synchronization. Using it as the backing
+        // file proves these callbacks issue real sync syscalls rather than
+        // inheriting PathFilesystem's successful no-op defaults. The errno
+        // differs across platforms, so the regression condition is simply that
+        // it propagates.
+        let handle = FileHandle {
+            file: unsafe { File::from_raw_fd(fds[1]) },
+            headerless_iv: 0,
+            state: Arc::new(FileState::new((0, 0))),
+        };
+        let fs = test_fs();
+        let caller = test_caller();
+
+        assert!(fs.flush(None, &handle, &caller).is_err());
+        assert!(fs.fsync(None, &handle, false, &caller).is_err());
+        assert!(fs.fsync(None, &handle, true, &caller).is_err());
     }
 }
