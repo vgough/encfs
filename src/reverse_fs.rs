@@ -1182,6 +1182,7 @@ impl PathFilesystem for ReverseFs {
             return Err(Errno::EROFS);
         }
         let (source, _) = self.resolve_source_path(&path)?;
+        #[allow(clippy::useless_conversion)]
         if mode & u32::from(libc::S_IFMT) != u32::from(libc::S_IFREG) {
             return Err(Errno::ENOSYS);
         }
