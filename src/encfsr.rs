@@ -37,6 +37,10 @@ fn help_encfsr_foreground() -> String {
     t!("help.encfs.foreground").to_string()
 }
 
+fn help_encfsr_write() -> String {
+    t!("help.encfsr.write").to_string()
+}
+
 fn help_encfsr_fuse_opts() -> String {
     t!("help.encfsr.fuse_opts").to_string()
 }
@@ -67,6 +71,10 @@ struct Args {
     /// Run in foreground (do not daemonize after mounting)
     #[arg(short = 'f', long, help = help_encfsr_foreground())]
     foreground: bool,
+
+    /// Allow writes to the plaintext source through the encrypted view.
+    #[arg(short = 'w', long, help = help_encfsr_write())]
+    write: bool,
 
     /// FUSE options passed directly to the FUSE layer (e.g. -o allow_other).
     /// Place these after -- or use trailing arguments directly.
@@ -224,12 +232,15 @@ fn main() -> Result<()> {
         config,
         config_bytes,
         config_metadata,
+        encfs::reverse_fs::ReverseFsOptions {
+            writable: args.write,
+        },
     );
 
-    // Build FUSE options: always mount read-only at kernel level (FUSE-01)
-    // plus default_permissions, then pass through any user-provided fuse_opts.
+    // The encrypted view is read-only unless the user explicitly opted into
+    // reverse writes.  A supplied `-o ro` may still tighten a writable mount.
     let mut mount_config = typed_fuse::mount::MountConfig {
-        read_only: true,
+        read_only: !args.write,
         default_permissions: true,
         ..typed_fuse::mount::MountConfig::new("encfsr")
     };
@@ -254,6 +265,10 @@ fn main() -> Result<()> {
             std::process::exit(1);
         };
         mount_config.parse_option_words(words);
+    }
+    if !args.write {
+        // Do not let `-o rw` turn the safe default into a writable mount.
+        mount_config.read_only = true;
     }
 
     // Pre-check the mount point so a bad one is reported in the user's

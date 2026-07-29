@@ -8,6 +8,10 @@ fn encfsr_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_encfsr"))
 }
 
+fn encfsctl_bin() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_encfsctl"))
+}
+
 /// Write a minimal V6 XML config to `.encfs6.xml` in `dir`.
 /// unique_iv: true = <uniqueIV>1</uniqueIV>, false = <uniqueIV>0</uniqueIV>
 /// chained_name_iv: true = <chainedNameIV>1</chainedNameIV>
@@ -223,6 +227,10 @@ fn test_encfsr_help() {
     assert!(
         success,
         "encfsr --help should exit 0. stdout: {stdout}, stderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("--write"),
+        "encfsr --help should document --write"
     );
 }
 
@@ -458,4 +466,74 @@ fn test_encfsr_proceeds_to_mount_attempt() {
         stderr.contains("mount point"),
         "encfsr should reach the mount step and reject the missing mount point. stderr: {stderr}"
     );
+}
+
+#[test]
+fn test_encfsr_write_proceeds_to_mount_attempt() {
+    let dir = live::unique_temp_dir("encfsr_test_write_mount_attempt")
+        .expect("failed to create temp dir");
+    let source_dir = dir.join("source");
+    let config_path = dir.join("config.encfs7");
+    let mount_dir = dir.join("mnt");
+    std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
+    write_v7_config(&config_path, false, "encfsr_test");
+
+    let (_success, _stdout, stderr) = run_encfsr(
+        &[
+            "--write",
+            "--stdinpass",
+            config_path.to_str().unwrap(),
+            source_dir.to_str().unwrap(),
+            mount_dir.to_str().unwrap(),
+        ],
+        Some("encfsr_test\n"),
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        stderr.contains("mount point"),
+        "encfsr --write should reach mount validation. stderr: {stderr}"
+    );
+}
+
+#[test]
+fn test_encfsctl_no_unique_iv_creates_writable_reverse_config() {
+    let dir =
+        live::unique_temp_dir("encfsr_test_new_reverse_config").expect("failed to create temp dir");
+    let mut child = Command::new(encfsctl_bin())
+        .args(["new", "--stdinpass", "--no-unique-iv"])
+        .arg(&dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to run encfsctl");
+    use std::io::Write;
+    child
+        .stdin
+        .take()
+        .expect("stdin unavailable")
+        .write_all(b"encfsr-test-password\n")
+        .expect("failed to write password");
+    let output = child
+        .wait_with_output()
+        .expect("failed to wait for encfsctl");
+    assert!(
+        output.status.success(),
+        "encfsctl new failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))
+        .expect("encfsctl should create a V7 config");
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        !config.unique_iv,
+        "--no-unique-iv must produce an encfsr-write-compatible config"
+    );
+    assert_eq!(
+        config.block_mac_bytes, 16,
+        "reverse writes retain V7 authenticated blocks"
+    );
+    assert!(config.chained_name_iv);
+    assert!(config.external_iv_chaining);
 }

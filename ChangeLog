@@ -1,3 +1,9 @@
+v2.0.0-beta.5 / 2026-07-28
+==================
+	* Add opt-in writable reverse mounts with `encfsr --write`
+	* Stage and authenticate reverse writes before applying them to the plaintext source
+	* Support V7 reverse-write configs created with `encfsctl new --no-unique-iv`
+
 v2.0.0-beta.4 / 2026-07-22
 ==================
 	* Replace async-fuse with libfuse-sys for improved Linux and macOS performance

@@ -8,7 +8,7 @@ This document provides comprehensive information for AI agents working in the En
 
 - **Language**: Rust (Edition 2024)
 - **Primary Goal**: Read/write compatibility with legacy EncFS filesystems
-- **Status**: Beta (v2.0.0-beta.4) - functional for read/write but still maturing
+- **Status**: Beta (v2.0.0-beta.5) - functional for read/write but still maturing
 
 ### Key Characteristics
 - Encrypts individual files (not block devices)
@@ -93,6 +93,12 @@ task clippy
 ./target/debug/encfsctl info /path/to/encrypted
 ./target/debug/encfsctl decode /path/to/encrypted encrypted_filename
 ./target/debug/encfsctl cat /path/to/encrypted encrypted_filename
+
+# Reverse encryption: plaintext source -> encrypted virtual view
+./target/debug/encfsr /path/to/source/.encfs7 /path/to/source /path/to/mountpoint
+
+# Opt in to writes through the encrypted reverse view
+./target/debug/encfsr --write /path/to/source/.encfs7 /path/to/source /path/to/mountpoint
 ```
 
 ### Installation
@@ -108,11 +114,13 @@ encfs/
 ├── src/                      # Rust source code
 │   ├── main.rs              # Main encfs binary (FUSE mount)
 │   ├── encfsctl.rs          # Control utility binary
+│   ├── encfsr.rs            # Reverse-mode FUSE binary
 │   ├── lib.rs               # Library entry point
 │   ├── config.rs            # Config file parsing (V4/V5/V6)
 │   ├── config_binary.rs     # Binary config format parser
 │   ├── constants.rs         # Global constants
 │   ├── fs.rs                # FUSE filesystem implementation
+│   ├── reverse_fs.rs        # Reverse-mode FUSE implementation
 │   └── crypto/              # Cryptographic operations
 │       ├── mod.rs           # Crypto module exports
 │       ├── ssl.rs           # Legacy cipher wrapper (RustCrypto)
@@ -141,7 +149,7 @@ encfs/
 
 2. **`config.rs`**: Configuration file handling
    - `EncfsConfig`: Main config struct
-   - `ConfigType`: Enum for V3/V4/V5/V6 formats
+   - `ConfigType`: Enum for V3/V4/V5/V6/V7 formats
    - `Interface`: Cipher/naming algorithm interface
    - Supports XML (V6) and binary (V4/V5) formats
    - XML uses Boost Serialization format for compatibility
@@ -171,6 +179,14 @@ encfs/
 7. **`encfsctl.rs`**: Control utility
    - Subcommands: info, passwd, decode, encode, cat, ls, showkey, export
    - Standalone utility for inspecting/manipulating encrypted filesystems
+
+8. **`reverse_fs.rs` / `encfsr.rs`**: Reverse encryption
+   - Presents an encrypted V7 view of a plaintext source directory
+   - Read-only by default; `encfsr --write` enables transactional writes
+   - Requires `unique_iv = false`; create a compatible V7 config with
+     `encfsctl new --no-unique-iv <source-dir>`
+   - Stages ciphertext writes and validates authenticated blocks before applying
+     changes to the plaintext source
 
 ## Naming Conventions
 
@@ -304,7 +320,16 @@ Three methods (in order of precedence):
 2. `--stdinpass`: Read from stdin
 3. Default: Interactive prompt via `rpassword`
 
-### 9. Validation Requirements
+### 9. Reverse Mode Writes
+- `encfsr` only accepts V7 configs and rejects `unique_iv = true`.
+- Use `--write` explicitly; regular reverse mounts remain read-only.
+- `encfsctl new --no-unique-iv` remains compatible with V7 AES-GCM-SIV tags,
+  filename IV chaining, and external IV chaining.
+- Incomplete or invalid ciphertext is rejected during flush/close without
+  applying it to the plaintext source. Direct source changes while a write is
+  staged cause the commit to fail with a conflict.
+
+### 10. Validation Requirements
 The `EncfsConfig::validate()` method enforces:
 - `plain_data` must be false (not supported)
 - `unique_iv` may be true or false (filesystem supports both)
@@ -314,13 +339,13 @@ The `EncfsConfig::validate()` method enforces:
 - `block_mac_bytes` must be 0-8
 - Block size must be larger than MAC overhead
 
-### 10. Logging
+### 11. Logging
 - Uses `env_logger` crate
 - Controlled by `RUST_LOG` environment variable
 - `-v` flag sets debug level
 - `-d` flag sets debug + foreground mode
 
-### 11. Daemonization
+### 12. Daemonization
 - Uses `daemonize` crate
 - Automatic unless `-f` (foreground) or `-d` (debug) flag
 - Happens after password validation, before FUSE mount
@@ -530,6 +555,6 @@ task test-live           # Live mount tests
 
 ---
 
-**Last Updated**: July 22, 2026
-**EncFS Version**: 2.0.0-beta.4
+**Last Updated**: July 28, 2026
+**EncFS Version**: 2.0.0-beta.5
 **Rust Edition**: 2024

@@ -152,6 +152,19 @@ struct EncfsrMountGuard {
 
 impl EncfsrMountGuard {
     fn mount(source: PathBuf, config_path: PathBuf, password: &str) -> Result<Self> {
+        Self::mount_with_write(source, config_path, password, false)
+    }
+
+    fn mount_writable(source: PathBuf, config_path: PathBuf, password: &str) -> Result<Self> {
+        Self::mount_with_write(source, config_path, password, true)
+    }
+
+    fn mount_with_write(
+        source: PathBuf,
+        config_path: PathBuf,
+        password: &str,
+        writable: bool,
+    ) -> Result<Self> {
         if !live_enabled() {
             return Err(anyhow!("ENCFS_LIVE_TESTS not enabled"));
         }
@@ -168,6 +181,9 @@ impl EncfsrMountGuard {
         println!("  [encfsr] mount_point: {:?}", mount_point);
 
         let mut cmd = Command::new(encfsr_bin());
+        if writable {
+            cmd.arg("--write");
+        }
         cmd.arg("--foreground")
             .arg("--stdinpass")
             .arg(&config_path)
@@ -765,6 +781,50 @@ fn test_encfsr_v7_aes_gcm_siv_round_trip() -> Result<()> {
         fs::read(source_dir.join("hello.txt"))?,
         fs::read(decrypt_mount.mount_point.join("hello.txt"))?
     );
+
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+/// Writable reverse mode accepts authenticated V7 ciphertext produced by a
+/// normal EncFS mount and applies it to the plaintext source only after the
+/// encrypted write is complete.
+#[test]
+#[ignore]
+fn test_encfsr_v7_write_through_forward_mount() -> Result<()> {
+    if !live_enabled() {
+        return Ok(());
+    }
+
+    let dir = unique_temp_dir("encfsr_write_v7")?;
+    let source_dir = dir.join("source");
+    fs::create_dir_all(&source_dir)?;
+
+    let mut config = EncfsConfig::standard_v7();
+    config.unique_iv = false;
+    config.argon2_memory_cost = Some(8);
+    config.argon2_time_cost = Some(1);
+    config.argon2_parallelism = Some(1);
+    config.set_v7_key(TEST_PASSWORD, &[0; 48])?;
+    config.save(&source_dir.join(".encfs7"))?;
+
+    let mut reverse_mount = EncfsrMountGuard::mount_writable(
+        source_dir.clone(),
+        source_dir.join(".encfs7"),
+        TEST_PASSWORD,
+    )?;
+    reverse_mount.allow_nested_mount();
+    let mut live_cfg = live_config_from_encfs(&config);
+    live_cfg.kind = live::LiveConfigKind::V7;
+    let forward_mount = live::MountGuard::mount_existing_backing_root(
+        live_cfg,
+        false,
+        reverse_mount.mount_point.clone(),
+    )?;
+
+    let payload = b"written through authenticated reverse mode";
+    fs::write(forward_mount.mount_point.join("restored.txt"), payload)?;
+    assert_eq!(fs::read(source_dir.join("restored.txt"))?, payload);
 
     let _ = fs::remove_dir_all(&dir);
     Ok(())

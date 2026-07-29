@@ -218,9 +218,9 @@ help.encfsctl.speed:
   de: "Versionsinformationen anzeigen und unterstützte Verschlüsselungsalgorithmen benchmarken"
 
 help.encfsr.about:
-  en: "EncFS Reverse - Virtual Encrypted Read-Only Filesystem"
-  fr: "EncFS Reverse - Système de fichiers chiffré virtuel en lecture seule"
-  de: "EncFS Reverse - Virtuelles verschlüsseltes schreibgeschütztes Dateisystem"
+  en: "EncFS Reverse - Virtual Encrypted Filesystem"
+  fr: "EncFS Reverse - Système de fichiers chiffré virtuel"
+  de: "EncFS Reverse - Virtuelles verschlüsseltes Dateisystem"
 help.encfsr.config:
   en: "EncFS config file (e.g. .encfs6.xml or .encfs7)"
   fr: "Fichier de configuration EncFS (par ex. .encfs6.xml ou .encfs7)"
@@ -229,6 +229,10 @@ help.encfsr.source:
   en: "Source directory (plaintext)"
   fr: "Répertoire source (texte en clair)"
   de: "Quellverzeichnis (Klartext)"
+help.encfsr.write:
+  en: "Allow transactional writes through the encrypted reverse view"
+  fr: "Autoriser les écritures transactionnelles via la vue chiffrée inversée"
+  de: "Transaktionale Schreibvorgänge über die verschlüsselte Reverse-Ansicht erlauben"
 help.encfsr.fuse_opts:
   en: "FUSE options (e.g. -o allow_other)"
   fr: "Options FUSE (ex : -o allow_other)"

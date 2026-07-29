@@ -137,7 +137,7 @@ fusermount -u ~/mount   # Linux
 ## Reverse encryption mode (encfsr)
 
 The **encfsr** binary provides *reverse* encryption: your **plaintext** files
-live on disk in a source directory, and encfsr mounts a **read-only** virtual
+live on disk in a source directory, and encfsr mounts a **read-only by default** virtual
 filesystem that exposes the **encrypted** view of that directory. Use this when
 you want to back up or sync an encrypted representation of local data (e.g. to
 an untrusted or cloud storage) without storing plaintext there.
@@ -149,8 +149,9 @@ an untrusted or cloud storage) without storing plaintext there.
 
 - A **V7** EncFS config (e.g. `.encfs7`). Older configs are not supported.
 - Config should be created **without** per-file IV headers: use
-  `encfsctl new --no-unique-iv ...` so the content is deterministic and suitable
-  for reverse mode.
+  `encfsctl new --no-unique-iv ...`.  This is required by encfsr, including
+  writable reverse mounts; authenticated V7 block encryption and IV chaining
+  remain supported.
 
 ### Usage
 
@@ -162,6 +163,15 @@ Example: plaintext in `~/Documents`, encrypted view at `/mnt/enc`:
 
 ```bash
 encfsr ~/Documents/.encfs7 ~/Documents /mnt/enc
+```
+
+To restore through the encrypted view, opt in explicitly to writable reverse
+mode.  Writes are staged and authenticated before they are applied to the
+plaintext source, so a malformed or incomplete encrypted write fails at flush
+or close rather than corrupting the source:
+
+```bash
+encfsr --write ~/Documents/.encfs7 ~/Documents /mnt/enc
 ```
 
 Then copy or sync from `/mnt/enc` to your backup/cloud target; the content and filenames there are encrypted.

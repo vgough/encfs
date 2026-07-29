@@ -600,7 +600,7 @@ checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "encfs"
-version = "2.0.0-beta.4"
+version = "2.0.0-beta.5"
 dependencies = [
  "aes",
  "aes-gcm",
