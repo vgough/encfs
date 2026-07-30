@@ -1918,18 +1918,6 @@ impl PathFilesystem for EncFs {
         Ok(self.write_impl(handle, offset, data)? as usize)
     }
 
-    fn flush(
-        &self,
-        _path: Option<&Path>,
-        handle: &FileHandle,
-        _caller: &Request,
-    ) -> Result<(), Errno> {
-        handle
-            .file
-            .sync_all()
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO).into())
-    }
-
     fn fsync(
         &self,
         _path: Option<&Path>,
@@ -2150,7 +2138,7 @@ mod tests {
     }
 
     #[test]
-    fn sync_callbacks_forward_backing_file_errors() {
+    fn flush_is_a_noop_and_fsync_callbacks_forward_backing_file_errors() {
         let mut fds = [0; 2];
         assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
         assert_eq!(unsafe { libc::close(fds[0]) }, 0);
@@ -2168,7 +2156,7 @@ mod tests {
         let fs = test_fs();
         let caller = test_caller();
 
-        assert!(fs.flush(None, &handle, &caller).is_err());
+        assert!(fs.flush(None, &handle, &caller).is_ok());
         assert!(fs.fsync(None, &handle, false, &caller).is_err());
         assert!(fs.fsync(None, &handle, true, &caller).is_err());
     }
