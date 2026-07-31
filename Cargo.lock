@@ -375,9 +375,9 @@ dependencies = [
 
 [[package]]
 name = "clang-sys"
-version = "1.8.1"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
+checksum = "157a8ba7b480713b56f4c09fd13fc3e0a22a5dfab8097ba61cbc5feef950788a"
 dependencies = [
  "glob",
  "libc",
@@ -880,9 +880,9 @@ dependencies = [
 
 [[package]]
 name = "hybrid-array"
-version = "0.4.13"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "818356c5132c1fede50f837ca96afbe78ff42413047f4abb886217845e1b6c8c"
+checksum = "707114b52a152fa7bdb290cd7cd5912d9467273b6d74e21b8d81aca1f8533f6b"
 dependencies = [
  "typenum",
 ]
@@ -1041,8 +1041,8 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "libfuse-sys"
-version = "0.4.0"
-source = "git+https://github.com/vgough/typed-fuse#4379eb1bd2bf82234f02ade4227e769f9fd346d6"
+version = "0.5.1"
+source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
 dependencies = [
  "bindgen",
  "libc",
@@ -1820,8 +1820,8 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse"
-version = "0.1.0"
-source = "git+https://github.com/vgough/typed-fuse#4379eb1bd2bf82234f02ade4227e769f9fd346d6"
+version = "0.5.1"
+source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
 dependencies = [
  "libc",
  "libfuse-sys",
@@ -1832,8 +1832,8 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse-core"
-version = "0.1.0"
-source = "git+https://github.com/vgough/typed-fuse#4379eb1bd2bf82234f02ade4227e769f9fd346d6"
+version = "0.5.1"
+source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
 dependencies = [
  "libc",
 ]
