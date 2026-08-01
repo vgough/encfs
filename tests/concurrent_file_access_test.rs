@@ -9,12 +9,15 @@
 
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
-use encfs::fs::EncFs;
+use encfs::fs::{EncFs, FileState};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
-use typed_fuse::{Caller, PathFilesystem};
+use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
+
+mod common;
+use common::Node;
 
 /// One block of `test_default` holds 1024 - 8 MAC bytes of plaintext.
 const BLOCK_DATA: usize = 1016;
@@ -46,10 +49,11 @@ fn make_fs(root: &Path) -> EncFs {
 
 /// A mounted-less `EncFs` over a fresh backing directory, plus the root-relative
 /// parent path FUSE would hand us.
-fn fixture() -> (TempDir, Arc<EncFs>, PathBuf) {
+fn fixture() -> (TempDir, Arc<EncFs>, Node<FileState>) {
     let tmp = TempDir::new().unwrap();
-    let fs = Arc::new(make_fs(tmp.path()));
-    (tmp, fs, PathBuf::from(""))
+    let mut fs = make_fs(tmp.path());
+    let root = fs.root_state();
+    (tmp, Arc::new(fs), Node::at(PathBuf::from(""), root))
 }
 
 #[test]
@@ -60,33 +64,37 @@ fn concurrent_partial_block_writes_same_file() {
     let (_tmp, fs, parent) = fixture();
     let req = caller();
     let name = OsStr::new("racefile");
-    let path = parent.join(name);
+    let path = parent.path().join(name);
 
-    let (_, created) = fs.create(&parent, name, 0o644, 0, 0, &req).unwrap();
-    let h0 = created.handle;
-    fs.write(Some(&path), &h0, &vec![0u8; BLOCK_DATA], 0, &req)
+    let (entry, created) = fs
+        .create(parent.as_node(), name, 0o644, 0, 0, &req)
         .unwrap();
-    fs.release(Some(&path), h0, &req).unwrap();
+    let node = Node::at(&path, entry.state);
+    let h0 = created.handle;
+    fs.write(node.as_node(), &h0, &vec![0u8; BLOCK_DATA], 0, &req)
+        .unwrap();
+    fs.release(node.as_node(), h0, &req).unwrap();
 
-    let ha = fs.open(&path, libc::O_RDWR, &req).unwrap().handle;
-    let hb = fs.open(&path, libc::O_RDWR, &req).unwrap().handle;
+    let ha = fs.open(node.as_node(), libc::O_RDWR, &req).unwrap().handle;
+    let hb = fs.open(node.as_node(), libc::O_RDWR, &req).unwrap().handle;
 
     let half = BLOCK_DATA / 2;
     let fsa = Arc::clone(&fs);
-    let pa = path.clone();
+    let pa = node.clone();
     let ta = std::thread::spawn(move || {
         let data = vec![0xAAu8; half];
         for _ in 0..20000 {
-            fsa.write(Some(&pa), &ha, &data, 0, &req).unwrap();
+            fsa.write(pa.as_node(), &ha, &data, 0, &req).unwrap();
         }
         ha
     });
     let fsb = Arc::clone(&fs);
-    let pb = path.clone();
+    let pb = node.clone();
     let tb = std::thread::spawn(move || {
         let data = vec![0xBBu8; BLOCK_DATA - half];
         for _ in 0..20000 {
-            fsb.write(Some(&pb), &hb, &data, half as u64, &req).unwrap();
+            fsb.write(pb.as_node(), &hb, &data, half as u64, &req)
+                .unwrap();
         }
         hb
     });
@@ -94,8 +102,19 @@ fn concurrent_partial_block_writes_same_file() {
     let hb = tb.join().unwrap();
 
     // Read back through a fresh handle: both halves intact, MAC verifying.
-    let hr = fs.open(&path, libc::O_RDONLY, &req).unwrap().handle;
-    let buf = fs.read(None, &hr, 0, BLOCK_DATA, &req).unwrap();
+    let hr = fs
+        .open(node.as_node(), libc::O_RDONLY, &req)
+        .unwrap()
+        .handle;
+    let buf = fs
+        .read(
+            PathNodeRef::new(None, node.state()),
+            &hr,
+            0,
+            BLOCK_DATA,
+            &req,
+        )
+        .unwrap();
     assert_eq!(buf.len(), BLOCK_DATA);
     assert!(
         buf[..half].iter().all(|&b| b == 0xAA),
@@ -108,9 +127,9 @@ fn concurrent_partial_block_writes_same_file() {
         &buf[half..half + 16]
     );
 
-    fs.release(Some(&path), ha, &req).unwrap();
-    fs.release(Some(&path), hb, &req).unwrap();
-    fs.release(Some(&path), hr, &req).unwrap();
+    fs.release(node.as_node(), ha, &req).unwrap();
+    fs.release(node.as_node(), hb, &req).unwrap();
+    fs.release(node.as_node(), hr, &req).unwrap();
 }
 
 #[test]
@@ -122,35 +141,38 @@ fn concurrent_write_and_truncate_same_file() {
     let (_tmp, fs, parent) = fixture();
     let req = caller();
     let name = OsStr::new("truncrace");
-    let path = parent.join(name);
+    let path = parent.path().join(name);
 
-    let (_, created) = fs.create(&parent, name, 0o644, 0, 0, &req).unwrap();
+    let (entry, created) = fs
+        .create(parent.as_node(), name, 0o644, 0, 0, &req)
+        .unwrap();
+    let node = Node::at(&path, entry.state);
     let hw = created.handle;
-    fs.write(Some(&path), &hw, &vec![7u8; 2000], 0, &req)
+    fs.write(node.as_node(), &hw, &vec![7u8; 2000], 0, &req)
         .unwrap();
 
-    let ht = fs.open(&path, libc::O_RDWR, &req).unwrap().handle;
+    let ht = fs.open(node.as_node(), libc::O_RDWR, &req).unwrap().handle;
 
     let fsw = Arc::clone(&fs);
-    let pw = path.clone();
+    let pw = node.clone();
     let tw = std::thread::spawn(move || {
         let mut errors = Vec::new();
         for i in 0..200u64 {
             let data = vec![(i % 251) as u8; 512];
-            if let Err(e) = fsw.write(Some(&pw), &hw, &data, (i % 3) * 512, &req) {
+            if let Err(e) = fsw.write(pw.as_node(), &hw, &data, (i % 3) * 512, &req) {
                 errors.push(("write", i, e));
             }
         }
         (hw, errors)
     });
     let fst = Arc::clone(&fs);
-    let pt = path.clone();
+    let pt = node.clone();
     let tt = std::thread::spawn(move || {
         let mut sa = typed_fuse::SetAttr::default();
         let mut errors = Vec::new();
         for i in 0..200u64 {
             sa.size = Some(1024 + (i % 4) * 256);
-            if let Err(e) = fst.setattr(Some(&pt), Some(&ht), &sa, &req) {
+            if let Err(e) = fst.setattr(pt.as_node(), Some(&ht), &sa, &req) {
                 errors.push(("truncate", i, e));
             }
         }
@@ -166,21 +188,24 @@ fn concurrent_write_and_truncate_same_file() {
     );
 
     // Every byte of the surviving file must still decrypt.
-    let size = fs.getattr(Some(&path), None, &req).unwrap().size;
-    let hr = fs.open(&path, libc::O_RDONLY, &req).unwrap().handle;
+    let size = fs.getattr(node.as_node(), None, &req).unwrap().size;
+    let hr = fs
+        .open(node.as_node(), libc::O_RDONLY, &req)
+        .unwrap()
+        .handle;
     let mut off = 0u64;
     while off < size {
         let n = std::cmp::min(512, size - off) as usize;
         let chunk = fs
-            .read(None, &hr, off, n, &req)
+            .read(PathNodeRef::new(None, node.state()), &hr, off, n, &req)
             .unwrap_or_else(|e| panic!("read at {} failed: {:?}", off, e));
         assert_eq!(chunk.len(), n, "short read at {}", off);
         off += n as u64;
     }
 
-    fs.release(Some(&path), hw, &req).unwrap();
-    fs.release(Some(&path), ht, &req).unwrap();
-    fs.release(Some(&path), hr, &req).unwrap();
+    fs.release(node.as_node(), hw, &req).unwrap();
+    fs.release(node.as_node(), ht, &req).unwrap();
+    fs.release(node.as_node(), hr, &req).unwrap();
 }
 
 #[test]
@@ -192,26 +217,35 @@ fn truncating_open_updates_iv_for_existing_handles() {
     let (_tmp, fs, parent) = fixture();
     let req = caller();
     let name = OsStr::new("trunciv");
-    let path = parent.join(name);
+    let path = parent.path().join(name);
 
-    let (_, created) = fs.create(&parent, name, 0o644, 0, 0, &req).unwrap();
+    let (entry, created) = fs
+        .create(parent.as_node(), name, 0o644, 0, 0, &req)
+        .unwrap();
+    let node = Node::at(&path, entry.state);
     let old = created.handle;
-    fs.write(Some(&path), &old, &vec![0x11u8; BLOCK_DATA], 0, &req)
+    fs.write(node.as_node(), &old, &vec![0x11u8; BLOCK_DATA], 0, &req)
         .unwrap();
 
     // Someone else truncates the file out from under `old`.
     let fresh = fs
-        .open(&path, libc::O_RDWR | libc::O_TRUNC, &req)
+        .open(node.as_node(), libc::O_RDWR | libc::O_TRUNC, &req)
         .unwrap()
         .handle;
 
     // The pre-existing handle writes again; this must use the new IV.
-    fs.write(Some(&path), &old, &vec![0x22u8; BLOCK_DATA], 0, &req)
+    fs.write(node.as_node(), &old, &vec![0x22u8; BLOCK_DATA], 0, &req)
         .unwrap();
 
     for (label, handle) in [("truncating handle", &fresh), ("stale handle", &old)] {
         let buf = fs
-            .read(None, handle, 0, BLOCK_DATA, &req)
+            .read(
+                PathNodeRef::new(None, node.state()),
+                handle,
+                0,
+                BLOCK_DATA,
+                &req,
+            )
             .unwrap_or_else(|e| panic!("read via {} failed: {:?}", label, e));
         assert_eq!(buf.len(), BLOCK_DATA, "short read via {}", label);
         assert!(
@@ -223,13 +257,24 @@ fn truncating_open_updates_iv_for_existing_handles() {
     }
 
     // And through a handle that reads the header from scratch.
-    let reader = fs.open(&path, libc::O_RDONLY, &req).unwrap().handle;
-    let buf = fs.read(None, &reader, 0, BLOCK_DATA, &req).unwrap();
+    let reader = fs
+        .open(node.as_node(), libc::O_RDONLY, &req)
+        .unwrap()
+        .handle;
+    let buf = fs
+        .read(
+            PathNodeRef::new(None, node.state()),
+            &reader,
+            0,
+            BLOCK_DATA,
+            &req,
+        )
+        .unwrap();
     assert!(buf.iter().all(|&b| b == 0x22), "wrong plaintext on reopen");
 
-    fs.release(Some(&path), old, &req).unwrap();
-    fs.release(Some(&path), fresh, &req).unwrap();
-    fs.release(Some(&path), reader, &req).unwrap();
+    fs.release(node.as_node(), old, &req).unwrap();
+    fs.release(node.as_node(), fresh, &req).unwrap();
+    fs.release(node.as_node(), reader, &req).unwrap();
 }
 
 #[test]
@@ -240,21 +285,32 @@ fn recreating_file_updates_iv_for_existing_handles() {
     let (_tmp, fs, parent) = fixture();
     let req = caller();
     let name = OsStr::new("createiv");
-    let path = parent.join(name);
+    let path = parent.path().join(name);
 
-    let (_, created) = fs.create(&parent, name, 0o644, 0, 0, &req).unwrap();
+    let (entry, created) = fs
+        .create(parent.as_node(), name, 0o644, 0, 0, &req)
+        .unwrap();
+    let node = Node::at(&path, entry.state);
     let old = created.handle;
-    fs.write(Some(&path), &old, &vec![0x33u8; BLOCK_DATA], 0, &req)
+    fs.write(node.as_node(), &old, &vec![0x33u8; BLOCK_DATA], 0, &req)
         .unwrap();
 
-    let (_, recreated) = fs.create(&parent, name, 0o644, 0, 0, &req).unwrap();
+    let (_, recreated) = fs
+        .create(parent.as_node(), name, 0o644, 0, 0, &req)
+        .unwrap();
     let fresh = recreated.handle;
 
-    fs.write(Some(&path), &old, &vec![0x44u8; BLOCK_DATA], 0, &req)
+    fs.write(node.as_node(), &old, &vec![0x44u8; BLOCK_DATA], 0, &req)
         .unwrap();
 
     let buf = fs
-        .read(None, &fresh, 0, BLOCK_DATA, &req)
+        .read(
+            PathNodeRef::new(None, node.state()),
+            &fresh,
+            0,
+            BLOCK_DATA,
+            &req,
+        )
         .unwrap_or_else(|e| panic!("read after re-create failed: {:?}", e));
     assert!(
         buf.iter().all(|&b| b == 0x44),
@@ -262,8 +318,8 @@ fn recreating_file_updates_iv_for_existing_handles() {
         &buf[..16]
     );
 
-    fs.release(Some(&path), old, &req).unwrap();
-    fs.release(Some(&path), fresh, &req).unwrap();
+    fs.release(node.as_node(), old, &req).unwrap();
+    fs.release(node.as_node(), fresh, &req).unwrap();
 }
 
 #[test]
@@ -275,31 +331,34 @@ fn concurrent_write_and_truncating_open() {
     let (_tmp, fs, parent) = fixture();
     let req = caller();
     let name = OsStr::new("trunopen");
-    let path = parent.join(name);
+    let path = parent.path().join(name);
 
-    let (_, created) = fs.create(&parent, name, 0o644, 0, 0, &req).unwrap();
+    let (entry, created) = fs
+        .create(parent.as_node(), name, 0o644, 0, 0, &req)
+        .unwrap();
+    let node = Node::at(&path, entry.state);
     let hw = created.handle;
 
     let fsw = Arc::clone(&fs);
-    let pw = path.clone();
+    let pw = node.clone();
     let tw = std::thread::spawn(move || {
         let data = vec![0x5Au8; BLOCK_DATA];
         let mut errors = Vec::new();
         for i in 0..2000u64 {
-            if let Err(e) = fsw.write(Some(&pw), &hw, &data, 0, &req) {
+            if let Err(e) = fsw.write(pw.as_node(), &hw, &data, 0, &req) {
                 errors.push(("write", i, e));
             }
         }
         (hw, errors)
     });
     let fso = Arc::clone(&fs);
-    let po = path.clone();
+    let po = node.clone();
     let to = std::thread::spawn(move || {
         let mut errors = Vec::new();
         for i in 0..2000u64 {
-            match fso.open(&po, libc::O_RDWR | libc::O_TRUNC, &req) {
+            match fso.open(po.as_node(), libc::O_RDWR | libc::O_TRUNC, &req) {
                 Ok(opened) => {
-                    if let Err(e) = fso.release(Some(&po), opened.handle, &req) {
+                    if let Err(e) = fso.release(po.as_node(), opened.handle, &req) {
                         errors.push(("release", i, e));
                     }
                 }
@@ -315,11 +374,20 @@ fn concurrent_write_and_truncating_open() {
 
     // Whatever survived must decrypt: either an empty file, or a block written
     // under the IV currently named by the header.
-    let size = fs.getattr(Some(&path), None, &req).unwrap().size;
-    let hr = fs.open(&path, libc::O_RDONLY, &req).unwrap().handle;
+    let size = fs.getattr(node.as_node(), None, &req).unwrap().size;
+    let hr = fs
+        .open(node.as_node(), libc::O_RDONLY, &req)
+        .unwrap()
+        .handle;
     if size > 0 {
         let buf = fs
-            .read(None, &hr, 0, size as usize, &req)
+            .read(
+                PathNodeRef::new(None, node.state()),
+                &hr,
+                0,
+                size as usize,
+                &req,
+            )
             .unwrap_or_else(|e| panic!("read of {} bytes failed: {:?}", size, e));
         assert!(
             buf.iter().all(|&b| b == 0x5A),
@@ -328,6 +396,6 @@ fn concurrent_write_and_truncating_open() {
         );
     }
 
-    fs.release(Some(&path), hw, &req).unwrap();
-    fs.release(Some(&path), hr, &req).unwrap();
+    fs.release(node.as_node(), hw, &req).unwrap();
+    fs.release(node.as_node(), hr, &req).unwrap();
 }

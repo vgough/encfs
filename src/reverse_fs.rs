@@ -21,8 +21,8 @@ use typed_fuse::passthrough::{
 };
 use typed_fuse::{
     Caller as Request, DirBuffer, Errno, FileKind as FileType, NodeAttr as FileAttr, Opened,
-    PathDirSink, PathFilesystem, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
-    XattrReply,
+    PathDirSink, PathEntry, PathFilesystem, PathNodeRef, PathPlusDirSink, SetAttr,
+    StatFs as ReplyStatFs, TimeOrNow, XattrReply,
 };
 
 const CONFIG_FILE_NAME: &str = ".encfs7";
@@ -68,6 +68,11 @@ struct StagedCiphertext {
     source: SourceFingerprint,
 }
 
+/// Per-source-inode staging state.
+///
+/// This also serves as the runtime's per-node state, so a node discovered by
+/// name and a handle opened on it converge on the same `Arc` via
+/// [`ReverseFileStates`].
 #[derive(Default)]
 #[doc(hidden)]
 pub struct ReverseFileState {
@@ -84,15 +89,18 @@ impl ReverseFileStates {
         let metadata = file
             .metadata()
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let key = (metadata.dev(), metadata.ino());
+        Ok(self.get_by_key((metadata.dev(), metadata.ino())))
+    }
+
+    fn get_by_key(&self, key: FileKey) -> Arc<Mutex<ReverseFileState>> {
         let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(state) = entries.get(&key).and_then(Weak::upgrade) {
-            return Ok(state);
+            return state;
         }
         entries.retain(|_, value| value.strong_count() > 0);
         let state = Arc::new(Mutex::new(ReverseFileState::default()));
         entries.insert(key, Arc::downgrade(&state));
-        Ok(state)
+        state
     }
 }
 
@@ -124,6 +132,10 @@ pub struct ReverseFs {
     config_gid: u32,
     writable: bool,
     file_states: ReverseFileStates,
+    /// Node state for the virtual config file. It has no source inode to key
+    /// off, and is never staged through; it exists so that node has a stable
+    /// identity of its own.
+    config_state: Arc<Mutex<ReverseFileState>>,
 }
 
 impl ReverseFs {
@@ -149,6 +161,7 @@ impl ReverseFs {
             config_gid,
             writable: options.writable,
             file_states: ReverseFileStates::default(),
+            config_state: Arc::new(Mutex::new(ReverseFileState::default())),
         }
     }
 
@@ -574,26 +587,42 @@ impl ReverseFs {
     /// Build the FUSE attributes for an encrypted FUSE path (including the
     /// virtual config file), reporting ciphertext sizes for regular files.
     fn attr_for_fuse_path(&self, path: &Path) -> Result<FileAttr, Errno> {
+        Ok(self.entry_for_fuse_path(path)?.attr)
+    }
+
+    /// As [`ReverseFs::attr_for_fuse_path`], but also reports the node state
+    /// of the backing source inode, which the operations that hand a node back
+    /// to the runtime must attach to the entry they return.
+    fn entry_for_fuse_path(
+        &self,
+        path: &Path,
+    ) -> Result<PathEntry<Mutex<ReverseFileState>>, Errno> {
         if Self::is_config_path(path) {
-            return Ok(self.config_file_attr());
+            return Ok(PathEntry::new(
+                self.config_file_attr(),
+                Arc::clone(&self.config_state),
+            ));
         }
 
         let (source_path, _) = self.resolve_source_path(path)?;
         let metadata = std::fs::symlink_metadata(&source_path)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let state = self
+            .file_states
+            .get_by_key((metadata.dev(), metadata.ino()));
 
         let mut reported_size = metadata.len();
         if metadata.is_file() {
-            let file =
-                File::open(&source_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             let file_iv = self.file_iv_for_path(path)?;
-            let state = self.file_states.get(&file)?;
             reported_size = self
                 .staged_size(&state, file_iv)
                 .unwrap_or(self.ciphertext_size_for_plaintext(reported_size)?);
         }
 
-        Ok(file_attr_from_metadata(&metadata, reported_size))
+        Ok(PathEntry::new(
+            file_attr_from_metadata(&metadata, reported_size),
+            state,
+        ))
     }
 
     /// Snapshot encrypted directory entries (with attributes) for a FUSE
@@ -603,7 +632,10 @@ impl ReverseFs {
     /// (reverse mode presents an encrypted view of the same tree shape), so
     /// `..`'s attributes come from `source_dir`'s real OS parent rather than
     /// re-decrypting the FUSE path.
-    fn build_dir_buffer(&self, path: &Path) -> Result<DirBuffer, libc::c_int> {
+    fn build_dir_buffer(
+        &self,
+        path: &Path,
+    ) -> Result<DirBuffer<Mutex<ReverseFileState>>, libc::c_int> {
         let (source_dir, dir_iv) = self.resolve_source_path(path)?;
 
         let read_dir =
@@ -640,10 +672,11 @@ impl ReverseFs {
                     let metadata = entry
                         .metadata()
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                    let state = self
+                        .file_states
+                        .get_by_key((metadata.dev(), metadata.ino()));
                     let mut size = metadata.len();
                     if metadata.is_file() {
-                        let entry_file = File::open(entry.path())
-                            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
                         let entry_iv = if self.config.external_iv_chaining {
                             let (_, entry_iv) =
                                 self.resolve_source_path(&path.join(&encrypted_name))?;
@@ -651,7 +684,6 @@ impl ReverseFs {
                         } else {
                             0
                         };
-                        let state = self.file_states.get(&entry_file)?;
                         size = self
                             .staged_size(&state, entry_iv)
                             .unwrap_or(self.ciphertext_size_for_plaintext(size)?);
@@ -660,6 +692,7 @@ impl ReverseFs {
                         encrypted_name,
                         file_type_from_metadata(&metadata),
                         file_attr_from_metadata(&metadata, size),
+                        state,
                     );
                 }
                 Err(e) => {
@@ -676,6 +709,7 @@ impl ReverseFs {
                 CONFIG_FILE_NAME,
                 FileType::RegularFile,
                 self.config_file_attr(),
+                Arc::clone(&self.config_state),
             );
         }
 
@@ -701,8 +735,9 @@ impl ReverseFs {
 }
 
 impl PathFilesystem for ReverseFs {
+    type NodeState = Mutex<ReverseFileState>;
     type Handle = ReverseHandle;
-    type DirHandle = DirBuffer;
+    type DirHandle = DirBuffer<Mutex<ReverseFileState>>;
 
     // Left to the kernel, as in the forward filesystem: a passthrough would
     // apply every client's lock in this one process (where POSIX locks cannot
@@ -710,6 +745,16 @@ impl PathFilesystem for ReverseFs {
     // plaintext source files rather than the ciphertext view being read.
     const SUPPORTS_POSIX_LOCKS: bool = false;
     const SUPPORTS_READDIRPLUS: bool = true;
+
+    /// A root whose source directory cannot be stat'd is a broken mount, so
+    /// rather than fail here (which the runtime cannot report) fall back to a
+    /// sentinel key; every operation through it will fail on its own.
+    fn root_state(&mut self) -> Arc<Mutex<ReverseFileState>> {
+        let key = fs::symlink_metadata(&self.source)
+            .map(|metadata| (metadata.dev(), metadata.ino()))
+            .unwrap_or_default();
+        self.file_states.get_by_key(key)
+    }
 
     fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
         debug!("ReverseFs::init");
@@ -721,13 +766,13 @@ impl PathFilesystem for ReverseFs {
 
     fn lookup(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
         name: &OsStr,
         _caller: &Request,
-    ) -> Result<Option<FileAttr>, Errno> {
-        let path = parent.join(name);
-        match self.attr_for_fuse_path(&path) {
-            Ok(attr) => Ok(Some(attr)),
+    ) -> Result<Option<PathEntry<Mutex<ReverseFileState>>>, Errno> {
+        let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
+        match self.entry_for_fuse_path(&path) {
+            Ok(entry) => Ok(Some(entry)),
             Err(error) if error == Errno::ENOENT => Ok(None),
             Err(error) => Err(error),
         }
@@ -735,11 +780,11 @@ impl PathFilesystem for ReverseFs {
 
     fn getattr(
         &self,
-        path: Option<&Path>,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         handle: Option<&ReverseHandle>,
         _caller: &Request,
     ) -> Result<FileAttr, Errno> {
-        if let Some(path) = path {
+        if let Some(path) = node.path() {
             return self.attr_for_fuse_path(path);
         }
         match handle.ok_or_else(|| Errno::from(libc::ESTALE))? {
@@ -768,19 +813,20 @@ impl PathFilesystem for ReverseFs {
 
     fn opendir(
         &self,
-        path: &Path,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         _flags: i32,
         _caller: &Request,
-    ) -> Result<Opened<DirBuffer>, Errno> {
+    ) -> Result<Opened<DirBuffer<Mutex<ReverseFileState>>>, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(Opened::new(self.build_dir_buffer(path)?))
     }
 
     fn readdir(
         &self,
-        _path: &Path,
-        handle: &DirBuffer,
+        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        handle: &DirBuffer<Mutex<ReverseFileState>>,
         offset: u64,
-        sink: &mut dyn PathDirSink,
+        sink: &mut dyn PathDirSink<Mutex<ReverseFileState>>,
         _caller: &Request,
     ) -> Result<(), Errno> {
         handle.fill(offset, sink);
@@ -789,10 +835,10 @@ impl PathFilesystem for ReverseFs {
 
     fn readdirplus(
         &self,
-        _path: &Path,
-        handle: &DirBuffer,
+        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        handle: &DirBuffer<Mutex<ReverseFileState>>,
         offset: u64,
-        sink: &mut dyn PathPlusDirSink,
+        sink: &mut dyn PathPlusDirSink<Mutex<ReverseFileState>>,
         _caller: &Request,
     ) -> Result<(), Errno> {
         handle.fill_plus(offset, sink);
@@ -801,10 +847,11 @@ impl PathFilesystem for ReverseFs {
 
     fn open(
         &self,
-        path: &Path,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         flags: i32,
         _caller: &Request,
     ) -> Result<Opened<ReverseHandle>, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         let write_flags = libc::O_WRONLY | libc::O_RDWR | libc::O_TRUNC | libc::O_CREAT;
         if flags & write_flags != 0 && !self.writable {
             return Err(Errno::EROFS);
@@ -840,7 +887,7 @@ impl PathFilesystem for ReverseFs {
 
     fn read<'a>(
         &'a self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         handle: &'a ReverseHandle,
         offset: u64,
         size: usize,
@@ -887,7 +934,12 @@ impl PathFilesystem for ReverseFs {
         }
     }
 
-    fn readlink(&self, path: &Path, _caller: &Request) -> Result<PathBuf, Errno> {
+    fn readlink(
+        &self,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        _caller: &Request,
+    ) -> Result<PathBuf, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         let (source_path, dir_iv) = self.resolve_source_path(path)?;
         let target = std::fs::read_link(source_path)
             .map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))?;
@@ -901,12 +953,13 @@ impl PathFilesystem for ReverseFs {
     #[allow(clippy::type_complexity)]
     fn setattr(
         &self,
-        path: Option<&Path>,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         handle: Option<&ReverseHandle>,
         set: &SetAttr,
         _caller: &Request,
     ) -> Result<FileAttr, Errno> {
         self.ensure_writable()?;
+        let path = node.path();
         let (file, file_iv, state, source_path): (
             Option<&File>,
             Option<u64>,
@@ -1006,7 +1059,7 @@ impl PathFilesystem for ReverseFs {
 
     fn write(
         &self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         handle: &ReverseHandle,
         data: &[u8],
         offset: u64,
@@ -1031,7 +1084,7 @@ impl PathFilesystem for ReverseFs {
 
     fn flush(
         &self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         handle: &ReverseHandle,
         _caller: &Request,
     ) -> Result<(), Errno> {
@@ -1049,7 +1102,7 @@ impl PathFilesystem for ReverseFs {
 
     fn release(
         &self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         handle: ReverseHandle,
         _caller: &Request,
     ) -> Result<(), Errno> {
@@ -1067,7 +1120,7 @@ impl PathFilesystem for ReverseFs {
 
     fn fsync(
         &self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         handle: &ReverseHandle,
         datasync: bool,
         _caller: &Request,
@@ -1105,15 +1158,15 @@ impl PathFilesystem for ReverseFs {
 
     fn create(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
         name: &OsStr,
         mode: u32,
         _umask: u32,
         flags: i32,
         _caller: &Request,
-    ) -> Result<(FileAttr, Opened<ReverseHandle>), Errno> {
+    ) -> Result<(PathEntry<Mutex<ReverseFileState>>, Opened<ReverseHandle>), Errno> {
         self.ensure_writable()?;
-        let path = parent.join(name);
+        let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
         if Self::is_config_path(&path) {
             return Err(Errno::EROFS);
         }
@@ -1137,7 +1190,7 @@ impl PathFilesystem for ReverseFs {
             .metadata()
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         Ok((
-            file_attr_from_metadata(&metadata, 0),
+            PathEntry::new(file_attr_from_metadata(&metadata, 0), Arc::clone(&state)),
             Opened::new(ReverseHandle::File {
                 file,
                 file_iv,
@@ -1149,14 +1202,14 @@ impl PathFilesystem for ReverseFs {
 
     fn mkdir(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
         name: &OsStr,
         mode: u32,
         _umask: u32,
         _caller: &Request,
-    ) -> Result<FileAttr, Errno> {
+    ) -> Result<PathEntry<Mutex<ReverseFileState>>, Errno> {
         self.ensure_writable()?;
-        let path = parent.join(name);
+        let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
         if Self::is_config_path(&path) {
             return Err(Errno::EROFS);
         }
@@ -1165,19 +1218,19 @@ impl PathFilesystem for ReverseFs {
             .mode(mode)
             .create(&source)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        self.attr_for_fuse_path(&path)
+        self.entry_for_fuse_path(&path)
     }
     fn mknod(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
         name: &OsStr,
         mode: u32,
         _rdev: u32,
         _umask: u32,
         _caller: &Request,
-    ) -> Result<FileAttr, Errno> {
+    ) -> Result<PathEntry<Mutex<ReverseFileState>>, Errno> {
         self.ensure_writable()?;
-        let path = parent.join(name);
+        let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
         if Self::is_config_path(&path) {
             return Err(Errno::EROFS);
         }
@@ -1192,17 +1245,17 @@ impl PathFilesystem for ReverseFs {
             .mode(mode)
             .open(source)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        self.attr_for_fuse_path(&path)
+        self.entry_for_fuse_path(&path)
     }
     fn symlink(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
         name: &OsStr,
         target: &Path,
         _caller: &Request,
-    ) -> Result<FileAttr, Errno> {
+    ) -> Result<PathEntry<Mutex<ReverseFileState>>, Errno> {
         self.ensure_writable()?;
-        let path = parent.join(name);
+        let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
         if Self::is_config_path(&path) {
             return Err(Errno::EROFS);
         }
@@ -1214,12 +1267,12 @@ impl PathFilesystem for ReverseFs {
             .map_err(|_| libc::EINVAL)?;
         std::os::unix::fs::symlink(OsString::from_vec(plain_target), source)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        self.attr_for_fuse_path(&path)
+        self.entry_for_fuse_path(&path)
     }
     fn link(
         &self,
-        path: &Path,
-        new_parent: &Path,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        new_parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
         new_name: &OsStr,
         _caller: &Request,
     ) -> Result<FileAttr, Errno> {
@@ -1227,7 +1280,8 @@ impl PathFilesystem for ReverseFs {
         if self.config.external_iv_chaining {
             return Err(Errno::EPERM);
         }
-        let dest = new_parent.join(new_name);
+        let path = node.path().ok_or(Errno::ENOENT)?;
+        let dest = new_parent.path().ok_or(Errno::ENOENT)?.join(new_name);
         if Self::is_config_path(path) || Self::is_config_path(&dest) {
             return Err(Errno::EROFS);
         }
@@ -1237,9 +1291,14 @@ impl PathFilesystem for ReverseFs {
         fs::hard_link(source, destination).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         self.attr_for_fuse_path(&dest)
     }
-    fn unlink(&self, parent: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+    fn unlink(
+        &self,
+        parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
         self.ensure_writable()?;
-        let path = parent.join(name);
+        let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
         if Self::is_config_path(&path) {
             return Err(Errno::EROFS);
         }
@@ -1247,9 +1306,14 @@ impl PathFilesystem for ReverseFs {
         let (source, _) = self.resolve_source_path(&path)?;
         fs::remove_file(source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO).into())
     }
-    fn rmdir(&self, parent: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+    fn rmdir(
+        &self,
+        parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
         self.ensure_writable()?;
-        let path = parent.join(name);
+        let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
         if Self::is_config_path(&path) {
             return Err(Errno::EROFS);
         }
@@ -1258,15 +1322,15 @@ impl PathFilesystem for ReverseFs {
     }
     fn rename(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
         name: &OsStr,
-        new_parent: &Path,
+        new_parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
         new_name: &OsStr,
         _caller: &Request,
     ) -> Result<(), Errno> {
         self.ensure_writable()?;
-        let source = parent.join(name);
-        let destination = new_parent.join(new_name);
+        let source = parent.path().ok_or(Errno::ENOENT)?.join(name);
+        let destination = new_parent.path().ok_or(Errno::ENOENT)?.join(new_name);
         if Self::is_config_path(&source) || Self::is_config_path(&destination) {
             return Err(Errno::EROFS);
         }
@@ -1278,13 +1342,14 @@ impl PathFilesystem for ReverseFs {
     }
     fn setxattr(
         &self,
-        path: &Path,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         name: &OsStr,
         value: &[u8],
         flags: i32,
         _caller: &Request,
     ) -> Result<(), Errno> {
         self.ensure_writable()?;
+        let path = node.path().ok_or(Errno::ENOENT)?;
         if Self::is_config_path(path) {
             return Err(Errno::EROFS);
         }
@@ -1300,8 +1365,14 @@ impl PathFilesystem for ReverseFs {
             .map_err(|e| e.raw())?;
         Ok(())
     }
-    fn removexattr(&self, path: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+    fn removexattr(
+        &self,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
         self.ensure_writable()?;
+        let path = node.path().ok_or(Errno::ENOENT)?;
         if Self::is_config_path(path) {
             return Err(Errno::EROFS);
         }
@@ -1314,11 +1385,12 @@ impl PathFilesystem for ReverseFs {
     }
     fn getxattr(
         &self,
-        path: &Path,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         name: &OsStr,
         size: usize,
         _caller: &Request,
     ) -> Result<XattrReply, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         if Self::is_config_path(path) {
             return Err(Errno::ENODATA);
         }
@@ -1334,7 +1406,13 @@ impl PathFilesystem for ReverseFs {
             .map_err(|_| libc::EIO)?;
         XattrReply::sized(encrypted, size)
     }
-    fn listxattr(&self, path: &Path, size: usize, _caller: &Request) -> Result<XattrReply, Errno> {
+    fn listxattr(
+        &self,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        size: usize,
+        _caller: &Request,
+    ) -> Result<XattrReply, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         if Self::is_config_path(path) {
             return XattrReply::sized(Vec::new(), size);
         }

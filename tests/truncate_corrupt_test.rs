@@ -6,7 +6,10 @@ use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
-use typed_fuse::{Caller, PathFilesystem, SetAttr};
+use typed_fuse::{Caller, PathFilesystem, PathNodeRef, SetAttr};
+
+mod common;
+use common::Node;
 
 #[test]
 fn test_truncate_corrupts_partial_block() {
@@ -48,7 +51,8 @@ fn test_truncate_corrupts_partial_block() {
 
     // I'll stick to what write_test.rs used: true, false.
     let config = encfs::config::EncfsConfig::test_default();
-    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
+    let mut fs = EncFs::new(root.clone(), Box::new(cipher), config);
+    let root_state = fs.root_state();
 
     let req = Caller {
         pid: 1,
@@ -63,10 +67,18 @@ fn test_truncate_corrupts_partial_block() {
     let path = parent.join(filename);
 
     // 1. Create file
-    let (_, create_res) = fs
-        .create(&parent, name, 0o644, 0, 0, &req)
+    let (created, create_res) = fs
+        .create(
+            PathNodeRef::new(Some(&parent), &root_state),
+            name,
+            0o644,
+            0,
+            0,
+            &req,
+        )
         .expect("create failed");
     let fh = create_res.handle;
+    let node = Node::at(&path, created.state);
 
     // 2. Write Data > 1 block (1024 bytes)
     // Write 1024 + 50 bytes.
@@ -75,12 +87,12 @@ fn test_truncate_corrupts_partial_block() {
 
     // Write in one go
     let written = fs
-        .write(Some(&path), &fh, &data, 0, &req)
+        .write(node.as_node(), &fh, &data, 0, &req)
         .expect("write failed");
     assert_eq!(written, data.len());
 
     // Release to flush
-    fs.release(Some(&path), fh, &req).unwrap();
+    fs.release(node.as_node(), fh, &req).unwrap();
 
     // 3. Truncate to a partial block size (e.g. 500 bytes)
     // This will force the first block (which was full 1024) to be truncated to 500.
@@ -89,7 +101,7 @@ fn test_truncate_corrupts_partial_block() {
     // and then write that garbage back.
     let target_size = 500;
     fs.setattr(
-        Some(&path),
+        node.as_node(),
         None,
         &SetAttr {
             size: Some(target_size),
@@ -181,7 +193,8 @@ fn test_truncate_extend_then_append_preserves_block0_tag() {
 
     let mut config = encfs::config::EncfsConfig::test_default();
     config.allow_holes = true;
-    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
+    let mut fs = EncFs::new(root.clone(), Box::new(cipher), config);
+    let root_state = fs.root_state();
 
     let req = Caller {
         pid: 1,
@@ -195,21 +208,29 @@ fn test_truncate_extend_then_append_preserves_block0_tag() {
     let name = OsStr::new(filename);
     let path = parent.join(filename);
 
-    let (_, create_res) = fs
-        .create(&parent, name, 0o644, 0, 0, &req)
+    let (created, create_res) = fs
+        .create(
+            PathNodeRef::new(Some(&parent), &root_state),
+            name,
+            0o644,
+            0,
+            0,
+            &req,
+        )
         .expect("create failed");
     let fh = create_res.handle;
+    let node = Node::at(&path, created.state);
 
     let payload1 = b"hello-partial-block".repeat(5);
     let written = fs
-        .write(Some(&path), &fh, &payload1, 0, &req)
+        .write(node.as_node(), &fh, &payload1, 0, &req)
         .expect("initial write failed");
     assert_eq!(written, payload1.len());
 
     let data_block_size = 1024u64 - 8u64;
     let extended_size = data_block_size * 2;
     fs.setattr(
-        Some(&path),
+        node.as_node(),
         Some(&fh),
         &SetAttr {
             size: Some(extended_size),
@@ -222,11 +243,11 @@ fn test_truncate_extend_then_append_preserves_block0_tag() {
     let payload2 = b"-appended-after-extend-";
     let append_offset = extended_size;
     let appended = fs
-        .write(Some(&path), &fh, payload2, append_offset, &req)
+        .write(node.as_node(), &fh, payload2, append_offset, &req)
         .expect("append write failed");
     assert_eq!(appended, payload2.len());
 
-    fs.release(Some(&path), fh, &req).unwrap();
+    fs.release(node.as_node(), fh, &req).unwrap();
 
     let mut entries = fs::read_dir(&tmp).unwrap();
     let entry = entries.next().unwrap().unwrap();

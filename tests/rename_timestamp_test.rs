@@ -5,7 +5,10 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
-use typed_fuse::{Caller, PathFilesystem, SetAttr, TimeOrNow};
+use typed_fuse::{Caller, PathFilesystem, PathNodeRef, SetAttr, TimeOrNow};
+
+mod common;
+use common::{Node, node};
 
 fn setup_fs(root: &Path, external_iv_chaining: bool) -> EncFs {
     let iface = Interface {
@@ -43,17 +46,26 @@ fn test_rename_directory_preserves_timestamps() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let fs = setup_fs(&tmp, false);
+    let mut fs = setup_fs(&tmp, false);
+    let root = fs.root_state();
     let r = req();
 
     // Create a directory "/dir"
-    fs.mkdir(Path::new("/"), OsStr::new("dir"), 0o755, 0, &r)
+    let dir = fs
+        .mkdir(
+            PathNodeRef::new(Some(Path::new("/")), &root),
+            OsStr::new("dir"),
+            0o755,
+            0,
+            &r,
+        )
         .expect("mkdir dir failed");
+    let dir = Node::at("/dir", dir.state);
 
     // Create a file "/dir/file.txt"
     let created = fs
         .create(
-            Path::new("/dir"),
+            dir.as_node(),
             OsStr::new("file.txt"),
             0o644,
             0,
@@ -61,8 +73,8 @@ fn test_rename_directory_preserves_timestamps() {
             &r,
         )
         .expect("create file failed");
-    let file_path = PathBuf::from("/dir/file.txt");
-    let _ = fs.release(Some(&file_path), created.1.handle, &r);
+    let file = Node::at(PathBuf::from("/dir/file.txt"), created.0.state);
+    let _ = fs.release(file.as_node(), created.1.handle, &r);
 
     // Set specific custom timestamps on /dir and /dir/file.txt
     let past_atime = UNIX_EPOCH + Duration::new(1_500_000_000, 123_456_000);
@@ -74,14 +86,14 @@ fn test_rename_directory_preserves_timestamps() {
         ..Default::default()
     };
 
-    let setattr_file = fs.setattr(Some(&file_path), None, &set_attr, &r);
+    let setattr_file = fs.setattr(file.as_node(), None, &set_attr, &r);
     assert!(
         setattr_file.is_ok(),
         "setattr file failed: {:?}",
         setattr_file.err()
     );
 
-    let setattr_dir = fs.setattr(Some(Path::new("/dir")), None, &set_attr, &r);
+    let setattr_dir = fs.setattr(dir.as_node(), None, &set_attr, &r);
     assert!(
         setattr_dir.is_ok(),
         "setattr dir failed: {:?}",
@@ -90,9 +102,9 @@ fn test_rename_directory_preserves_timestamps() {
 
     // Rename "/dir" -> "/renamed_dir"
     let rename_res = fs.rename(
-        Path::new("/"),
+        PathNodeRef::new(Some(Path::new("/")), &root),
         OsStr::new("dir"),
-        Path::new("/"),
+        PathNodeRef::new(Some(Path::new("/")), &root),
         OsStr::new("renamed_dir"),
         &r,
     );
@@ -103,8 +115,9 @@ fn test_rename_directory_preserves_timestamps() {
     );
 
     // Check timestamps of renamed directory
+    let renamed_dir = node(&fs, &root, "/renamed_dir", &r);
     let dir_attr = fs
-        .getattr(Some(Path::new("/renamed_dir")), None, &r)
+        .getattr(renamed_dir.as_node(), None, &r)
         .expect("getattr renamed_dir failed");
     assert_eq!(
         dir_attr.atime, past_atime,
@@ -116,8 +129,9 @@ fn test_rename_directory_preserves_timestamps() {
     );
 
     // Check timestamps of child file
+    let renamed_file = node(&fs, &root, "/renamed_dir/file.txt", &r);
     let file_attr = fs
-        .getattr(Some(Path::new("/renamed_dir/file.txt")), None, &r)
+        .getattr(renamed_file.as_node(), None, &r)
         .expect("getattr file.txt failed");
     assert_eq!(file_attr.atime, past_atime, "file atime lost across rename");
     assert_eq!(file_attr.mtime, past_mtime, "file mtime lost across rename");
@@ -135,13 +149,14 @@ fn test_rename_file_external_iv_chaining_preserves_timestamps() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let fs = setup_fs(&tmp, true);
+    let mut fs = setup_fs(&tmp, true);
+    let root = fs.root_state();
     let r = req();
 
     // Create a file "/file.txt"
     let created = fs
         .create(
-            Path::new("/"),
+            PathNodeRef::new(Some(Path::new("/")), &root),
             OsStr::new("file.txt"),
             0o644,
             0,
@@ -149,8 +164,8 @@ fn test_rename_file_external_iv_chaining_preserves_timestamps() {
             &r,
         )
         .expect("create file failed");
-    let file_path = PathBuf::from("/file.txt");
-    let _ = fs.release(Some(&file_path), created.1.handle, &r);
+    let file = Node::at(PathBuf::from("/file.txt"), created.0.state);
+    let _ = fs.release(file.as_node(), created.1.handle, &r);
 
     let past_atime = UNIX_EPOCH + Duration::new(1_600_000_000, 111_222_000);
     let past_mtime = UNIX_EPOCH + Duration::new(1_600_000_000, 333_444_000);
@@ -161,7 +176,7 @@ fn test_rename_file_external_iv_chaining_preserves_timestamps() {
         ..Default::default()
     };
 
-    let setattr_res = fs.setattr(Some(&file_path), None, &set_attr, &r);
+    let setattr_res = fs.setattr(file.as_node(), None, &set_attr, &r);
     assert!(
         setattr_res.is_ok(),
         "setattr file failed: {:?}",
@@ -170,9 +185,9 @@ fn test_rename_file_external_iv_chaining_preserves_timestamps() {
 
     // Rename "/file.txt" -> "/renamed.txt" with external_iv_chaining=true
     let rename_res = fs.rename(
-        Path::new("/"),
+        PathNodeRef::new(Some(Path::new("/")), &root),
         OsStr::new("file.txt"),
-        Path::new("/"),
+        PathNodeRef::new(Some(Path::new("/")), &root),
         OsStr::new("renamed.txt"),
         &r,
     );
@@ -182,8 +197,9 @@ fn test_rename_file_external_iv_chaining_preserves_timestamps() {
         rename_res.err()
     );
 
+    let renamed_file = node(&fs, &root, "/renamed.txt", &r);
     let file_attr = fs
-        .getattr(Some(Path::new("/renamed.txt")), None, &r)
+        .getattr(renamed_file.as_node(), None, &r)
         .expect("getattr renamed.txt failed");
     assert_eq!(
         file_attr.atime, past_atime,

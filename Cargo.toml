@@ -4,7 +4,7 @@ exclude = ["fuzz"]
 
 [package]
 name = "encfs"
-version = "2.0.0-beta.5"
+version = "2.0.0-beta.6"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -27,7 +27,7 @@ daemonize = "0.5"
 chrono = "0.4"
 clap = { version = "4.6.1", features = ["derive"] }
 env_logger = "0.11.10"
-typed-fuse = { git = "https://github.com/vgough/typed-fuse" }
+typed-fuse = { path = "../typed-fuse/typed-fuse" }
 libc = "0.2.186"
 log = "0.4.32"
 quick-xml = { version = "0.40.1", features = ["serialize"] }

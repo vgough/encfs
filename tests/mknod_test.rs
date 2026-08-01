@@ -4,13 +4,18 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
+use encfs::fs::FileState;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::os::unix::fs::FileTypeExt;
 use std::path::{Path, PathBuf};
 use typed_fuse::{
-    Caller, FileKind as FileType, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink,
+    Caller, FileKind as FileType, NodeAttr, PathDirIdentity, PathDirSink, PathFilesystem,
+    PathNodeRef, PathPlusDirSink,
 };
+
+mod common;
+use common::Node;
 
 /// S_IFIFO from POSIX (named pipe)
 const S_IFIFO: u32 = 0o010000;
@@ -42,16 +47,28 @@ fn req() -> Caller {
 }
 
 struct EntrySink(Vec<(OsString, FileType)>);
-impl PathDirSink for EntrySink {
-    fn add(&mut self, name: &OsStr, kind: FileType, _next_offset: u64) -> bool {
+impl PathDirSink<FileState> for EntrySink {
+    fn add(
+        &mut self,
+        name: &OsStr,
+        kind: FileType,
+        _identity: PathDirIdentity<FileState>,
+        _next_offset: u64,
+    ) -> bool {
         self.0.push((name.to_os_string(), kind));
         true
     }
 }
 
 struct PlusSink(Vec<(OsString, NodeAttr)>);
-impl PathPlusDirSink for PlusSink {
-    fn add(&mut self, name: &OsStr, attr: NodeAttr, _next_offset: u64) -> bool {
+impl PathPlusDirSink<FileState> for PlusSink {
+    fn add(
+        &mut self,
+        name: &OsStr,
+        attr: NodeAttr,
+        _identity: PathDirIdentity<FileState>,
+        _next_offset: u64,
+    ) -> bool {
         self.0.push((name.to_os_string(), attr));
         true
     }
@@ -66,7 +83,8 @@ fn test_mknod_fifo_getattr_returns_named_pipe() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let fs = setup_fs(&tmp);
+    let mut fs = setup_fs(&tmp);
+    let root = fs.root_state();
     let r = req();
 
     let parent = PathBuf::from("");
@@ -74,13 +92,17 @@ fn test_mknod_fifo_getattr_returns_named_pipe() {
     let mode = S_IFIFO | 0o755;
 
     // Create FIFO via mknod
-    fs.mknod(&parent, name, mode, 0, 0, &r)
+    let created = fs
+        .mknod(PathNodeRef::new(Some(&parent), &root), name, mode, 0, 0, &r)
         .expect("mknod FIFO failed");
 
     let path = parent.join("myfifo");
+    let node = Node::at(&path, created.state);
 
     // getattr should return NamedPipe (FIFO) type
-    let attr = fs.getattr(Some(&path), None, &r).expect("getattr failed");
+    let attr = fs
+        .getattr(node.as_node(), None, &r)
+        .expect("getattr failed");
     assert_eq!(
         attr.kind,
         FileType::NamedPipe,
@@ -117,18 +139,35 @@ fn test_mknod_fifo_readdir_reports_named_pipe() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let fs = setup_fs(&tmp);
+    let mut fs = setup_fs(&tmp);
+    let root = fs.root_state();
     let r = req();
 
     let parent = PathBuf::from("");
-    fs.mknod(&parent, OsStr::new("pipe"), S_IFIFO | 0o600, 0, 0, &r)
-        .expect("mknod FIFO failed");
+    fs.mknod(
+        PathNodeRef::new(Some(&parent), &root),
+        OsStr::new("pipe"),
+        S_IFIFO | 0o600,
+        0,
+        0,
+        &r,
+    )
+    .expect("mknod FIFO failed");
 
     let dir_path = PathBuf::from("");
-    let handle = fs.opendir(&dir_path, 0, &r).expect("opendir failed").handle;
+    let handle = fs
+        .opendir(PathNodeRef::new(Some(&dir_path), &root), 0, &r)
+        .expect("opendir failed")
+        .handle;
     let mut entries = EntrySink(Vec::new());
-    fs.readdir(&dir_path, &handle, 0, &mut entries, &r)
-        .expect("readdir failed");
+    fs.readdir(
+        PathNodeRef::new(Some(&dir_path), &root),
+        &handle,
+        0,
+        &mut entries,
+        &r,
+    )
+    .expect("readdir failed");
 
     let pipe_entry = entries
         .0
@@ -153,17 +192,34 @@ fn test_readdirplus_returns_entries_with_attrs() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let fs = setup_fs(&tmp);
+    let mut fs = setup_fs(&tmp);
+    let root = fs.root_state();
     let r = req();
 
     let parent = PathBuf::from("");
-    fs.mknod(&parent, OsStr::new("pipe"), S_IFIFO | 0o600, 0, 0, &r)
-        .expect("mknod FIFO failed");
+    fs.mknod(
+        PathNodeRef::new(Some(&parent), &root),
+        OsStr::new("pipe"),
+        S_IFIFO | 0o600,
+        0,
+        0,
+        &r,
+    )
+    .expect("mknod FIFO failed");
 
-    let handle = fs.opendir(&parent, 0, &r).expect("opendir failed").handle;
+    let handle = fs
+        .opendir(PathNodeRef::new(Some(&parent), &root), 0, &r)
+        .expect("opendir failed")
+        .handle;
     let mut entries = PlusSink(Vec::new());
-    fs.readdirplus(&parent, &handle, 0, &mut entries, &r)
-        .expect("readdirplus failed");
+    fs.readdirplus(
+        PathNodeRef::new(Some(&parent), &root),
+        &handle,
+        0,
+        &mut entries,
+        &r,
+    )
+    .expect("readdirplus failed");
 
     let pipe_entry = entries
         .0

@@ -1,13 +1,16 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
+use encfs::fs::FileState;
 use std::collections::BTreeSet;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use typed_fuse::{
-    Caller, DirBuffer, FileKind, NodeAttr, PathDirSink, PathFilesystem, PathPlusDirSink,
+    Caller, DirBuffer, FileKind, NodeAttr, PathDirIdentity, PathDirSink, PathFilesystem,
+    PathNodeRef, PathPlusDirSink,
 };
 
 fn req() -> Caller {
@@ -42,10 +45,10 @@ fn setup_fs(test_name: &str) -> (PathBuf, EncFs) {
     (root.clone(), EncFs::new(root, Box::new(cipher), config))
 }
 
-fn create_file(encfs: &EncFs, name: &str) {
+fn create_file(encfs: &EncFs, root: &Arc<FileState>, name: &str) {
     encfs
         .mknod(
-            Path::new(""),
+            PathNodeRef::new(Some(Path::new("")), root),
             OsStr::new(name),
             #[allow(clippy::useless_conversion)]
             u32::from(libc::S_IFREG | 0o600),
@@ -66,8 +69,14 @@ struct Entries {
     values: Vec<Entry>,
     limit: usize,
 }
-impl PathDirSink for Entries {
-    fn add(&mut self, name: &OsStr, _kind: FileKind, next_offset: u64) -> bool {
+impl PathDirSink<FileState> for Entries {
+    fn add(
+        &mut self,
+        name: &OsStr,
+        _kind: FileKind,
+        _identity: PathDirIdentity<FileState>,
+        next_offset: u64,
+    ) -> bool {
         if self.values.len() >= self.limit {
             return false;
         }
@@ -90,8 +99,14 @@ struct PlusEntries {
     values: Vec<PlusEntry>,
     limit: usize,
 }
-impl PathPlusDirSink for PlusEntries {
-    fn add(&mut self, name: &OsStr, attr: NodeAttr, next_offset: u64) -> bool {
+impl PathPlusDirSink<FileState> for PlusEntries {
+    fn add(
+        &mut self,
+        name: &OsStr,
+        attr: NodeAttr,
+        _identity: PathDirIdentity<FileState>,
+        next_offset: u64,
+    ) -> bool {
         if self.values.len() >= self.limit {
             return false;
         }
@@ -104,46 +119,90 @@ impl PathPlusDirSink for PlusEntries {
     }
 }
 
-fn read_entries(encfs: &EncFs, handle: &DirBuffer, offset: u64) -> Vec<Entry> {
+fn read_entries(
+    encfs: &EncFs,
+    root: &Arc<FileState>,
+    handle: &DirBuffer<FileState>,
+    offset: u64,
+) -> Vec<Entry> {
     let mut sink = Entries {
         values: Vec::new(),
         limit: usize::MAX,
     };
     encfs
-        .readdir(Path::new(""), handle, offset, &mut sink, &req())
+        .readdir(
+            PathNodeRef::new(Some(Path::new("")), root),
+            handle,
+            offset,
+            &mut sink,
+            &req(),
+        )
         .expect("readdir");
     sink.values
 }
 
-fn read_prefix(encfs: &EncFs, handle: &DirBuffer, count: usize) -> Vec<Entry> {
+fn read_prefix(
+    encfs: &EncFs,
+    root: &Arc<FileState>,
+    handle: &DirBuffer<FileState>,
+    count: usize,
+) -> Vec<Entry> {
     let mut sink = Entries {
         values: Vec::new(),
         limit: count,
     };
     encfs
-        .readdir(Path::new(""), handle, 0, &mut sink, &req())
+        .readdir(
+            PathNodeRef::new(Some(Path::new("")), root),
+            handle,
+            0,
+            &mut sink,
+            &req(),
+        )
         .expect("readdir prefix");
     sink.values
 }
 
-fn read_entries_plus(encfs: &EncFs, handle: &DirBuffer, offset: u64) -> Vec<PlusEntry> {
+fn read_entries_plus(
+    encfs: &EncFs,
+    root: &Arc<FileState>,
+    handle: &DirBuffer<FileState>,
+    offset: u64,
+) -> Vec<PlusEntry> {
     let mut sink = PlusEntries {
         values: Vec::new(),
         limit: usize::MAX,
     };
     encfs
-        .readdirplus(Path::new(""), handle, offset, &mut sink, &req())
+        .readdirplus(
+            PathNodeRef::new(Some(Path::new("")), root),
+            handle,
+            offset,
+            &mut sink,
+            &req(),
+        )
         .expect("readdirplus");
     sink.values
 }
 
-fn read_prefix_plus(encfs: &EncFs, handle: &DirBuffer, count: usize) -> Vec<PlusEntry> {
+fn read_prefix_plus(
+    encfs: &EncFs,
+    root: &Arc<FileState>,
+    handle: &DirBuffer<FileState>,
+    count: usize,
+) -> Vec<PlusEntry> {
     let mut sink = PlusEntries {
         values: Vec::new(),
         limit: count,
     };
     encfs
-        .readdirplus(Path::new(""), handle, 0, &mut sink, &req())
+        .readdirplus(
+            PathNodeRef::new(Some(Path::new("")), root),
+            handle,
+            0,
+            &mut sink,
+            &req(),
+        )
         .expect("readdirplus prefix");
     sink.values
 }
@@ -164,21 +223,26 @@ fn plus_names<'a>(entries: impl IntoIterator<Item = &'a PlusEntry>) -> BTreeSet<
 
 #[test]
 fn readdir_resumes_from_an_opendir_snapshot() {
-    let (root, encfs) = setup_fs("readdir_snapshot");
+    let (dir, mut encfs) = setup_fs("readdir_snapshot");
+    let root = encfs.root_state();
     for name in ["old-a", "old-b", "old-c"] {
-        create_file(&encfs, name);
+        create_file(&encfs, &root, name);
     }
     let handle = encfs
-        .opendir(Path::new(""), 0, &req())
+        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
         .expect("opendir")
         .handle;
-    let prefix = read_prefix(&encfs, &handle, 3);
+    let prefix = read_prefix(&encfs, &root, &handle, 3);
     let resume_offset = prefix.last().expect("snapshot prefix").offset;
     encfs
-        .unlink(Path::new(""), OsStr::new("old-b"), &req())
+        .unlink(
+            PathNodeRef::new(Some(Path::new("")), &root),
+            OsStr::new("old-b"),
+            &req(),
+        )
         .expect("remove old-b");
-    create_file(&encfs, "new-entry");
-    let resumed = read_entries(&encfs, &handle, resume_offset);
+    create_file(&encfs, &root, "new-entry");
+    let resumed = read_entries(&encfs, &root, &handle, resume_offset);
     let combined: Vec<_> = prefix.iter().chain(&resumed).cloned().collect();
     let expected_before = BTreeSet::from([
         ".".to_string(),
@@ -190,7 +254,7 @@ fn readdir_resumes_from_an_opendir_snapshot() {
     assert_eq!(names(&combined), expected_before);
     assert_eq!(combined.len(), expected_before.len(), "duplicate entries");
     let new_handle = encfs
-        .opendir(Path::new(""), 0, &req())
+        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
         .expect("new opendir")
         .handle;
     let expected_after = BTreeSet::from([
@@ -200,32 +264,44 @@ fn readdir_resumes_from_an_opendir_snapshot() {
         "old-c".to_string(),
         "new-entry".to_string(),
     ]);
-    assert_eq!(names(&read_entries(&encfs, &new_handle, 0)), expected_after);
+    assert_eq!(
+        names(&read_entries(&encfs, &root, &new_handle, 0)),
+        expected_after
+    );
     encfs
-        .releasedir(Some(Path::new("")), handle, &req())
+        .releasedir(PathNodeRef::new(Some(Path::new("")), &root), handle, &req())
         .expect("release old snapshot");
     encfs
-        .releasedir(Some(Path::new("")), new_handle, &req())
+        .releasedir(
+            PathNodeRef::new(Some(Path::new("")), &root),
+            new_handle,
+            &req(),
+        )
         .expect("release new snapshot");
-    fs::remove_dir_all(root).expect("cleanup");
+    fs::remove_dir_all(dir).expect("cleanup");
 }
 
 #[test]
 fn readdirplus_retains_snapshot_attributes_after_deletion() {
-    let (root, encfs) = setup_fs("readdirplus_snapshot");
-    create_file(&encfs, "kept");
-    create_file(&encfs, "deleted");
+    let (dir, mut encfs) = setup_fs("readdirplus_snapshot");
+    let root = encfs.root_state();
+    create_file(&encfs, &root, "kept");
+    create_file(&encfs, &root, "deleted");
     let handle = encfs
-        .opendir(Path::new(""), 0, &req())
+        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
         .expect("opendir")
         .handle;
-    let prefix = read_prefix_plus(&encfs, &handle, 2);
+    let prefix = read_prefix_plus(&encfs, &root, &handle, 2);
     let resume_offset = prefix.last().expect("snapshot prefix").offset;
     encfs
-        .unlink(Path::new(""), OsStr::new("deleted"), &req())
+        .unlink(
+            PathNodeRef::new(Some(Path::new("")), &root),
+            OsStr::new("deleted"),
+            &req(),
+        )
         .expect("remove deleted entry");
-    create_file(&encfs, "added");
-    let resumed = read_entries_plus(&encfs, &handle, resume_offset);
+    create_file(&encfs, &root, "added");
+    let resumed = read_entries_plus(&encfs, &root, &handle, resume_offset);
     let combined: Vec<_> = prefix.iter().chain(&resumed).cloned().collect();
     let expected_before = BTreeSet::from([
         ".".to_string(),
@@ -241,7 +317,7 @@ fn readdirplus_retains_snapshot_attributes_after_deletion() {
         .expect("deleted entry retained in snapshot");
     assert_eq!(deleted.attr.kind, FileKind::RegularFile);
     let new_handle = encfs
-        .opendir(Path::new(""), 0, &req())
+        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
         .expect("new opendir")
         .handle;
     let expected_after = BTreeSet::from([
@@ -251,32 +327,37 @@ fn readdirplus_retains_snapshot_attributes_after_deletion() {
         "added".to_string(),
     ]);
     assert_eq!(
-        plus_names(&read_entries_plus(&encfs, &new_handle, 0)),
+        plus_names(&read_entries_plus(&encfs, &root, &new_handle, 0)),
         expected_after
     );
     encfs
-        .releasedir(Some(Path::new("")), handle, &req())
+        .releasedir(PathNodeRef::new(Some(Path::new("")), &root), handle, &req())
         .expect("release old snapshot");
     encfs
-        .releasedir(Some(Path::new("")), new_handle, &req())
+        .releasedir(
+            PathNodeRef::new(Some(Path::new("")), &root),
+            new_handle,
+            &req(),
+        )
         .expect("release new snapshot");
-    fs::remove_dir_all(root).expect("cleanup");
+    fs::remove_dir_all(dir).expect("cleanup");
 }
 
 #[test]
 fn directory_terminal_offsets_are_empty() {
-    let (root, encfs) = setup_fs("directory_terminal_offsets");
-    create_file(&encfs, "entry");
+    let (dir, mut encfs) = setup_fs("directory_terminal_offsets");
+    let root = encfs.root_state();
+    create_file(&encfs, &root, "entry");
     let handle = encfs
-        .opendir(Path::new(""), 0, &req())
+        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
         .expect("opendir")
         .handle;
-    assert!(read_entries(&encfs, &handle, 3).is_empty());
-    assert!(read_entries(&encfs, &handle, u64::MAX).is_empty());
-    assert!(read_entries_plus(&encfs, &handle, 3).is_empty());
-    assert!(read_entries_plus(&encfs, &handle, u64::MAX).is_empty());
+    assert!(read_entries(&encfs, &root, &handle, 3).is_empty());
+    assert!(read_entries(&encfs, &root, &handle, u64::MAX).is_empty());
+    assert!(read_entries_plus(&encfs, &root, &handle, 3).is_empty());
+    assert!(read_entries_plus(&encfs, &root, &handle, u64::MAX).is_empty());
     encfs
-        .releasedir(Some(Path::new("")), handle, &req())
+        .releasedir(PathNodeRef::new(Some(Path::new("")), &root), handle, &req())
         .expect("releasedir");
-    fs::remove_dir_all(root).expect("cleanup");
+    fs::remove_dir_all(dir).expect("cleanup");
 }

@@ -12,7 +12,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 arbitrary = { version = "1", features = ["derive"] }
-typed-fuse = { git = "https://github.com/vgough/typed-fuse" }
+typed-fuse = { path = "../../typed-fuse/typed-fuse" }
 
 [dependencies.encfs]
 path = ".."

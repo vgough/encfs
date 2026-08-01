@@ -1,14 +1,26 @@
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
+use encfs::fs::FileState;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
-use typed_fuse::{Caller, FileKind as FileType, PathDirSink, PathFilesystem};
+use typed_fuse::{
+    Caller, FileKind as FileType, PathDirIdentity, PathDirSink, PathFilesystem, PathNodeRef,
+};
+
+mod common;
+use common::Node;
 
 struct Entries(Vec<(OsString, FileType)>);
-impl PathDirSink for Entries {
-    fn add(&mut self, name: &OsStr, kind: FileType, _next_offset: u64) -> bool {
+impl PathDirSink<FileState> for Entries {
+    fn add(
+        &mut self,
+        name: &OsStr,
+        kind: FileType,
+        _identity: PathDirIdentity<FileState>,
+        _next_offset: u64,
+    ) -> bool {
         self.0.push((name.to_os_string(), kind));
         true
     }
@@ -39,7 +51,8 @@ fn test_symlink_type() {
     cipher.set_key(&user_key, &user_iv);
 
     let config = encfs::config::EncfsConfig::test_default();
-    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
+    let mut fs = EncFs::new(root.clone(), Box::new(cipher), config);
+    let root_state = fs.root_state();
 
     let req = Caller {
         pid: 1,
@@ -53,13 +66,21 @@ fn test_symlink_type() {
     let target = Path::new("target_file");
 
     // Create Symlink
-    let _ = fs
-        .symlink(&parent, name, target, &req)
+    let created = fs
+        .symlink(
+            PathNodeRef::new(Some(&parent), &root_state),
+            name,
+            target,
+            &req,
+        )
         .expect("symlink creation failed");
 
     // Check getattr
     let path = parent.join(name);
-    let attr = fs.getattr(Some(&path), None, &req).expect("getattr failed");
+    let node = Node::at(&path, created.state);
+    let attr = fs
+        .getattr(node.as_node(), None, &req)
+        .expect("getattr failed");
 
     // Logic: attr.kind should be Symlink, but currently it is RegularFile (bug)
     println!("File kind: {:?}", attr.kind);
@@ -71,10 +92,19 @@ fn test_symlink_type() {
     );
 
     // Check readdir
-    let handle = fs.opendir(&parent, 0, &req).expect("opendir failed").handle;
+    let handle = fs
+        .opendir(PathNodeRef::new(Some(&parent), &root_state), 0, &req)
+        .expect("opendir failed")
+        .handle;
     let mut entries = Entries(Vec::new());
-    fs.readdir(&parent, &handle, 0, &mut entries, &req)
-        .expect("readdir failed");
+    fs.readdir(
+        PathNodeRef::new(Some(&parent), &root_state),
+        &handle,
+        0,
+        &mut entries,
+        &req,
+    )
+    .expect("readdir failed");
     let entry = entries
         .0
         .iter()

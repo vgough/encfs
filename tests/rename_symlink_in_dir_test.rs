@@ -11,7 +11,10 @@ use encfs::fs::EncFs;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use typed_fuse::{Caller, PathFilesystem};
+use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
+
+mod common;
+use common::{Node, node};
 
 fn setup_fs(root: &Path) -> EncFs {
     let iface = Interface {
@@ -49,23 +52,33 @@ fn test_rename_directory_containing_symlink_with_chained_name_iv() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let fs = setup_fs(&tmp);
+    let mut fs = setup_fs(&tmp);
+    let root = fs.root_state();
     let r = req();
 
     // Create a directory "parent"
-    let parent_path = PathBuf::from("/parent");
-    fs.mkdir(Path::new("/"), OsStr::new("parent"), 0o755, 0, &r)
+    let parent_dir = fs
+        .mkdir(
+            PathNodeRef::new(Some(Path::new("/")), &root),
+            OsStr::new("parent"),
+            0o755,
+            0,
+            &r,
+        )
         .expect("mkdir parent failed");
+    let parent_dir = Node::at(PathBuf::from("/parent"), parent_dir.state);
 
     // Create a symlink inside the directory
     let target = Path::new("some_target");
-    fs.symlink(&parent_path, OsStr::new("link"), target, &r)
+    let link = fs
+        .symlink(parent_dir.as_node(), OsStr::new("link"), target, &r)
         .expect("symlink inside dir failed");
+    let link = Node::at("/parent/link", link.state);
 
     // Create a regular file inside the directory for comparison
     let created = fs
         .create(
-            &parent_path,
+            parent_dir.as_node(),
             OsStr::new("file.txt"),
             0o644,
             0,
@@ -73,11 +86,11 @@ fn test_rename_directory_containing_symlink_with_chained_name_iv() {
             &r,
         )
         .expect("create file failed");
-    let created_path = PathBuf::from("/parent/file.txt");
-    let _ = fs.release(Some(&created_path), created.1.handle, &r);
+    let created_file = Node::at(PathBuf::from("/parent/file.txt"), created.0.state);
+    let _ = fs.release(created_file.as_node(), created.1.handle, &r);
 
     // Verify the symlink can be read before rename
-    let readlink_result = fs.readlink(Path::new("/parent/link"), &r);
+    let readlink_result = fs.readlink(link.as_node(), &r);
     assert!(
         readlink_result.is_ok(),
         "readlink before rename failed: {:?}",
@@ -93,9 +106,9 @@ fn test_rename_directory_containing_symlink_with_chained_name_iv() {
     // Rename the directory containing the symlink
     // This is the operation that triggers the bug (ENOSYS due to symlink handling)
     let rename_result = fs.rename(
-        Path::new("/"),
+        PathNodeRef::new(Some(Path::new("/")), &root),
         OsStr::new("parent"),
-        Path::new("/"),
+        PathNodeRef::new(Some(Path::new("/")), &root),
         OsStr::new("renamed_parent"),
         &r,
     );
@@ -107,7 +120,8 @@ fn test_rename_directory_containing_symlink_with_chained_name_iv() {
     );
 
     // Verify the symlink target can still be read after rename
-    let readlink_after = fs.readlink(Path::new("/renamed_parent/link"), &r);
+    let moved_link = node(&fs, &root, "/renamed_parent/link", &r);
+    let readlink_after = fs.readlink(moved_link.as_node(), &r);
     assert!(
         readlink_after.is_ok(),
         "readlink after rename failed: {:?}",
@@ -122,14 +136,15 @@ fn test_rename_directory_containing_symlink_with_chained_name_iv() {
     );
 
     // Verify the old path no longer exists
-    let old_path_result = fs.getattr(Some(Path::new("/parent")), None, &r);
+    let old_path_result = fs.getattr(parent_dir.as_node(), None, &r);
     assert!(
         old_path_result.is_err(),
         "old path should not exist after rename"
     );
 
     // Verify the regular file also works after rename
-    let file_attr = fs.getattr(Some(Path::new("/renamed_parent/file.txt")), None, &r);
+    let moved_file = node(&fs, &root, "/renamed_parent/file.txt", &r);
+    let file_attr = fs.getattr(moved_file.as_node(), None, &r);
     assert!(
         file_attr.is_ok(),
         "regular file should exist after rename: {:?}",
@@ -149,46 +164,61 @@ fn test_rename_nested_directory_with_symlinks_chained_name_iv() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let fs = setup_fs(&tmp);
+    let mut fs = setup_fs(&tmp);
+    let root = fs.root_state();
     let r = req();
 
     // Create nested directories: /outer/inner
-    fs.mkdir(Path::new("/"), OsStr::new("outer"), 0o755, 0, &r)
+    let outer = fs
+        .mkdir(
+            PathNodeRef::new(Some(Path::new("/")), &root),
+            OsStr::new("outer"),
+            0o755,
+            0,
+            &r,
+        )
         .expect("mkdir outer failed");
-    fs.mkdir(Path::new("/outer"), OsStr::new("inner"), 0o755, 0, &r)
+    let outer = Node::at("/outer", outer.state);
+    let inner = fs
+        .mkdir(outer.as_node(), OsStr::new("inner"), 0o755, 0, &r)
         .expect("mkdir inner failed");
+    let inner = Node::at("/outer/inner", inner.state);
 
     // Create symlinks at different levels
-    fs.symlink(
-        Path::new("/outer"),
-        OsStr::new("link1"),
-        Path::new("../some_target"),
-        &r,
-    )
-    .expect("symlink in outer failed");
-    fs.symlink(
-        Path::new("/outer/inner"),
-        OsStr::new("link2"),
-        Path::new("../../other_target"),
-        &r,
-    )
-    .expect("symlink in inner failed");
+    let link1 = fs
+        .symlink(
+            outer.as_node(),
+            OsStr::new("link1"),
+            Path::new("../some_target"),
+            &r,
+        )
+        .expect("symlink in outer failed");
+    let link1 = Node::at("/outer/link1", link1.state);
+    let link2 = fs
+        .symlink(
+            inner.as_node(),
+            OsStr::new("link2"),
+            Path::new("../../other_target"),
+            &r,
+        )
+        .expect("symlink in inner failed");
+    let link2 = Node::at("/outer/inner/link2", link2.state);
 
     // Verify symlinks before rename
     let link1_before = fs
-        .readlink(Path::new("/outer/link1"), &r)
+        .readlink(link1.as_node(), &r)
         .expect("readlink link1 before failed");
     let link2_before = fs
-        .readlink(Path::new("/outer/inner/link2"), &r)
+        .readlink(link2.as_node(), &r)
         .expect("readlink link2 before failed");
     assert_eq!(link1_before, Path::new("../some_target"));
     assert_eq!(link2_before, Path::new("../../other_target"));
 
     // Rename the outer directory
     let rename_result = fs.rename(
-        Path::new("/"),
+        PathNodeRef::new(Some(Path::new("/")), &root),
         OsStr::new("outer"),
-        Path::new("/"),
+        PathNodeRef::new(Some(Path::new("/")), &root),
         OsStr::new("moved"),
         &r,
     );
@@ -200,7 +230,8 @@ fn test_rename_nested_directory_with_symlinks_chained_name_iv() {
     );
 
     // Verify symlinks after rename
-    let link1_after = fs.readlink(Path::new("/moved/link1"), &r);
+    let moved_link1 = node(&fs, &root, "/moved/link1", &r);
+    let link1_after = fs.readlink(moved_link1.as_node(), &r);
     assert!(
         link1_after.is_ok(),
         "readlink link1 after failed: {:?}",
@@ -208,7 +239,8 @@ fn test_rename_nested_directory_with_symlinks_chained_name_iv() {
     );
     assert_eq!(link1_after.unwrap(), Path::new("../some_target"));
 
-    let link2_after = fs.readlink(Path::new("/moved/inner/link2"), &r);
+    let moved_link2 = node(&fs, &root, "/moved/inner/link2", &r);
+    let link2_after = fs.readlink(moved_link2.as_node(), &r);
     assert!(
         link2_after.is_ok(),
         "readlink link2 after failed: {:?}",
