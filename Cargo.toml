@@ -27,7 +27,7 @@ daemonize = "0.5"
 chrono = "0.4"
 clap = { version = "4.6.1", features = ["derive"] }
 env_logger = "0.11.10"
-typed-fuse = { path = "../typed-fuse/typed-fuse" }
+typed-fuse = { git = "https://github.com/vgough/typed-fuse" }
 libc = "0.2.186"
 log = "0.4.32"
 quick-xml = { version = "0.40.1", features = ["serialize"] }
