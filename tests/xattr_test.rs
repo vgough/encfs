@@ -5,12 +5,16 @@
 /// "user.encfs." prefix on disk.
 use encfs::config::Interface;
 use encfs::crypto::ssl::SslCipher;
-use encfs::fs::EncFs;
+use encfs::fs::{EncFs, FileState};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use typed_fuse::{Caller, PathFilesystem, XattrReply as ReplyXAttr};
+use std::sync::Arc;
+use typed_fuse::{Caller, PathFilesystem, PathNodeRef, XattrReply as ReplyXAttr};
+
+mod common;
+use common::Node;
 
 /// Generous buffer size passed to getxattr/listxattr so the reply is always
 /// `ReplyXAttr::Data` rather than a `Size` probe.
@@ -42,13 +46,22 @@ fn req() -> Caller {
     }
 }
 
-fn create_test_file(encfs: &EncFs, caller: &Caller) -> PathBuf {
-    let path = PathBuf::from("/test.txt");
-    let (_, created) = encfs
-        .create(Path::new("/"), OsStr::new("test.txt"), 0o644, 0, 0, caller)
+fn create_test_file(encfs: &EncFs, root: &Arc<FileState>, caller: &Caller) -> Node<FileState> {
+    let (entry, created) = encfs
+        .create(
+            PathNodeRef::new(Some(Path::new("/")), root),
+            OsStr::new("test.txt"),
+            0o644,
+            0,
+            0,
+            caller,
+        )
         .expect("create failed");
-    encfs.release(Some(&path), created.handle, caller).unwrap();
-    path
+    let node = Node::at(PathBuf::from("/test.txt"), entry.state);
+    encfs
+        .release(node.as_node(), created.handle, caller)
+        .unwrap();
+    node
 }
 
 #[cfg(target_os = "macos")]
@@ -78,10 +91,11 @@ fn test_xattr_set_get() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
-    let path = create_test_file(&encfs, &r);
+    let file = create_test_file(&encfs, &root, &r);
 
     // Test setting and getting various xattr names
     let test_cases = vec![
@@ -99,12 +113,12 @@ fn test_xattr_set_get() {
     for (attr_name, attr_value) in &test_cases {
         // Set xattr
         encfs
-            .setxattr(&path, OsStr::new(attr_name), attr_value, 0, &r)
+            .setxattr(file.as_node(), OsStr::new(attr_name), attr_value, 0, &r)
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
 
         // Get xattr
         let result = encfs
-            .getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
+            .getxattr(file.as_node(), OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
             .unwrap_or_else(|_| panic!("getxattr failed for {}", attr_name));
 
         match result {
@@ -134,10 +148,11 @@ fn test_xattr_list() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
-    let path = create_test_file(&encfs, &r);
+    let file = create_test_file(&encfs, &root, &r);
 
     // Set multiple xattrs
     let attrs = vec![
@@ -149,13 +164,13 @@ fn test_xattr_list() {
 
     for (attr_name, attr_value) in &attrs {
         encfs
-            .setxattr(&path, OsStr::new(attr_name), attr_value, 0, &r)
+            .setxattr(file.as_node(), OsStr::new(attr_name), attr_value, 0, &r)
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
     }
 
     // List xattrs
     let result = encfs
-        .listxattr(&path, XATTR_BUF_SIZE, &r)
+        .listxattr(file.as_node(), XATTR_BUF_SIZE, &r)
         .expect("listxattr failed");
 
     let mut listed_attrs = Vec::new();
@@ -214,21 +229,22 @@ fn test_xattr_remove() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
-    let path = create_test_file(&encfs, &r);
+    let file = create_test_file(&encfs, &root, &r);
 
     // Set an xattr
     let attr_name = "user.foo";
     let attr_value = b"test_value".to_vec();
     encfs
-        .setxattr(&path, OsStr::new(attr_name), &attr_value, 0, &r)
+        .setxattr(file.as_node(), OsStr::new(attr_name), &attr_value, 0, &r)
         .expect("setxattr failed");
 
     // Verify it exists
     let result = encfs
-        .getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
+        .getxattr(file.as_node(), OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
         .expect("getxattr failed");
     match result {
         ReplyXAttr::Data(data) => assert_eq!(data, attr_value),
@@ -237,11 +253,11 @@ fn test_xattr_remove() {
 
     // Remove it
     encfs
-        .removexattr(&path, OsStr::new(attr_name), &r)
+        .removexattr(file.as_node(), OsStr::new(attr_name), &r)
         .expect("removexattr failed");
 
     // Verify it's gone
-    let result = encfs.getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r);
+    let result = encfs.getxattr(file.as_node(), OsStr::new(attr_name), XATTR_BUF_SIZE, &r);
     assert!(result.is_err(), "getxattr should fail after removexattr");
 
     // Cleanup
@@ -257,16 +273,17 @@ fn test_xattr_on_disk_storage() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
-    let path = create_test_file(&encfs, &r);
+    let file = create_test_file(&encfs, &root, &r);
 
     // Set an xattr
     let attr_name = "user.foo";
     let attr_value = b"test_value".to_vec();
     encfs
-        .setxattr(&path, OsStr::new(attr_name), &attr_value, 0, &r)
+        .setxattr(file.as_node(), OsStr::new(attr_name), &attr_value, 0, &r)
         .expect("setxattr failed");
 
     // Find the encrypted file on disk
@@ -325,10 +342,11 @@ fn test_xattr_round_trip() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
-    let path = create_test_file(&encfs, &r);
+    let file = create_test_file(&encfs, &root, &r);
 
     // Test various attribute names and values
     let test_cases = vec![
@@ -345,12 +363,12 @@ fn test_xattr_round_trip() {
     for (attr_name, attr_value) in &test_cases {
         // Set
         encfs
-            .setxattr(&path, OsStr::new(attr_name), attr_value, 0, &r)
+            .setxattr(file.as_node(), OsStr::new(attr_name), attr_value, 0, &r)
             .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
 
         // Get
         let result = encfs
-            .getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
+            .getxattr(file.as_node(), OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
             .unwrap_or_else(|_| panic!("getxattr failed for {}", attr_name));
 
         match result {
@@ -368,13 +386,13 @@ fn test_xattr_round_trip() {
 
         // Remove
         encfs
-            .removexattr(&path, OsStr::new(attr_name), &r)
+            .removexattr(file.as_node(), OsStr::new(attr_name), &r)
             .unwrap_or_else(|_| panic!("removexattr failed for {}", attr_name));
 
         // Verify it's gone
         assert!(
             encfs
-                .getxattr(&path, OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
+                .getxattr(file.as_node(), OsStr::new(attr_name), XATTR_BUF_SIZE, &r)
                 .is_err(),
             "xattr should be removed: {}",
             attr_name

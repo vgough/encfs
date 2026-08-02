@@ -22,8 +22,9 @@ use typed_fuse::passthrough::{
     utimens_permission_check,
 };
 use typed_fuse::{
-    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathDirSink, PathFilesystem,
-    PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
+    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathDirSink, PathEntry,
+    PathFilesystem, PathNodeRef, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
+    XattrReply as ReplyXAttr,
 };
 
 /// Errors from internal helpers are raw errno values; trait methods convert
@@ -61,8 +62,11 @@ struct FileMeta {
 ///   the same instant the contents are reset; otherwise they would keep
 ///   encrypting blocks under an IV the header no longer names, and nothing
 ///   could ever decrypt them again.
+///
+/// This also serves as the runtime's per-node state, so a node discovered by
+/// name and a handle opened on it converge on the same `Arc` via [`FileStates`].
 #[derive(Debug)]
-struct FileState {
+pub struct FileState {
     key: FileKey,
     meta: RwLock<FileMeta>,
 }
@@ -1096,7 +1100,7 @@ impl EncFs {
         parent: &Path,
         name: &std::ffi::OsStr,
         target: &std::path::Path,
-    ) -> Result<FileAttr, libc::c_int> {
+    ) -> Result<PathEntry<FileState>, libc::c_int> {
         debug!("symlink: {:?}/{:?} -> {:?}", parent, name, target);
         self.ensure_writable()?;
 
@@ -1115,7 +1119,7 @@ impl EncFs {
         passthrough_symlink(OsStr::new(&enc_target), &real_path).map_err(|e| e.raw())?;
 
         // Return the attributes of the entry we just created.
-        self.attr_for_path(Some(&path), None)
+        self.entry_for_path(&path)
     }
 
     fn attr_for_path(
@@ -1123,6 +1127,17 @@ impl EncFs {
         path: Option<&Path>,
         handle: Option<&FileHandle>,
     ) -> Result<FileAttr, libc::c_int> {
+        Ok(self.attr_and_key_for_path(path, handle)?.0)
+    }
+
+    /// As [`EncFs::attr_for_path`], but also reports the backing file's
+    /// identity, which the discovery operations need in order to attach the
+    /// matching [`FileState`] to the entry they return.
+    fn attr_and_key_for_path(
+        &self,
+        path: Option<&Path>,
+        handle: Option<&FileHandle>,
+    ) -> Result<(FileAttr, FileKey), libc::c_int> {
         debug!("getattr: {:?} handle={}", path, handle.is_some());
 
         let metadata = if let Some(handle) = handle {
@@ -1140,7 +1155,17 @@ impl EncFs {
             fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
         };
 
-        Ok(self.attr_from_metadata(&metadata))
+        Ok((
+            self.attr_from_metadata(&metadata),
+            (metadata.dev(), metadata.ino()),
+        ))
+    }
+
+    /// Attributes plus node state for a path, as returned by the operations
+    /// that hand a node back to the runtime.
+    fn entry_for_path(&self, path: &Path) -> Result<PathEntry<FileState>, libc::c_int> {
+        let (attr, key) = self.attr_and_key_for_path(Some(path), None)?;
+        Ok(PathEntry::new(attr, self.file_states.get_by_key(key)))
     }
 
     fn attr_from_metadata(&self, metadata: &fs::Metadata) -> FileAttr {
@@ -1160,7 +1185,7 @@ impl EncFs {
         file_attr_from_metadata(metadata, size)
     }
 
-    fn directory_snapshot(&self, path: &Path) -> Result<DirBuffer, libc::c_int> {
+    fn directory_snapshot(&self, path: &Path) -> Result<DirBuffer<FileState>, libc::c_int> {
         let (real_path, dir_iv) = self.encrypt_path(path)?;
 
         let entries =
@@ -1199,6 +1224,8 @@ impl EncFs {
                         OsStr::from_bytes(&decrypted_name),
                         file_type_from_metadata(&metadata),
                         self.attr_from_metadata(&metadata),
+                        self.file_states
+                            .get_by_key((metadata.dev(), metadata.ino())),
                     );
                 }
                 Err(e) => {
@@ -1362,7 +1389,7 @@ impl EncFs {
         name: &OsStr,
         mode: u32,
         flags: u32,
-    ) -> Result<(FileAttr, FileHandle), libc::c_int> {
+    ) -> Result<(PathEntry<FileState>, FileHandle), libc::c_int> {
         debug!(
             "create: {:?}/{:?} flags={} mode={}",
             parent, name, flags, mode
@@ -1418,7 +1445,7 @@ impl EncFs {
         let attr = file_attr_from_metadata(&metadata, 0);
 
         Ok((
-            attr,
+            PathEntry::new(attr, Arc::clone(&state)),
             FileHandle {
                 file,
                 headerless_iv,
@@ -1441,7 +1468,7 @@ impl EncFs {
         parent: &Path,
         name: &OsStr,
         mode: u32,
-    ) -> Result<FileAttr, libc::c_int> {
+    ) -> Result<PathEntry<FileState>, libc::c_int> {
         let path = parent.join(name);
         debug!("mkdir: {:?} mode={:o}", path, mode);
         self.ensure_writable()?;
@@ -1455,7 +1482,7 @@ impl EncFs {
 
         set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
 
-        self.attr_for_path(Some(&path), None)
+        self.entry_for_path(&path)
     }
 
     fn mknod_impl(
@@ -1465,7 +1492,7 @@ impl EncFs {
         name: &OsStr,
         mode: u32,
         rdev: u32,
-    ) -> Result<FileAttr, libc::c_int> {
+    ) -> Result<PathEntry<FileState>, libc::c_int> {
         let path = parent.join(name);
         debug!("mknod: {:?} mode={:o} rdev={}", path, mode, rdev);
         self.ensure_writable()?;
@@ -1502,7 +1529,7 @@ impl EncFs {
 
         set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
 
-        self.attr_for_path(Some(&path), None)
+        self.entry_for_path(&path)
     }
 
     fn rmdir_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
@@ -1699,8 +1726,9 @@ impl EncFs {
 }
 
 impl PathFilesystem for EncFs {
+    type NodeState = FileState;
     type Handle = FileHandle;
-    type DirHandle = DirBuffer;
+    type DirHandle = DirBuffer<FileState>;
 
     // POSIX record locks are deliberately left to the kernel. Forwarding them
     // would mean taking every client's lock with `fcntl` in this one daemon
@@ -1713,6 +1741,16 @@ impl PathFilesystem for EncFs {
     const SUPPORTS_FLOCK: bool = true;
     const SUPPORTS_READDIRPLUS: bool = true;
 
+    /// A root whose backing directory cannot be stat'd is a broken mount, so
+    /// rather than fail here (which the runtime cannot report) fall back to a
+    /// sentinel key; every operation through it will fail on its own.
+    fn root_state(&mut self) -> Arc<FileState> {
+        let key = fs::symlink_metadata(&self.root)
+            .map(|metadata| (metadata.dev(), metadata.ino()))
+            .unwrap_or_default();
+        self.file_states.get_by_key(key)
+    }
+
     fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
         debug!("init");
     }
@@ -1723,13 +1761,13 @@ impl PathFilesystem for EncFs {
 
     fn lookup(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         _caller: &Request,
-    ) -> Result<Option<FileAttr>, Errno> {
-        let path = parent.join(name);
-        match self.attr_for_path(Some(&path), None) {
-            Ok(attr) => Ok(Some(attr)),
+    ) -> Result<Option<PathEntry<FileState>>, Errno> {
+        let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
+        match self.entry_for_path(&path) {
+            Ok(entry) => Ok(Some(entry)),
             Err(libc::ENOENT) => Ok(None),
             Err(error) => Err(error.into()),
         }
@@ -1737,20 +1775,21 @@ impl PathFilesystem for EncFs {
 
     fn getattr(
         &self,
-        path: Option<&Path>,
+        node: PathNodeRef<'_, FileState>,
         handle: Option<&FileHandle>,
         _caller: &Request,
     ) -> Result<FileAttr, Errno> {
-        Ok(self.attr_for_path(path, handle)?)
+        Ok(self.attr_for_path(node.path(), handle)?)
     }
 
     fn setattr(
         &self,
-        path: Option<&Path>,
+        node: PathNodeRef<'_, FileState>,
         handle: Option<&FileHandle>,
         set_attr: &SetAttr,
         caller: &Request,
     ) -> Result<FileAttr, Errno> {
+        let path = node.path();
         if let Some(size) = set_attr.size {
             self.do_truncate(path, handle, size)?;
         }
@@ -1778,7 +1817,13 @@ impl PathFilesystem for EncFs {
         Ok(self.attr_for_path(path, handle)?)
     }
 
-    fn access(&self, path: &Path, mask: i32, caller: &Request) -> Result<(), Errno> {
+    fn access(
+        &self,
+        node: PathNodeRef<'_, FileState>,
+        mask: i32,
+        caller: &Request,
+    ) -> Result<(), Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.access_impl(*caller, path, mask as u32)?)
     }
 
@@ -1786,88 +1831,113 @@ impl PathFilesystem for EncFs {
         Ok(self.statfs_impl(path)?)
     }
 
-    fn readlink(&self, path: &Path, _caller: &Request) -> Result<PathBuf, Errno> {
+    fn readlink(
+        &self,
+        node: PathNodeRef<'_, FileState>,
+        _caller: &Request,
+    ) -> Result<PathBuf, Errno> {
         use std::os::unix::ffi::OsStringExt;
+        let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(PathBuf::from(OsString::from_vec(self.readlink_impl(path)?)))
     }
 
     fn symlink(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         target: &Path,
         _caller: &Request,
-    ) -> Result<FileAttr, Errno> {
+    ) -> Result<PathEntry<FileState>, Errno> {
+        let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.symlink_impl(parent, name, target)?)
     }
 
     fn link(
         &self,
-        path: &Path,
-        new_parent: &Path,
+        node: PathNodeRef<'_, FileState>,
+        new_parent: PathNodeRef<'_, FileState>,
         new_name: &OsStr,
         _caller: &Request,
     ) -> Result<FileAttr, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
+        let new_parent = new_parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.link_impl(path, new_parent, new_name)?)
     }
 
     fn mknod(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         mode: u32,
         rdev: u32,
         _umask: u32,
         caller: &Request,
-    ) -> Result<FileAttr, Errno> {
+    ) -> Result<PathEntry<FileState>, Errno> {
+        let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.mknod_impl(*caller, parent, name, mode, rdev)?)
     }
 
     fn mkdir(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         mode: u32,
         _umask: u32,
         caller: &Request,
-    ) -> Result<FileAttr, Errno> {
+    ) -> Result<PathEntry<FileState>, Errno> {
+        let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.mkdir_impl(*caller, parent, name, mode)?)
     }
 
-    fn unlink(&self, parent: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+    fn unlink(
+        &self,
+        parent: PathNodeRef<'_, FileState>,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.unlink_impl(parent, name)?)
     }
 
-    fn rmdir(&self, parent: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+    fn rmdir(
+        &self,
+        parent: PathNodeRef<'_, FileState>,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.rmdir_impl(parent, name)?)
     }
 
     fn rename(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        new_parent: &Path,
+        new_parent: PathNodeRef<'_, FileState>,
         new_name: &OsStr,
         _caller: &Request,
     ) -> Result<(), Errno> {
+        let parent = parent.path().ok_or(Errno::ENOENT)?;
+        let new_parent = new_parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.rename_internal(parent, name, new_parent, new_name)?)
     }
 
     fn opendir(
         &self,
-        path: &Path,
+        node: PathNodeRef<'_, FileState>,
         _flags: i32,
         _caller: &Request,
-    ) -> Result<Opened<DirBuffer>, Errno> {
+    ) -> Result<Opened<DirBuffer<FileState>>, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(Opened::new(self.directory_snapshot(path)?))
     }
 
     fn readdir(
         &self,
-        _path: &Path,
-        handle: &DirBuffer,
+        _node: PathNodeRef<'_, FileState>,
+        handle: &DirBuffer<FileState>,
         offset: u64,
-        sink: &mut dyn PathDirSink,
+        sink: &mut dyn PathDirSink<FileState>,
         _caller: &Request,
     ) -> Result<(), Errno> {
         handle.fill(offset, sink);
@@ -1876,10 +1946,10 @@ impl PathFilesystem for EncFs {
 
     fn readdirplus(
         &self,
-        _path: &Path,
-        handle: &DirBuffer,
+        _node: PathNodeRef<'_, FileState>,
+        handle: &DirBuffer<FileState>,
         offset: u64,
-        sink: &mut dyn PathPlusDirSink,
+        sink: &mut dyn PathPlusDirSink<FileState>,
         _caller: &Request,
     ) -> Result<(), Errno> {
         handle.fill_plus(offset, sink);
@@ -1888,16 +1958,17 @@ impl PathFilesystem for EncFs {
 
     fn open(
         &self,
-        path: &Path,
+        node: PathNodeRef<'_, FileState>,
         flags: i32,
         _caller: &Request,
     ) -> Result<Opened<FileHandle>, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(Opened::new(self.open_impl(path, flags as u32)?))
     }
 
     fn read<'a>(
         &'a self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, FileState>,
         handle: &'a FileHandle,
         offset: u64,
         size: usize,
@@ -1909,7 +1980,7 @@ impl PathFilesystem for EncFs {
 
     fn write(
         &self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, FileState>,
         handle: &FileHandle,
         data: &[u8],
         offset: u64,
@@ -1920,7 +1991,7 @@ impl PathFilesystem for EncFs {
 
     fn fsync(
         &self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, FileState>,
         handle: &FileHandle,
         datasync: bool,
         _caller: &Request,
@@ -1935,7 +2006,7 @@ impl PathFilesystem for EncFs {
 
     fn flock(
         &self,
-        _path: Option<&Path>,
+        _node: PathNodeRef<'_, FileState>,
         handle: &FileHandle,
         operation: i32,
         _caller: &Request,
@@ -1950,43 +2021,58 @@ impl PathFilesystem for EncFs {
 
     fn create(
         &self,
-        parent: &Path,
+        parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         mode: u32,
         _umask: u32,
         flags: i32,
         caller: &Request,
-    ) -> Result<(FileAttr, Opened<FileHandle>), Errno> {
-        let (attr, handle) = self.create_impl(*caller, parent, name, mode, flags as u32)?;
-        Ok((attr, Opened::new(handle)))
+    ) -> Result<(PathEntry<FileState>, Opened<FileHandle>), Errno> {
+        let parent = parent.path().ok_or(Errno::ENOENT)?;
+        let (entry, handle) = self.create_impl(*caller, parent, name, mode, flags as u32)?;
+        Ok((entry, Opened::new(handle)))
     }
 
     fn setxattr(
         &self,
-        path: &Path,
+        node: PathNodeRef<'_, FileState>,
         name: &OsStr,
         value: &[u8],
         flags: i32,
         _caller: &Request,
     ) -> Result<(), Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.setxattr_impl(path, name, value, flags as u32, 0)?)
     }
 
     fn getxattr(
         &self,
-        path: &Path,
+        node: PathNodeRef<'_, FileState>,
         name: &OsStr,
         size: usize,
         _caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         ReplyXAttr::sized(self.getxattr_impl(path, name)?, size)
     }
 
-    fn listxattr(&self, path: &Path, size: usize, _caller: &Request) -> Result<ReplyXAttr, Errno> {
+    fn listxattr(
+        &self,
+        node: PathNodeRef<'_, FileState>,
+        size: usize,
+        _caller: &Request,
+    ) -> Result<ReplyXAttr, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         ReplyXAttr::sized(self.listxattr_impl(path)?, size)
     }
 
-    fn removexattr(&self, path: &Path, name: &OsStr, _caller: &Request) -> Result<(), Errno> {
+    fn removexattr(
+        &self,
+        node: PathNodeRef<'_, FileState>,
+        name: &OsStr,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.removexattr_impl(path, name)?)
     }
 }
@@ -2003,7 +2089,7 @@ mod tests {
     use std::os::fd::FromRawFd;
     use std::path::PathBuf;
     use std::sync::Arc;
-    use typed_fuse::{Caller, PathFilesystem};
+    use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
 
     fn table_len(states: &FileStates) -> usize {
         states.table.lock().unwrap().entries.len()
@@ -2156,8 +2242,10 @@ mod tests {
         let fs = test_fs();
         let caller = test_caller();
 
-        assert!(fs.flush(None, &handle, &caller).is_ok());
-        assert!(fs.fsync(None, &handle, false, &caller).is_err());
-        assert!(fs.fsync(None, &handle, true, &caller).is_err());
+        let node = || PathNodeRef::new(None, &handle.state);
+
+        assert!(fs.flush(node(), &handle, &caller).is_ok());
+        assert!(fs.fsync(node(), &handle, false, &caller).is_err());
+        assert!(fs.fsync(node(), &handle, true, &caller).is_err());
     }
 }

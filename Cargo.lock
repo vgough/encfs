@@ -386,9 +386,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.6.4"
+version = "4.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d91e0c145792ef73a6ad36d27c75ac09f1832222a3c209689d90f534685ee5b7"
+checksum = "301b56658598e48f3648647ac6fc887be7e7108eddfa4e9b63fcf3ec58c0cadf"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -396,9 +396,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.6.2"
+version = "4.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f09628afdcc538b57f3c6341e9c8e9970f18e4a481690a64974d7023bd33548b"
+checksum = "94a65403d1a1bd28f7dc68eb8506e8874808ee5eecb59298de588e2e1407a078"
 dependencies = [
  "anstream",
  "anstyle",
@@ -600,7 +600,7 @@ checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "encfs"
-version = "2.0.0-beta.5"
+version = "2.0.0-beta.6"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1041,8 +1041,8 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "libfuse-sys"
-version = "0.5.1"
-source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
+version = "0.6.0"
+source = "git+https://github.com/vgough/typed-fuse#e5c592179a630b8cf638220ddadbf344a9e961d6"
 dependencies = [
  "bindgen",
  "libc",
@@ -1820,8 +1820,8 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse"
-version = "0.5.1"
-source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
+version = "0.6.0"
+source = "git+https://github.com/vgough/typed-fuse#e5c592179a630b8cf638220ddadbf344a9e961d6"
 dependencies = [
  "libc",
  "libfuse-sys",
@@ -1832,8 +1832,8 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse-core"
-version = "0.5.1"
-source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
+version = "0.6.0"
+source = "git+https://github.com/vgough/typed-fuse#e5c592179a630b8cf638220ddadbf344a9e961d6"
 dependencies = [
  "libc",
 ]

@@ -6,7 +6,10 @@ use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
-use typed_fuse::{Caller, PathFilesystem};
+use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
+
+mod common;
+use common::Node;
 
 #[test]
 fn test_virtual_driver_write() {
@@ -57,7 +60,8 @@ fn test_virtual_driver_write() {
         allow_holes: false,
         config_hash: None,
     };
-    let fs = EncFs::new(root.clone(), Box::new(cipher), config);
+    let mut fs = EncFs::new(root.clone(), Box::new(cipher), config);
+    let root_state = fs.root_state();
 
     // Create a second cipher instance for verification since SslCipher is not Clone (holds OpenSsl state)
     let verify_cipher = SslCipher::new(&iface, 192).unwrap();
@@ -75,8 +79,15 @@ fn test_virtual_driver_write() {
     let name = OsStr::new("test.txt");
 
     // Create
-    let (_attr, create_res) = fs
-        .create(&parent, name, 0o644, 0, 0, &req)
+    let (created, create_res) = fs
+        .create(
+            PathNodeRef::new(Some(&parent), &root_state),
+            name,
+            0o644,
+            0,
+            0,
+            &req,
+        )
         .expect("create failed");
     let fh = create_res.handle;
 
@@ -84,8 +95,9 @@ fn test_virtual_driver_write() {
     let data = b"hello world".to_vec();
     // Use proper path for logging
     let path = parent.join("test.txt");
+    let node = Node::at(&path, created.state);
     let written = fs
-        .write(Some(&path), &fh, &data, 0, &req)
+        .write(node.as_node(), &fh, &data, 0, &req)
         .expect("write failed");
     assert_eq!(written, data.len());
 
@@ -126,7 +138,7 @@ fn test_virtual_driver_write() {
     assert_eq!(read_data, data);
 
     // Release (close)
-    fs.release(Some(&path), fh, &req).unwrap();
+    fs.release(node.as_node(), fh, &req).unwrap();
 
     // Verify persistence by opening again
     // We didn't implement 'lookup' which FUSE uses to get FH?
@@ -134,7 +146,7 @@ fn test_virtual_driver_write() {
     // But `EncFs::open` takes path.
     // EncFs `open`: `encrypt_path` -> `File::open`.
 
-    let open_res = fs.open(&path, 0, &req).expect("open failed");
+    let open_res = fs.open(node.as_node(), 0, &req).expect("open failed");
     let _fh2 = open_res.handle;
 
     // Verify again after re-opening (persistence check)

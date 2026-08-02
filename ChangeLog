@@ -1,3 +1,8 @@
+v2.0.0-beta.6 / 2026-08-01
+==================
+	* Update typed-fuse to 0.6 with stable per-node state handling
+	* Add filesystem synchronization support and correct FUSE flush behavior
+
 v2.0.0-beta.5 / 2026-07-28
 ==================
 	* Add opt-in writable reverse mounts with `encfsr --write`

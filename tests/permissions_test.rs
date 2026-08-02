@@ -10,7 +10,10 @@ use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use typed_fuse::{Caller, FileKind as FileType, PathFilesystem};
+use typed_fuse::{Caller, FileKind as FileType, PathFilesystem, PathNodeRef};
+
+mod common;
+use common::{Node, node};
 
 fn setup_fs(root: &Path) -> EncFs {
     let iface = Interface {
@@ -47,13 +50,20 @@ fn test_mkdir_uses_mode_parameter() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
     // Create a directory with restrictive permissions (0o700 = rwx------)
     let mode: u32 = 0o700;
     encfs
-        .mkdir(Path::new("/"), OsStr::new("restricted_dir"), mode, 0, &r)
+        .mkdir(
+            PathNodeRef::new(Some(Path::new("/")), &root),
+            OsStr::new("restricted_dir"),
+            mode,
+            0,
+            &r,
+        )
         .expect("mkdir failed");
 
     // Find the actual encrypted directory in the root
@@ -91,7 +101,8 @@ fn test_mkdir_various_modes() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
     // Test various mode values
@@ -108,15 +119,22 @@ fn test_mkdir_various_modes() {
 
     for (name, mode) in test_cases {
         encfs
-            .mkdir(Path::new("/"), OsStr::new(name), mode, 0, &r)
+            .mkdir(
+                PathNodeRef::new(Some(Path::new("/")), &root),
+                OsStr::new(name),
+                mode,
+                0,
+                &r,
+            )
             .unwrap_or_else(|_| panic!("mkdir {} failed", name));
     }
 
     // Check the modes via getattr
     for (name, expected_mode) in test_cases {
         let path = PathBuf::from("/").join(name);
+        let file = node(&encfs, &root, &path, &r);
         let attr = encfs
-            .getattr(Some(&path), None, &r)
+            .getattr(file.as_node(), None, &r)
             .unwrap_or_else(|_| panic!("getattr for {} failed", name));
         let actual_mode = (attr.perm as u32) & 0o777;
 
@@ -148,14 +166,15 @@ fn test_create_file_uses_mode_parameter() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
     // Create a file with restrictive permissions (0o600 = rw-------)
     let mode: u32 = 0o600;
-    let (_, created) = encfs
+    let (entry, created) = encfs
         .create(
-            Path::new("/"),
+            PathNodeRef::new(Some(Path::new("/")), &root),
             OsStr::new("restricted_file.txt"),
             mode,
             0,
@@ -165,7 +184,8 @@ fn test_create_file_uses_mode_parameter() {
         .expect("create file failed");
 
     // Release the file handle
-    let _ = encfs.release(Some(Path::new("/restricted_file.txt")), created.handle, &r);
+    let file = Node::at("/restricted_file.txt", entry.state);
+    let _ = encfs.release(file.as_node(), created.handle, &r);
 
     // Find the actual encrypted file in the root
     let entries: Vec<_> = fs::read_dir(&tmp)
@@ -204,7 +224,8 @@ fn test_create_file_various_modes() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
     // Test various file mode values
@@ -219,9 +240,9 @@ fn test_create_file_various_modes() {
     ];
 
     for (name, mode) in test_cases {
-        let (_, created) = encfs
+        let (entry, created) = encfs
             .create(
-                Path::new("/"),
+                PathNodeRef::new(Some(Path::new("/")), &root),
                 OsStr::new(name),
                 mode,
                 0,
@@ -231,14 +252,16 @@ fn test_create_file_various_modes() {
             .unwrap_or_else(|_| panic!("create {} failed", name));
 
         // Release the file handle
-        let _ = encfs.release(Some(&PathBuf::from("/").join(name)), created.handle, &r);
+        let file = Node::at(PathBuf::from("/").join(name), entry.state);
+        let _ = encfs.release(file.as_node(), created.handle, &r);
     }
 
     // Check the modes via getattr
     for (name, expected_mode) in test_cases {
         let path = PathBuf::from("/").join(name);
+        let file = node(&encfs, &root, &path, &r);
         let attr = encfs
-            .getattr(Some(&path), None, &r)
+            .getattr(file.as_node(), None, &r)
             .unwrap_or_else(|_| panic!("getattr for {} failed", name));
         let actual_mode = (attr.perm as u32) & 0o777;
 
@@ -270,13 +293,14 @@ fn test_symlink_permissions_are_standard() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
     // Create a symlink
     encfs
         .symlink(
-            Path::new("/"),
+            PathNodeRef::new(Some(Path::new("/")), &root),
             OsStr::new("test_symlink"),
             Path::new("target"),
             &r,
@@ -284,9 +308,9 @@ fn test_symlink_permissions_are_standard() {
         .expect("symlink creation failed");
 
     // Check the symlink's attributes
-    let path = PathBuf::from("/test_symlink");
+    let link = node(&encfs, &root, "/test_symlink", &r);
     let attr = encfs
-        .getattr(Some(&path), None, &r)
+        .getattr(link.as_node(), None, &r)
         .expect("getattr for symlink failed");
 
     // On Unix, symlinks typically have mode 0o777 (or 0o120777 for type + perms)
@@ -319,20 +343,28 @@ fn test_permissions_mixed_types_in_directory() {
     }
     fs::create_dir(&tmp).unwrap();
 
-    let encfs = setup_fs(&tmp);
+    let mut encfs = setup_fs(&tmp);
+    let root = encfs.root_state();
     let r = req();
 
     // Create a directory with specific permissions
     let dir_mode: u32 = 0o750;
     encfs
-        .mkdir(Path::new("/"), OsStr::new("test_dir"), dir_mode, 0, &r)
+        .mkdir(
+            PathNodeRef::new(Some(Path::new("/")), &root),
+            OsStr::new("test_dir"),
+            dir_mode,
+            0,
+            &r,
+        )
         .expect("mkdir failed");
+    let dir = node(&encfs, &root, "/test_dir", &r);
 
     // Create a file inside the directory with different permissions
     let file_mode: u32 = 0o640;
-    let (_, created) = encfs
+    let (entry, created) = encfs
         .create(
-            Path::new("/test_dir"),
+            dir.as_node(),
             OsStr::new("test_file.txt"),
             file_mode,
             0,
@@ -340,16 +372,13 @@ fn test_permissions_mixed_types_in_directory() {
             &r,
         )
         .expect("create file failed");
-    let _ = encfs.release(
-        Some(Path::new("/test_dir/test_file.txt")),
-        created.handle,
-        &r,
-    );
+    let file = Node::at("/test_dir/test_file.txt", entry.state);
+    let _ = encfs.release(file.as_node(), created.handle, &r);
 
     // Create a symlink inside the directory
     encfs
         .symlink(
-            Path::new("/test_dir"),
+            dir.as_node(),
             OsStr::new("test_link"),
             Path::new("test_file.txt"),
             &r,
@@ -358,7 +387,7 @@ fn test_permissions_mixed_types_in_directory() {
 
     // Verify directory permissions
     let dir_attr = encfs
-        .getattr(Some(Path::new("/test_dir")), None, &r)
+        .getattr(dir.as_node(), None, &r)
         .expect("getattr for dir failed");
     let dir_actual = (dir_attr.perm as u32) & 0o777;
     assert_eq!(
@@ -369,7 +398,7 @@ fn test_permissions_mixed_types_in_directory() {
 
     // Verify file permissions
     let file_attr = encfs
-        .getattr(Some(Path::new("/test_dir/test_file.txt")), None, &r)
+        .getattr(file.as_node(), None, &r)
         .expect("getattr for file failed");
     let file_actual = (file_attr.perm as u32) & 0o777;
     assert_eq!(
@@ -379,8 +408,9 @@ fn test_permissions_mixed_types_in_directory() {
     );
 
     // Verify symlink permissions (should be 0o777)
+    let link = node(&encfs, &root, "/test_dir/test_link", &r);
     let link_attr = encfs
-        .getattr(Some(Path::new("/test_dir/test_link")), None, &r)
+        .getattr(link.as_node(), None, &r)
         .expect("getattr for symlink failed");
     let link_actual = (link_attr.perm as u32) & 0o777;
     #[cfg(not(target_os = "macos"))]

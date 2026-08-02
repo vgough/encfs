@@ -622,7 +622,7 @@ checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "encfs"
-version = "2.0.0-beta.5"
+version = "2.0.0-beta.6"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1072,7 +1072,6 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 [[package]]
 name = "libfuse-sys"
 version = "0.5.1"
-source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
 dependencies = [
  "bindgen",
  "libc",
@@ -1850,7 +1849,6 @@ dependencies = [
 [[package]]
 name = "typed-fuse"
 version = "0.5.1"
-source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
 dependencies = [
  "libc",
  "libfuse-sys",
@@ -1862,7 +1860,6 @@ dependencies = [
 [[package]]
 name = "typed-fuse-core"
 version = "0.5.1"
-source = "git+https://github.com/vgough/typed-fuse#0bba642dfa8d7501b673cbfee4b3762d7d3fd95f"
 dependencies = [
  "libc",
 ]

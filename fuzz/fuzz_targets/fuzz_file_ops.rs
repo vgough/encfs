@@ -13,13 +13,13 @@ use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
-use typed_fuse::{Caller, PathFilesystem, SetAttr};
 use libfuzzer_sys::fuzz_target;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use typed_fuse::{Caller, PathFilesystem, PathNodeRef, SetAttr};
 
 /// Maximum number of operations executed per fuzz input (keeps runs fast).
 const MAX_OPS: usize = 32;
@@ -205,7 +205,8 @@ fn verify_full(
 
 fuzz_target!(|input: FuzzInput| {
     let tmp = TempDir::new();
-    let fs = make_encfs(tmp.0.clone());
+    let mut fs = make_encfs(tmp.0.clone());
+    let root_state = fs.root_state();
 
     // Second cipher instance with identical key — used only for verification
     // reads so as not to share state with the EncFs cipher.
@@ -218,10 +219,19 @@ fuzz_target!(|input: FuzzInput| {
     let parent = PathBuf::from("");
     let path = parent.join(filename);
 
-    let (_, create_res) = fs
-        .create(&parent, OsStr::new(filename), 0o644, 0, 0, &req)
+    let (created, create_res) = fs
+        .create(
+            PathNodeRef::new(Some(&parent), &root_state),
+            OsStr::new(filename),
+            0o644,
+            0,
+            0,
+            &req,
+        )
         .unwrap_or_else(|e| panic!("create failed: errno={}", e));
     let fh = create_res.handle;
+    let state = created.state;
+    let node = || PathNodeRef::new(Some(&path), &state);
 
     // The encrypted filename on disk is opaque; find it by scanning the dir.
     // Only one file exists at this point.
@@ -266,7 +276,7 @@ fuzz_target!(|input: FuzzInput| {
                 }
 
                 let written = fs
-                    .write(Some(&path), &fh, &data, offset as u64, &req)
+                    .write(node(), &fh, &data, offset as u64, &req)
                     .unwrap_or_else(|e| panic!("write at offset={} failed: errno={}", offset, e));
                 assert_eq!(
                     written as usize,
@@ -324,7 +334,7 @@ fuzz_target!(|input: FuzzInput| {
                 }
 
                 fs.setattr(
-                    Some(&path),
+                    node(),
                     Some(&fh),
                     &SetAttr {
                         size: Some(size as u64),
@@ -351,7 +361,7 @@ fuzz_target!(|input: FuzzInput| {
                 }
 
                 fs.setattr(
-                    Some(&path),
+                    node(),
                     Some(&fh),
                     &SetAttr {
                         size: Some(size as u64),
@@ -373,5 +383,5 @@ fuzz_target!(|input: FuzzInput| {
         }
     }
 
-    let _ = fs.release(Some(&path), fh, &req);
+    let _ = fs.release(node(), fh, &req);
 });
