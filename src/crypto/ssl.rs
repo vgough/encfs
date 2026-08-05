@@ -1,4 +1,5 @@
 use crate::config::Interface;
+use crate::crypto::file_iv::FileIv;
 use aes::{Aes128, Aes192, Aes256};
 use aes_gcm_siv::aead::{AeadInPlace, KeyInit as AeadKeyInit};
 use aes_gcm_siv::{Aes128GcmSiv, Aes256GcmSiv, Nonce, Tag};
@@ -103,6 +104,10 @@ pub struct SslCipher {
     iv: Vec<u8>,
     name_encoding: NameEncoding,
     iface: Interface,
+    /// Selects the 96-bit file-IV wire format for `encrypt_header` /
+    /// `decrypt_header` / the AES-GCM-SIV nonce and AAD. Defaults to the
+    /// legacy 64-bit representation.
+    wide_file_iv: bool,
 }
 
 impl Drop for SslCipher {
@@ -146,6 +151,7 @@ impl SslCipher {
             iv: vec![],
             name_encoding: NameEncoding::Stream, // Default
             iface: iface.clone(),
+            wide_file_iv: false,
         })
     }
 
@@ -155,6 +161,10 @@ impl SslCipher {
         } else {
             self.name_encoding = NameEncoding::Stream;
         }
+    }
+
+    pub fn set_wide_file_iv(&mut self, wide: bool) {
+        self.wide_file_iv = wide;
     }
 
     fn block_size(&self) -> usize {
@@ -800,28 +810,52 @@ impl SslCipher {
         }
     }
 
-    pub fn decrypt_header(&self, header: &mut [u8], external_iv: u64) -> Result<u64> {
-        // Decrypt header using stream cipher and external IV
-        // Header is 8 bytes.
+    /// Decrypts a per-file IV header. `header` must be exactly the configured
+    /// header length (8 bytes narrow, 12 bytes wide) — the caller reads that
+    /// many bytes from disk via `EncfsConfig::header_size()`.
+    pub fn decrypt_header(&self, header: &mut [u8], external_iv: u64) -> Result<FileIv> {
+        let expected_len = if self.wide_file_iv { 12 } else { 8 };
+        if header.len() != expected_len {
+            return Err(anyhow!(
+                "Invalid file header length {} (expected {})",
+                header.len(),
+                expected_len
+            ));
+        }
+
+        // Decrypt header using stream cipher and external IV.
         // We use self.key and self.iv (which is the volume key/iv).
         self.legacy_stream_decode(header, external_iv, &self.key, &self.iv)?;
 
-        let mut file_iv = 0u64;
-        for &b in header.iter() {
-            file_iv = (file_iv << 8) | (b as u64);
+        if self.wide_file_iv {
+            let bytes: [u8; 12] = header.try_into().expect("checked length above");
+            Ok(FileIv::from_wide_be_bytes(bytes))
+        } else {
+            let mut file_iv = 0u64;
+            for &b in header.iter() {
+                file_iv = (file_iv << 8) | (b as u64);
+            }
+            Ok(FileIv::from_u64(file_iv))
         }
-
-        Ok(file_iv)
     }
 
-    pub fn encrypt_header(&self, external_iv: u64) -> Result<(Vec<u8>, u64)> {
-        // Generate random 64-bit file IV
-        let mut file_iv_bytes = [0u8; 8];
-        getrandom::fill(&mut file_iv_bytes)
-            .map_err(|e| anyhow!("Failed to generate random IV: {}", e))?;
-
-        let file_iv = u64::from_be_bytes(file_iv_bytes);
-        let mut header = file_iv_bytes.to_vec();
+    /// Generates a fresh per-file IV header, returning `(header, file_iv)`.
+    /// The header is exactly 8 (narrow) or 12 (wide) random bytes, selected by
+    /// `set_wide_file_iv`.
+    pub fn encrypt_header(&self, external_iv: u64) -> Result<(Vec<u8>, FileIv)> {
+        let (mut header, file_iv) = if self.wide_file_iv {
+            let mut file_iv_bytes = [0u8; 12];
+            getrandom::fill(&mut file_iv_bytes)
+                .map_err(|e| anyhow!("Failed to generate random IV: {}", e))?;
+            let file_iv = FileIv::from_wide_be_bytes(file_iv_bytes);
+            (file_iv_bytes.to_vec(), file_iv)
+        } else {
+            let mut file_iv_bytes = [0u8; 8];
+            getrandom::fill(&mut file_iv_bytes)
+                .map_err(|e| anyhow!("Failed to generate random IV: {}", e))?;
+            let file_iv = FileIv::from_u64(u64::from_be_bytes(file_iv_bytes));
+            (file_iv_bytes.to_vec(), file_iv)
+        };
 
         // Encrypt header using stream cipher and external IV
         self.stream_encode(&mut header, external_iv, &self.key, &self.iv)?;
@@ -829,9 +863,15 @@ impl SslCipher {
         Ok((header, file_iv))
     }
 
-    pub fn encrypt_header_with_iv(&self, file_iv: u64, external_iv: u64) -> Result<Vec<u8>> {
-        let file_iv_bytes = file_iv.to_be_bytes();
-        let mut header = file_iv_bytes.to_vec();
+    /// Encrypts a specific per-file IV into its on-disk header. Rejects a
+    /// `file_iv` that does not fit the configured width rather than
+    /// truncating it.
+    pub fn encrypt_header_with_iv(&self, file_iv: FileIv, external_iv: u64) -> Result<Vec<u8>> {
+        let mut header = if self.wide_file_iv {
+            file_iv.to_wide_be_bytes().to_vec()
+        } else {
+            file_iv.try_to_u64()?.to_be_bytes().to_vec()
+        };
 
         // Encrypt header using stream cipher and external IV
         self.stream_encode(&mut header, external_iv, &self.key, &self.iv)?;
@@ -857,25 +897,71 @@ impl SslCipher {
         }
     }
 
-    fn aes_gcm_siv_nonce(file_iv: u64, block_num: u64) -> [u8; 12] {
+    /// Narrow (legacy 64-bit file IV) nonce construction. Byte-identical to
+    /// the pre-wide-IV implementation.
+    fn aes_gcm_siv_nonce_narrow(file_iv: u64, block_num: u64) -> [u8; 12] {
         let mut nonce = [0u8; 12];
         nonce[..8].copy_from_slice(&(file_iv ^ (block_num >> 32)).to_le_bytes());
         nonce[8..].copy_from_slice(&(block_num as u32).to_le_bytes());
         nonce
     }
 
-    fn aes_gcm_siv_aad(file_iv: u64, block_num: u64) -> [u8; 16] {
+    /// Narrow (legacy 64-bit file IV) AAD construction. Byte-identical to the
+    /// pre-wide-IV implementation.
+    fn aes_gcm_siv_aad_narrow(file_iv: u64, block_num: u64) -> [u8; 16] {
         let mut aad = [0u8; 16];
         aad[..8].copy_from_slice(&file_iv.to_le_bytes());
         aad[8..].copy_from_slice(&block_num.to_le_bytes());
         aad
     }
 
+    /// Wide (96-bit file IV) nonce: first 12 bytes of `LE128(file_iv XOR
+    /// block_num)`. This XOR mixes `block_num` into only the low 64 bits of
+    /// the 96-bit IV, so the full 12-byte IV and block number are bound
+    /// separately in the AAD to keep distinct `(file_iv, block_num)` pairs
+    /// bound even if the derived nonce repeats.
+    fn aes_gcm_siv_nonce_wide(file_iv: u128, block_num: u64) -> [u8; 12] {
+        let mixed = file_iv ^ (block_num as u128);
+        mixed.to_le_bytes()[..12]
+            .try_into()
+            .expect("slice is exactly 12 bytes")
+    }
+
+    /// Wide (96-bit file IV) AAD: the full 12-byte file IV followed by the
+    /// full 8-byte block number, each little-endian.
+    fn aes_gcm_siv_aad_wide(file_iv: u128, block_num: u64) -> [u8; 20] {
+        let mut aad = [0u8; 20];
+        aad[..12].copy_from_slice(&file_iv.to_le_bytes()[..12]);
+        aad[12..].copy_from_slice(&block_num.to_le_bytes());
+        aad
+    }
+
+    /// Builds the nonce/AAD pair for the configured file-IV width.
+    fn aes_gcm_siv_nonce_and_aad(
+        &self,
+        file_iv: FileIv,
+        block_num: u64,
+    ) -> Result<([u8; 12], Vec<u8>)> {
+        if self.wide_file_iv {
+            let iv = file_iv.as_u128();
+            Ok((
+                Self::aes_gcm_siv_nonce_wide(iv, block_num),
+                Self::aes_gcm_siv_aad_wide(iv, block_num).to_vec(),
+            ))
+        } else {
+            let iv = file_iv.try_to_u64()?;
+            Ok((
+                Self::aes_gcm_siv_nonce_narrow(iv, block_num),
+                Self::aes_gcm_siv_aad_narrow(iv, block_num).to_vec(),
+            ))
+        }
+    }
+
     pub fn encrypt_block_aes_gcm_siv_inplace(
         &self,
         data: &mut [u8],
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
     ) -> Result<[u8; 16]> {
         if self.iface.name != "ssl/aes" {
             return Err(anyhow!("AES-GCM-SIV block mode requires ssl/aes cipher"));
@@ -884,9 +970,8 @@ impl SslCipher {
             return Err(anyhow!("Cipher key is not initialized"));
         }
 
-        let nonce_bytes = Self::aes_gcm_siv_nonce(file_iv, block_num);
+        let (nonce_bytes, aad) = self.aes_gcm_siv_nonce_and_aad(file_iv, block_num)?;
         let nonce = Nonce::from(nonce_bytes);
-        let aad = Self::aes_gcm_siv_aad(file_iv, block_num);
 
         let tag = match self.key.len() {
             16 => {
@@ -919,7 +1004,7 @@ impl SslCipher {
         data: &mut [u8],
         tag: &[u8],
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
     ) -> Result<()> {
         if self.iface.name != "ssl/aes" {
             return Err(anyhow!("AES-GCM-SIV block mode requires ssl/aes cipher"));
@@ -934,9 +1019,8 @@ impl SslCipher {
             ));
         }
 
-        let nonce_bytes = Self::aes_gcm_siv_nonce(file_iv, block_num);
+        let (nonce_bytes, aad) = self.aes_gcm_siv_nonce_and_aad(file_iv, block_num)?;
         let nonce = Nonce::from(nonce_bytes);
-        let aad = Self::aes_gcm_siv_aad(file_iv, block_num);
         let tag = Tag::from_slice(tag);
 
         match self.key.len() {
@@ -2006,7 +2090,10 @@ mod tests {
         );
 
         let header = cipher
-            .encrypt_header_with_iv(0x0f1e2d3c4b5a6978u64, 0x8877665544332211u64)
+            .encrypt_header_with_iv(
+                FileIv::from_u64(0x0f1e2d3c4b5a6978u64),
+                0x8877665544332211u64,
+            )
             .expect("encrypt_header_with_iv failed");
         assert_eq!(
             header,
@@ -2206,7 +2293,7 @@ mod tests {
             );
 
             let hdr = cipher
-                .encrypt_header_with_iv(0x0f1e2d3c4b5a6978, 0x8877665544332211)
+                .encrypt_header_with_iv(FileIv::from_u64(0x0f1e2d3c4b5a6978), 0x8877665544332211)
                 .expect("header");
             assert_eq!(
                 golden_hex(&hdr),
@@ -2247,7 +2334,11 @@ mod tests {
                     .map(|i| (i as u8).wrapping_mul(0x33))
                     .collect();
                 let t = cipher
-                    .encrypt_block_aes_gcm_siv_inplace(&mut g, 7, 0x1020304050607080)
+                    .encrypt_block_aes_gcm_siv_inplace(
+                        &mut g,
+                        7,
+                        FileIv::from_u64(0x1020304050607080),
+                    )
                     .expect("gcmsiv");
                 assert_eq!(
                     golden_hex(&g),
@@ -2258,5 +2349,137 @@ mod tests {
                 assert_eq!(golden_hex(&t), exp_tag, "{}: gcm-siv tag drift", tag);
             }
         }
+    }
+
+    /// Locks the 96-bit wide file-IV wire format: 12-byte header, and an
+    /// AES-GCM-SIV nonce/AAD built independently of `SslCipher`'s internals
+    /// (by hand from the ADR's formula, then encrypted with a fresh
+    /// `aes_gcm_siv` cipher) rather than by re-calling the same private
+    /// helpers under test. A drift in the wide construction fails here
+    /// instead of silently producing a different wire format.
+    #[test]
+    fn wide_file_iv_golden_vector() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 4,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 256).expect("cipher");
+        let key = [0x11u8; 32];
+        let iv = [0x22u8; 16];
+        cipher.set_key(&key, &iv);
+        cipher.set_wide_file_iv(true);
+
+        let file_iv_bytes: [u8; 12] = [
+            0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+        ];
+        let file_iv = FileIv::from_wide_be_bytes(file_iv_bytes);
+        let block_num: u64 = 0x1122_3344_5566_7788;
+
+        // --- Header: 12-byte plaintext / encrypted header round trip ---
+        let external_iv = 0x99aa_bbcc_ddee_ff00u64;
+        let header = cipher
+            .encrypt_header_with_iv(file_iv, external_iv)
+            .expect("encrypt 12-byte header");
+        assert_eq!(header.len(), 12, "wide header must be exactly 12 bytes");
+        let mut header_for_decrypt = header.clone();
+        let decoded = cipher
+            .decrypt_header(&mut header_for_decrypt, external_iv)
+            .expect("decrypt 12-byte header");
+        assert_eq!(
+            decoded, file_iv,
+            "header round trip must recover the file IV"
+        );
+
+        // --- Nonce/AAD: built independently from the ADR's formula ---
+        let mut full = [0u8; 16];
+        full[4..].copy_from_slice(&file_iv_bytes);
+        let file_iv_u128 = u128::from_be_bytes(full);
+        let mixed = file_iv_u128 ^ (block_num as u128);
+        let expected_nonce: [u8; 12] = mixed.to_le_bytes()[..12].try_into().unwrap();
+
+        let mut expected_aad = [0u8; 20];
+        expected_aad[..12].copy_from_slice(&file_iv_u128.to_le_bytes()[..12]);
+        expected_aad[12..].copy_from_slice(&block_num.to_le_bytes());
+
+        // --- Ciphertext/tag: computed with a fresh aes_gcm_siv cipher, not via SslCipher ---
+        let plaintext: Vec<u8> = (0u8..32u8).collect();
+        let mut expected_data = plaintext.clone();
+        let aead = Aes256GcmSiv::new_from_slice(&key).expect("aead");
+        let nonce = Nonce::from(expected_nonce);
+        let expected_tag = aead
+            .encrypt_in_place_detached(&nonce, &expected_aad, &mut expected_data)
+            .expect("independent encrypt");
+
+        let mut data = plaintext.clone();
+        let tag = cipher
+            .encrypt_block_aes_gcm_siv_inplace(&mut data, block_num, file_iv)
+            .expect("encrypt via SslCipher");
+
+        assert_eq!(
+            data, expected_data,
+            "wide AES-GCM-SIV ciphertext must match the ADR's nonce/AAD construction"
+        );
+        assert_eq!(
+            tag.as_slice(),
+            expected_tag.as_slice(),
+            "wide AES-GCM-SIV tag must match the ADR's nonce/AAD construction"
+        );
+
+        // Decrypt round trip through SslCipher.
+        let mut roundtrip = data.clone();
+        cipher
+            .decrypt_block_aes_gcm_siv_inplace(&mut roundtrip, &tag, block_num, file_iv)
+            .expect("decrypt via SslCipher");
+        assert_eq!(roundtrip, plaintext);
+    }
+
+    /// The maximum accepted 96-bit file IV round-trips through the wide
+    /// header and AES-GCM-SIV block path; a value at `2^96` is never
+    /// constructible; and a wide-only `FileIv` is rejected when a caller
+    /// tries to use it on the narrow (64-bit) path.
+    #[test]
+    fn wide_file_iv_boundary_values() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 4,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 256).expect("cipher");
+        cipher.set_key(&[0x33u8; 32], &[0x44u8; 16]);
+        cipher.set_wide_file_iv(true);
+
+        let max_iv = FileIv::try_from_u128(FileIv::MAX).expect("max value must be constructible");
+        assert!(FileIv::try_from_u128(FileIv::MAX + 1).is_err());
+
+        let header = cipher
+            .encrypt_header_with_iv(max_iv, 0)
+            .expect("encrypt header for max IV");
+        let mut header_for_decrypt = header.clone();
+        assert_eq!(
+            cipher
+                .decrypt_header(&mut header_for_decrypt, 0)
+                .expect("decrypt header for max IV"),
+            max_iv
+        );
+
+        let mut data = vec![0u8; 16];
+        let tag = cipher
+            .encrypt_block_aes_gcm_siv_inplace(&mut data, 0, max_iv)
+            .expect("encrypt block for max IV");
+        cipher
+            .decrypt_block_aes_gcm_siv_inplace(&mut data, &tag, 0, max_iv)
+            .expect("decrypt block for max IV");
+        assert_eq!(data, vec![0u8; 16]);
+
+        // A wide-only value (bit 64 set) must not silently truncate onto the
+        // narrow path: `encrypt_header_with_iv` on a narrow-mode cipher must
+        // reject it rather than writing a truncated 8-byte header.
+        let mut narrow_cipher = SslCipher::new(&iface, 256).expect("cipher");
+        narrow_cipher.set_key(&[0x33u8; 32], &[0x44u8; 16]);
+        let wide_only = FileIv::try_from_u128(1u128 << 64).unwrap();
+        assert!(narrow_cipher.encrypt_header_with_iv(wide_only, 0).is_err());
     }
 }

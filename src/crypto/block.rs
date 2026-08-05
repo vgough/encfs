@@ -1,5 +1,6 @@
 use crate::config::ConfigType;
 use crate::crypto::cipher::Cipher;
+use crate::crypto::file_iv::FileIv;
 use std::io;
 
 /// Fixed tag length for the V7 AES-GCM-SIV per-block format.
@@ -141,7 +142,7 @@ impl<'a> BlockCodec<'a> {
     pub fn decrypt_block(
         &self,
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
         block_data: &mut [u8],
     ) -> io::Result<Vec<u8>> {
         if self.allow_holes {
@@ -164,7 +165,7 @@ impl<'a> BlockCodec<'a> {
     pub fn encrypt_block(
         &self,
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
         plaintext: &[u8],
     ) -> io::Result<Vec<u8>> {
         match self.layout.mode() {
@@ -176,9 +177,10 @@ impl<'a> BlockCodec<'a> {
     fn decrypt_legacy_block(
         &self,
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
         block_data: &mut [u8],
     ) -> io::Result<Vec<u8>> {
+        let file_iv = file_iv.try_to_u64().map_err(io::Error::other)?;
         self.cipher
             .legacy_decrypt_block_inplace(block_data, block_num, file_iv, self.layout.block_size())
             .map_err(io::Error::other)?;
@@ -220,7 +222,7 @@ impl<'a> BlockCodec<'a> {
     fn decrypt_aes_gcm_siv_block(
         &self,
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
         block_data: &mut [u8],
     ) -> io::Result<Vec<u8>> {
         let tag_len = AES_GCM_SIV_BLOCK_TAG_BYTES as usize;
@@ -241,9 +243,10 @@ impl<'a> BlockCodec<'a> {
     fn encrypt_legacy_block(
         &self,
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
         plaintext: &[u8],
     ) -> io::Result<Vec<u8>> {
+        let file_iv = file_iv.try_to_u64().map_err(io::Error::other)?;
         let mac_len = self.layout.overhead_bytes() as usize;
         let mut block = Vec::with_capacity(mac_len + plaintext.len());
         block.resize(mac_len, 0);
@@ -271,7 +274,7 @@ impl<'a> BlockCodec<'a> {
     fn encrypt_aes_gcm_siv_block(
         &self,
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
         plaintext: &[u8],
     ) -> io::Result<Vec<u8>> {
         // Allocate the output buffer with space for the tag and the ciphertext.

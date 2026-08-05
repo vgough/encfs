@@ -58,6 +58,8 @@ fn test_virtual_driver_write() {
         external_iv_chaining: false,
         chained_name_iv: true,
         allow_holes: false,
+        wide_file_iv: false,
+        minimum_reader_version: 0,
         config_hash: None,
     };
     let mut fs = EncFs::new(root.clone(), Box::new(cipher), config);

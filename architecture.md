@@ -107,13 +107,20 @@ encfsr [--write] /path/to/source/.encfs7 /path/to/source /path/to/mountpoint
 
 | Component | Purpose |
 |-------|---------|
-| File Header | (Optional, 8 bytes if `unique_iv` enabled) Contains file-specific IV |
+| File Header | 0, 8, or 12 bytes — see below. Contains the per-file IV when present. |
 | File Blocks | Encrypted chunks of file data |
 
-Encrypted file layout: `[Header: 8 bytes if unique_iv] [Block 0] [Block 1] ... [Block N]`
+Encrypted file layout: `[Header: 0/8/12 bytes] [Block 0] [Block 1] ... [Block N]`
+
+Header size (`EncfsConfig::header_size()`) is conditional:
+- `unique_iv = false` (headerless, including all reverse-mode configs): 0 bytes. The file IV is derived from the path instead (64-bit).
+- `unique_iv = true`, narrow (default before this ADR, or `--legacy-file-iv` / any V4-V6 / pre-ADR V7 config): 8 bytes, a random 64-bit file IV.
+- `unique_iv = true`, wide (`wide_file_iv = true`, the default for new V7/AES-GCM-SIV filesystems): 12 bytes, a random 96-bit file IV. Requires V7 + AES-GCM-SIV block mode; see ADR 0001.
+
+Do not conflate the 64-bit *file seed* (the header/path-derived value above) with the 96-bit *AES-GCM-SIV nonce* every block uses: even the narrow 64-bit seed produces a full 96-bit nonce by mixing in the 64-bit block number, so AES-GCM-SIV always receives 96 nonce bits — widening the file IV increases how many of those bits are unpredictable per file, not the nonce length itself.
 
 - **Legacy (V4-V6):** block = `[MAC: block_mac_bytes (0-8)] [Random: block_mac_rand_bytes] [Data]`. `block_mac_rand_bytes` must be 0 (not implemented). MAC is optional.
-- **V7 (AES-GCM-SIV, default for new filesystems):** block = `[Ciphertext][16-byte tag]`; nonce/AAD derived from file IV + block number. Authentication is always on, no separate MAC/Random fields.
+- **V7 (AES-GCM-SIV, default for new filesystems):** block = `[Ciphertext][16-byte tag]`; nonce/AAD derived from file IV + block number (narrow: 12-byte nonce / 16-byte AAD; wide: 12-byte nonce / 20-byte AAD — see ADR 0001 for the exact byte layout). Authentication is always on, no separate MAC/Random fields.
 
 Full rationale and byte-level detail: `docs/DESIGN.md`.
 

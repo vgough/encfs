@@ -3,7 +3,9 @@ extern crate rust_i18n;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use encfs::{config, constants, crypto::cipher::Cipher, crypto::ssl::SslCipher};
+use encfs::{
+    config, constants, crypto::cipher::Cipher, crypto::file_iv::FileIv, crypto::ssl::SslCipher,
+};
 use getrandom::fill as fill_random;
 use rpassword::prompt_password;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -171,6 +173,10 @@ fn help_new_no_unique_iv() -> String {
     t!("help.encfsctl.new_no_unique_iv").to_string()
 }
 
+fn help_new_legacy_file_iv() -> String {
+    t!("help.encfsctl.new_legacy_file_iv").to_string()
+}
+
 fn help_speed() -> String {
     t!("help.encfsctl.speed").to_string()
 }
@@ -270,6 +276,8 @@ enum Command {
         no_chained_iv: bool,
         #[arg(long, help = help_new_no_unique_iv())]
         no_unique_iv: bool,
+        #[arg(long, help = help_new_legacy_file_iv())]
+        legacy_file_iv: bool,
     },
     #[command(about = help_speed())]
     Speed,
@@ -317,7 +325,15 @@ fn main() -> Result<()> {
             stdinpass,
             no_chained_iv,
             no_unique_iv,
-        }) => cmd_new(&rootdir, extpass, stdinpass, no_chained_iv, no_unique_iv),
+            legacy_file_iv,
+        }) => cmd_new(
+            &rootdir,
+            extpass,
+            stdinpass,
+            no_chained_iv,
+            no_unique_iv,
+            legacy_file_iv,
+        ),
         Some(Command::Speed) => cmd_speed(),
         None => {
             // Default to info command if rootdir is provided
@@ -566,6 +582,31 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     };
     let block_mac_line = t!("ctl.block_mac", bytes = config.block_mac_bytes);
     println!("{}", paint(&block_mac_line, block_mac_hl, color));
+
+    if block_mode == encfs::crypto::block::BlockMode::AesGcmSiv {
+        let file_iv_width = if config.wide_file_iv {
+            t!("ctl.file_iv_width_wide")
+        } else {
+            t!("ctl.file_iv_width_narrow")
+        };
+        let file_iv_hl = bool_highlight(config.wide_file_iv, def.wide_file_iv);
+        println!(
+            "{}{}",
+            t!("ctl.file_iv_width"),
+            paint(&file_iv_width, file_iv_hl, color)
+        );
+    }
+
+    if config.config_type == ConfigType::V7 {
+        println!(
+            "{}",
+            t!(
+                "ctl.v7_min_reader_version",
+                effective = config.minimum_reader_version,
+                max = constants::V7_CURRENT_CONFIG_VERSION
+            )
+        );
+    }
 
     println!(
         "{}{}",
@@ -837,6 +878,13 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
             config.config_hash = None;
             // Update config version to latest for new format
             config.version = constants::DEFAULT_CONFIG_VERSION;
+            // Upgraded configs stay on the narrow/base file-IV format: an
+            // in-place V4/V5/V6 -> V7 upgrade is not the "new filesystem"
+            // path `standard_v7()` covers, and picking the wide format here
+            // would silently make the upgraded volume unreadable by
+            // `--legacy-file-iv`-era tooling without the user asking for it.
+            config.wide_file_iv = false;
+            config.minimum_reader_version = constants::V7_BASE_CONFIG_VERSION;
         }
     } else {
         // Keep existing KDF or upgrade to PBKDF2 if legacy
@@ -1112,7 +1160,7 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
         };
         cipher.decrypt_header(&mut header, external_iv)?
     } else {
-        0
+        FileIv::from_u64(0)
     };
 
     // Use FileDecoder to decrypt content
@@ -1365,6 +1413,7 @@ fn cmd_new(
     stdinpass: bool,
     no_chained_iv: bool,
     no_unique_iv: bool,
+    legacy_file_iv: bool,
 ) -> Result<()> {
     // Create directory if it doesn't exist
     if !rootdir.exists() {
@@ -1400,8 +1449,19 @@ fn cmd_new(
         config.chained_name_iv = false;
         config.external_iv_chaining = false;
     }
+    if legacy_file_iv {
+        config.wide_file_iv = false;
+    }
     if no_unique_iv {
+        // A headerless/reverse-mode config cannot use the wide format.
+        // Redundant with `--legacy-file-iv`, not an error.
         config.unique_iv = false;
+        config.wide_file_iv = false;
+    }
+    if !config.wide_file_iv {
+        // Otherwise the compatibility flags would still produce a config that
+        // pre-change readers reject on the new minimum-reader-version field.
+        config.minimum_reader_version = constants::V7_BASE_CONFIG_VERSION;
     }
     fill_random(&mut config.salt)
         .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
@@ -1513,7 +1573,7 @@ fn bench_aes_gcm_siv(key_size: i32, buf_size: usize, duration: std::time::Durati
 
     measure_throughput(&mut buf, duration, |data, block_num| {
         cipher
-            .encrypt_block_aes_gcm_siv_inplace(data, block_num, 0)
+            .encrypt_block_aes_gcm_siv_inplace(data, block_num, FileIv::from_u64(0))
             .map(|_tag| ())
     })
 }
@@ -1821,7 +1881,7 @@ fn export_directory(
 
                     cipher.decrypt_header(&mut header, path_iv)?
                 } else {
-                    0
+                    FileIv::from_u64(0)
                 };
 
                 // Decrypt content using FileDecoder
@@ -2047,7 +2107,7 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
 
 /// Format decoded V7 protobuf Config as human-readable raw text.
 fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
-    use encfs::config_proto::{BlockCipherAlgorithm, NameEncodingMode};
+    use encfs::config_proto::{BlockCipherAlgorithm, FileIvWidth, NameEncodingMode};
 
     fn bytes_hex(b: &[u8], max_display: usize) -> String {
         if b.is_empty() {
@@ -2107,6 +2167,14 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
             out.push_str(&format!("  key_size: {}\n", c.key_size));
             out.push_str(&format!("  block_size: {}\n", c.block_size));
             out.push_str(&format!("  unique_iv: {}\n", c.unique_iv));
+            // Raw diagnostic view: show the true wire value even when this
+            // build doesn't recognize it, rather than folding an unknown
+            // future width into the zero (64-bit) variant as the decoder does.
+            let width = match FileIvWidth::try_from(c.file_iv_width) {
+                Ok(w) => w.as_str_name().to_string(),
+                Err(_) => format!("FILE_IV_WIDTH_UNKNOWN({})", c.file_iv_width),
+            };
+            out.push_str(&format!("  file_iv_width: {}\n", width));
             out.push_str("}\n");
         }
         None => {}
@@ -2137,6 +2205,15 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
     out.push_str("config_hash: ");
     out.push_str(&bytes_hex(&proto.config_hash, 64));
     out.push('\n');
+
+    // Wire 0 means the base version (pre-existing configs never wrote this
+    // field), so show both the raw value and what it means.
+    let effective =
+        config::EncfsConfig::effective_v7_min_reader_version(proto.minimum_reader_version);
+    out.push_str(&format!(
+        "minimum_reader_version: {} (effective: {})\n",
+        proto.minimum_reader_version, effective
+    ));
 
     out
 }
@@ -2473,6 +2550,8 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         };
 
@@ -2576,6 +2655,8 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         };
 
@@ -2656,6 +2737,8 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: false, // V4 usually false
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         };
 
@@ -2855,6 +2938,8 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         };
 
@@ -2930,6 +3015,8 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         };
 
@@ -2955,6 +3042,150 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_dir_all(temp_dir);
+        Ok(())
+    }
+
+    fn new_config_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("encfsctl_new_{}_{}", name, std::process::id()))
+    }
+
+    #[test]
+    fn cmd_new_defaults_to_wide_file_iv() -> Result<()> {
+        let dir = new_config_dir("wide");
+        let _ = fs::remove_dir_all(&dir);
+        cmd_new(
+            &dir,
+            Some("echo test_password".to_string()),
+            false,
+            false,
+            false,
+            false,
+        )?;
+
+        let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+        assert!(config.wide_file_iv);
+        assert_eq!(config.header_size(), 12);
+        assert_eq!(
+            config.minimum_reader_version,
+            constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+        );
+
+        let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
+        assert_eq!(
+            proto.minimum_reader_version,
+            constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[test]
+    fn cmd_new_legacy_file_iv_creates_narrow_config() -> Result<()> {
+        let dir = new_config_dir("legacy_file_iv");
+        let _ = fs::remove_dir_all(&dir);
+        cmd_new(
+            &dir,
+            Some("echo test_password".to_string()),
+            false,
+            false,
+            false,
+            true, // legacy_file_iv
+        )?;
+
+        let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+        assert!(!config.wide_file_iv);
+        assert_eq!(config.header_size(), 8);
+        assert_eq!(
+            config.minimum_reader_version,
+            constants::V7_BASE_CONFIG_VERSION
+        );
+
+        // Base-version configs re-encode the wire field as 0, matching a
+        // pre-this-ADR V7 config byte-for-byte in that respect.
+        let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
+        assert_eq!(proto.minimum_reader_version, 0);
+
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[test]
+    fn cmd_new_no_unique_iv_creates_headerless_narrow_config() -> Result<()> {
+        let dir = new_config_dir("no_unique_iv");
+        let _ = fs::remove_dir_all(&dir);
+        cmd_new(
+            &dir,
+            Some("echo test_password".to_string()),
+            false,
+            false,
+            true, // no_unique_iv
+            false,
+        )?;
+
+        let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+        assert!(!config.unique_iv);
+        assert!(!config.wide_file_iv);
+        assert_eq!(config.header_size(), 0);
+
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[test]
+    fn cmd_new_redundant_legacy_file_iv_and_no_unique_iv() -> Result<()> {
+        let dir = new_config_dir("both_flags");
+        let _ = fs::remove_dir_all(&dir);
+        cmd_new(
+            &dir,
+            Some("echo test_password".to_string()),
+            false,
+            false,
+            true, // no_unique_iv
+            true, // legacy_file_iv
+        )?;
+
+        let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+        assert!(!config.unique_iv);
+        assert!(!config.wide_file_iv);
+        assert_eq!(
+            config.minimum_reader_version,
+            constants::V7_BASE_CONFIG_VERSION
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[test]
+    fn raw_info_shows_wide_file_iv_and_effective_min_reader_version() -> Result<()> {
+        let dir = new_config_dir("raw_info");
+        let _ = fs::remove_dir_all(&dir);
+        cmd_new(
+            &dir,
+            Some("echo test_password".to_string()),
+            false,
+            false,
+            false,
+            false,
+        )?;
+
+        let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
+        let raw = format_v7_config_raw(&proto);
+        assert!(
+            raw.contains("file_iv_width: FILE_IV_WIDTH_96"),
+            "raw info: {raw}"
+        );
+        assert!(
+            raw.contains(&format!(
+                "minimum_reader_version: {} (effective: {})",
+                constants::V7_WIDE_FILE_IV_CONFIG_VERSION,
+                constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            )),
+            "raw info: {raw}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
         Ok(())
     }
 }

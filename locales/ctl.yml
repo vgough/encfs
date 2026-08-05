@@ -99,6 +99,22 @@ ctl.block_mac:
   en: "Block MAC: %{bytes} bytes"
   fr: "MAC de bloc : %{bytes} octets"
   de: "Block-MAC: %{bytes} Bytes"
+ctl.file_iv_width:
+  en: "File IV width: "
+  fr: "Largeur de l'IV de fichier : "
+  de: "Datei-IV-Breite: "
+ctl.file_iv_width_wide:
+  en: "96-bit"
+  fr: "96 bits"
+  de: "96-Bit"
+ctl.file_iv_width_narrow:
+  en: "64-bit"
+  fr: "64 bits"
+  de: "64-Bit"
+ctl.v7_min_reader_version:
+  en: "V7 minimum reader version: %{effective} (build supports through %{max})"
+  fr: "Version minimale de lecteur V7 : %{effective} (cette version prend en charge jusqu'à %{max})"
+  de: "V7 Mindest-Leserversion: %{effective} (Build unterstützt bis %{max})"
 ctl.allow_holes:
   en: "File holes allowed: "
   fr: "Trous de fichier autorisés : "

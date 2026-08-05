@@ -10,6 +10,7 @@
 //! Build a boxed cipher through [`build`].
 
 use crate::config::Interface;
+use crate::crypto::file_iv::FileIv;
 use crate::crypto::ssl::SslCipher;
 use anyhow::Result;
 
@@ -28,6 +29,11 @@ pub trait Cipher: Send + Sync {
 
     /// Select the filename encoding (block vs stream) from the name interface.
     fn set_name_encoding(&mut self, iface: &Interface);
+
+    /// Select the on-disk/wire file-IV width: 96-bit when `wide`, else the
+    /// legacy 64-bit representation. Governs `encrypt_header`,
+    /// `encrypt_header_with_iv`, and the AES-GCM-SIV nonce/AAD construction.
+    fn set_wide_file_iv(&mut self, wide: bool);
 
     // --- file-content block crypto (used by BlockCodec) ---
 
@@ -57,7 +63,7 @@ pub trait Cipher: Send + Sync {
         &self,
         data: &mut [u8],
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
     ) -> Result<[u8; 16]>;
 
     /// Decrypt and verify one AES-GCM-SIV (V7) block in place.
@@ -66,19 +72,19 @@ pub trait Cipher: Send + Sync {
         data: &mut [u8],
         tag: &[u8],
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
     ) -> Result<()>;
 
     // --- file header IV (used by the file codec) ---
 
     /// Generate a fresh per-file IV header, returning `(header, file_iv)`.
-    fn encrypt_header(&self, external_iv: u64) -> Result<(Vec<u8>, u64)>;
+    fn encrypt_header(&self, external_iv: u64) -> Result<(Vec<u8>, FileIv)>;
 
     /// Encrypt a specific per-file IV into its on-disk header.
-    fn encrypt_header_with_iv(&self, file_iv: u64, external_iv: u64) -> Result<Vec<u8>>;
+    fn encrypt_header_with_iv(&self, file_iv: FileIv, external_iv: u64) -> Result<Vec<u8>>;
 
     /// Decrypt a per-file IV header, returning the file IV.
-    fn decrypt_header(&self, header: &mut [u8], external_iv: u64) -> Result<u64>;
+    fn decrypt_header(&self, header: &mut [u8], external_iv: u64) -> Result<FileIv>;
 
     // --- filename crypto (used by the filesystem layers) ---
 
@@ -138,6 +144,10 @@ impl Cipher for SslCipher {
         SslCipher::set_name_encoding(self, iface)
     }
 
+    fn set_wide_file_iv(&mut self, wide: bool) {
+        SslCipher::set_wide_file_iv(self, wide)
+    }
+
     fn mac_64_no_iv(&self, data: &[u8]) -> Result<u64> {
         SslCipher::mac_64_no_iv(self, data)
     }
@@ -166,7 +176,7 @@ impl Cipher for SslCipher {
         &self,
         data: &mut [u8],
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
     ) -> Result<[u8; 16]> {
         SslCipher::encrypt_block_aes_gcm_siv_inplace(self, data, block_num, file_iv)
     }
@@ -176,20 +186,20 @@ impl Cipher for SslCipher {
         data: &mut [u8],
         tag: &[u8],
         block_num: u64,
-        file_iv: u64,
+        file_iv: FileIv,
     ) -> Result<()> {
         SslCipher::decrypt_block_aes_gcm_siv_inplace(self, data, tag, block_num, file_iv)
     }
 
-    fn encrypt_header(&self, external_iv: u64) -> Result<(Vec<u8>, u64)> {
+    fn encrypt_header(&self, external_iv: u64) -> Result<(Vec<u8>, FileIv)> {
         SslCipher::encrypt_header(self, external_iv)
     }
 
-    fn encrypt_header_with_iv(&self, file_iv: u64, external_iv: u64) -> Result<Vec<u8>> {
+    fn encrypt_header_with_iv(&self, file_iv: FileIv, external_iv: u64) -> Result<Vec<u8>> {
         SslCipher::encrypt_header_with_iv(self, file_iv, external_iv)
     }
 
-    fn decrypt_header(&self, header: &mut [u8], external_iv: u64) -> Result<u64> {
+    fn decrypt_header(&self, header: &mut [u8], external_iv: u64) -> Result<FileIv> {
         SslCipher::decrypt_header(self, header, external_iv)
     }
 
@@ -265,7 +275,7 @@ mod tests {
 
         // Exercise one path through the trait object to confirm dispatch works.
         let header = cipher
-            .encrypt_header_with_iv(0x0f1e2d3c4b5a6978, 0x8877665544332211)
+            .encrypt_header_with_iv(FileIv::from_u64(0x0f1e2d3c4b5a6978), 0x8877665544332211)
             .expect("header via dyn Cipher");
         assert_eq!(header, [0x68, 0xd9, 0xed, 0x17, 0x09, 0x3d, 0x81, 0xc1]);
         assert_eq!(cipher.iv_len(), 16);

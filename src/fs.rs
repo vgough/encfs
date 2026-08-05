@@ -1,6 +1,7 @@
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
+use crate::crypto::file_iv::FileIv;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use libc;
@@ -44,7 +45,7 @@ struct FileMeta {
     /// the inode. `None` for headerless configurations (`header_size == 0`),
     /// where the IV is derived from the path instead and lives on the handle;
     /// see [`FileHandle::headerless_iv`].
-    header_iv: Option<u64>,
+    header_iv: Option<FileIv>,
 }
 
 /// State shared by every handle on one backing inode.
@@ -184,14 +185,14 @@ pub struct FileHandle {
     /// IV for headerless configurations, derived from the path at open time.
     /// Truncation cannot change it, so unlike the header IV it is safe to cache
     /// per handle. Zero (and unused) when the config stores a per-file header.
-    headerless_iv: u64,
+    headerless_iv: FileIv,
     /// Shared state for the backing inode; guards every RMW on this file.
     state: Arc<FileState>,
 }
 
 impl FileHandle {
     /// The IV this file's blocks are encrypted under, as of `meta`.
-    fn file_iv(&self, meta: &FileMeta) -> u64 {
+    fn file_iv(&self, meta: &FileMeta) -> FileIv {
         meta.header_iv.unwrap_or(self.headerless_iv)
     }
 }
@@ -668,8 +669,8 @@ impl EncFs {
     }
 }
 
-fn headerless_file_iv(header_size: u64, external_iv: u64) -> u64 {
-    if header_size == 0 { external_iv } else { 0 }
+fn headerless_file_iv(header_size: u64, external_iv: u64) -> FileIv {
+    FileIv::from_u64(if header_size == 0 { external_iv } else { 0 })
 }
 
 impl EncFs {
@@ -677,7 +678,7 @@ impl EncFs {
     ///
     /// Callers must hold the file's write lock: this replaces the IV every
     /// existing handle on the inode encrypts under.
-    fn write_file_header(&self, file: &File, external_iv: u64) -> Result<u64, libc::c_int> {
+    fn write_file_header(&self, file: &File, external_iv: u64) -> Result<FileIv, libc::c_int> {
         let (header, file_iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
             error!("Failed to generate header: {}", e);
             libc::EIO
@@ -694,7 +695,7 @@ impl EncFs {
         file: &File,
         path: &Path,
         external_iv: u64,
-    ) -> Result<Option<u64>, libc::c_int> {
+    ) -> Result<Option<FileIv>, libc::c_int> {
         let header_size = self.config.header_size() as usize;
         let mut header = vec![0u8; header_size];
         let bytes_read = file
@@ -727,7 +728,7 @@ impl EncFs {
         &self,
         file_ref: &File,
         _guard: &RwLockWriteGuard<'_, FileMeta>,
-        file_iv: u64,
+        file_iv: FileIv,
         header_size: u64,
         current_logical_size: u64,
         new_logical_size: u64,
@@ -793,7 +794,7 @@ impl EncFs {
         &self,
         file_ref: &File,
         _guard: &RwLockWriteGuard<'_, FileMeta>,
-        file_iv: u64,
+        file_iv: FileIv,
         header_size: u64,
         new_logical_size: u64,
         block_layout: BlockLayout,
@@ -988,9 +989,9 @@ impl EncFs {
             file_iv
         } else if self.config.external_iv_chaining {
             let (_, path_iv) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
-            path_iv
+            FileIv::from_u64(path_iv)
         } else {
-            0
+            FileIv::from_u64(0)
         };
 
         if size > current_logical_size {
@@ -1305,7 +1306,7 @@ impl EncFs {
                 // pre-header-cache behaviour for partially written files.
                 Some(
                     self.read_file_header(&file, path, external_iv)?
-                        .unwrap_or(0),
+                        .unwrap_or(FileIv::from_u64(0)),
                 )
             };
         } else {
@@ -2084,6 +2085,7 @@ mod tests {
         is_apple_xattr, lock_source_and_dest,
     };
     use crate::config::{EncfsConfig, Interface};
+    use crate::crypto::file_iv::FileIv;
     use crate::crypto::ssl::SslCipher;
     use std::fs::File;
     use std::os::fd::FromRawFd;
@@ -2182,13 +2184,16 @@ mod tests {
     fn headerless_files_use_external_iv() {
         assert_eq!(
             headerless_file_iv(0, 0x1234_5678_9abc_def0),
-            0x1234_5678_9abc_def0
+            FileIv::from_u64(0x1234_5678_9abc_def0)
         );
     }
 
     #[test]
     fn headered_files_ignore_external_iv() {
-        assert_eq!(headerless_file_iv(8, 0x1234_5678_9abc_def0), 0);
+        assert_eq!(
+            headerless_file_iv(8, 0x1234_5678_9abc_def0),
+            FileIv::from_u64(0)
+        );
     }
 
     #[test]
@@ -2236,7 +2241,7 @@ mod tests {
         // it propagates.
         let handle = FileHandle {
             file: unsafe { File::from_raw_fd(fds[1]) },
-            headerless_iv: 0,
+            headerless_iv: FileIv::from_u64(0),
             state: Arc::new(FileState::new((0, 0))),
         };
         let fs = test_fs();

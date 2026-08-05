@@ -1,5 +1,6 @@
 use crate::crypto::block::{BlockCodec, BlockLayout, BlockMode};
 use crate::crypto::cipher::Cipher;
+use crate::crypto::file_iv::FileIv;
 #[cfg(test)]
 use crate::crypto::ssl::SslCipher;
 use std::io;
@@ -56,7 +57,7 @@ pub struct FileCodecParams {
 pub struct FileDecoder<'a, F: ReadAt> {
     cipher: &'a dyn Cipher,
     file: &'a F,
-    file_iv: u64,
+    file_iv: FileIv,
     header_size: u64,
     block_size: u64, // On-disk block size from config (e.g., 1024)
     block_mac_bytes: u64,
@@ -70,7 +71,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
     pub fn new(
         cipher: &'a dyn Cipher,
         file: &'a F,
-        file_iv: u64,
+        file_iv: FileIv,
         header_size: u64,
         block_size: u64,
         block_mac_bytes: u64,
@@ -94,7 +95,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
     pub fn new_with_mode(
         cipher: &'a dyn Cipher,
         file: &'a F,
-        file_iv: u64,
+        file_iv: FileIv,
         header_size: u64,
         block_size: u64,
         block_mac_bytes: u64,
@@ -119,7 +120,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
     pub fn new_from_config(
         cipher: &'a dyn Cipher,
         file: &'a F,
-        file_iv: u64,
+        file_iv: FileIv,
         params: &FileCodecParams,
         ignore_mac_mismatch: bool,
     ) -> Self {
@@ -245,7 +246,7 @@ impl<'a, F: ReadAt> FileDecoder<'a, F> {
 pub struct FileEncoder<'a, F: ReadAt + WriteAt + FileLen> {
     cipher: &'a dyn Cipher,
     file: &'a F,
-    file_iv: u64,
+    file_iv: FileIv,
     header_size: u64,
     block_size: u64,
     block_mac_bytes: u64,
@@ -258,7 +259,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
     pub fn new(
         cipher: &'a dyn Cipher,
         file: &'a F,
-        file_iv: u64,
+        file_iv: FileIv,
         header_size: u64,
         block_size: u64,
         block_mac_bytes: u64,
@@ -280,7 +281,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
     pub fn new_with_mode(
         cipher: &'a dyn Cipher,
         file: &'a F,
-        file_iv: u64,
+        file_iv: FileIv,
         header_size: u64,
         block_size: u64,
         block_mac_bytes: u64,
@@ -303,7 +304,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
     pub fn new_from_config(
         cipher: &'a dyn Cipher,
         file: &'a F,
-        file_iv: u64,
+        file_iv: FileIv,
         params: &FileCodecParams,
     ) -> Self {
         Self::new_with_mode(
@@ -714,7 +715,7 @@ mod tests {
         // Actually SslCipher wrapper expects key/IV set via set_key
         cipher.set_key(&key, &iv);
 
-        let file_iv = 123456789;
+        let file_iv = FileIv::from_u64(123456789);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = 0;
@@ -766,7 +767,7 @@ mod tests {
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 987654321;
+        let file_iv = FileIv::from_u64(987654321);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = 8; // Enable MAC
@@ -820,7 +821,7 @@ mod tests {
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 11111;
+        let file_iv = FileIv::from_u64(11111);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = 8;
@@ -868,7 +869,7 @@ mod tests {
         let iv = vec![0u8; 16];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 33333;
+        let file_iv = FileIv::from_u64(33333);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES;
@@ -924,7 +925,7 @@ mod tests {
         let iv = vec![0u8; 16];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 44444;
+        let file_iv = FileIv::from_u64(44444);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES;
@@ -974,7 +975,7 @@ mod tests {
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 22222;
+        let file_iv = FileIv::from_u64(22222);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = 8;
@@ -1025,7 +1026,7 @@ mod tests {
         let iv = vec![0u8; 16];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 55555;
+        let file_iv = FileIv::from_u64(55555);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES; // 16
@@ -1078,7 +1079,7 @@ mod tests {
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 123;
+        let file_iv = FileIv::from_u64(123);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = 8;
@@ -1146,7 +1147,7 @@ mod tests {
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 987654;
+        let file_iv = FileIv::from_u64(987654);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = 0; // No MACs (standard mode)
@@ -1202,7 +1203,7 @@ mod tests {
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 555555;
+        let file_iv = FileIv::from_u64(555555);
         let header_size = 8;
         let block_size = 64;
         let block_mac_bytes = 0;
@@ -1298,7 +1299,7 @@ mod tests {
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 987654;
+        let file_iv = FileIv::from_u64(987654);
         let header_size: u64 = 8;
         let block_size: u64 = 64;
         let block_mac_bytes: u64 = 8;
@@ -1331,7 +1332,7 @@ mod tests {
         let iv = vec![0u8; 32];
         cipher.set_key(&key, &iv);
 
-        let file_iv = 555555;
+        let file_iv = FileIv::from_u64(555555);
         let header_size: u64 = 8;
         let block_size: u64 = 64;
         let block_mac_bytes: u64 = 8;
