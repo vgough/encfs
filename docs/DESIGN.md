@@ -1,20 +1,14 @@
-For notes about internationalization, see [README-NLS](README-NLS).
-
 EncFS is a program which provides an encrypted virtual filesystem for Linux
-using the FUSE kernel module ( see http://sourceforge.net/projects/avf to
-download the latest version of FUSE ).  FUSE provides a loadable kernel module
+using the FUSE kernel module.  FUSE provides a loadable kernel module
 which exports a filesystem interface to user-mode.  EncFS runs entirely in
 user-mode and acts as a transparent encrypted filesystem.
 
 Usage
 -----
 
- - To see command line options, see the man page for [encfs](encfs/encfs.pod)
-   and [encfsctl](encfs/encfsctl.pod), or for
-   brief usage message, run the programs without an argument (or `-h`):
+ - To see command line options, run the programs without an argument (or `-h`):
 
      encfs -h
-     man encfs
 
  - To create a new encrypted filesystem:
    
