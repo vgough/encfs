@@ -1484,7 +1484,20 @@ fn cmd_new(
     } else {
         print!("{}", t!("ctl.new_enter_password"));
         io::stdout().flush()?;
-        prompt_password("").context(t!("ctl.error_failed_to_read_password"))?
+        let password = prompt_password("").context(t!("ctl.error_failed_to_read_password"))?;
+
+        print!("{}", t!("ctl.new_verify_password"));
+        io::stdout().flush()?;
+        let mut verify_password =
+            prompt_password("").context(t!("ctl.error_failed_to_read_password"))?;
+
+        if password != verify_password {
+            zeroize::Zeroize::zeroize(&mut verify_password);
+            anyhow::bail!("{}", t!("ctl.error_password_mismatch"));
+        }
+        zeroize::Zeroize::zeroize(&mut verify_password);
+
+        password
     };
 
     config
