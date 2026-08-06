@@ -28,6 +28,12 @@ message Config {
 
   // Hash of the config (with encrypted_key and config_hash cleared), used as AEAD AAD.
   bytes config_hash = 6;
+
+  // Minimum reader version required to interpret this config. 0 on the wire
+  // means the base V7 format (version 1); readers must special-case that.
+  // Gates the whole config, not just the block cipher, so it lives here
+  // rather than inside AesGcmSivBlockCipher.
+  uint32 minimum_reader_version = 8;
 }
 
 message Argon2Kdf {
@@ -52,10 +58,21 @@ message BasicBlockCipher {
   bool unique_iv = 6;
 }
 
+// Width of the random per-file IV. FILE_IV_WIDTH_64 is the zero value so an
+// absent/omitted field (all configs written before this ADR) means 64-bit.
+// Leaves room for future expansions;
+// any new value must be paired with a minimum_reader_version bump so old
+// readers fail closed instead of silently misreading it as 64-bit.
+enum FileIvWidth {
+  FILE_IV_WIDTH_64 = 0;
+  FILE_IV_WIDTH_96 = 1;
+}
+
 message AesGcmSivBlockCipher {
   int32 key_size = 1; // AES key size in bits (128 or 256)
   int32 block_size = 2;
   bool unique_iv = 3;
+  FileIvWidth file_iv_width = 4;
 }
 
 enum NameEncodingMode {

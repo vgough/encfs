@@ -73,6 +73,7 @@ with EncFS 1.9.x, config formats V4/V5/V6) and newly created filesystems
 | Block overhead | Up to 8-byte MAC header per block | 16-byte tag per block (default block size 4080 of 4096 bytes) |
 | Filenames | Stream (CFB, multi-pass) or block mode, IV from HMAC of the name | Unchanged — still legacy stream/block filename modes for compatibility |
 | Volume key wrap | Encrypted with the PBKDF2-derived user key | Wrapped with a 32-byte Argon2id-derived AEAD key |
+| Per-file IV (with `uniqueIV`) | 64-bit, stored in an 8-byte file header | 96-bit by default, stored in a 12-byte file header (`encfsctl new --legacy-file-iv` opts back into the 64-bit/8-byte form for interop with older tooling) |
 
 In short: legacy filesystems use PBKDF2-HMAC-SHA1 + CBC with an optional
 64-bit per-block MAC, while new V7 filesystems use Argon2id + AES-GCM-SIV,
@@ -151,7 +152,9 @@ an untrusted or cloud storage) without storing plaintext there.
 - Config should be created **without** per-file IV headers: use
   `encfsctl new --no-unique-iv ...`.  This is required by encfsr, including
   writable reverse mounts; authenticated V7 block encryption and IV chaining
-  remain supported.
+  remain supported. Headerless configs always use the 64-bit path-derived
+  file IV — the 96-bit wide-header format only applies when `uniqueIV` is
+  enabled, so it never applies to reverse mode.
 
 ### Usage
 

@@ -86,7 +86,7 @@ fn test_legacy_v5_decode() -> anyhow::Result<()> {
         .cipher
         .decrypt_header(&mut header, iv_for_header)
         .context("Failed to decrypt header")?;
-    println!("File IV: {:x}", file_iv);
+    println!("File IV: {:x}", file_iv.as_u128());
 
     let metadata = file.metadata()?;
     // Assuming 8 byte header

@@ -1,3 +1,17 @@
+Unreleased
+==================
+	* New V7/AES-GCM-SIV filesystems default to a 96-bit random per-file IV
+	  (12-byte header), up from 64 bits. Existing filesystems, including
+	  existing 64-bit V7/GCM-SIV volumes, are unaffected and keep decrypting
+	  byte-for-byte unchanged.
+	* New 96-bit volumes are not readable by pre-this-release tooling; such
+	  readers fail closed via a "config hash mismatch" error. Use
+	  `encfsctl new --legacy-file-iv` to create a filesystem that older
+	  tooling can still read.
+	* Add an authenticated V7 minimum-reader-version field so future
+	  V7 changes that older readers cannot safely interpret fail with a
+	  clear version error instead of a generic corruption message.
+
 v2.0.0-beta.6 / 2026-08-01
 ==================
 	* Update typed-fuse to 0.6 with stable per-node state handling

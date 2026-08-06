@@ -1,20 +1,14 @@
-For notes about internationalization, see [README-NLS](README-NLS).
-
 EncFS is a program which provides an encrypted virtual filesystem for Linux
-using the FUSE kernel module ( see http://sourceforge.net/projects/avf to
-download the latest version of FUSE ).  FUSE provides a loadable kernel module
+using the FUSE kernel module.  FUSE provides a loadable kernel module
 which exports a filesystem interface to user-mode.  EncFS runs entirely in
 user-mode and acts as a transparent encrypted filesystem.
 
 Usage
 -----
 
- - To see command line options, see the man page for [encfs](encfs/encfs.pod)
-   and [encfsctl](encfs/encfsctl.pod), or for
-   brief usage message, run the programs without an argument (or `-h`):
+ - To see command line options, run the programs without an argument (or `-h`):
 
      encfs -h
-     man encfs
 
  - To create a new encrypted filesystem:
    
@@ -105,11 +99,26 @@ Technology
    mode, per-block authentication (16-byte tag) is always enabled.
 
    Also during filesystem creation, one can enable per-file initialization
-   vectors.  This causes a header with a random initialization vector to be
-   maintained with each file.  Each file then has its own 64 bit initialization
-   vector which is augmented by the block number - so that each block within a
+   vectors (`uniqueIV`).  This causes a header with a random initialization
+   vector to be maintained with each file.  Each file then has its own file
+   IV which is combined with the block number - so that each block within a
    file has a unique initialization vector.  This makes it infeasible to copy a
-   whole block from one file to another. 
+   whole block from one file to another.
+
+   For V7/AES-GCM-SIV filesystems the header (and file IV) can be either
+   width:
+     - Narrow (8-byte header, 64-bit file IV): the pre-existing format, still
+       used by every V4-V6 filesystem, headerless (`uniqueIV=0`) configs, and
+       V7 filesystems created with `encfsctl new --legacy-file-iv`.
+     - Wide (12-byte header, 96-bit file IV): the default for newly created
+       V7/AES-GCM-SIV filesystems. AES-GCM-SIV's nonce is always 96 bits
+       either way; widening the file IV widens how many of those bits are
+       unpredictable per file, reducing cross-file nonce collisions. See
+       `docs/adr/0001-96-bit-file-iv-for-aes-gcm-siv.md` for the exact
+       nonce/AAD byte layout of both widths.
+     - Headerless (`uniqueIV=0`, 0-byte header, always 64-bit): the file IV is
+       derived from the path instead of a stored header. Reverse mode
+       (`encfsr`) always uses this form.
 
 Backward Compatibility
 ----------------------
@@ -138,7 +147,18 @@ Backward Compatibility
    the config (cipher params, KDF params, feature flags, etc.) invalidates the
    AAD, causing decryption to fail. The config hash is also stored and checked
    on load; a hash mismatch indicates tampering or corruption. New V7 filesystems
-   default to Argon2id KDF, AES-GCM-SIV block mode, and AES-256.
+   default to Argon2id KDF, AES-GCM-SIV block mode, AES-256, and a 96-bit
+   per-file IV (`wide_file_iv`).
+
+   V7 also carries an authenticated `minimum_reader_version`. A build only
+   opens a config whose minimum reader version it supports; a config
+   requiring a newer version fails with a dedicated error rather than being
+   misread. New 96-bit-file-IV volumes are intentionally **not** readable by
+   tooling built before this feature: an old build cannot know the new
+   protobuf fields, so it recomputes a different config hash and fails
+   closed (reported as "config hash mismatch"). Use
+   `encfsctl new --legacy-file-iv` (or `--no-unique-iv`, which is always
+   64-bit) to create a filesystem that old tooling can still read.
 
 Utility
 -------

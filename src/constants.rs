@@ -26,5 +26,16 @@ pub const FILE_BUFFER_SIZE: usize = 128 * 1024;
 /// EncFS V5 configuration format minimum sub-version
 pub const V5_MIN_SUBVERSION: i32 = 20040813;
 
+/// V7 protobuf format's base minimum-reader version. A `minimum_reader_version`
+/// wire value of 0 means this version (pre-existing configs never wrote the
+/// field, so 0 must decode to the same meaning as this constant).
+pub const V7_BASE_CONFIG_VERSION: u32 = 1;
+
+/// V7 minimum-reader version at which `wide_file_iv` becomes interpretable.
+pub const V7_WIDE_FILE_IV_CONFIG_VERSION: u32 = 2;
+
+/// Highest V7 minimum-reader version this build understands.
+pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_WIDE_FILE_IV_CONFIG_VERSION;
+
 /// Line length for Base64 encoded data in XML config
 pub const XML_BASE64_LINE_LEN: usize = 76;

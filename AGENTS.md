@@ -13,10 +13,12 @@ This document provides comprehensive information for AI agents working in the En
 ### Key Characteristics
 - Encrypts individual files (not block devices)
 - Uses FUSE for filesystem operations
-- Supports multiple config formats (V4, V5, V6)
+- Supports multiple config formats (V4, V5, V6, V7 - see Config Format Compatibility below)
 - RustCrypto-based cryptographic operations (AES, Blowfish, SHA1, PBKDF2, Argon2, AES-GCM, AES-GCM-SIV)
 - Modern cryptography (AES-GCM-SIV, Argon2) for new setups
 - Internationalization support
+
+For stack/dependency details, the full module map, data flow, and security architecture, see `architecture.md`. This document focuses on commands, conventions, and agent-relevant gotchas.
 
 ## Essential Commands
 
@@ -109,84 +111,25 @@ cargo install --path .
 
 ## Project Structure
 
-```
-encfs/
-├── src/                      # Rust source code
-│   ├── main.rs              # Main encfs binary (FUSE mount)
-│   ├── encfsctl.rs          # Control utility binary
-│   ├── encfsr.rs            # Reverse-mode FUSE binary
-│   ├── lib.rs               # Library entry point
-│   ├── config.rs            # Config file parsing (V4/V5/V6)
-│   ├── config_binary.rs     # Binary config format parser
-│   ├── constants.rs         # Global constants
-│   ├── fs.rs                # FUSE filesystem implementation
-│   ├── reverse_fs.rs        # Reverse-mode FUSE implementation
-│   └── crypto/              # Cryptographic operations
-│       ├── mod.rs           # Crypto module exports
-│       ├── ssl.rs           # Legacy cipher wrapper (RustCrypto)
-│       └── file.rs          # File encryption/decryption
-├── tests/                   # Integration tests
-│   ├── fixtures/            # Test data (encrypted files)
-│   ├── live_mount.rs        # Live FUSE mount tests (ignored by default)
-│   └── *.rs                 # Other integration tests
-├── locales/                 # i18n translation files (YAML)
-│   ├── main.yml            # Main binary translations
-│   ├── ctl.yml             # encfsctl translations
-│   └── help.yml            # Help text translations
-├── Cargo.toml              # Rust dependencies
-├── Taskfile.yml            # Task runner config (alternative to make)
-└── .github/workflows/      # CI configuration
-```
+Top-level layout: `src/` (Rust source), `tests/` (integration tests, `fixtures/`
+test data, `live_mount.rs` ignored-by-default live tests), `locales/` (i18n
+YAML), `Cargo.toml`, `Taskfile.yml`, `.github/workflows/` (CI).
 
-## Code Organization
+Quick pointers for the modules agents touch most:
+- `src/fs.rs`: forward-mode FUSE filesystem (`EncFs`, implements `typed_fuse::PathFilesystem`)
+- `src/reverse_fs.rs` / `src/encfsr.rs`: reverse-mode FUSE (encrypted view of a
+  plaintext source dir); requires a V7 config with `unique_iv = false`
+  (`encfsctl new --no-unique-iv <source-dir>`); `--write` stages and validates
+  ciphertext before committing it to the plaintext source
+- `src/config.rs`: `EncfsConfig`, `ConfigType` (V3 unsupported, V4/V5 binary
+  read-only, V6 XML, V7 protobuf), config validation
+- `src/crypto/`: `cipher.rs` (trait), `ssl.rs` (sole impl: legacy CBC/CFB+MAC
+  and V7 AES-GCM-SIV), `block.rs` (per-block layout/mode selection), `aead.rs`
+  (V7 volume-key wrap only), `file.rs` (block boundaries, header IV, dispatch)
 
-### Module Hierarchy
-
-1. **`lib.rs`**: Library entry point
-   - Exports all public modules
-   - Initializes i18n system
-   - Contains integration tests
-
-2. **`config.rs`**: Configuration file handling
-   - `EncfsConfig`: Main config struct
-   - `ConfigType`: Enum for V3/V4/V5/V6/V7 formats
-   - `Interface`: Cipher/naming algorithm interface
-   - Supports XML (V6) and binary (V4/V5) formats
-   - XML uses Boost Serialization format for compatibility
-
-3. **`config_binary.rs`**: Binary config parser
-   - `ConfigReader`: Reads V4/V5 binary configs
-   - `ConfigVar`: Variable-length encoded values
-
-4. **`crypto/` namespace**: Cryptographic operations
-   - **`ssl.rs`**: Legacy cipher wrapper using RustCrypto (AES/Blowfish CFB/CBC modes)
-   - **`aead.rs`**: Modern authenticated encryption (AES-256-GCM for V7 configs)
-   - **`file.rs`**: File-level encryption, handles block boundaries, MACs, headers
-
-5. **`fs.rs`**: FUSE filesystem implementation
-   - `EncFs`: Main filesystem struct
-   - Implements the synchronous `typed_fuse::PathFilesystem` trait
-   - Path encryption/decryption with IV chaining
-   - Uses typed file and directory handles owned by the FUSE runtime
-   - All FUSE operations (read, write, readdir, etc.)
-
-6. **`main.rs`**: Main encfs binary
-   - CLI argument parsing with `clap`
-   - Password handling (prompt, stdin, extpass)
-   - Daemonization support
-   - FUSE mount setup
-
-7. **`encfsctl.rs`**: Control utility
-   - Subcommands: info, passwd, decode, encode, cat, ls, showkey, export
-   - Standalone utility for inspecting/manipulating encrypted filesystems
-
-8. **`reverse_fs.rs` / `encfsr.rs`**: Reverse encryption
-   - Presents an encrypted V7 view of a plaintext source directory
-   - Read-only by default; `encfsr --write` enables transactional writes
-   - Requires `unique_iv = false`; create a compatible V7 config with
-     `encfsctl new --no-unique-iv <source-dir>`
-   - Stages ciphertext writes and validates authenticated blocks before applying
-     changes to the plaintext source
+See `architecture.md`'s Module Map for the complete file list (including
+`security.rs`, `config_binary.rs`, `config_proto.rs`) and Data Flow for how a
+FUSE op moves through these layers.
 
 ## Naming Conventions
 
@@ -257,12 +200,13 @@ fn live_smoke_mount_unmount_standard() -> Result<()> {
 ## Important Gotchas and Non-Obvious Patterns
 
 ### 1. Config Format Compatibility
-- **V6 (XML)**: Current format, `.encfs6.xml` file
+- **V7 (Protobuf)**: Current default for new filesystems, `.encfs7` file. Argon2id KDF, AES-256-GCM key wrap, AES-GCM-SIV per-block crypto.
+- **V6 (XML)**: `.encfs6.xml` file. Still fully supported (read/write).
 - **V5 (Binary)**: Legacy format, `.encfs5` file - READ ONLY (save not implemented)
 - **V4 (Binary)**: Older format, `.encfs4` file - READ ONLY
-- **V3**: Not supported (will error)
+- **V3 and earlier**: Not supported (will error)
 
-The code must maintain compatibility with all three formats for reading existing filesystems.
+The code must maintain compatibility with all formats for reading existing filesystems. See `architecture.md`'s Data Model section for on-disk layout details.
 
 ### 2. IV Chaining Modes
 Two types of IV chaining affect how paths are encrypted:
@@ -278,17 +222,12 @@ Two types of IV chaining affect how paths are encrypted:
 **Critical**: When decrypting files in paranoia mode, you MUST use the path IV from `decrypt_path()`, not 0!
 
 ### 3. File Structure
-Encrypted files have this structure:
-```
-[Header: 8 bytes if unique_iv] [Block 0] [Block 1] ... [Block N]
-```
+Encrypted files share the header layout `[Header: 8 bytes if unique_iv] [Block 0] [Block 1] ... [Block N]`,
+but block contents differ by format:
+- **Legacy (V4-V6)**: `[MAC: block_mac_bytes] [Random: block_mac_rand_bytes] [Data]`. `block_mac_rand_bytes` is not yet supported (must be 0).
+- **V7 (AES-GCM-SIV)**: `[Ciphertext][16-byte tag]`, always authenticated.
 
-Each block (if MACs enabled):
-```
-[MAC: block_mac_bytes] [Random: block_mac_rand_bytes] [Data: remaining]
-```
-
-**Note**: `block_mac_rand_bytes` is not yet supported (must be 0).
+See `architecture.md`'s Data Model section for full byte-level detail.
 
 ### 4. Filename Encryption
 - Base64 encoded (URL-safe variant without padding)
@@ -330,14 +269,13 @@ Three methods (in order of precedence):
   staged cause the commit to fail with a conflict.
 
 ### 10. Validation Requirements
-The `EncfsConfig::validate()` method enforces:
+The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
 - `plain_data` must be false (not supported)
 - `unique_iv` may be true or false (filesystem supports both)
 - `block_mac_rand_bytes` must be 0 (not implemented yet)
 - `key_size` must be positive and multiple of 8
-- `block_size` must be positive
-- `block_mac_bytes` must be 0-8
-- Block size must be larger than MAC overhead
+- `block_size` must be positive and larger than the block's crypto overhead
+- `block_mac_bytes` must be 0-8 for legacy formats, or exactly 16 (the AES-GCM-SIV tag) for V7
 
 ### 11. Logging
 - Uses `env_logger` crate
@@ -352,25 +290,9 @@ The `EncfsConfig::validate()` method enforces:
 
 ## Dependencies
 
-### Core Dependencies
-- **typed-fuse** (git dependency from `vgough/typed-fuse`): Typed libfuse3 bindings and path adapter
-
-- **clap** (4.6.1): CLI argument parsing
-- **anyhow** (1.0.102): Error handling
-- **serde** (1.0.228): Serialization/deserialization
-- **quick-xml** (0.40.1): XML parsing for V6 configs
-- **base64** (0.22.1): Base64 encoding for filenames
-- **rust-i18n** (4): Internationalization
-- **log** (0.4.32) + **env_logger** (0.11.10): Logging
-- **rpassword** (7.5.4): Password prompts
-- **daemonize** (0.5): Background daemon support
-- **libc** (0.2.186): POSIX system calls
-- **chrono** (0.4): Date/time handling
-- **argon2** (0.5) / **aes-gcm-siv** (0.11.1) / **sha2** (0.11): Modern cryptography
-- **prost** (0.14.4): Protobuf serialization support
-
-### System Dependencies
-- **FUSE 3.12+**: libfuse3-dev (Linux), a compatible fuse3 package (FreeBSD), macFUSE (macOS)
+See `architecture.md`'s Stack & Dependencies table for the full crate list and versions.
+System dependency: **FUSE 3.12+** (libfuse3-dev on Linux, a compatible fuse3 package on
+FreeBSD, macFUSE on macOS).
 
 ## CI/CD
 
@@ -419,25 +341,20 @@ Status: `allow_failures: true`
 4. Check for deprecation warnings with clippy
 
 ### Adding Translations
-1. Add keys to `locales/main.yml`, `locales/ctl.yml`, or `locales/help.yml`
+1. Add keys to `locales/main.yml`, `locales/ctl.yml`, `locales/help.yml`, or `locales/lib.yml`
 2. Provide translations for en, fr, de
 3. Use `t!("key.subkey")` macro in code
 4. For clap help text, create helper function returning `String`
 
 ## Security Considerations
 
-### Known Weaknesses (Inherited from EncFS Design)
-See `ISSUES.md` for detailed analysis. Key issues:
-- 64-bit IVs (should be 128-bit)
-- 64-bit MACs (should be 128-bit+)
-- Same key for encryption and authentication
-- Stream cipher for last file block
-- File holes not authenticated
-- Information leakage between decryption and MAC check
+Legacy formats (V4-V6) inherit protocol-level weaknesses (64-bit IVs/MACs, key
+reuse for encryption+auth, unauthenticated file holes) that can't be fixed
+without breaking compatibility; V7 (AES-GCM-SIV) does not have these
+limitations. See `architecture.md`'s Security and Constraints & Trade-offs
+sections for the full picture.
 
-**Note**: These are protocol-level issues that can't be fixed without breaking compatibility. The Rust port inherits these limitations.
-
-### Implementation Security
+### Implementation Security (coding practices for agents)
 - Rust's memory safety prevents many C++ vulnerabilities
 - Use `anyhow::Result` to ensure errors are handled
 - Avoid `unwrap()` in production code paths
@@ -526,8 +443,9 @@ fn some_fuse_op(&self, path: &Path) -> ResultEntry {
 
 ## Additional Resources
 
+- **architecture.md**: Stack, module map, data flow, security architecture, tech debt
 - **README.md**: Project overview and status
-- **DESIGN.md**: Technical overview of EncFS encryption
+- **docs/DESIGN.md**: Technical overview of EncFS encryption
 - **INSTALL.md**: Build and installation instructions
 - **Cargo.toml**: Dependencies and metadata
 - **Taskfile.yml**: Available task commands
@@ -544,9 +462,10 @@ task test-live           # Live mount tests
 ```
 
 ### Most Important Files
-- `src/fs.rs`: FUSE implementation
+- `src/fs.rs`: forward-mode FUSE implementation
+- `src/reverse_fs.rs`: reverse-mode FUSE implementation
 - `src/config.rs`: Config parsing
-- `src/crypto/ssl.rs`: Cryptography
+- `src/crypto/ssl.rs`: Cryptography (legacy + V7 AES-GCM-SIV)
 - `tests/live_mount.rs`: Integration tests
 
 ### Most Common Issues
@@ -555,6 +474,6 @@ task test-live           # Live mount tests
 
 ---
 
-**Last Updated**: August 1, 2026
+**Last Updated**: August 4, 2026
 **EncFS Version**: 2.0.0-beta.6
 **Rust Edition**: 2024

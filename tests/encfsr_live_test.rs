@@ -93,6 +93,8 @@ fn make_encfsr_config() -> EncfsConfig {
         external_iv_chaining: false,
         chained_name_iv: true,
         allow_holes: false,
+        wide_file_iv: false,
+        minimum_reader_version: 0,
         config_hash: None,
     }
 }
@@ -748,6 +750,7 @@ fn test_encfsr_v7_aes_gcm_siv_round_trip() -> Result<()> {
     // Create V7 config (standard_v7 uses AES-GCM-SIV, 16-byte tag)
     let mut config = EncfsConfig::standard_v7();
     config.unique_iv = false; // Required by encfsr
+    config.wide_file_iv = false; // headerless configs cannot use the wide format
     config.argon2_memory_cost = Some(8);
     config.argon2_time_cost = Some(1);
     config.argon2_parallelism = Some(1);
@@ -802,6 +805,7 @@ fn test_encfsr_v7_write_through_forward_mount() -> Result<()> {
 
     let mut config = EncfsConfig::standard_v7();
     config.unique_iv = false;
+    config.wide_file_iv = false; // headerless configs cannot use the wide format
     config.argon2_memory_cost = Some(8);
     config.argon2_time_cost = Some(1);
     config.argon2_parallelism = Some(1);

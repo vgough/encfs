@@ -1,6 +1,7 @@
 use crate::config::EncfsConfig;
 use crate::crypto::block::{BlockCodec, BlockLayout};
 use crate::crypto::cipher::Cipher;
+use crate::crypto::file_iv::FileIv;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_NO_PAD;
 use libc;
@@ -457,7 +458,7 @@ impl ReverseFs {
             Self::read_exact_at(&staged.file, &mut encrypted, physical_offset)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             codec
-                .decrypt_block(block_num, file_iv, &mut encrypted)
+                .decrypt_block(block_num, FileIv::from_u64(file_iv), &mut encrypted)
                 .map_err(|_| libc::EBADMSG)?;
             physical_offset += size as u64;
             block_num += 1;
@@ -475,7 +476,7 @@ impl ReverseFs {
             Self::read_exact_at(&staged.file, &mut encrypted, physical_offset)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
             let plaintext = codec
-                .decrypt_block(block_num, file_iv, &mut encrypted)
+                .decrypt_block(block_num, FileIv::from_u64(file_iv), &mut encrypted)
                 .map_err(|_| libc::EIO)?;
             Self::write_all_at(source, &plaintext, plaintext_offset)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -553,7 +554,7 @@ impl ReverseFs {
             plain_buf.truncate(n);
 
             let cipher_block = codec
-                .encrypt_block(block_num, file_iv, &plain_buf)
+                .encrypt_block(block_num, FileIv::from_u64(file_iv), &plain_buf)
                 .map_err(|_| libc::EIO)?;
 
             // Slice out only the bytes the caller requested (first/last blocks may be partial)
@@ -1440,6 +1441,8 @@ mod tests {
         let config_path = root.join(".encfs7");
         let mut config = EncfsConfig::standard_v7();
         config.unique_iv = false;
+        config.wide_file_iv = false;
+        config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         config.argon2_memory_cost = Some(8);
         config.argon2_time_cost = Some(1);
         config.argon2_parallelism = Some(1);

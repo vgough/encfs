@@ -83,6 +83,10 @@ fn write_v7_config(path: &Path, unique_iv: bool, password: &str) {
 
     let mut config = EncfsConfig::standard_v7();
     config.unique_iv = unique_iv;
+    if !unique_iv {
+        // Headerless configs cannot use the wide file-IV format.
+        config.wide_file_iv = false;
+    }
     // Lower Argon2 parameters for tests to avoid mlockall/RLIMIT_MEMLOCK ENOMEM
     config.argon2_memory_cost = Some(8);
     config.argon2_time_cost = Some(1);
@@ -178,6 +182,8 @@ fn write_valid_encfsr_config(dir: &Path, password: &str) {
         external_iv_chaining: false,
         chained_name_iv: true,
         allow_holes: false,
+        wide_file_iv: false,
+        minimum_reader_version: 0,
         config_hash: None,
     };
 

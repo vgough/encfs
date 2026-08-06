@@ -111,6 +111,20 @@ pub struct EncfsConfig {
     #[serde(rename = "allowHoles", default)]
     pub allow_holes: bool,
 
+    // Widen the AES-GCM-SIV per-file IV from 64 to 96 bits (V7 only). Requires
+    // unique_iv and AES-GCM-SIV block mode; see `validate()`. Absent in every
+    // pre-existing config (V4-V6 and pre-this-ADR V7), so it defaults to false
+    // and those configs keep decrypting byte-for-byte unchanged.
+    #[serde(rename = "wideFileIV", default)]
+    pub wide_file_iv: bool,
+
+    /// Effective V7 minimum-reader version (never the raw wire value, which
+    /// may be 0 meaning `V7_BASE_CONFIG_VERSION`). Zero/unused for non-V7
+    /// configs. Not serialized: V7 configs are built directly rather than via
+    /// serde, and V4-V6 have no equivalent field.
+    #[serde(skip, default)]
+    pub minimum_reader_version: u32,
+
     /// Config hash for V7 AEAD AAD (set on load, not serialized).
     #[serde(skip, default)]
     pub config_hash: Option<Vec<u8>>,
@@ -213,6 +227,8 @@ impl EncfsConfig {
             external_iv_chaining: true,
             chained_name_iv: true,
             allow_holes: true,
+            wide_file_iv: true,
+            minimum_reader_version: crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION,
             config_hash: None,
         }
     }
@@ -359,6 +375,34 @@ impl EncfsConfig {
                 self.block_mac_rand_bytes
             ));
         }
+        if self.wide_file_iv
+            && (!self.unique_iv || self.block_mode() != crate::crypto::block::BlockMode::AesGcmSiv)
+        {
+            return Err(anyhow::anyhow!(
+                "wideFileIV requires uniqueIV=true and AES-GCM-SIV block mode"
+            ));
+        }
+        if self.config_type == ConfigType::V7 {
+            let max_required = if self.wide_file_iv {
+                crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            } else {
+                crate::constants::V7_BASE_CONFIG_VERSION
+            };
+            if self.minimum_reader_version < max_required {
+                return Err(anyhow::anyhow!(
+                    "V7 minimum reader version {} is too low for the enabled features (requires >= {})",
+                    self.minimum_reader_version,
+                    max_required
+                ));
+            }
+            if self.minimum_reader_version > crate::constants::V7_CURRENT_CONFIG_VERSION {
+                return Err(anyhow::anyhow!(
+                    "V7 minimum reader version {} exceeds what this build supports (through {})",
+                    self.minimum_reader_version,
+                    crate::constants::V7_CURRENT_CONFIG_VERSION
+                ));
+            }
+        }
         if self.kdf_iterations < 0 {
             return Err(anyhow::anyhow!(
                 "Invalid kdfIterations {} (must be >= 0)",
@@ -462,6 +506,8 @@ impl EncfsConfig {
             external_iv_chaining: false,
             chained_name_iv: false,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         };
         cfg.validate()?;
@@ -555,6 +601,8 @@ impl EncfsConfig {
             external_iv_chaining,
             chained_name_iv,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         };
         cfg.validate()?;
@@ -585,6 +633,21 @@ impl EncfsConfig {
     fn load_v7(data: &[u8]) -> Result<Self> {
         let proto = Self::decode_v7_proto(data)?;
 
+        // Version gate first: before config-hash verification or interpreting
+        // any feature fields, so a config requiring a future version fails
+        // with a dedicated error instead of being misread or misclassified as
+        // corrupted. Wire 0 means the base version, since every V7 config
+        // written before this field existed omits it.
+        let effective_min_reader =
+            Self::effective_v7_min_reader_version(proto.minimum_reader_version);
+        if effective_min_reader > crate::constants::V7_CURRENT_CONFIG_VERSION {
+            anyhow::bail!(
+                "V7 config requires reader version {}; this build supports through {}",
+                effective_min_reader,
+                crate::constants::V7_CURRENT_CONFIG_VERSION
+            );
+        }
+
         let argon2 = proto
             .argon2
             .as_ref()
@@ -605,62 +668,83 @@ impl EncfsConfig {
         };
 
         let key_data = proto.encrypted_key;
-        let (cipher_iface, key_size, block_size, block_mac_bytes, block_mac_rand_bytes, unique_iv) =
-            match proto.cipher {
-                None => {
-                    anyhow::bail!("V7 config requires a cipher");
-                }
-                Some(crate::config_proto::config::Cipher::Legacy(ref cipher)) => {
-                    // BlockCipherAlgorithm::Aes = 1, Blowfish = 2.
-                    let cipher_iface = match cipher.algorithm {
-                        1 => Interface {
-                            name: "ssl/aes".to_string(),
-                            major: 3,
-                            minor: 0,
-                            age: 0,
-                        },
-                        2 => Interface {
-                            name: "ssl/blowfish".to_string(),
-                            major: 0,
-                            minor: 0,
-                            age: 0,
-                        },
-                        _ => anyhow::bail!("V7: unsupported block cipher algorithm"),
-                    };
-
-                    // Backward compatibility: older V7 configs could encode AES-GCM-SIV via
-                    // the legacy cipher message using the 16-byte per-block tag sentinel.
-                    let inferred_aead_from_mac = cipher.block_mac_bytes
-                        == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
-                    let block_mac_bytes = if inferred_aead_from_mac {
-                        crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
-                    } else {
-                        cipher.block_mac_bytes
-                    };
-
-                    (
-                        cipher_iface,
-                        cipher.key_size,
-                        cipher.block_size,
-                        block_mac_bytes,
-                        cipher.block_mac_rand_bytes,
-                        cipher.unique_iv,
-                    )
-                }
-                Some(crate::config_proto::config::Cipher::GcmSiv(ref cipher)) => (
-                    Interface {
+        let (
+            cipher_iface,
+            key_size,
+            block_size,
+            block_mac_bytes,
+            block_mac_rand_bytes,
+            unique_iv,
+            wide_file_iv,
+        ) = match proto.cipher {
+            None => {
+                anyhow::bail!("V7 config requires a cipher");
+            }
+            Some(crate::config_proto::config::Cipher::Legacy(ref cipher)) => {
+                // BlockCipherAlgorithm::Aes = 1, Blowfish = 2.
+                let cipher_iface = match cipher.algorithm {
+                    1 => Interface {
                         name: "ssl/aes".to_string(),
                         major: 3,
                         minor: 0,
                         age: 0,
                     },
+                    2 => Interface {
+                        name: "ssl/blowfish".to_string(),
+                        major: 0,
+                        minor: 0,
+                        age: 0,
+                    },
+                    _ => anyhow::bail!("V7: unsupported block cipher algorithm"),
+                };
+
+                // Backward compatibility: older V7 configs could encode AES-GCM-SIV via
+                // the legacy cipher message using the 16-byte per-block tag sentinel.
+                let inferred_aead_from_mac = cipher.block_mac_bytes
+                    == crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32;
+                let block_mac_bytes = if inferred_aead_from_mac {
+                    crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32
+                } else {
+                    cipher.block_mac_bytes
+                };
+
+                (
+                    cipher_iface,
                     cipher.key_size,
                     cipher.block_size,
-                    crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32,
-                    0,
+                    block_mac_bytes,
+                    cipher.block_mac_rand_bytes,
                     cipher.unique_iv,
-                ),
-            };
+                    // The legacy message (including the AES-GCM-SIV-via-sentinel
+                    // backward-compatibility path) never carries a wide file IV.
+                    false,
+                )
+            }
+            Some(crate::config_proto::config::Cipher::GcmSiv(ref cipher)) => (
+                Interface {
+                    name: "ssl/aes".to_string(),
+                    major: 3,
+                    minor: 0,
+                    age: 0,
+                },
+                cipher.key_size,
+                cipher.block_size,
+                crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES as i32,
+                0,
+                cipher.unique_iv,
+                // Unrecognized wire values fall back to the zero variant
+                // (64-bit) rather than erroring here; a future width value
+                // must raise minimum_reader_version so unaware readers are
+                // rejected by the version gate above instead of reaching
+                // this point.
+                match crate::config_proto::FileIvWidth::try_from(cipher.file_iv_width)
+                    .unwrap_or(crate::config_proto::FileIvWidth::FileIvWidth64)
+                {
+                    crate::config_proto::FileIvWidth::FileIvWidth64 => false,
+                    crate::config_proto::FileIvWidth::FileIvWidth96 => true,
+                },
+            ),
+        };
 
         // NameEncodingMode::Stream = 1, Block = 2
         let name_iface = match name_encoding.mode {
@@ -713,6 +797,8 @@ impl EncfsConfig {
             external_iv_chaining: name_encoding.external_iv_chaining,
             chained_name_iv: name_encoding.chained_name_iv,
             allow_holes,
+            wide_file_iv,
+            minimum_reader_version: effective_min_reader,
             config_hash: Some(config_hash),
         };
         cfg.validate()?;
@@ -763,6 +849,7 @@ impl EncfsConfig {
         );
         volume_key_blob.zeroize();
         cipher.set_name_encoding(&self.name_iface);
+        cipher.set_wide_file_iv(self.wide_file_iv);
 
         Ok(Box::new(cipher))
     }
@@ -860,7 +947,23 @@ impl EncfsConfig {
     }
 
     pub fn header_size(&self) -> u64 {
-        if self.unique_iv { 8 } else { 0 }
+        if !self.unique_iv {
+            0
+        } else if self.wide_file_iv {
+            12
+        } else {
+            8
+        }
+    }
+
+    /// Maps a raw V7 `minimum_reader_version` wire value to its effective
+    /// version: 0 (the pre-field default) means `V7_BASE_CONFIG_VERSION`.
+    pub fn effective_v7_min_reader_version(raw: u32) -> u32 {
+        if raw == 0 {
+            crate::constants::V7_BASE_CONFIG_VERSION
+        } else {
+            raw
+        }
     }
 
     /// Returns grouped file codec parameters for constructing `FileDecoder`/`FileEncoder`.
@@ -914,6 +1017,8 @@ impl EncfsConfig {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         }
     }
@@ -923,6 +1028,7 @@ impl EncfsConfig {
     /// Saves the configuration to a file.
     /// Supports XML (V6) and protobuf (V7) based on config type or file extension.
     pub fn save(&self, path: &Path) -> Result<()> {
+        self.validate()?;
         let ext = path.extension().and_then(|s| s.to_str());
         let is_v7_path = path
             .file_name()
@@ -982,6 +1088,7 @@ impl EncfsConfig {
         if self.config_type != ConfigType::V7 {
             anyhow::bail!("set_v7_key only applies to V7 config");
         }
+        self.validate()?;
         let memory_cost = self
             .argon2_memory_cost
             .ok_or_else(|| anyhow::anyhow!("V7 requires Argon2 params"))?;
@@ -1046,7 +1153,7 @@ impl EncfsConfig {
     fn encfs_config_to_proto_v7(&self) -> crate::config_proto::Config {
         use crate::config_proto::{
             AesGcmSivBlockCipher, Argon2Kdf, BasicBlockCipher, BlockCipherAlgorithm, Config,
-            FeatureFlags, NameEncoding, NameEncodingMode,
+            FeatureFlags, FileIvWidth, NameEncoding, NameEncodingMode,
         };
 
         let algorithm = match self.cipher_iface.name.as_str() {
@@ -1071,6 +1178,11 @@ impl EncfsConfig {
                     key_size: self.key_size,
                     block_size: self.block_size,
                     unique_iv: self.unique_iv,
+                    file_iv_width: if self.wide_file_iv {
+                        FileIvWidth::FileIvWidth96
+                    } else {
+                        FileIvWidth::FileIvWidth64
+                    } as i32,
                 }),
             ),
         };
@@ -1101,6 +1213,16 @@ impl EncfsConfig {
             allow_holes: self.allow_holes,
         });
 
+        // Wire 0 means the base version (pre-existing V7 configs never wrote
+        // this field), so a base-version config re-encodes as 0 to keep its
+        // protobuf bytes and config hash readable by pre-change tools.
+        let minimum_reader_version =
+            if self.minimum_reader_version <= crate::constants::V7_BASE_CONFIG_VERSION {
+                0
+            } else {
+                self.minimum_reader_version
+            };
+
         Config {
             encrypted_key: self.key_data.clone(),
             argon2,
@@ -1108,6 +1230,7 @@ impl EncfsConfig {
             name_encoding,
             feature_flags,
             config_hash: self.config_hash.clone().unwrap_or_default(),
+            minimum_reader_version,
         }
     }
 
@@ -1397,6 +1520,8 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: 0,
             config_hash: None,
         }
     }
@@ -1610,6 +1735,8 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };
         getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
@@ -1644,6 +1771,15 @@ mod tests {
             cfg.block_overhead_bytes(),
             crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES
         );
+        assert!(
+            cfg.wide_file_iv,
+            "new V7 filesystems default to wide file IVs"
+        );
+        assert_eq!(cfg.header_size(), 12);
+        assert_eq!(
+            cfg.minimum_reader_version,
+            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+        );
         assert!(cfg.validate().is_ok());
     }
 
@@ -1657,9 +1793,17 @@ mod tests {
                 assert_eq!(c.key_size, cfg.key_size);
                 assert_eq!(c.block_size, cfg.block_size);
                 assert_eq!(c.unique_iv, cfg.unique_iv);
+                assert_eq!(
+                    c.file_iv_width,
+                    crate::config_proto::FileIvWidth::FileIvWidth96 as i32
+                );
             }
             other => panic!("expected GcmSiv cipher variant, got {:?}", other),
         }
+        assert_eq!(
+            proto.minimum_reader_version,
+            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+        );
     }
 
     #[test]
@@ -1710,10 +1854,312 @@ mod tests {
             loaded.block_overhead_bytes(),
             crate::crypto::block::AES_GCM_SIV_BLOCK_TAG_BYTES
         );
+        assert!(loaded.wide_file_iv);
+        assert_eq!(loaded.header_size(), 12);
+        assert_eq!(
+            loaded.minimum_reader_version,
+            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+        );
         let _cipher = loaded.get_cipher(password)?;
 
         let _ = std::fs::remove_file(config_path);
         Ok(())
+    }
+
+    /// A narrow (`--legacy-file-iv`-equivalent) V7/AES-GCM-SIV volume round
+    /// trips with an 8-byte header and re-encodes `minimum_reader_version` as
+    /// protobuf 0, byte-identical to a pre-this-ADR V7/GCM-SIV config.
+    #[test]
+    fn test_v7_narrow_aes_gcm_siv_roundtrip() -> Result<()> {
+        let dir = std::env::temp_dir();
+        let config_path = dir.join(format!(
+            "encfs_v7_narrow_gcm_siv_test_{}.encfs7",
+            std::process::id()
+        ));
+
+        let mut config = EncfsConfig::standard_v7();
+        config.wide_file_iv = false;
+        config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+        let key_len = (config.key_size / 8) as usize;
+        let iv_len = 16;
+        let mut volume_key_blob = vec![0u8; key_len + iv_len];
+        getrandom::fill(&mut volume_key_blob).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+
+        let proto = config.encfs_config_to_proto_v7();
+        assert_eq!(
+            proto.minimum_reader_version, 0,
+            "base-version configs must re-encode as protobuf 0"
+        );
+
+        let password = "test_password";
+        config.set_v7_key(password, &volume_key_blob)?;
+        config.save(&config_path)?;
+
+        let loaded = EncfsConfig::load(&config_path)?;
+        assert_eq!(
+            loaded.block_mode(),
+            crate::crypto::block::BlockMode::AesGcmSiv
+        );
+        assert!(!loaded.wide_file_iv);
+        assert_eq!(loaded.header_size(), 8);
+        assert_eq!(
+            loaded.minimum_reader_version,
+            crate::constants::V7_BASE_CONFIG_VERSION
+        );
+        let _cipher = loaded.get_cipher(password)?;
+
+        let _ = std::fs::remove_file(config_path);
+        Ok(())
+    }
+
+    #[test]
+    fn validate_rejects_wide_file_iv_without_unique_iv_or_gcm_siv() {
+        let mut cfg = EncfsConfig::standard_v7();
+        cfg.unique_iv = false;
+        assert!(cfg.validate().is_err());
+
+        let mut cfg = EncfsConfig::standard_v7();
+        cfg.block_mac_bytes = 8; // forces legacy block mode
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_wide_file_iv_below_required_reader_version() {
+        let mut cfg = EncfsConfig::standard_v7();
+        cfg.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
+        assert!(cfg.validate().is_err());
+
+        cfg.minimum_reader_version = crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_minimum_reader_version_above_current() {
+        let mut cfg = EncfsConfig::standard_v7();
+        cfg.minimum_reader_version = crate::constants::V7_CURRENT_CONFIG_VERSION + 1;
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn absent_minimum_reader_version_loads_as_base_version() -> Result<()> {
+        let dir = std::env::temp_dir();
+        let config_path = dir.join(format!(
+            "encfs_v7_base_version_test_{}.encfs7",
+            std::process::id()
+        ));
+
+        let mut config = EncfsConfig::standard_v7();
+        config.wide_file_iv = false;
+        config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
+        config.block_mac_bytes = 8; // legacy block mode, matching most pre-ADR V7 configs
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob)?;
+        config.save(&config_path)?;
+
+        let loaded = EncfsConfig::load(&config_path)?;
+        assert_eq!(
+            loaded.minimum_reader_version,
+            crate::constants::V7_BASE_CONFIG_VERSION
+        );
+
+        let _ = std::fs::remove_file(config_path);
+        Ok(())
+    }
+
+    /// Regression test for `encfsctl passwd --upgrade`'s V6/V4/V5 -> V7
+    /// in-place upgrade: it mutates an existing config's `config_type` to
+    /// `V7` rather than building a fresh `standard_v7()`, so it is not
+    /// caught by a struct-literal audit. It must also set `wide_file_iv =
+    /// false` and `minimum_reader_version = V7_BASE_CONFIG_VERSION`
+    /// alongside the type flip, or the subsequent `set_v7_key()` (which now
+    /// calls `validate()`) fails.
+    #[test]
+    fn v6_to_v7_upgrade_mutation_produces_a_valid_config() -> Result<()> {
+        let mut config = create_test_config(); // V6, minimum_reader_version: 0
+
+        // Mirror `cmd_passwd`'s `upgrading_to_v7` mutation exactly.
+        config.config_type = ConfigType::V7;
+        config.config_hash = None;
+        config.wide_file_iv = false;
+        config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
+
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        config.salt = vec![0u8; crate::constants::DEFAULT_SALT_SIZE];
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("newpass", &volume_key_blob)?;
+        assert!(config.validate().is_ok());
+        Ok(())
+    }
+
+    /// Documents *why* the mutation above must set `minimum_reader_version`:
+    /// flipping only `config_type` (the pre-fix behavior) leaves it at 0,
+    /// which fails `validate()` because V7 requires at least
+    /// `V7_BASE_CONFIG_VERSION`.
+    #[test]
+    fn config_type_flip_alone_is_not_a_valid_v7_upgrade() {
+        let mut cfg = create_test_config();
+        cfg.config_type = ConfigType::V7;
+        assert!(cfg.validate().is_err());
+    }
+
+    /// Simulates a pre-this-ADR V7 decoder/schema: a `Config` message that
+    /// only knows field numbers 1-7 (everything up to and including
+    /// `config_hash`), with neither `file_iv_width` (field 4 of
+    /// `AesGcmSivBlockCipher`) nor the top-level `minimum_reader_version`
+    /// (field 8). prost drops unknown fields on decode, so re-encoding and
+    /// re-hashing this reduced message reproduces exactly what a released
+    /// pre-change reader would compute — and it must NOT match the hash a
+    /// wide config was saved with. This is the fail-closed compatibility
+    /// boundary the ADR requires: old readers reject new volumes via config
+    /// hash mismatch rather than silently misreading them.
+    #[test]
+    fn frozen_pre_change_schema_rejects_wide_config_via_hash_mismatch() {
+        use prost::Message;
+        use sha2::{Digest, Sha256};
+
+        mod old_schema {
+            use prost::Message;
+
+            #[derive(Clone, PartialEq, Message)]
+            pub struct Config {
+                #[prost(bytes = "vec", tag = "1")]
+                pub encrypted_key: Vec<u8>,
+                #[prost(message, optional, tag = "2")]
+                pub argon2: Option<Argon2Kdf>,
+                #[prost(message, optional, tag = "3")]
+                pub legacy: Option<BasicBlockCipher>,
+                #[prost(message, optional, tag = "4")]
+                pub name_encoding: Option<NameEncoding>,
+                #[prost(message, optional, tag = "5")]
+                pub feature_flags: Option<FeatureFlags>,
+                #[prost(bytes = "vec", tag = "6")]
+                pub config_hash: Vec<u8>,
+                #[prost(message, optional, tag = "7")]
+                pub gcm_siv: Option<AesGcmSivBlockCipherNoWideIv>,
+            }
+
+            #[derive(Clone, PartialEq, Message)]
+            pub struct Argon2Kdf {
+                #[prost(bytes = "vec", tag = "1")]
+                pub salt: Vec<u8>,
+                #[prost(uint32, tag = "2")]
+                pub memory_cost_kib: u32,
+                #[prost(uint32, tag = "3")]
+                pub time_cost: u32,
+                #[prost(uint32, tag = "4")]
+                pub parallelism: u32,
+            }
+
+            #[derive(Clone, PartialEq, Message)]
+            pub struct BasicBlockCipher {
+                #[prost(enumeration = "i32", tag = "1")]
+                pub algorithm: i32,
+                #[prost(int32, tag = "2")]
+                pub key_size: i32,
+                #[prost(int32, tag = "3")]
+                pub block_size: i32,
+                #[prost(int32, tag = "4")]
+                pub block_mac_bytes: i32,
+                #[prost(int32, tag = "5")]
+                pub block_mac_rand_bytes: i32,
+                #[prost(bool, tag = "6")]
+                pub unique_iv: bool,
+            }
+
+            #[derive(Clone, PartialEq, Message)]
+            pub struct AesGcmSivBlockCipherNoWideIv {
+                #[prost(int32, tag = "1")]
+                pub key_size: i32,
+                #[prost(int32, tag = "2")]
+                pub block_size: i32,
+                #[prost(bool, tag = "3")]
+                pub unique_iv: bool,
+                // No field 4 (file_iv_width): this schema predates the ADR.
+            }
+
+            #[derive(Clone, PartialEq, Message)]
+            pub struct NameEncoding {
+                #[prost(enumeration = "i32", tag = "1")]
+                pub mode: i32,
+                #[prost(bool, tag = "2")]
+                pub chained_name_iv: bool,
+                #[prost(bool, tag = "3")]
+                pub external_iv_chaining: bool,
+            }
+
+            #[derive(Clone, PartialEq, Message)]
+            pub struct FeatureFlags {
+                #[prost(bool, tag = "1")]
+                pub allow_holes: bool,
+            }
+        }
+
+        let mut config = EncfsConfig::standard_v7();
+        getrandom::fill(&mut config.salt).unwrap();
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob).unwrap();
+
+        let new_proto = config.encfs_config_to_proto_v7();
+        let new_bytes = new_proto.encode_to_vec();
+
+        // Decode with the reduced pre-ADR schema: fields 4 (file_iv_width,
+        // inside AesGcmSivBlockCipher) and 8 (minimum_reader_version) are
+        // unknown to it and get dropped by prost during decode.
+        let old_view = old_schema::Config::decode(new_bytes.as_slice())
+            .expect("old schema can still decode the shared prefix");
+
+        // Recompute the hash exactly as a pre-ADR reader would: over its own
+        // (smaller) struct, with encrypted_key/config_hash cleared.
+        let mut old_for_hash = old_view.clone();
+        old_for_hash.encrypted_key = Vec::new();
+        old_for_hash.config_hash = Vec::new();
+        let old_recomputed_hash = Sha256::digest(old_for_hash.encode_to_vec()).to_vec();
+
+        assert_ne!(
+            old_recomputed_hash, new_proto.config_hash,
+            "a pre-change reader must recompute a different config hash for a wide config, \
+             causing it to fail closed rather than accept it as an 8-byte-header volume"
+        );
+    }
+
+    /// A build that implements only through `V7_CURRENT_CONFIG_VERSION`
+    /// rejects a synthetic future config declaring a higher minimum reader
+    /// version, via the dedicated version error, even though the unknown
+    /// fields decode cleanly (prost silently drops fields it doesn't know).
+    #[test]
+    fn rejects_future_minimum_reader_version_before_hash_check() {
+        use prost::Message;
+
+        let mut config = EncfsConfig::standard_v7();
+        getrandom::fill(&mut config.salt).unwrap();
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob).unwrap();
+
+        let mut proto = config.encfs_config_to_proto_v7();
+        proto.minimum_reader_version = crate::constants::V7_CURRENT_CONFIG_VERSION + 1;
+        // A real future reader would also fold this field into the hash;
+        // recompute so the failure we observe is specifically the version
+        // gate, not an incidental hash mismatch.
+        proto.config_hash = Vec::new();
+        proto.encrypted_key = volume_key_blob.clone();
+        let recomputed = EncfsConfig::v7_config_hash_from_proto(&proto);
+        proto.config_hash = recomputed;
+        proto.encrypted_key = config.key_data.clone();
+
+        let mut bytes = V7_MAGIC.to_vec();
+        bytes.extend_from_slice(&proto.encode_to_vec());
+
+        let err = EncfsConfig::load_v7(&bytes).expect_err("future version must be rejected");
+        assert!(
+            err.to_string().contains("reader version"),
+            "error should be the dedicated version error, got: {err}"
+        );
     }
 
     #[test]
@@ -1752,6 +2198,8 @@ mod tests {
             external_iv_chaining: false,
             chained_name_iv: true,
             allow_holes: false,
+            wide_file_iv: false,
+            minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };
         getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;

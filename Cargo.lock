@@ -210,7 +210,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -964,15 +964,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -1042,7 +1033,7 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 [[package]]
 name = "libfuse-sys"
 version = "0.6.0"
-source = "git+https://github.com/vgough/typed-fuse#e5c592179a630b8cf638220ddadbf344a9e961d6"
+source = "git+https://github.com/vgough/typed-fuse#dd70e2731f038ac0ba131d83297ec498bd813bf6"
 dependencies = [
  "bindgen",
  "libc",
@@ -1821,7 +1812,7 @@ dependencies = [
 [[package]]
 name = "typed-fuse"
 version = "0.6.0"
-source = "git+https://github.com/vgough/typed-fuse#e5c592179a630b8cf638220ddadbf344a9e961d6"
+source = "git+https://github.com/vgough/typed-fuse#dd70e2731f038ac0ba131d83297ec498bd813bf6"
 dependencies = [
  "libc",
  "libfuse-sys",
@@ -1833,7 +1824,7 @@ dependencies = [
 [[package]]
 name = "typed-fuse-core"
 version = "0.6.0"
-source = "git+https://github.com/vgough/typed-fuse#e5c592179a630b8cf638220ddadbf344a9e961d6"
+source = "git+https://github.com/vgough/typed-fuse#dd70e2731f038ac0ba131d83297ec498bd813bf6"
 dependencies = [
  "libc",
 ]

@@ -73,7 +73,7 @@ mod tests {
         let mut header = [0u8; 8];
         file.read_at(&mut header, 0)?;
         let file_iv = cipher.decrypt_header(&mut header, 0)?;
-        println!("File IV: {:016x}", file_iv);
+        println!("File IV: {:016x}", file_iv.as_u128());
 
         // Get file size (excluding header)
         let metadata = file.metadata()?;
@@ -156,7 +156,7 @@ mod tests {
 
         // Use path_iv for external IV chaining (paranoia mode)
         let file_iv = encfs.cipher.decrypt_header(&mut header, path_iv)?;
-        println!("File IV from header: {:016x}", file_iv);
+        println!("File IV from header: {:016x}", file_iv.as_u128());
 
         let metadata = file.metadata()?;
         let content_size = metadata.len() - 8;
