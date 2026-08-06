@@ -1461,3 +1461,109 @@ fn live_tar_extract_single_file() -> Result<()> {
 
     Ok(())
 }
+
+/// Regression test for the "backing file created but no data written"
+/// report: `cp` between two paths *within the same EncFS mount*.
+///
+/// Root cause, bisected to a single upstream commit: fixed in typed-fuse
+/// commit `5a07205` ("fix statfs on darwin"), picked up here via the
+/// `Cargo.lock` bump in this same change. Before that fix, macOS's
+/// `fuse_reply_statfs` binding built a `struct statfs` and handed its
+/// pointer to `fuse_reply_statfs_vanilla`, which actually expects `struct
+/// statvfs*` — a different, differently-laid-out type. Every
+/// `statfs()`/`statvfs()` on any file in the mount therefore returned
+/// reinterpreted garbage, independently confirmed by `stat -f`: two very
+/// differently sized files in the mount reported identical, nonsensical
+/// `st_blocks`, matching the mountpoint's own volume-level number. Exactly
+/// how `cp`'s data-copy path consumes that garbage to end up writing zero
+/// bytes while still exiting 0 was not isolated (would need
+/// `fs_usage`/`dtruss`, which need root) — what's verified is the A/B: the
+/// same `cp` invocation loses data at the pre-fix commit and doesn't at the
+/// post-fix one, with no other functional change in between. `dd`, a
+/// single-call Python `write()`, `rsync`, and `cp` from an *external* source
+/// into the mount were all unaffected even pre-fix.
+///
+/// This is deliberately config-independent (V6 `Standard` fixture and a
+/// fresh wide-file-IV V7 volume both exercise it) because the bug reproduced
+/// identically on both before the fix: it is a macOS/FUSE-binding-layer bug
+/// with no dependency on file-IV width, header size, or block mode, and it
+/// predates the 96-bit-IV work that first surfaced it (that work simply made
+/// this the new default happy path people would immediately test with `cp`).
+fn run_internal_copy_same_mount(
+    mount: &MountGuard,
+    header_size: u64,
+    expected_physical_size: u64,
+) -> Result<()> {
+    let src = mount.mount_point.join("cp_src_internal.bin");
+    let dst = mount.mount_point.join("cp_dst_internal.bin");
+    let payload = pattern_bytes(400_000);
+    fs::write(&src, &payload).context("write source inside mount")?;
+
+    let before = live::list_non_dot_entries_recursive(&mount.backing_root)?
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let status = Command::new("cp")
+        .arg(&src)
+        .arg(&dst)
+        .status()
+        .context("spawn cp")?;
+    anyhow::ensure!(status.success(), "cp exited with {status}");
+
+    let after = live::list_non_dot_entries_recursive(&mount.backing_root)?;
+    let new_backing_file = after
+        .iter()
+        .find(|p| !before.contains(*p))
+        .context("no new backing file appeared for the cp destination")?;
+    let backing_len = fs::metadata(new_backing_file)
+        .context("stat new backing file")?
+        .len();
+
+    let got = fs::read(&dst).context("read cp destination")?;
+    assert_eq!(
+        (backing_len, got.len()),
+        (expected_physical_size, payload.len()),
+        "cp between two paths on the same EncFS mount lost data: backing file is \
+         {backing_len} bytes (header alone is {header_size}, full copy should be \
+         {expected_physical_size}), mounted read returned {} bytes, expected {} bytes of payload",
+        got.len(),
+        payload.len()
+    );
+    assert_eq!(got, payload, "cp destination content mismatch");
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn live_internal_copy_same_mount_standard() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    // Standard fixture: uniqueIV=1, wideFileIV unset (narrow) => 8-byte
+    // header; blockMACBytes=0 => no per-block overhead.
+    run_internal_copy_same_mount(&mount, 8, 8 + 400_000)
+}
+
+#[test]
+#[ignore]
+fn live_internal_copy_same_mount_wide_v7() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let (backing_root, cfg) = live::init_wide_v7_backing_root()?;
+    // standard_v7() defaults: uniqueIV=1, wideFileIV=1 => 12-byte header,
+    // AES-GCM-SIV block mode => 16-byte per-block tag overhead.
+    let expected = encfs::crypto::file::FileEncoder::<fs::File>::calculate_physical_size_with_mode(
+        400_000,
+        12,
+        cfg.block_size,
+        cfg.block_mac_bytes,
+        encfs::crypto::block::BlockMode::AesGcmSiv,
+    );
+    let mount = MountGuard::mount_existing_backing_root(cfg, false, backing_root)?;
+    run_internal_copy_same_mount(&mount, 12, expected)
+}

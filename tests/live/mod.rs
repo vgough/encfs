@@ -87,6 +87,46 @@ pub fn data_block_size(cfg: &LiveConfig) -> u64 {
     cfg.block_size - cfg.block_mac_bytes
 }
 
+/// Builds a fresh backing root holding a wide-file-IV V7 config — the same
+/// shape `encfsctl new` (no flags) produces. There is no `.encfs7` fixture
+/// checked in, so this generates one on the fly via
+/// `EncfsConfig::standard_v7()` + `set_v7_key`, exactly as `encfsctl new`
+/// does, rather than loading it from `tests/fixtures`.
+pub fn init_wide_v7_backing_root() -> Result<(PathBuf, LiveConfig)> {
+    let backing_root = unique_temp_dir("encfs_live_wide_v7_backing")?;
+
+    let mut config = EncfsConfig::standard_v7();
+    anyhow::ensure!(config.wide_file_iv, "standard_v7() must default to wide IV");
+    // Cheap KDF for test speed only; everything else is production defaults.
+    config.argon2_memory_cost = Some(8);
+    config.argon2_time_cost = Some(1);
+    config.argon2_parallelism = Some(1);
+    getrandom::fill(&mut config.salt).context("fill salt")?;
+
+    let key_len = (config.key_size / 8) as usize;
+    let mut volume_key_blob = vec![0u8; key_len + 16];
+    getrandom::fill(&mut volume_key_blob).context("fill volume key")?;
+
+    let password = "wide-v7-live-test";
+    config
+        .set_v7_key(password, &volume_key_blob)
+        .context("set_v7_key")?;
+    config
+        .save(&backing_root.join(".encfs7"))
+        .context("save V7 config")?;
+
+    let live_cfg = LiveConfig {
+        kind: LiveConfigKind::V7,
+        password: "wide-v7-live-test",
+        block_size: config.block_size as u64,
+        block_mac_bytes: config.block_mac_bytes as u64,
+        chained_name_iv: config.chained_name_iv,
+        external_iv_chaining: config.external_iv_chaining,
+    };
+
+    Ok((backing_root, live_cfg))
+}
+
 pub fn unique_temp_dir(prefix: &str) -> Result<PathBuf> {
     let pid = std::process::id();
     let n = TMP_COUNTER.fetch_add(1, Ordering::SeqCst);
