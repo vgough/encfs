@@ -1,0 +1,50 @@
+name: FreeBSD
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Build and test in a FreeBSD VM
+      uses: vmactions/freebsd-vm@v1
+      timeout-minutes: 90
+      with:
+        release: '15'
+        usesh: true
+        copyback: false
+        cache-after-prepare: true
+
+        prepare: |
+          pkg install -y git pkgconf rust protobuf llvm fusefs-libs3
+
+        run: |
+          set -e
+
+          # fusefs.ko is already in the GENERIC kernel, so the live tests need
+          # no kldload. protobuf provides protoc, which build.rs falls back to
+          # because protoc-bin-vendored ships no FreeBSD binary. llvm provides
+          # the libclang bindgen needs, and fusefs-libs3 the fuse3.pc that
+          # libfuse-sys probes for.
+          rustc --version
+          pkg-config --modversion fuse3
+
+          cargo clippy --all-targets --all-features -- -D warnings
+
+          cargo build --release
+
+          cargo test --release
+
+          ENCFS_LIVE_TESTS=1 cargo test --release --test live_mount -- --ignored --test-threads=1

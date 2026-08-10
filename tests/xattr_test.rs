@@ -73,7 +73,7 @@ unsafe fn listxattr_nofollow(
     unsafe { libc::listxattr(path, value, size, libc::XATTR_NOFOLLOW) }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
 unsafe fn listxattr_nofollow(
     path: *const libc::c_char,
     value: *mut libc::c_char,
@@ -81,6 +81,76 @@ unsafe fn listxattr_nofollow(
 ) -> libc::ssize_t {
     unsafe { libc::llistxattr(path, value, size) }
 }
+
+/// The attribute names actually present on the backing file, read with the
+/// platform's own syscall rather than through the filesystem under test.
+#[cfg(not(target_os = "freebsd"))]
+fn backing_xattr_names(path: &Path) -> Vec<String> {
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    let size = unsafe { listxattr_nofollow(c_path.as_ptr(), std::ptr::null_mut(), 0) };
+    if size <= 0 {
+        return Vec::new();
+    }
+    let mut buf = vec![0 as libc::c_char; size as usize];
+    let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), buf.as_mut_ptr(), size as usize) };
+    if ret <= 0 {
+        return Vec::new();
+    }
+    buf.truncate(ret as usize);
+    let bytes: Vec<u8> = buf.iter().map(|&b| b as u8).collect();
+    String::from_utf8_lossy(&bytes)
+        .split('\0')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// FreeBSD has no `llistxattr`. `extattr_list_link(2)` lists one namespace at
+/// a time and returns "a single byte containing the length of the attribute
+/// name, followed by the attribute name", with no NUL terminator.
+#[cfg(target_os = "freebsd")]
+fn backing_xattr_names(path: &Path) -> Vec<String> {
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    let namespace = libc::EXTATTR_NAMESPACE_USER;
+    let size =
+        unsafe { libc::extattr_list_link(c_path.as_ptr(), namespace, std::ptr::null_mut(), 0) };
+    if size <= 0 {
+        return Vec::new();
+    }
+    let mut raw = vec![0u8; size as usize];
+    let ret = unsafe {
+        libc::extattr_list_link(
+            c_path.as_ptr(),
+            namespace,
+            raw.as_mut_ptr() as *mut libc::c_void,
+            raw.len(),
+        )
+    };
+    if ret <= 0 {
+        return Vec::new();
+    }
+    raw.truncate(ret as usize);
+    let mut names = Vec::new();
+    let mut i = 0;
+    while i < raw.len() {
+        let len = raw[i] as usize;
+        i += 1;
+        if i + len > raw.len() {
+            break;
+        }
+        names.push(String::from_utf8_lossy(&raw[i..i + len]).to_string());
+        i += len;
+    }
+    names
+}
+
+/// What an encfs-stored attribute name looks like on the backing file. On
+/// FreeBSD the namespace is a syscall argument rather than part of the name,
+/// so the "user." half is not stored there.
+#[cfg(target_os = "freebsd")]
+const ON_DISK_PREFIX: &str = "encfs.";
+#[cfg(not(target_os = "freebsd"))]
+const ON_DISK_PREFIX: &str = "user.encfs.";
 
 #[test]
 fn test_xattr_set_get() {
@@ -114,7 +184,7 @@ fn test_xattr_set_get() {
         // Set xattr
         encfs
             .setxattr(file.as_node(), OsStr::new(attr_name), attr_value, 0, &r)
-            .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
+            .unwrap_or_else(|e| panic!("setxattr failed for {}: {:?}", attr_name, e));
 
         // Get xattr
         let result = encfs
@@ -165,7 +235,7 @@ fn test_xattr_list() {
     for (attr_name, attr_value) in &attrs {
         encfs
             .setxattr(file.as_node(), OsStr::new(attr_name), attr_value, 0, &r)
-            .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
+            .unwrap_or_else(|e| panic!("setxattr failed for {}: {:?}", attr_name, e));
     }
 
     // List xattrs
@@ -296,37 +366,18 @@ fn test_xattr_on_disk_storage() {
     assert_eq!(entries.len(), 1, "Expected exactly one file");
     let encrypted_file_path = entries[0].path();
 
-    // Check that xattrs on disk start with "user.encfs."
-    // Use libc to list xattrs on the encrypted file
-    let c_path = std::ffi::CString::new(encrypted_file_path.as_os_str().as_bytes()).unwrap();
-
-    // Get size first
-    let size = unsafe { listxattr_nofollow(c_path.as_ptr(), std::ptr::null_mut(), 0) };
-
-    if size > 0 {
-        let size_usize = size as usize;
-        let mut buf = vec![0 as libc::c_char; size_usize];
-        let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), buf.as_mut_ptr(), size_usize) };
-
-        if ret > 0 {
-            buf.truncate(ret as usize);
-            let list_u8: Vec<u8> = buf.iter().map(|&b| b as u8).collect();
-            let list_str = String::from_utf8_lossy(&list_u8);
-            let names: Vec<&str> = list_str.split('\0').filter(|s| !s.is_empty()).collect();
-
-            // Verify all xattrs on disk start with "user.encfs."
-            for name in names {
-                // Ignore macOS system xattrs
-                if cfg!(target_os = "macos") && name.starts_with("com.apple.") {
-                    continue;
-                }
-                assert!(
-                    name.starts_with("user.encfs."),
-                    "xattr on disk should start with 'user.encfs.': {}",
-                    name
-                );
-            }
+    // Check that the names stored on disk carry encfs's prefix.
+    for name in backing_xattr_names(&encrypted_file_path) {
+        // Ignore macOS system xattrs
+        if cfg!(target_os = "macos") && name.starts_with("com.apple.") {
+            continue;
         }
+        assert!(
+            name.starts_with(ON_DISK_PREFIX),
+            "xattr on disk should start with '{}': {}",
+            ON_DISK_PREFIX,
+            name
+        );
     }
 
     // Cleanup
@@ -364,7 +415,7 @@ fn test_xattr_round_trip() {
         // Set
         encfs
             .setxattr(file.as_node(), OsStr::new(attr_name), attr_value, 0, &r)
-            .unwrap_or_else(|_| panic!("setxattr failed for {}", attr_name));
+            .unwrap_or_else(|e| panic!("setxattr failed for {}: {:?}", attr_name, e));
 
         // Get
         let result = encfs

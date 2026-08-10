@@ -2,8 +2,7 @@ use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use crate::crypto::file_iv::FileIv;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD_NO_PAD;
+use crate::xattr_name;
 use libc;
 use log::{debug, error, warn};
 use std::borrow::Cow;
@@ -1583,10 +1582,9 @@ impl EncFs {
                 libc::EIO
             })?;
 
-        // Store with "user.encfs." prefix + base64-encoded encrypted name
-        // Use base64 encoding for the encrypted name to make it filesystem-safe
-        let encoded_name = STANDARD_NO_PAD.encode(&encrypted_name);
-        let final_name = format!("user.encfs.{}", encoded_name);
+        // Store under the "user.encfs." prefix, with the encrypted name
+        // base64-encoded so it is a legal attribute name everywhere.
+        let final_name = xattr_name::encode(&encrypted_name);
 
         let c_name = std::ffi::CString::new(final_name).map_err(|_| libc::EINVAL)?;
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
@@ -1615,16 +1613,24 @@ impl EncFs {
             })?;
 
         // Encode encrypted name for storage lookup
-        let encoded_name = STANDARD_NO_PAD.encode(&encrypted_name);
-        let lookup_name = format!("user.encfs.{}", encoded_name);
+        let lookup_name = xattr_name::encode(&encrypted_name);
 
         let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
         // Read the on-disk (encrypted) value; the caller's size limit is
         // applied by the trait wrapper against the decrypted length.
-        let encrypted_value =
-            passthrough::getxattr_value_nofollow(&c_path, &c_name).map_err(|e| e.raw())?;
+        let encrypted_value = match passthrough::getxattr_value_nofollow(&c_path, &c_name) {
+            Ok(value) => value,
+            // An attribute written before the alphabet change carries the
+            // older spelling; try that before reporting it missing.
+            Err(e) if e == Errno::ENOATTR => {
+                let legacy = xattr_name::encode_legacy(&encrypted_name);
+                let c_legacy = std::ffi::CString::new(legacy).map_err(|_| libc::EINVAL)?;
+                passthrough::getxattr_value_nofollow(&c_path, &c_legacy).map_err(|e| e.raw())?
+            }
+            Err(e) => return Err(e.raw()),
+        };
 
         // Decrypt value
         let decrypted_value = self
@@ -1658,11 +1664,11 @@ impl EncFs {
                 Err(_) => continue, // Invalid UTF-8, skip
             };
 
-            if let Some(encoded_part) = name_str.strip_prefix("user.encfs.") {
+            if let Some(encoded_part) = name_str.strip_prefix(xattr_name::PREFIX) {
                 // This is an encrypted encfs attribute stored on disk
                 // Extract the base64-encoded encrypted name
-                match STANDARD_NO_PAD.decode(encoded_part) {
-                    Ok(encrypted_name_bytes) => {
+                match xattr_name::decode(encoded_part) {
+                    Some(encrypted_name_bytes) => {
                         match self
                             .cipher
                             .decrypt_xattr_name(&encrypted_name_bytes, path_iv)
@@ -1678,7 +1684,7 @@ impl EncFs {
                             }
                         }
                     }
-                    Err(_) => {
+                    None => {
                         warn!("Failed to decode base64 xattr name: {}", name_str);
                         // Skip this name but continue
                     }
@@ -1715,14 +1721,21 @@ impl EncFs {
             })?;
 
         // Encode encrypted name for storage lookup
-        let encoded_name = STANDARD_NO_PAD.encode(&encrypted_name);
-        let lookup_name = format!("user.encfs.{}", encoded_name);
+        let lookup_name = xattr_name::encode(&encrypted_name);
 
         let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
-        // Remove xattr from underlying filesystem
-        passthrough::removexattr_nofollow(&c_path, &c_name).map_err(|e| e.raw())
+        // Remove xattr from underlying filesystem, falling back to the older
+        // spelling for attributes written before the alphabet change.
+        match passthrough::removexattr_nofollow(&c_path, &c_name) {
+            Err(e) if e == Errno::ENOATTR => {
+                let legacy = xattr_name::encode_legacy(&encrypted_name);
+                let c_legacy = std::ffi::CString::new(legacy).map_err(|_| libc::EINVAL)?;
+                passthrough::removexattr_nofollow(&c_path, &c_legacy).map_err(|e| e.raw())
+            }
+            other => other.map_err(|e| e.raw()),
+        }
     }
 }
 

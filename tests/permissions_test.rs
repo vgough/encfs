@@ -321,9 +321,11 @@ fn test_symlink_permissions_are_standard() {
     // Verify it's marked as a symlink
     assert_eq!(attr.kind, FileType::Symlink, "Expected symlink file type");
 
-    // On most Unix systems, symlinks have 0o777 permissions
-    // (the actual file permissions are determined by the target)
-    #[cfg(not(target_os = "macos"))]
+    // Linux fixes symlink permission bits at 0o777 and ignores them. The BSDs
+    // give symlinks mode bits of their own -- FreeBSD has lchmod(2), "similar
+    // to chmod() but does not follow symbolic links" -- and report 0o755 here,
+    // so they are excluded rather than asserted against a Linux constant.
+    #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
     assert_eq!(
         actual_mode, 0o777,
         "Symlinks should have 0o777 permissions, got {:o}",
@@ -407,13 +409,14 @@ fn test_permissions_mixed_types_in_directory() {
         file_mode, file_actual
     );
 
-    // Verify symlink permissions (should be 0o777)
+    // Verify symlink permissions (0o777 on Linux; see the note in
+    // test_symlink_permissions_are_standard for why the BSDs are excluded)
     let link = node(&encfs, &root, "/test_dir/test_link", &r);
     let link_attr = encfs
         .getattr(link.as_node(), None, &r)
         .expect("getattr for symlink failed");
     let link_actual = (link_attr.perm as u32) & 0o777;
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
     assert_eq!(
         link_actual, 0o777,
         "Symlink mode mismatch: expected {:o}, got {:o}",

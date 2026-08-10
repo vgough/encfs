@@ -194,10 +194,13 @@ pub fn mountinfo_has_mount(mount_point: &Path) -> io::Result<bool> {
     Ok(false)
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "freebsd"))]
 pub fn mountinfo_has_mount(mount_point: &Path) -> io::Result<bool> {
-    // No /proc on macOS; parse `mount` output. Compare both the raw path and
-    // the canonicalized one (/var/folders/... resolves to /private/var/...).
+    // No /proc on macOS or FreeBSD; parse `mount` output. Compare both the raw
+    // path and the canonicalized one (/var/folders/... resolves to
+    // /private/var/...). FreeBSD prints the same
+    // "<device> on <mountpoint> (<fstype>, ...)" shape and calls the type
+    // "fusefs", so the substring test below covers it unchanged.
     let output = Command::new("/sbin/mount").stdin(Stdio::null()).output()?;
     let data = String::from_utf8_lossy(&output.stdout);
     let raw = format!(" on {} (", mount_point.display());

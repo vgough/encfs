@@ -2,8 +2,7 @@ use crate::config::EncfsConfig;
 use crate::crypto::block::{BlockCodec, BlockLayout};
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file_iv::FileIv;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD_NO_PAD;
+use crate::xattr_name;
 use libc;
 use log::{debug, warn};
 use std::borrow::Cow;
@@ -719,11 +718,13 @@ impl ReverseFs {
 
     fn decrypt_xattr_name(&self, name: &OsStr, path_iv: u64) -> Result<Vec<u8>, libc::c_int> {
         let name = name.to_str().ok_or(libc::EILSEQ)?;
-        let encoded = name.strip_prefix("user.encfs.").ok_or(libc::ENODATA)?;
-        let encrypted = STANDARD_NO_PAD.decode(encoded).map_err(|_| libc::ENODATA)?;
+        let encoded = name
+            .strip_prefix(xattr_name::PREFIX)
+            .ok_or(Errno::ENOATTR.raw())?;
+        let encrypted = xattr_name::decode(encoded).ok_or(Errno::ENOATTR.raw())?;
         self.cipher
             .decrypt_xattr_name(&encrypted, path_iv)
-            .map_err(|_| libc::ENODATA)
+            .map_err(|_| Errno::ENOATTR.raw())
     }
 
     fn encrypted_xattr_name(&self, name: &[u8], path_iv: u64) -> Result<String, libc::c_int> {
@@ -731,7 +732,7 @@ impl ReverseFs {
             .cipher
             .encrypt_xattr_name(name, path_iv)
             .map_err(|_| libc::EIO)?;
-        Ok(format!("user.encfs.{}", STANDARD_NO_PAD.encode(encrypted)))
+        Ok(xattr_name::encode(&encrypted))
     }
 }
 
@@ -1393,7 +1394,7 @@ impl PathFilesystem for ReverseFs {
     ) -> Result<XattrReply, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         if Self::is_config_path(path) {
-            return Err(Errno::ENODATA);
+            return Err(Errno::ENOATTR);
         }
         let (source, path_iv) = self.resolve_source_path(path)?;
         let plain_name = self.decrypt_xattr_name(name, path_iv)?;
