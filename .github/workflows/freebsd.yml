@@ -33,13 +33,16 @@ jobs:
         run: |
           set -e
 
-          # fusefs.ko is already in the GENERIC kernel, so the live tests need
-          # no kldload. protobuf provides protoc, which build.rs falls back to
-          # because protoc-bin-vendored ships no FreeBSD binary. llvm provides
-          # the libclang bindgen needs, and fusefs-libs3 the fuse3.pc that
+          # protobuf provides protoc, which build.rs falls back to because
+          # protoc-bin-vendored ships no FreeBSD binary. llvm provides the
+          # libclang bindgen needs, and fusefs-libs3 the fuse3.pc that
           # libfuse-sys probes for.
           rustc --version
           pkg-config --modversion fuse3
+
+          # fusefs is a loadable module, not compiled into GENERIC, so
+          # /dev/fuse only exists once it is loaded.
+          kldstat -q -n fusefs.ko || kldload fusefs
 
           cargo clippy --all-targets --all-features -- -D warnings
 
