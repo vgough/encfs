@@ -366,8 +366,17 @@ fn test_xattr_on_disk_storage() {
     assert_eq!(entries.len(), 1, "Expected exactly one file");
     let encrypted_file_path = entries[0].path();
 
-    // Check that the names stored on disk carry encfs's prefix.
-    for name in backing_xattr_names(&encrypted_file_path) {
+    // Check that the names stored on disk carry encfs's prefix. Assert at
+    // least one such name exists so a failing or empty listing can't pass
+    // vacuously.
+    let names = backing_xattr_names(&encrypted_file_path);
+    assert!(
+        names.iter().any(|name| name.starts_with(ON_DISK_PREFIX)),
+        "expected at least one encfs xattr on disk with prefix '{}', got {:?}",
+        ON_DISK_PREFIX,
+        names
+    );
+    for name in names {
         // Ignore macOS system xattrs
         if cfg!(target_os = "macos") && name.starts_with("com.apple.") {
             continue;

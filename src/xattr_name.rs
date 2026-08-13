@@ -1,7 +1,10 @@
 //! On-disk naming for encfs's encrypted extended attributes.
 //!
 //! Each attribute is stored under [`PREFIX`] followed by the base64 of its
-//! encrypted name. The standard base64 alphabet includes `/`, which FreeBSD
+//! encrypted name. [`PREFIX`] carries the `user.` namespace; that is part of
+//! the stored name on Linux and macOS, but on FreeBSD the `extattr_*`
+//! syscalls pass it out-of-band and the backing file records only
+//! `encfs.<b64>`. The standard base64 alphabet includes `/`, which FreeBSD
 //! will not accept in an extended-attribute name: `setextattr(8)` fails with
 //! `EINVAL` on a name containing one, while the same name spelled with `+`
 //! or `=` is stored without complaint. Two of the six distinct names the
@@ -23,7 +26,7 @@
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD_NO_PAD, URL_SAFE_NO_PAD};
 
-/// Prefix carried by every attribute encfs owns on the backing file.
+/// Prefix encfs uses for a stored (encrypted) attribute name.
 pub const PREFIX: &str = "user.encfs.";
 
 /// The on-disk name for an encrypted attribute name.
