@@ -14,7 +14,7 @@ prost-build = "0.14.4"
 protoc-bin-vendored = "3.2"
 
 [dependencies]
-anyhow = "1.0.102"
+anyhow = "1.0.104"
 argon2 = "0.5"
 aes = "0.8"
 aes-gcm = "0.10"
@@ -25,14 +25,14 @@ cbc = "0.1"
 cfb-mode = "0.8"
 daemonize = "0.5"
 chrono = "0.4"
-clap = { version = "4.6.1", features = ["derive"] }
-env_logger = "0.11.10"
+clap = { version = "4.6.7", features = ["derive"] }
+env_logger = "0.11.11"
 typed-fuse = { git = "https://github.com/vgough/typed-fuse" }
-libc = "0.2.186"
-log = "0.4.32"
+libc = "0.2.190"
+log = "0.4.34"
 quick-xml = { version = "0.40.1", features = ["serialize"] }
 rpassword = "7.5.4"
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
 rust-i18n = "4"
 prost = "0.14.4"
 getrandom = "0.4"
