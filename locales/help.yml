@@ -47,6 +47,18 @@ help.encfs.mount_point:
   en: "Mount point"
   fr: "Point de montage"
   de: "Mountpoint"
+help.encfs.touchid:
+  en: "macOS: require Touch ID after mounting and again after the idle timeout"
+  fr: "macOS : exiger Touch ID après le montage et de nouveau après le délai d'inactivité"
+  de: "macOS: Touch ID nach dem Mounten und erneut nach dem Inaktivitäts-Timeout verlangen"
+help.encfs.idle_timeout:
+  en: "Minutes without activity before Touch ID is required again (with --touchid)"
+  fr: "Minutes sans activité avant que Touch ID soit de nouveau exigé (avec --touchid)"
+  de: "Minuten ohne Aktivität, bevor Touch ID erneut verlangt wird (mit --touchid)"
+help.encfs.idle_ignore:
+  en: "Process name whose access never counts as activity or prompts for Touch ID (repeatable, with --touchid)"
+  fr: "Nom de processus dont les accès ne comptent jamais comme activité ni ne demandent Touch ID (répétable, avec --touchid)"
+  de: "Prozessname, dessen Zugriffe nie als Aktivität zählen oder Touch ID anfordern (wiederholbar, mit --touchid)"
 
 help.encfsctl.about:
   en: "Administrative tool for working with EncFS filesystems"

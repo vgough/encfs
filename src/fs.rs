@@ -2,6 +2,7 @@ use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use crate::crypto::file_iv::FileIv;
+use crate::idle_lock::{Access, IdleLock};
 use crate::xattr_name;
 use libc;
 use log::{debug, error, warn};
@@ -215,6 +216,8 @@ pub struct EncFs {
     read_only: bool,
     /// Per-backing-inode state serializing read-modify-write I/O.
     file_states: FileStates,
+    /// Optional inactivity lock gating data access (on-demand mode).
+    idle_lock: Option<IdleLock>,
 }
 
 impl EncFs {
@@ -225,12 +228,27 @@ impl EncFs {
             config,
             read_only: false,
             file_states: FileStates::default(),
+            idle_lock: None,
         }
     }
 
     pub fn with_read_only(mut self, read_only: bool) -> Self {
         self.read_only = read_only;
         self
+    }
+
+    /// Require re-authentication for data access after a period of
+    /// inactivity. See [`IdleLock`] for which operations it gates.
+    pub fn with_idle_lock(mut self, idle_lock: IdleLock) -> Self {
+        self.idle_lock = Some(idle_lock);
+        self
+    }
+
+    fn check_idle_lock(&self, access: Access, caller: &Request) -> OpResult {
+        match &self.idle_lock {
+            Some(lock) => lock.check(access, caller.pid),
+            None => Ok(()),
+        }
     }
 
     fn ensure_writable(&self) -> OpResult {
@@ -1803,6 +1821,7 @@ impl PathFilesystem for EncFs {
         set_attr: &SetAttr,
         caller: &Request,
     ) -> Result<FileAttr, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path();
         if let Some(size) = set_attr.size {
             self.do_truncate(path, handle, size)?;
@@ -1848,8 +1867,9 @@ impl PathFilesystem for EncFs {
     fn readlink(
         &self,
         node: PathNodeRef<'_, FileState>,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<PathBuf, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         use std::os::unix::ffi::OsStringExt;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(PathBuf::from(OsString::from_vec(self.readlink_impl(path)?)))
@@ -1860,8 +1880,9 @@ impl PathFilesystem for EncFs {
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         target: &Path,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<PathEntry<FileState>, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.symlink_impl(parent, name, target)?)
     }
@@ -1871,8 +1892,9 @@ impl PathFilesystem for EncFs {
         node: PathNodeRef<'_, FileState>,
         new_parent: PathNodeRef<'_, FileState>,
         new_name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<FileAttr, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         let new_parent = new_parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.link_impl(path, new_parent, new_name)?)
@@ -1887,6 +1909,7 @@ impl PathFilesystem for EncFs {
         _umask: u32,
         caller: &Request,
     ) -> Result<PathEntry<FileState>, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.mknod_impl(*caller, parent, name, mode, rdev)?)
     }
@@ -1899,6 +1922,7 @@ impl PathFilesystem for EncFs {
         _umask: u32,
         caller: &Request,
     ) -> Result<PathEntry<FileState>, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.mkdir_impl(*caller, parent, name, mode)?)
     }
@@ -1907,8 +1931,9 @@ impl PathFilesystem for EncFs {
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.unlink_impl(parent, name)?)
     }
@@ -1917,8 +1942,9 @@ impl PathFilesystem for EncFs {
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.rmdir_impl(parent, name)?)
     }
@@ -1929,8 +1955,9 @@ impl PathFilesystem for EncFs {
         name: &OsStr,
         new_parent: PathNodeRef<'_, FileState>,
         new_name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         let new_parent = new_parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.rename_internal(parent, name, new_parent, new_name)?)
@@ -1940,8 +1967,9 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         _flags: i32,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<Opened<DirBuffer<FileState>>, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(Opened::new(self.directory_snapshot(path)?))
     }
@@ -1952,8 +1980,9 @@ impl PathFilesystem for EncFs {
         handle: &DirBuffer<FileState>,
         offset: u64,
         sink: &mut dyn PathDirSink<FileState>,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         handle.fill(offset, sink);
         Ok(())
     }
@@ -1964,8 +1993,9 @@ impl PathFilesystem for EncFs {
         handle: &DirBuffer<FileState>,
         offset: u64,
         sink: &mut dyn PathPlusDirSink<FileState>,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         handle.fill_plus(offset, sink);
         Ok(())
     }
@@ -1974,8 +2004,9 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         flags: i32,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<Opened<FileHandle>, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(Opened::new(self.open_impl(path, flags as u32)?))
     }
@@ -1986,8 +2017,9 @@ impl PathFilesystem for EncFs {
         handle: &'a FileHandle,
         offset: u64,
         size: usize,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<Cow<'a, [u8]>, Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let size = u32::try_from(size).unwrap_or(u32::MAX);
         Ok(Cow::Owned(self.read_impl(handle, offset, size)?))
     }
@@ -1998,8 +2030,9 @@ impl PathFilesystem for EncFs {
         handle: &FileHandle,
         data: &[u8],
         offset: u64,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<usize, Errno> {
+        self.check_idle_lock(Access::HandleWrite, caller)?;
         Ok(self.write_impl(handle, offset, data)? as usize)
     }
 
@@ -2042,6 +2075,7 @@ impl PathFilesystem for EncFs {
         flags: i32,
         caller: &Request,
     ) -> Result<(PathEntry<FileState>, Opened<FileHandle>), Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         let (entry, handle) = self.create_impl(*caller, parent, name, mode, flags as u32)?;
         Ok((entry, Opened::new(handle)))
@@ -2053,8 +2087,9 @@ impl PathFilesystem for EncFs {
         name: &OsStr,
         value: &[u8],
         flags: i32,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.setxattr_impl(path, name, value, flags as u32, 0)?)
     }
@@ -2064,8 +2099,9 @@ impl PathFilesystem for EncFs {
         node: PathNodeRef<'_, FileState>,
         name: &OsStr,
         size: usize,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
+        self.check_idle_lock(Access::XattrRead, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         ReplyXAttr::sized(self.getxattr_impl(path, name)?, size)
     }
@@ -2074,8 +2110,9 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         size: usize,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
+        self.check_idle_lock(Access::XattrRead, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         ReplyXAttr::sized(self.listxattr_impl(path)?, size)
     }
@@ -2084,8 +2121,9 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
+        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.removexattr_impl(path, name)?)
     }

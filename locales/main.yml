@@ -92,3 +92,15 @@ encfsr.config_not_v7:
   en: "error: encfsr only supports V7 config files (.encfs7); got non-V7 config at %{path}"
   fr: "erreur : encfsr ne prend en charge que les fichiers de configuration V7 (.encfs7) ; configuration non V7 trouvée à %{path}"
   de: "Fehler: encfsr unterstützt nur V7-Konfigurationsdateien (.encfs7); nicht-V7-Konfiguration bei %{path} gefunden"
+main.touchid_reason:
+  en: "unlock the encrypted filesystem at %{mount_point}"
+  fr: "déverrouiller le système de fichiers chiffré monté sur %{mount_point}"
+  de: "das verschlüsselte Dateisystem unter %{mount_point} entsperren"
+main.touchid_failed:
+  en: "Touch ID authentication failed: %{error}"
+  fr: "Échec de l'authentification Touch ID : %{error}"
+  de: "Touch-ID-Authentifizierung fehlgeschlagen: %{error}"
+main.touchid_unlocked:
+  en: "Touch ID authentication succeeded; locking after %{minutes} minutes of inactivity"
+  fr: "Authentification Touch ID réussie ; verrouillage après %{minutes} minutes d'inactivité"
+  de: "Touch-ID-Authentifizierung erfolgreich; Sperre nach %{minutes} Minuten Inaktivität"

@@ -25,6 +25,7 @@ For command reference, testing patterns, and coding conventions, see `AGENTS.md`
 | `log` & `env_logger` | 0.4.32 / 0.11.10 | Logging |
 | `rpassword` | 7.5.4 | Password prompts |
 | `daemonize` | 0.5 | Background daemon support |
+| `objc2-local-authentication` + `objc2`/`objc2-foundation`/`block2` | 0.3 / 0.6 | macOS only: Touch ID prompts for on-demand mounts (`touchid.rs`) |
 | `libc` | 0.2.186 | POSIX syscalls; also backs `security.rs` process hardening |
 | `chrono` | 0.4 | Date/time handling |
 | `aes` / `blowfish` / `cbc` / `cfb-mode` | (various) | Legacy (V4-V6 compatible) block/stream ciphers, used by `crypto/ssl.rs` |
@@ -60,6 +61,8 @@ encfs/
 │   ├── config_proto.rs       # `prost`-generated V7 protobuf bindings (build-time, see build.rs)
 │   ├── constants.rs          # Global constants (defaults, buffer sizes)
 │   ├── fs.rs                 # Forward-mode FUSE filesystem implementation
+│   ├── idle_lock.rs          # Inactivity lock gating data ops in on-demand mode (`encfs --touchid`)
+│   ├── touchid.rs            # macOS only: Touch ID `Authenticator` via LocalAuthentication
 │   ├── reverse_fs.rs         # Reverse-mode FUSE implementation (staged, validated writes)
 │   └── crypto/
 │       ├── mod.rs            # Crypto module exports

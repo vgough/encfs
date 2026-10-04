@@ -59,6 +59,21 @@ fn help_main_mount_point() -> String {
     t!("help.encfs.mount_point").to_string()
 }
 
+#[cfg(target_os = "macos")]
+fn help_main_touchid() -> String {
+    t!("help.encfs.touchid").to_string()
+}
+
+#[cfg(target_os = "macos")]
+fn help_main_idle_timeout() -> String {
+    t!("help.encfs.idle_timeout").to_string()
+}
+
+#[cfg(target_os = "macos")]
+fn help_main_idle_ignore() -> String {
+    t!("help.encfs.idle_ignore").to_string()
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about = help_main_about(), long_about = None, arg_required_else_help = true)]
 struct Args {
@@ -88,6 +103,25 @@ struct Args {
 
     #[arg(long, help = help_main_no_default_permissions())]
     no_default_permissions: bool,
+
+    #[cfg(target_os = "macos")]
+    #[arg(long, help = help_main_touchid())]
+    touchid: bool,
+
+    #[cfg(target_os = "macos")]
+    #[arg(
+        long,
+        value_name = "MINUTES",
+        default_value_t = 10,
+        value_parser = clap::value_parser!(u64).range(1..),
+        requires = "touchid",
+        help = help_main_idle_timeout()
+    )]
+    idle_timeout: u64,
+
+    #[cfg(target_os = "macos")]
+    #[arg(long, value_name = "PROCESS", requires = "touchid", help = help_main_idle_ignore())]
+    idle_ignore: Vec<String>,
 
     #[arg(help = help_main_root())]
     root: PathBuf,
@@ -185,22 +219,64 @@ fn main() -> Result<()> {
                 .canonicalize()
                 .with_context(|| format!("invalid mount point {}", args.mount_point.display()))?;
 
+            // On-demand mode: Touch ID once before the mount comes up, then
+            // again whenever the idle lock engages.
+            #[cfg(target_os = "macos")]
+            let touchid = args.touchid.then(|| {
+                encfs::touchid::TouchId::new(t!(
+                    "main.touchid_reason",
+                    mount_point = mount_point.display()
+                ))
+            });
+            #[cfg(target_os = "macos")]
+            let unlock = touchid.as_ref().map(|touchid| {
+                move || -> Result<()> {
+                    use encfs::idle_lock::Authenticator;
+                    touchid.authenticate().map_err(|error| {
+                        anyhow::anyhow!("{}", t!("main.touchid_failed", error = error))
+                    })
+                }
+            });
+            #[cfg(not(target_os = "macos"))]
+            let unlock: Option<fn() -> Result<()>> = None;
+
             // Daemonize unless foreground mode is requested. This must happen
             // before the FUSE session is created (forking after libfuse has
-            // initialized process state is unsafe).
-            if !foreground {
-                let daemonize = Daemonize::new();
-                match daemonize.start() {
-                    Ok(_) => info!("{}", t!("main.daemonized_successfully")),
-                    Err(e) => {
-                        let error_msg = t!("main.failed_to_daemonize", error = e);
-                        error!("{}", error_msg);
-                        return Err(anyhow::anyhow!("{}", error_msg));
-                    }
+            // initialized process state is unsafe). The initial unlock runs in
+            // the daemon so LocalAuthentication is never used across a fork.
+            if foreground {
+                if let Some(unlock) = &unlock {
+                    unlock()?;
                 }
+            } else {
+                daemonize(
+                    unlock
+                        .as_ref()
+                        .map(|unlock| unlock as &dyn Fn() -> Result<()>),
+                )?;
             }
 
             let fs = EncFs::new(root, cipher, config).with_read_only(args.read_only);
+            #[cfg(target_os = "macos")]
+            let fs = match touchid {
+                Some(touchid) => {
+                    use encfs::idle_lock::{DEFAULT_IGNORED_PROCESSES, IdleLock};
+                    info!(
+                        "{}",
+                        t!("main.touchid_unlocked", minutes = args.idle_timeout)
+                    );
+                    let ignored = DEFAULT_IGNORED_PROCESSES
+                        .iter()
+                        .map(|name| name.to_string())
+                        .chain(args.idle_ignore);
+                    fs.with_idle_lock(IdleLock::new(
+                        std::time::Duration::from_secs(args.idle_timeout * 60),
+                        Box::new(touchid),
+                        ignored,
+                    ))
+                }
+                None => fs,
+            };
 
             let mount_config = mount::MountConfig {
                 allow_other: args.public,
@@ -219,4 +295,56 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Detach into the background. With `ready`, the parent waits for the daemon
+/// to run it and exits non-zero (with the error on the terminal) if it fails,
+/// instead of exiting successfully before the daemon has been checked.
+fn daemonize(ready: Option<&dyn Fn() -> Result<()>>) -> Result<()> {
+    use daemonize::Outcome;
+    use std::io::{Read, Write};
+
+    let daemon_error = |e: &dyn std::fmt::Display| {
+        let error_msg = t!("main.failed_to_daemonize", error = e);
+        error!("{}", error_msg);
+        anyhow::anyhow!("{}", error_msg)
+    };
+
+    let Some(ready) = ready else {
+        Daemonize::new().start().map_err(|e| daemon_error(&e))?;
+        info!("{}", t!("main.daemonized_successfully"));
+        return Ok(());
+    };
+
+    let (mut reader, mut writer) = std::io::pipe()?;
+    match Daemonize::new().execute() {
+        Outcome::Parent(Ok(_)) => {
+            drop(writer);
+            // EOF arrives once the daemon reports or exits.
+            let mut status = String::new();
+            reader.read_to_string(&mut status)?;
+            match status.strip_prefix("ok") {
+                Some("") => std::process::exit(0),
+                _ if status.is_empty() => Err(daemon_error(&"daemon exited during startup")),
+                _ => {
+                    let message = status.strip_prefix("error: ").unwrap_or(&status);
+                    error!("{}", message);
+                    Err(anyhow::anyhow!("{}", message))
+                }
+            }
+        }
+        Outcome::Parent(Err(e)) => Err(daemon_error(&e)),
+        Outcome::Child(Ok(_)) => {
+            drop(reader);
+            info!("{}", t!("main.daemonized_successfully"));
+            let result = ready();
+            let _ = match &result {
+                Ok(()) => writer.write_all(b"ok"),
+                Err(e) => writer.write_all(format!("error: {e}").as_bytes()),
+            };
+            drop(writer);
+            result
+        }
+        Outcome::Child(Err(e)) => Err(daemon_error(&e)),
+    }
 }
