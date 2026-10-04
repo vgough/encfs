@@ -44,6 +44,13 @@ zeroize = { version = "1", features = ["derive"] }
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
 tempfile = "3"
 
+# Touch ID for on-demand mounts (`encfs --touchid`).
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSError", "NSString"] }
+objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "block2", "LAContext"] }
+
 [[bin]]
 name = "encfsctl"
 path = "src/encfsctl.rs"

@@ -134,6 +134,34 @@ fusermount -u ~/mount   # Linux
 # or: umount ~/mount    # macOS / FreeBSD
 ```
 
+### On-demand mode with Touch ID (macOS)
+
+```bash
+encfs --touchid --idle-timeout 10 ~/encrypted ~/mount
+```
+
+After the password, encfs asks for Touch ID, then goes into the background.
+After `--idle-timeout` minutes (default 10) without file activity it locks:
+opening, reading, listing, or changing anything in the mount then brings up a
+fresh Touch ID prompt, and the request waits for it. Cancelling the prompt
+returns "Permission denied" (with no further prompts for 10 seconds).
+
+What does and does not count:
+
+- File and directory metadata (`stat`, lookups, `statfs`, access checks) is
+  always answered and never counts as activity, so Finder and system services
+  polling the volume neither keep it unlocked nor cause prompts. This means
+  sizes and timestamps of paths a caller already knows stay visible while
+  locked; file contents, directory listings, symlink targets and extended
+  attribute values do not.
+- Extended attribute reads never count as activity or prompt; while locked
+  they are refused.
+- Writes to files that were already open keep working while locked, so
+  buffered data is not lost.
+- Requests from background services (Spotlight, Time Machine, Quick Look
+  thumbnails, XProtect, and similar) never count as activity or prompt; while
+  locked they are refused. Add more with `--idle-ignore <process-name>`.
+
 
 ## Reverse encryption mode (encfsr)
 
