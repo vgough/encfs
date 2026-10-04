@@ -23,7 +23,7 @@ base64 = "0.22.1"
 blowfish = "0.9"
 cbc = "0.1"
 cfb-mode = "0.8"
-daemonize = "0.5"
+daemonix = "0.1"
 chrono = "0.4"
 clap = { version = "4.6.7", features = ["derive"] }
 env_logger = "0.11.11"

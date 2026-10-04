@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use daemonize::Daemonize;
+use daemonix::Daemonize;
 use log::{error, info};
 use rust_i18n::t;
 use std::path::PathBuf;
@@ -301,7 +301,7 @@ fn main() -> Result<()> {
 /// to run it and exits non-zero (with the error on the terminal) if it fails,
 /// instead of exiting successfully before the daemon has been checked.
 fn daemonize(ready: Option<&dyn Fn() -> Result<()>>) -> Result<()> {
-    use daemonize::Outcome;
+    use daemonix::Outcome;
     use std::io::{Read, Write};
 
     let daemon_error = |e: &dyn std::fmt::Display| {

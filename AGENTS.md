@@ -284,7 +284,7 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
 - `-d` flag sets debug + foreground mode
 
 ### 12. Daemonization
-- Uses `daemonize` crate
+- Uses `daemonix` crate
 - Automatic unless `-f` (foreground) or `-d` (debug) flag
 - Happens after password validation, before FUSE mount
 
