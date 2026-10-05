@@ -1,10 +1,8 @@
 //! Symlink targets on legacy (V4-V6) volumes must use the C++ EncFS encoding
 //! (`DirNode::relativeCipherPath`), so links are readable by both
-//! implementations. The golden values below were derived for the
-//! `encfs6-std.xml` fixture (password "test") by applying C++
-//! `NameIO::recodePath` (read from the v1.9.5 source) to this port's filename
-//! encryption, which the C++-generated fixtures verify; they were not produced
-//! by running the C++ binary.
+//! implementations. The golden values below are the output of the C++ EncFS
+//! 1.9.5 sources (`NameIO::encodePath`, and `"+" + encodeName` for absolute
+//! targets) for the `encfs6-std.xml` fixture (password "test").
 
 use encfs::config::EncfsConfig;
 use encfs::fs::EncFs;
@@ -18,6 +16,7 @@ use common::Node;
 
 const CPP_FOO: &str = "fLMCNPaioJgONaVVlbj3uVG4";
 const CPP_DIR_FOO: &str = ",W3pS8-zxucfrK0JwBw6xBkX/POUujXpACk,r93Fj1IzawshB";
+const CPP_ETC_HOSTS: &str = "+YODXynldyHaBQ1lpPE4BcFFZ";
 
 fn caller() -> Caller {
     Caller {
@@ -36,8 +35,6 @@ fn legacy_symlink_targets_match_cpp() -> anyhow::Result<()> {
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir(&tmp)?;
 
-    let reference = config.get_cipher("test")?;
-    let cpp_abs = format!("+{}", reference.encrypt_filename_no_iv(b"etc/hosts")?);
     let mut encfs = EncFs::new(tmp.clone(), config.get_cipher("test")?, config);
     let root = encfs.root_state();
     let r = caller();
@@ -46,7 +43,7 @@ fn legacy_symlink_targets_match_cpp() -> anyhow::Result<()> {
     let cases = [
         ("l1", "foo", CPP_FOO),
         ("l2", "dir/foo", CPP_DIR_FOO),
-        ("l3", "/etc/hosts", cpp_abs.as_str()),
+        ("l3", "/etc/hosts", CPP_ETC_HOSTS),
     ];
     for (name, target, golden) in cases {
         let created = encfs

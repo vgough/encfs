@@ -330,11 +330,13 @@ impl EncfsConfig {
                 "plainData=1 is not supported by this implementation"
             ));
         }
-        // Only these two filename codecs are implemented. Anything else (C++
-        // `nameio/block32`, `nameio/null`) would otherwise fall back to stream
-        // encoding, failing to read existing names and writing names C++
-        // cannot read.
-        if self.name_iface.name != "nameio/stream" && self.name_iface.name != "nameio/block" {
+        // Only these filename codecs are implemented. Anything else (such as
+        // C++ `nameio/null`) would otherwise fall back to stream encoding,
+        // failing to read existing names and writing names C++ cannot read.
+        if !matches!(
+            self.name_iface.name.as_str(),
+            "nameio/stream" | "nameio/block" | "nameio/block32"
+        ) {
             return Err(anyhow::anyhow!(
                 "Filename encoding {:?} is not supported by this implementation",
                 self.name_iface.name
@@ -2068,16 +2070,16 @@ mod tests {
         assert!(cfg.validate().is_ok());
     }
 
-    /// C++ `nameio/block32` and `nameio/null` aren't implemented; mounting
-    /// them as stream encoding would misread and corrupt names.
+    /// C++ `nameio/null` isn't implemented; mounting it as stream encoding
+    /// would misread and corrupt names.
     #[test]
     fn validate_rejects_unsupported_name_encodings() {
-        for name in ["nameio/block32", "nameio/null", ""] {
+        for name in ["nameio/null", ""] {
             let mut cfg = create_test_config();
             cfg.name_iface.name = name.to_string();
             assert!(cfg.validate().is_err(), "{name:?} must be refused");
         }
-        for name in ["nameio/stream", "nameio/block"] {
+        for name in ["nameio/stream", "nameio/block", "nameio/block32"] {
             let mut cfg = create_test_config();
             cfg.name_iface.name = name.to_string();
             assert!(cfg.validate().is_ok(), "{name:?} must be accepted");

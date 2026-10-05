@@ -93,6 +93,8 @@ where
 pub enum NameEncoding {
     Stream,
     Block,
+    /// `nameio/block32`: block encoding written in case-insensitive Base32.
+    Block32,
 }
 
 /// Main cryptographic wrapper for EncFS.
@@ -164,6 +166,8 @@ impl SslCipher {
     pub fn set_name_encoding(&mut self, iface: &Interface) {
         if iface.name == "nameio/block" {
             self.name_encoding = NameEncoding::Block;
+        } else if iface.name == "nameio/block32" {
+            self.name_encoding = NameEncoding::Block32;
         } else {
             self.name_encoding = NameEncoding::Stream;
         }
@@ -607,7 +611,9 @@ impl SslCipher {
     fn decrypt_filename_opt(&self, encoded_name: &str, iv: Option<u64>) -> Result<(Vec<u8>, u64)> {
         match self.name_encoding {
             NameEncoding::Stream => self.decrypt_filename_stream(encoded_name, iv),
-            NameEncoding::Block => self.decrypt_filename_block(encoded_name, iv),
+            NameEncoding::Block | NameEncoding::Block32 => {
+                self.decrypt_filename_block(encoded_name, iv)
+            }
         }
     }
 
@@ -654,8 +660,12 @@ impl SslCipher {
         encoded_name: &str,
         iv: Option<u64>,
     ) -> Result<(Vec<u8>, u64)> {
-        // 1. Base64 Decode
-        let data = Self::filename_base64_decode(encoded_name)?;
+        // 1. Base64 (or Base32) Decode
+        let data = if self.name_encoding == NameEncoding::Block32 {
+            Self::filename_base32_decode(encoded_name)?
+        } else {
+            Self::filename_base64_decode(encoded_name)?
+        };
 
         if data.len() < 2 {
             return Err(anyhow!("Filename too short"));
@@ -718,18 +728,25 @@ impl SslCipher {
     ) -> Result<(String, u64)> {
         match self.name_encoding {
             NameEncoding::Stream => self.encrypt_filename_stream(plaintext_name, iv),
-            NameEncoding::Block => self.encrypt_filename_block(plaintext_name, iv),
+            NameEncoding::Block | NameEncoding::Block32 => {
+                self.encrypt_filename_block(plaintext_name, iv)
+            }
         }
     }
 
     pub fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32 {
-        let max_bytes = (max_encoded_len * 6) / 8;
+        let bits_per_char = if self.name_encoding == NameEncoding::Block32 {
+            5
+        } else {
+            6
+        };
+        let max_bytes = (max_encoded_len * bits_per_char) / 8;
         if max_bytes <= 2 {
             return 0; // Too small to hold checksum
         }
         match self.name_encoding {
             NameEncoding::Stream => max_bytes - 2,
-            NameEncoding::Block => {
+            NameEncoding::Block | NameEncoding::Block32 => {
                 let bs = self.block_size() as u32;
                 let max_bs_multiple = max_bytes - 2;
                 let max_blocks = (max_bs_multiple / bs) * bs;
@@ -804,8 +821,12 @@ impl SslCipher {
         // Copy back
         data.splice(2.., block_data);
 
-        // 5. Base64 Encode
-        let encoded = Self::filename_base64_encode(&data)?;
+        // 5. Base64 (or Base32) Encode
+        let encoded = if self.name_encoding == NameEncoding::Block32 {
+            Self::filename_base32_encode(&data)
+        } else {
+            Self::filename_base64_encode(&data)?
+        };
         Ok((encoded, new_iv))
     }
 
@@ -1158,6 +1179,55 @@ impl SslCipher {
     pub fn set_key(&mut self, key: &[u8], iv: &[u8]) {
         self.key = key.to_vec();
         self.iv = iv.to_vec();
+    }
+
+    /// Base32 filename encoding used by `nameio/block32` (C++ `changeBase2`
+    /// to 5-bit values, then `B32ToAscii`): values 0-25 map to `A`-`Z` and
+    /// 26-31 to `2`-`7`, least-significant bits first.
+    pub fn filename_base32_encode(data: &[u8]) -> String {
+        let mut s = String::with_capacity((data.len() * 8).div_ceil(5));
+        let mut work: u32 = 0;
+        let mut work_bits = 0;
+        let mut push = |v: u32| {
+            let v = v as u8;
+            s.push(if v < 26 { b'A' + v } else { b'2' + (v - 26) } as char);
+        };
+        for &b in data {
+            work |= (b as u32) << work_bits;
+            work_bits += 8;
+            while work_bits >= 5 {
+                push(work & 0x1f);
+                work >>= 5;
+                work_bits -= 5;
+            }
+        }
+        if work_bits > 0 {
+            push(work & 0x1f);
+        }
+        s
+    }
+
+    /// Inverse of [`Self::filename_base32_encode`]. Case-insensitive, like
+    /// C++ `AsciiToB32`; trailing bits that don't fill a byte are dropped.
+    pub fn filename_base32_decode(s: &str) -> Result<Vec<u8>> {
+        let mut out = Vec::with_capacity(s.len() * 5 / 8);
+        let mut work: u32 = 0;
+        let mut work_bits = 0;
+        for c in s.chars() {
+            let v = match c.to_ascii_uppercase() {
+                c @ 'A'..='Z' => c as u32 - 'A' as u32,
+                c @ '2'..='7' => 26 + (c as u32 - '2' as u32),
+                _ => return Err(anyhow!("Invalid char in filename: {}", c)),
+            };
+            work |= v << work_bits;
+            work_bits += 5;
+            if work_bits >= 8 {
+                out.push((work & 0xff) as u8);
+                work >>= 8;
+                work_bits -= 8;
+            }
+        }
+        Ok(out)
     }
 
     pub fn filename_base64_decode(s: &str) -> Result<Vec<u8>> {
