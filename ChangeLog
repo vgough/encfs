@@ -1,4 +1,4 @@
-Unreleased
+v2.0.0 / 2026-10-04
 ==================
 	* New V7/AES-GCM-SIV filesystems default to a 96-bit random per-file IV
 	  (12-byte header), up from 64 bits. Existing filesystems, including
@@ -11,6 +11,10 @@ Unreleased
 	* Add an authenticated V7 minimum-reader-version field so future
 	  V7 changes that older readers cannot safely interpret fail with a
 	  clear version error instead of a generic corruption message.
+	* Verify password by prompting for confirmation when creating a new filesystem
+	* Add support and CI testing for FreeBSD
+	* Add Touch ID on-demand mode for macOS (`encfs --touchid`) with idle timeout
+	  locking and background process filtering
 
 v2.0.0-beta.6 / 2026-08-01
 ==================
