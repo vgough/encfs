@@ -950,6 +950,25 @@ impl EncfsConfig {
         Ok(volume_key_blob)
     }
 
+    /// Whether extended attributes are stored encrypted. Only V7 does this;
+    /// legacy (V4-V6) volumes pass attributes through unchanged, as C++ EncFS
+    /// does, so both implementations see the same attributes.
+    pub fn encrypts_xattrs(&self) -> bool {
+        self.config_type == ConfigType::V7
+    }
+
+    /// Whether symlink targets use the C++ EncFS path encoding (see
+    /// `symlink_target`) rather than V7's single name under the link's path IV.
+    pub fn uses_legacy_symlink_targets(&self) -> bool {
+        self.config_type != ConfigType::V7
+    }
+
+    /// Whether a symlink's stored target depends on the symlink's own path IV,
+    /// so moving the link requires re-encrypting the target.
+    pub fn symlink_target_depends_on_path(&self) -> bool {
+        !self.uses_legacy_symlink_targets() && self.chained_name_iv
+    }
+
     pub fn header_size(&self) -> u64 {
         if !self.unique_iv {
             0

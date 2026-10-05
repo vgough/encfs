@@ -98,6 +98,12 @@ pub trait Cipher: Send + Sync {
     /// Decrypt an encoded filename, returning `(plaintext, next_iv)`.
     fn decrypt_filename(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)>;
 
+    /// Encrypt a filename with no IV mixed in at all (C++ `iv == nullptr`).
+    fn encrypt_filename_no_iv(&self, plaintext_name: &[u8]) -> Result<String>;
+
+    /// Decrypt a filename encoded with no IV at all (C++ `iv == nullptr`).
+    fn decrypt_filename_no_iv(&self, encoded_name: &str) -> Result<Vec<u8>>;
+
     /// Maximum plaintext name length that fits within `max_encoded_len`.
     fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32;
 
@@ -217,6 +223,14 @@ impl Cipher for SslCipher {
 
     fn decrypt_filename(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
         SslCipher::decrypt_filename(self, encoded_name, iv)
+    }
+
+    fn encrypt_filename_no_iv(&self, plaintext_name: &[u8]) -> Result<String> {
+        SslCipher::encrypt_filename_no_iv(self, plaintext_name)
+    }
+
+    fn decrypt_filename_no_iv(&self, encoded_name: &str) -> Result<Vec<u8>> {
+        SslCipher::decrypt_filename_no_iv(self, encoded_name)
     }
 
     fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32 {

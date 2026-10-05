@@ -177,16 +177,23 @@ impl SslCipher {
         self.name_mac_includes_iv = include;
     }
 
-    /// Filename checksum: MAC_16 over `data`, with the directory IV mixed in
-    /// only when `name_mac_includes_iv` is set (see the field docs).
-    fn name_mac_16(&self, data: &[u8], iv: u64) -> Result<(u16, u64)> {
-        if self.name_mac_includes_iv {
+    /// Filename checksum: MAC_16 over `data`, folding in the directory IV only
+    /// when one is given. C++ EncFS passes a null IV (no IV bytes in the HMAC)
+    /// for unchained names and for absolute symlink targets.
+    fn name_mac_16(&self, data: &[u8], iv: Option<u64>) -> Result<(u16, u64)> {
+        if let Some(iv) = iv {
             return self.mac_16(data, iv);
         }
         let mac64 = self.mac_64_no_iv(data)?;
         let mac32 = ((mac64 >> 32) as u32) ^ (mac64 as u32);
         let mac16 = ((mac32 >> 16) as u16) ^ (mac32 as u16);
         Ok((mac16, mac64))
+    }
+
+    /// The IV argument for a chained-name call: `None` (no IV in the MAC)
+    /// when `name_mac_includes_iv` is off.
+    fn name_iv_arg(&self, iv: u64) -> Option<u64> {
+        self.name_mac_includes_iv.then_some(iv)
     }
 
     fn block_size(&self) -> usize {
@@ -588,13 +595,27 @@ impl SslCipher {
     }
 
     pub fn decrypt_filename(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
+        self.decrypt_filename_opt(encoded_name, self.name_iv_arg(iv))
+    }
+
+    /// Decrypts a name encoded with no IV at all (C++ `iv == nullptr`), as
+    /// used for absolute symlink targets on legacy volumes.
+    pub fn decrypt_filename_no_iv(&self, encoded_name: &str) -> Result<Vec<u8>> {
+        Ok(self.decrypt_filename_opt(encoded_name, None)?.0)
+    }
+
+    fn decrypt_filename_opt(&self, encoded_name: &str, iv: Option<u64>) -> Result<(Vec<u8>, u64)> {
         match self.name_encoding {
             NameEncoding::Stream => self.decrypt_filename_stream(encoded_name, iv),
             NameEncoding::Block => self.decrypt_filename_block(encoded_name, iv),
         }
     }
 
-    fn decrypt_filename_stream(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
+    fn decrypt_filename_stream(
+        &self,
+        encoded_name: &str,
+        iv: Option<u64>,
+    ) -> Result<(Vec<u8>, u64)> {
         // 1. Base64 Decode
         let data = Self::filename_base64_decode(encoded_name)?;
 
@@ -610,7 +631,7 @@ impl SslCipher {
         let mut name_data = data[2..].to_vec();
 
         // IV for name decryption is checksum ^ directory_iv
-        let name_iv = (checksum as u64) ^ iv;
+        let name_iv = (checksum as u64) ^ iv.unwrap_or(0);
 
         self.legacy_stream_decode(&mut name_data, name_iv, &self.key, &self.iv)?;
 
@@ -628,7 +649,11 @@ impl SslCipher {
         Ok((name_data, new_iv))
     }
 
-    fn decrypt_filename_block(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
+    fn decrypt_filename_block(
+        &self,
+        encoded_name: &str,
+        iv: Option<u64>,
+    ) -> Result<(Vec<u8>, u64)> {
         // 1. Base64 Decode
         let data = Self::filename_base64_decode(encoded_name)?;
 
@@ -648,7 +673,7 @@ impl SslCipher {
         }
 
         // IV for name decryption is checksum ^ directory_iv
-        let name_iv = (checksum as u64) ^ iv;
+        let name_iv = (checksum as u64) ^ iv.unwrap_or(0);
         self.legacy_block_decode(&mut block_data, name_iv, &self.key, &self.iv)?;
 
         // 4. Verify MAC (over decrypted data INCLUDING padding)
@@ -677,6 +702,20 @@ impl SslCipher {
     }
 
     pub fn encrypt_filename(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
+        self.encrypt_filename_opt(plaintext_name, self.name_iv_arg(iv))
+    }
+
+    /// Encrypts a name with no IV at all (C++ `iv == nullptr`), as used for
+    /// absolute symlink targets on legacy volumes.
+    pub fn encrypt_filename_no_iv(&self, plaintext_name: &[u8]) -> Result<String> {
+        Ok(self.encrypt_filename_opt(plaintext_name, None)?.0)
+    }
+
+    fn encrypt_filename_opt(
+        &self,
+        plaintext_name: &[u8],
+        iv: Option<u64>,
+    ) -> Result<(String, u64)> {
         match self.name_encoding {
             NameEncoding::Stream => self.encrypt_filename_stream(plaintext_name, iv),
             NameEncoding::Block => self.encrypt_filename_block(plaintext_name, iv),
@@ -699,7 +738,11 @@ impl SslCipher {
         }
     }
 
-    fn encrypt_filename_stream(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
+    fn encrypt_filename_stream(
+        &self,
+        plaintext_name: &[u8],
+        iv: Option<u64>,
+    ) -> Result<(String, u64)> {
         // 1. Calculate Checksum
         let (checksum, new_iv) = self.name_mac_16(plaintext_name, iv)?;
 
@@ -711,7 +754,7 @@ impl SslCipher {
 
         // 3. Encrypt
         // IV for name encryption is checksum ^ directory_iv
-        let name_iv = (checksum as u64) ^ iv;
+        let name_iv = (checksum as u64) ^ iv.unwrap_or(0);
 
         let mut name_data = data[2..].to_vec();
         self.stream_encode(&mut name_data, name_iv, &self.key, &self.iv)?;
@@ -724,7 +767,11 @@ impl SslCipher {
         Ok((encoded, new_iv))
     }
 
-    fn encrypt_filename_block(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
+    fn encrypt_filename_block(
+        &self,
+        plaintext_name: &[u8],
+        iv: Option<u64>,
+    ) -> Result<(String, u64)> {
         let bs = self.block_size();
 
         // 1. Calculate Padding
@@ -749,7 +796,7 @@ impl SslCipher {
         data[1] = (checksum & 0xff) as u8;
 
         // 4. Encrypt
-        let name_iv = (checksum as u64) ^ iv;
+        let name_iv = (checksum as u64) ^ iv.unwrap_or(0);
 
         let mut block_data = data[2..].to_vec();
         self.block_encode(&mut block_data, name_iv, &self.key, &self.iv)?;

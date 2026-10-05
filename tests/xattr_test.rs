@@ -1,9 +1,10 @@
 /// Tests for: Extended attribute (xattr) support
 ///
 /// Verifies that xattr operations (set, get, list, remove) work correctly
-/// with encryption. All attributes are encrypted and stored with the
-/// "user.encfs." prefix on disk.
-use encfs::config::Interface;
+/// with encryption. On V7 volumes all attributes are encrypted and stored with
+/// the "user.encfs." prefix on disk; legacy (V4-V6) volumes store them as-is,
+/// like C++ EncFS.
+use encfs::config::{ConfigType, Interface};
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::{EncFs, FileState};
 use std::ffi::OsStr;
@@ -21,6 +22,10 @@ use common::Node;
 const XATTR_BUF_SIZE: usize = 65536;
 
 fn setup_fs(root: &Path) -> EncFs {
+    setup_fs_with(root, ConfigType::V7)
+}
+
+fn setup_fs_with(root: &Path, config_type: ConfigType) -> EncFs {
     let iface = Interface {
         name: "ssl/aes".to_string(),
         major: 3,
@@ -33,7 +38,8 @@ fn setup_fs(root: &Path) -> EncFs {
     let user_iv = vec![2u8; 16];
     cipher.set_key(&user_key, &user_iv);
 
-    let config = encfs::config::EncfsConfig::test_default();
+    let mut config = encfs::config::EncfsConfig::test_default();
+    config.config_type = config_type;
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
@@ -151,6 +157,133 @@ fn backing_xattr_names(path: &Path) -> Vec<String> {
 const ON_DISK_PREFIX: &str = "encfs.";
 #[cfg(not(target_os = "freebsd"))]
 const ON_DISK_PREFIX: &str = "user.encfs.";
+
+/// How the plaintext attribute `user.foo` appears on a legacy volume's backing
+/// file (FreeBSD drops the namespace from the name).
+#[cfg(target_os = "freebsd")]
+const PLAIN_ON_DISK: &str = "foo";
+#[cfg(not(target_os = "freebsd"))]
+const PLAIN_ON_DISK: &str = "user.foo";
+
+fn fresh_dir(name: &str) -> PathBuf {
+    let tmp = std::env::temp_dir().join(name);
+    if tmp.exists() {
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+    fs::create_dir(&tmp).unwrap();
+    tmp
+}
+
+fn only_backing_file(root: &Path) -> PathBuf {
+    let entries: Vec<_> = fs::read_dir(root)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false))
+        .collect();
+    assert_eq!(entries.len(), 1, "Expected exactly one file");
+    entries[0].path()
+}
+
+fn get_value(encfs: &EncFs, node: &Node<FileState>, name: &str) -> Vec<u8> {
+    match encfs
+        .getxattr(node.as_node(), OsStr::new(name), XATTR_BUF_SIZE, &req())
+        .expect("getxattr failed")
+    {
+        ReplyXAttr::Data(data) => data,
+        ReplyXAttr::Size(_) => panic!("getxattr returned Size instead of Data"),
+    }
+}
+
+fn list_names(encfs: &EncFs, node: &Node<FileState>) -> Vec<String> {
+    match encfs
+        .listxattr(node.as_node(), XATTR_BUF_SIZE, &req())
+        .expect("listxattr failed")
+    {
+        ReplyXAttr::Data(data) => String::from_utf8_lossy(&data)
+            .split('\0')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect(),
+        ReplyXAttr::Size(_) => panic!("listxattr returned Size instead of Data"),
+    }
+}
+
+/// Legacy volumes must store attributes unencrypted so C++ EncFS sees them.
+#[test]
+fn test_legacy_xattr_stored_plaintext() {
+    let tmp = fresh_dir("encfs_xattr_legacy_plain_test");
+    let mut encfs = setup_fs_with(&tmp, ConfigType::V6);
+    let root = encfs.root_state();
+    let r = req();
+    let file = create_test_file(&encfs, &root, &r);
+
+    encfs
+        .setxattr(file.as_node(), OsStr::new("user.foo"), b"bar", 0, &r)
+        .expect("setxattr failed");
+
+    let names = backing_xattr_names(&only_backing_file(&tmp));
+    assert!(names.contains(&PLAIN_ON_DISK.to_string()), "{names:?}");
+    assert!(
+        !names.iter().any(|n| n.starts_with(ON_DISK_PREFIX)),
+        "{names:?}"
+    );
+    assert_eq!(get_value(&encfs, &file, "user.foo"), b"bar");
+    assert!(list_names(&encfs, &file).contains(&"user.foo".to_string()));
+
+    encfs
+        .removexattr(file.as_node(), OsStr::new("user.foo"), &r)
+        .expect("removexattr failed");
+    assert!(
+        encfs
+            .getxattr(file.as_node(), OsStr::new("user.foo"), XATTR_BUF_SIZE, &r)
+            .is_err()
+    );
+
+    fs::remove_dir_all(&tmp).unwrap();
+}
+
+/// Attributes an earlier build stored encrypted on a legacy volume stay
+/// readable and removable, and setting the attribute again replaces the
+/// encrypted copy with a plaintext one.
+#[test]
+fn test_legacy_xattr_reads_encrypted_copy() {
+    let tmp = fresh_dir("encfs_xattr_legacy_migrate_test");
+    let mut v7 = setup_fs_with(&tmp, ConfigType::V7);
+    let root = v7.root_state();
+    let r = req();
+    let file = create_test_file(&v7, &root, &r);
+    v7.setxattr(file.as_node(), OsStr::new("user.foo"), b"old", 0, &r)
+        .expect("setxattr failed");
+    v7.setxattr(file.as_node(), OsStr::new("user.gone"), b"x", 0, &r)
+        .expect("setxattr failed");
+
+    let legacy = setup_fs_with(&tmp, ConfigType::V6);
+    assert_eq!(get_value(&legacy, &file, "user.foo"), b"old");
+    let listed = list_names(&legacy, &file);
+    assert!(listed.contains(&"user.foo".to_string()), "{listed:?}");
+
+    legacy
+        .removexattr(file.as_node(), OsStr::new("user.gone"), &r)
+        .expect("removexattr failed");
+    legacy
+        .setxattr(file.as_node(), OsStr::new("user.foo"), b"new", 0, &r)
+        .expect("setxattr failed");
+    assert_eq!(get_value(&legacy, &file, "user.foo"), b"new");
+
+    let names = backing_xattr_names(&only_backing_file(&tmp));
+    assert!(
+        !names.iter().any(|n| n.starts_with(ON_DISK_PREFIX)),
+        "{names:?}"
+    );
+    let listed = list_names(&legacy, &file);
+    assert_eq!(
+        listed.iter().filter(|n| *n == "user.foo").count(),
+        1,
+        "{listed:?}"
+    );
+
+    fs::remove_dir_all(&tmp).unwrap();
+}
 
 #[test]
 fn test_xattr_set_get() {

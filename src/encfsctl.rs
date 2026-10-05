@@ -1828,44 +1828,39 @@ fn export_directory(
             } else if metadata.is_symlink() {
                 // Handle symlinks - read and decrypt the link target
                 let link_target = std::fs::read_link(entry.path())?;
-                if let Some(target_str) = link_target.to_str() {
-                    // Symlink targets are encrypted as a single filename string using the symlink's
-                    // path IV (matching `fs.rs` symlink/readlink).
-                    let link_path_iv = if config.chained_name_iv { new_iv } else { 0 };
-                    let (decrypted_target_bytes, _) =
-                        match cipher.decrypt_filename(target_str, link_path_iv) {
-                            Ok(res) => res,
-                            Err(e) => {
-                                if fail_on_error {
-                                    return Err(anyhow::anyhow!(
-                                        "{}",
-                                        t!(
-                                            "ctl.error_undecryptable_symlink_target",
-                                            path = entry.path().display(),
-                                            error = e
-                                        )
-                                    ));
-                                }
-                                eprintln!(
-                                    "Warning: Skipping symlink with undecryptable target {:?}: {}",
-                                    entry.path(),
-                                    e
-                                );
-                                return Ok(());
-                            }
-                        };
+                let link_path_iv = if config.chained_name_iv { new_iv } else { 0 };
+                let decrypted_target_bytes = match encfs::symlink_target::decrypt(
+                    cipher,
+                    config,
+                    link_target.as_os_str().as_bytes(),
+                    link_path_iv,
+                ) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        if fail_on_error {
+                            return Err(anyhow::anyhow!(
+                                "{}",
+                                t!(
+                                    "ctl.error_undecryptable_symlink_target",
+                                    path = entry.path().display(),
+                                    error = e
+                                )
+                            ));
+                        }
+                        eprintln!(
+                            "Warning: Skipping symlink with undecryptable target {:?}: {}",
+                            entry.path(),
+                            e
+                        );
+                        return Ok(());
+                    }
+                };
 
-                    #[cfg(unix)]
-                    std::os::unix::fs::symlink(
-                        std::ffi::OsStr::from_bytes(&decrypted_target_bytes),
-                        &dest_path,
-                    )?;
-                } else {
-                    eprintln!(
-                        "Warning: Skipping symlink with non-UTF-8 target: {:?}",
-                        entry.path()
-                    );
-                }
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(
+                    std::ffi::OsStr::from_bytes(&decrypted_target_bytes),
+                    &dest_path,
+                )?;
             } else if metadata.is_file() {
                 // Decrypt and copy file content
                 let src_file = std::fs::File::open(entry.path())?;
@@ -2578,12 +2573,12 @@ mod tests {
         let symlink_target = "target_path";
 
         // Encrypt name
-        let (enc_name, name_iv) = cipher.encrypt_filename(symlink_name.as_bytes(), 0)?;
+        let (enc_name, _) = cipher.encrypt_filename(symlink_name.as_bytes(), 0)?;
 
-        // Encrypt target string (to be content of symlink)
-        // export_directory uses link_path_iv = new_iv (from name decryption) if chained_name_iv
-        let link_iv = if config.chained_name_iv { name_iv } else { 0 };
-        let (enc_target, _) = cipher.encrypt_filename(symlink_target.as_bytes(), link_iv)?;
+        // Encrypt target string (to be content of symlink). This is a V6 volume,
+        // so the target is stored the C++ way: a relative path encoded from IV 0,
+        // independent of the link's own path IV.
+        let (enc_target, _) = cipher.encrypt_filename(symlink_target.as_bytes(), 0)?;
 
         // Create the symlink in source
         // The symlink points to 'enc_target'

@@ -7,6 +7,7 @@ pub mod fs;
 pub mod idle_lock;
 pub mod reverse_fs;
 pub mod security;
+pub mod symlink_target;
 #[cfg(target_os = "macos")]
 pub mod touchid;
 pub mod xattr_name;
