@@ -330,6 +330,16 @@ impl EncfsConfig {
                 "plainData=1 is not supported by this implementation"
             ));
         }
+        // Only these two filename codecs are implemented. Anything else (C++
+        // `nameio/block32`, `nameio/null`) would otherwise fall back to stream
+        // encoding, failing to read existing names and writing names C++
+        // cannot read.
+        if self.name_iface.name != "nameio/stream" && self.name_iface.name != "nameio/block" {
+            return Err(anyhow::anyhow!(
+                "Filename encoding {:?} is not supported by this implementation",
+                self.name_iface.name
+            ));
+        }
         if self.key_size <= 0 || self.key_size % 8 != 0 {
             return Err(anyhow::anyhow!(
                 "Invalid keySize {} (must be positive and a multiple of 8)",
@@ -1094,7 +1104,12 @@ impl EncfsConfig {
                 minor: 0,
                 age: 0,
             },
-            name_iface: Interface::default(),
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 1,
+                age: 0,
+            },
             key_size: 192,
             block_size: 1024,
             key_data: vec![],
@@ -1607,7 +1622,12 @@ mod tests {
                 minor: 0,
                 age: 0,
             },
-            name_iface: Interface::default(),
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 1,
+                age: 0,
+            },
             key_size: 192,
             block_size: 1024,
             key_data: vec![],
@@ -1824,7 +1844,12 @@ mod tests {
                 minor: 0,
                 age: 0,
             },
-            name_iface: Interface::default(),
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 1,
+                age: 0,
+            },
             key_size: 192,
             block_size: 1024,
             key_data: vec![],
@@ -2041,6 +2066,22 @@ mod tests {
 
         cfg.minimum_reader_version = crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION;
         assert!(cfg.validate().is_ok());
+    }
+
+    /// C++ `nameio/block32` and `nameio/null` aren't implemented; mounting
+    /// them as stream encoding would misread and corrupt names.
+    #[test]
+    fn validate_rejects_unsupported_name_encodings() {
+        for name in ["nameio/block32", "nameio/null", ""] {
+            let mut cfg = create_test_config();
+            cfg.name_iface.name = name.to_string();
+            assert!(cfg.validate().is_err(), "{name:?} must be refused");
+        }
+        for name in ["nameio/stream", "nameio/block"] {
+            let mut cfg = create_test_config();
+            cfg.name_iface.name = name.to_string();
+            assert!(cfg.validate().is_ok(), "{name:?} must be accepted");
+        }
     }
 
     #[test]
@@ -2354,7 +2395,12 @@ mod tests {
                 minor: 0,
                 age: 0,
             },
-            name_iface: Interface::default(),
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 1,
+                age: 0,
+            },
             key_size: 192,
             block_size: 1024,
             key_data: vec![],
