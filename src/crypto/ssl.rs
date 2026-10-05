@@ -762,7 +762,7 @@ impl SslCipher {
         self.block_encrypt_inplace(data, key, &ivec)
     }
 
-    fn filename_base64_encode(data: &[u8]) -> Result<String> {
+    pub fn filename_base64_encode(data: &[u8]) -> Result<String> {
         // Custom Base64 encoding
         // 1. changeBase2 (pack 8-bit bytes into 6-bit values)
         // 2. B64ToAscii (map 0-63 to chars)
@@ -1091,7 +1091,7 @@ impl SslCipher {
         self.iv = iv.to_vec();
     }
 
-    fn filename_base64_decode(s: &str) -> Result<Vec<u8>> {
+    pub fn filename_base64_decode(s: &str) -> Result<Vec<u8>> {
         let mut b64_vals = Vec::with_capacity(s.len());
         for c in s.chars() {
             let v = match c {

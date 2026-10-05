@@ -265,7 +265,7 @@ impl EncFs {
     /// If IV chaining is enabled (standard), the IV of a directory is derived from
     /// its parent's IV and its encrypted filename.
     /// Returns the full encrypted path and the IV of the final directory.
-    fn encrypt_path(&self, path: &Path) -> Result<(PathBuf, u64), libc::c_int> {
+    pub fn encrypt_path(&self, path: &Path) -> Result<(PathBuf, u64), libc::c_int> {
         let mut encrypted_path = PathBuf::new();
         let mut iv = 0u64;
         for component in path.components() {
