@@ -34,8 +34,13 @@ pub const V7_BASE_CONFIG_VERSION: u32 = 1;
 /// V7 minimum-reader version at which `wide_file_iv` becomes interpretable.
 pub const V7_WIDE_FILE_IV_CONFIG_VERSION: u32 = 2;
 
+/// V7 minimum-reader version at which the `xattr_format` and `symlink_format`
+/// feature flags and the Base32 (`nameio/block32`) name mode become
+/// interpretable.
+pub const V7_STORAGE_FORMATS_CONFIG_VERSION: u32 = 3;
+
 /// Highest V7 minimum-reader version this build understands.
-pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_WIDE_FILE_IV_CONFIG_VERSION;
+pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_STORAGE_FORMATS_CONFIG_VERSION;
 
 /// Line length for Base64 encoded data in XML config
 pub const XML_BASE64_LINE_LEN: usize = 76;

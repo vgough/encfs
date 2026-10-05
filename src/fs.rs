@@ -3,6 +3,7 @@ use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use crate::crypto::file_iv::FileIv;
 use crate::idle_lock::{Access, IdleLock};
+use crate::symlink_target;
 use crate::xattr_name;
 use libc;
 use log::{debug, error, warn};
@@ -265,7 +266,7 @@ impl EncFs {
     /// If IV chaining is enabled (standard), the IV of a directory is derived from
     /// its parent's IV and its encrypted filename.
     /// Returns the full encrypted path and the IV of the final directory.
-    fn encrypt_path(&self, path: &Path) -> Result<(PathBuf, u64), libc::c_int> {
+    pub fn encrypt_path(&self, path: &Path) -> Result<(PathBuf, u64), libc::c_int> {
         let mut encrypted_path = PathBuf::new();
         let mut iv = 0u64;
         for component in path.components() {
@@ -376,57 +377,52 @@ impl EncFs {
             }
         }
 
-        // Symlink targets are encrypted using a path-derived IV (see `symlink`/`readlink`).
+        // V7 symlink targets are encrypted using a path-derived IV (see `symlink`/`readlink`).
         // If the symlink name changes while `chained_name_iv` is enabled, the IV used to
         // decrypt/encrypt the symlink target changes. A plain `rename` would therefore
         // break `readlink`. Rewrite the symlink target under the destination IV.
-        if meta.is_symlink() {
-            if self.config.external_iv_chaining {
-                warn!("Renaming symlinks with external IV chaining is not supported");
-                return Err(libc::ENOSYS);
+        // Legacy targets don't depend on the link's path, so a plain rename works.
+        // External IV chaining only affects file headers, which symlinks lack.
+        if meta.is_symlink() && self.config.symlink_target_depends_on_path() {
+            let (_, source_iv) = self.encrypt_path(&source)?;
+            let (_, dest_iv) = self.encrypt_path(&dest)?;
+
+            let target =
+                fs::read_link(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            let target_str = target.to_str().ok_or(libc::EILSEQ)?;
+
+            let (plain_target, _) = self
+                .cipher
+                .decrypt_filename(target_str, source_iv)
+                .map_err(|e| {
+                    error!("Failed to decrypt symlink target during rename: {}", e);
+                    libc::EIO
+                })?;
+
+            let (enc_target, _) = self
+                .cipher
+                .encrypt_filename(&plain_target, dest_iv)
+                .map_err(|e| {
+                    error!("Failed to encrypt symlink target during rename: {}", e);
+                    libc::EIO
+                })?;
+
+            // Best-effort remove existing destination (rename(2) would replace).
+            match fs::remove_file(&real_dest) {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
             }
 
-            if self.config.chained_name_iv {
-                let (_, source_iv) = self.encrypt_path(&source)?;
-                let (_, dest_iv) = self.encrypt_path(&dest)?;
+            passthrough_symlink(OsStr::new(&enc_target), &real_dest).map_err(|e| e.raw())?;
+            let atime = meta.accessed().ok();
+            let mtime = meta.modified().ok();
+            let _ = passthrough::utimens_path(&real_dest, atime, mtime);
 
-                let target = fs::read_link(&real_source)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                let target_str = target.to_str().ok_or(libc::EILSEQ)?;
+            // Remove source symlink.
+            fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-                let (plain_target, _) = self
-                    .cipher
-                    .decrypt_filename(target_str, source_iv)
-                    .map_err(|e| {
-                        error!("Failed to decrypt symlink target during rename: {}", e);
-                        libc::EIO
-                    })?;
-
-                let (enc_target, _) = self
-                    .cipher
-                    .encrypt_filename(&plain_target, dest_iv)
-                    .map_err(|e| {
-                        error!("Failed to encrypt symlink target during rename: {}", e);
-                        libc::EIO
-                    })?;
-
-                // Best-effort remove existing destination (rename(2) would replace).
-                match fs::remove_file(&real_dest) {
-                    Ok(_) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
-                }
-
-                passthrough_symlink(OsStr::new(&enc_target), &real_dest).map_err(|e| e.raw())?;
-                let atime = meta.accessed().ok();
-                let mtime = meta.modified().ok();
-                let _ = passthrough::utimens_path(&real_dest, atime, mtime);
-
-                // Remove source symlink.
-                fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-                return Ok(());
-            }
+            return Ok(());
         }
 
         fs::rename(real_source, real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
@@ -518,15 +514,10 @@ impl EncFs {
             self.copy_file_with_header_rewrite(source.physical, dest.physical, source.iv, dest.iv)?;
         } else if meta.is_symlink() {
             // Handle symlinks during recursive directory copies.
-            // When chained_name_iv is enabled, symlink targets are encrypted using
+            // On V7 with chained_name_iv, symlink targets are encrypted using
             // the path IV of the symlink. If the symlink's path changes (due to parent
             // directory rename), we need to re-encrypt the target with the new IV.
-            if self.config.external_iv_chaining {
-                // External IV chaining for symlinks is not supported
-                return Err(libc::ENOSYS);
-            }
-
-            if self.config.chained_name_iv {
+            if self.config.symlink_target_depends_on_path() {
                 // Re-encrypt symlink target with the new path IV
                 let target = fs::read_link(source.physical)
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -563,7 +554,7 @@ impl EncFs {
 
                 passthrough_symlink(OsStr::new(&enc_target), dest.physical).map_err(|e| e.raw())?;
             } else {
-                // No IV chaining - just copy the symlink as-is
+                // The target doesn't depend on the link's path - copy it as-is
                 let target = fs::read_link(source.physical)
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
                 passthrough_symlink(target.as_os_str(), dest.physical).map_err(|e| e.raw())?;
@@ -1075,16 +1066,16 @@ impl EncFs {
 
         let target = fs::read_link(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        // target on disk is encrypted (base64). So it should be valid string.
-        let target_str = target.to_str().ok_or(libc::EILSEQ)?;
-
-        let (plain_target_bytes, _) = self
-            .cipher
-            .decrypt_filename(target_str, path_iv) // Decrypt takes base64 string
-            .map_err(|e| {
-                error!("Failed to decrypt symlink target: {}", e);
-                libc::EIO
-            })?;
+        let plain_target_bytes = symlink_target::decrypt(
+            self.cipher.as_ref(),
+            &self.config,
+            target.as_os_str().as_bytes(),
+            path_iv,
+        )
+        .map_err(|e| {
+            error!("Failed to decrypt symlink target: {}", e);
+            libc::EIO
+        })?;
 
         Ok(plain_target_bytes)
     }
@@ -1125,16 +1116,18 @@ impl EncFs {
         let path = parent.join(name);
         let (real_path, path_iv) = self.encrypt_path(&path)?;
 
-        let target_bytes = target.as_os_str().as_bytes();
-        let (enc_target, _) = self
-            .cipher
-            .encrypt_filename(target_bytes, path_iv)
-            .map_err(|e| {
-                error!("Failed to encrypt symlink target: {}", e);
-                libc::EIO
-            })?;
+        let enc_target = symlink_target::encrypt(
+            self.cipher.as_ref(),
+            &self.config,
+            target.as_os_str().as_bytes(),
+            path_iv,
+        )
+        .map_err(|e| {
+            error!("Failed to encrypt symlink target: {}", e);
+            libc::EIO
+        })?;
 
-        passthrough_symlink(OsStr::new(&enc_target), &real_path).map_err(|e| e.raw())?;
+        passthrough_symlink(OsStr::from_bytes(&enc_target), &real_path).map_err(|e| e.raw())?;
 
         // Return the attributes of the entry we just created.
         self.entry_for_path(&path)
@@ -1580,6 +1573,18 @@ impl EncFs {
 
         let name_bytes = name.as_bytes();
 
+        if !self.config.encrypts_xattrs() {
+            // Legacy volumes store attributes as-is, like C++ EncFS.
+            let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
+            let c_path = c_path(&real_path).map_err(|e| e.raw())?;
+            passthrough::setxattr_nofollow(&c_path, &c_name, value, flags as i32)
+                .map_err(|e| e.raw())?;
+            // Drop any encrypted copy an earlier build stored, so the name
+            // isn't listed twice.
+            let _ = self.remove_encrypted_xattr(&real_path, name_bytes, path_iv);
+            return Ok(());
+        }
+
         // Encrypt all attributes
         // Store them with "user.encfs." prefix on disk
         // Encrypt the full xattr name
@@ -1618,6 +1623,17 @@ impl EncFs {
         let (real_path, path_iv) = self.encrypt_path(path)?;
 
         let name_bytes = name.as_bytes();
+
+        if !self.config.encrypts_xattrs() {
+            // Legacy volumes store attributes as-is, like C++ EncFS. Fall back
+            // to an encrypted copy written by an earlier build.
+            let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
+            let c_path = c_path(&real_path).map_err(|e| e.raw())?;
+            match passthrough::getxattr_value_nofollow(&c_path, &c_name) {
+                Err(e) if e == Errno::ENOATTR => {}
+                other => return other.map_err(|e| e.raw()),
+            }
+        }
 
         // Encrypt all attributes
         // Look them up with "user.encfs." prefix on disk
@@ -1679,6 +1695,11 @@ impl EncFs {
         for name_bytes in names {
             let name_str = match std::str::from_utf8(&name_bytes) {
                 Ok(s) => s,
+                Err(_) if !self.config.encrypts_xattrs() => {
+                    decrypted_list.extend_from_slice(&name_bytes);
+                    decrypted_list.push(0);
+                    continue;
+                }
                 Err(_) => continue, // Invalid UTF-8, skip
             };
 
@@ -1707,6 +1728,10 @@ impl EncFs {
                         // Skip this name but continue
                     }
                 }
+            } else if !self.config.encrypts_xattrs() {
+                // Legacy volumes store attributes as-is, like C++ EncFS.
+                decrypted_list.extend_from_slice(&name_bytes);
+                decrypted_list.push(0);
             } else {
                 // Non-encfs attribute (shouldn't happen if we encrypt all), skip it
                 // or pass through if there are any legacy unencrypted attributes
@@ -1727,6 +1752,27 @@ impl EncFs {
 
         let name_bytes = name.as_bytes();
 
+        if !self.config.encrypts_xattrs() {
+            // Legacy volumes store attributes as-is, like C++ EncFS. Fall back
+            // to an encrypted copy written by an earlier build.
+            let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
+            let c_path = c_path(&real_path).map_err(|e| e.raw())?;
+            match passthrough::removexattr_nofollow(&c_path, &c_name) {
+                Err(e) if e == Errno::ENOATTR => {}
+                other => return other.map_err(|e| e.raw()),
+            }
+        }
+
+        self.remove_encrypted_xattr(&real_path, name_bytes, path_iv)
+    }
+
+    /// Removes the encrypted (`user.encfs.`-prefixed) form of attribute `name`.
+    fn remove_encrypted_xattr(
+        &self,
+        real_path: &Path,
+        name_bytes: &[u8],
+        path_iv: u64,
+    ) -> OpResult {
         // Encrypt all attributes
         // Look them up with "user.encfs." prefix on disk
         // Encrypt the full xattr name
@@ -1742,7 +1788,7 @@ impl EncFs {
         let lookup_name = xattr_name::encode(&encrypted_name);
 
         let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
-        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
+        let c_path = c_path(real_path).map_err(|e| e.raw())?;
 
         // Remove xattr from underlying filesystem, falling back to the older
         // spelling for attributes written before the alphabet change.

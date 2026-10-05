@@ -36,6 +36,28 @@ pub struct BoostSerialization {
     pub cfg: EncfsConfig,
 }
 
+/// How a V7 volume stores extended attributes (V4-V6 always pass them
+/// through unencrypted, like C++ EncFS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum XattrFormat {
+    /// Names and values encrypted; names stored under `user.encfs.`.
+    #[default]
+    Encrypted,
+    /// Names and values passed through unchanged.
+    Plaintext,
+}
+
+/// How a V7 volume stores symlink targets (V4-V6 always use the legacy path
+/// form, like C++ EncFS). See `symlink_target`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SymlinkFormat {
+    /// The whole target encrypted as one name under the link's path IV.
+    #[default]
+    EncryptedName,
+    /// The C++ EncFS path form, independent of the link's location.
+    LegacyPath,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EncfsConfig {
@@ -118,6 +140,16 @@ pub struct EncfsConfig {
     #[serde(rename = "wideFileIV", default)]
     pub wide_file_iv: bool,
 
+    // How a V7 volume stores extended attributes and symlink targets. V4-V6
+    // always use the plaintext/legacy-path forms and must leave these at the
+    // default. `encfsctl passwd --upgrade` sets the legacy forms so an
+    // upgraded volume's existing data stays readable; see `encrypts_xattrs()`
+    // and `uses_legacy_symlink_targets()`.
+    #[serde(skip, default)]
+    pub xattr_format: XattrFormat,
+    #[serde(skip, default)]
+    pub symlink_format: SymlinkFormat,
+
     /// Effective V7 minimum-reader version (never the raw wire value, which
     /// may be 0 meaning `V7_BASE_CONFIG_VERSION`). Zero/unused for non-V7
     /// configs. Not serialized: V7 configs are built directly rather than via
@@ -190,7 +222,8 @@ mod kdf_algorithm_serde {
 }
 
 impl EncfsConfig {
-    /// Returns a new V7 config with standard settings (AES-256, stream naming, Argon2id).
+    /// Returns a new V7 config with standard settings (AES-256, Base32 block
+    /// naming, Argon2id).
     /// New V7 configs default to AES-GCM-SIV block mode (16-byte tag per block).
     /// Caller must set random salt and call set_v7_key before save.
     pub fn standard_v7() -> Self {
@@ -205,8 +238,8 @@ impl EncfsConfig {
                 age: 0,
             },
             name_iface: Interface {
-                name: "nameio/stream".to_string(),
-                major: 2,
+                name: "nameio/block32".to_string(),
+                major: 4,
                 minor: 0,
                 age: 0,
             },
@@ -228,7 +261,9 @@ impl EncfsConfig {
             chained_name_iv: true,
             allow_holes: true,
             wide_file_iv: true,
-            minimum_reader_version: crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
+            minimum_reader_version: crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION,
             config_hash: None,
         }
     }
@@ -294,6 +329,18 @@ impl EncfsConfig {
         if self.plain_data {
             return Err(anyhow::anyhow!(
                 "plainData=1 is not supported by this implementation"
+            ));
+        }
+        // Only these filename codecs are implemented. Anything else (such as
+        // C++ `nameio/null`) would otherwise fall back to stream encoding,
+        // failing to read existing names and writing names C++ cannot read.
+        if !matches!(
+            self.name_iface.name.as_str(),
+            "nameio/stream" | "nameio/block" | "nameio/block32"
+        ) {
+            return Err(anyhow::anyhow!(
+                "Filename encoding {:?} is not supported by this implementation",
+                self.name_iface.name
             ));
         }
         if self.key_size <= 0 || self.key_size % 8 != 0 {
@@ -382,12 +429,15 @@ impl EncfsConfig {
                 "wideFileIV requires uniqueIV=true and AES-GCM-SIV block mode"
             ));
         }
+        let default_formats = self.xattr_format == XattrFormat::default()
+            && self.symlink_format == SymlinkFormat::default();
+        if !default_formats && self.config_type != ConfigType::V7 {
+            return Err(anyhow::anyhow!(
+                "xattr and symlink storage formats only apply to V7 configs"
+            ));
+        }
         if self.config_type == ConfigType::V7 {
-            let max_required = if self.wide_file_iv {
-                crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
-            } else {
-                crate::constants::V7_BASE_CONFIG_VERSION
-            };
+            let max_required = self.required_v7_reader_version();
             if self.minimum_reader_version < max_required {
                 return Err(anyhow::anyhow!(
                     "V7 minimum reader version {} is too low for the enabled features (requires >= {})",
@@ -507,6 +557,8 @@ impl EncfsConfig {
             chained_name_iv: false,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -602,6 +654,8 @@ impl EncfsConfig {
             chained_name_iv,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -746,9 +800,11 @@ impl EncfsConfig {
             ),
         };
 
-        // NameEncodingMode::Stream = 1, Block = 2
+        // NameEncodingMode::Stream = 1, Block = 2, Block32 = 3. Unspecified
+        // (0) has always meant stream; any other value is a newer mode this
+        // build can't interpret, so refuse rather than misread names.
         let name_iface = match name_encoding.mode {
-            1 => Interface {
+            0 | 1 => Interface {
                 name: "nameio/stream".to_string(),
                 major: 2,
                 minor: 0,
@@ -760,12 +816,13 @@ impl EncfsConfig {
                 minor: 0,
                 age: 0,
             },
-            _ => Interface {
-                name: "nameio/stream".to_string(),
-                major: 2,
+            3 => Interface {
+                name: "nameio/block32".to_string(),
+                major: 4,
                 minor: 0,
                 age: 0,
             },
+            other => anyhow::bail!("V7: unsupported name encoding mode {}", other),
         };
 
         let allow_holes = proto
@@ -773,6 +830,28 @@ impl EncfsConfig {
             .as_ref()
             .map(|f| f.allow_holes)
             .unwrap_or(false);
+        // Unknown values are rejected rather than defaulted: a new format
+        // must also raise minimum_reader_version, so reaching here with one
+        // means the config is inconsistent.
+        let (xattr_format, symlink_format) = match proto.feature_flags.as_ref() {
+            None => Default::default(),
+            Some(f) => {
+                use crate::config_proto::{SymlinkFormat as WireSymlink, XattrFormat as WireXattr};
+                let xattr = match WireXattr::try_from(f.xattr_format) {
+                    Ok(WireXattr::Encrypted) => XattrFormat::Encrypted,
+                    Ok(WireXattr::Plaintext) => XattrFormat::Plaintext,
+                    Err(_) => anyhow::bail!("V7: unsupported xattr format {}", f.xattr_format),
+                };
+                let symlink = match WireSymlink::try_from(f.symlink_format) {
+                    Ok(WireSymlink::EncryptedName) => SymlinkFormat::EncryptedName,
+                    Ok(WireSymlink::LegacyPath) => SymlinkFormat::LegacyPath,
+                    Err(_) => {
+                        anyhow::bail!("V7: unsupported symlink format {}", f.symlink_format)
+                    }
+                };
+                (xattr, symlink)
+            }
+        };
 
         let cfg = EncfsConfig {
             config_type: ConfigType::V7,
@@ -798,6 +877,8 @@ impl EncfsConfig {
             chained_name_iv: name_encoding.chained_name_iv,
             allow_holes,
             wide_file_iv,
+            xattr_format,
+            symlink_format,
             minimum_reader_version: effective_min_reader,
             config_hash: Some(config_hash),
         };
@@ -850,6 +931,10 @@ impl EncfsConfig {
         volume_key_blob.zeroize();
         cipher.set_name_encoding(&self.name_iface);
         cipher.set_wide_file_iv(self.wide_file_iv);
+        // C++ EncFS drops the IV from the filename MAC when names are not
+        // chained. V7 is Rust-only and has always mixed in a zero IV, so keep
+        // that to stay readable for existing `--no-chained-iv` V7 volumes.
+        cipher.set_name_mac_includes_iv(self.chained_name_iv || self.config_type == ConfigType::V7);
 
         Ok(Box::new(cipher))
     }
@@ -946,6 +1031,40 @@ impl EncfsConfig {
         Ok(volume_key_blob)
     }
 
+    /// The lowest V7 minimum-reader version that can interpret every feature
+    /// this config uses.
+    pub fn required_v7_reader_version(&self) -> u32 {
+        let default_formats = self.xattr_format == XattrFormat::default()
+            && self.symlink_format == SymlinkFormat::default();
+        if !default_formats || self.name_iface.name == "nameio/block32" {
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+        } else if self.wide_file_iv {
+            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+        } else {
+            crate::constants::V7_BASE_CONFIG_VERSION
+        }
+    }
+
+    /// Whether extended attributes are stored encrypted. Only V7 does this,
+    /// unless its `xattr_format` is `Plaintext`; legacy (V4-V6) volumes pass
+    /// attributes through unchanged, as C++ EncFS does, so both
+    /// implementations see the same attributes.
+    pub fn encrypts_xattrs(&self) -> bool {
+        self.config_type == ConfigType::V7 && self.xattr_format == XattrFormat::Encrypted
+    }
+
+    /// Whether symlink targets use the C++ EncFS path encoding (see
+    /// `symlink_target`) rather than V7's single name under the link's path IV.
+    pub fn uses_legacy_symlink_targets(&self) -> bool {
+        self.config_type != ConfigType::V7 || self.symlink_format == SymlinkFormat::LegacyPath
+    }
+
+    /// Whether a symlink's stored target depends on the symlink's own path IV,
+    /// so moving the link requires re-encrypting the target.
+    pub fn symlink_target_depends_on_path(&self) -> bool {
+        !self.uses_legacy_symlink_targets() && self.chained_name_iv
+    }
+
     pub fn header_size(&self) -> u64 {
         if !self.unique_iv {
             0
@@ -999,7 +1118,12 @@ impl EncfsConfig {
                 minor: 0,
                 age: 0,
             },
-            name_iface: Interface::default(),
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 1,
+                age: 0,
+            },
             key_size: 192,
             block_size: 1024,
             key_data: vec![],
@@ -1018,6 +1142,8 @@ impl EncfsConfig {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         }
@@ -1187,11 +1313,11 @@ impl EncfsConfig {
             ),
         };
 
-        let mode = if self.name_iface.name == "nameio/block" {
-            NameEncodingMode::Block as i32
-        } else {
-            NameEncodingMode::Stream as i32
-        };
+        let mode = match self.name_iface.name.as_str() {
+            "nameio/block" => NameEncodingMode::Block,
+            "nameio/block32" => NameEncodingMode::Block32,
+            _ => NameEncodingMode::Stream,
+        } as i32;
 
         let name_encoding = Some(NameEncoding {
             mode,
@@ -1211,6 +1337,14 @@ impl EncfsConfig {
 
         let feature_flags = Some(FeatureFlags {
             allow_holes: self.allow_holes,
+            xattr_format: match self.xattr_format {
+                XattrFormat::Encrypted => crate::config_proto::XattrFormat::Encrypted,
+                XattrFormat::Plaintext => crate::config_proto::XattrFormat::Plaintext,
+            } as i32,
+            symlink_format: match self.symlink_format {
+                SymlinkFormat::EncryptedName => crate::config_proto::SymlinkFormat::EncryptedName,
+                SymlinkFormat::LegacyPath => crate::config_proto::SymlinkFormat::LegacyPath,
+            } as i32,
         });
 
         // Wire 0 means the base version (pre-existing V7 configs never wrote
@@ -1502,7 +1636,12 @@ mod tests {
                 minor: 0,
                 age: 0,
             },
-            name_iface: Interface::default(),
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 1,
+                age: 0,
+            },
             key_size: 192,
             block_size: 1024,
             key_data: vec![],
@@ -1521,6 +1660,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         }
@@ -1717,7 +1858,12 @@ mod tests {
                 minor: 0,
                 age: 0,
             },
-            name_iface: Interface::default(),
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 1,
+                age: 0,
+            },
             key_size: 192,
             block_size: 1024,
             key_data: vec![],
@@ -1736,6 +1882,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };
@@ -1778,8 +1926,9 @@ mod tests {
         assert_eq!(cfg.header_size(), 12);
         assert_eq!(
             cfg.minimum_reader_version,
-            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
+        assert_eq!(cfg.name_iface.name, "nameio/block32");
         assert!(cfg.validate().is_ok());
     }
 
@@ -1802,7 +1951,7 @@ mod tests {
         }
         assert_eq!(
             proto.minimum_reader_version,
-            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
     }
 
@@ -1858,7 +2007,7 @@ mod tests {
         assert_eq!(loaded.header_size(), 12);
         assert_eq!(
             loaded.minimum_reader_version,
-            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
         let _cipher = loaded.get_cipher(password)?;
 
@@ -1878,6 +2027,13 @@ mod tests {
         ));
 
         let mut config = EncfsConfig::standard_v7();
+        // Stream names, as V7 configs written before Base32 names used.
+        config.name_iface = Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 0,
+            age: 0,
+        };
         config.wide_file_iv = false;
         config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
@@ -1927,11 +2083,116 @@ mod tests {
     #[test]
     fn validate_rejects_wide_file_iv_below_required_reader_version() {
         let mut cfg = EncfsConfig::standard_v7();
+        // Stream names, as V7 configs written before Base32 names used.
+        cfg.name_iface = Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 0,
+            age: 0,
+        };
         cfg.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         assert!(cfg.validate().is_err());
 
         cfg.minimum_reader_version = crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION;
         assert!(cfg.validate().is_ok());
+    }
+
+    /// C++ `nameio/null` isn't implemented; mounting it as stream encoding
+    /// would misread and corrupt names.
+    #[test]
+    fn validate_rejects_unsupported_name_encodings() {
+        for name in ["nameio/null", ""] {
+            let mut cfg = create_test_config();
+            cfg.name_iface.name = name.to_string();
+            assert!(cfg.validate().is_err(), "{name:?} must be refused");
+        }
+        for name in ["nameio/stream", "nameio/block", "nameio/block32"] {
+            let mut cfg = create_test_config();
+            cfg.name_iface.name = name.to_string();
+            assert!(cfg.validate().is_ok(), "{name:?} must be accepted");
+        }
+    }
+
+    /// A name mode this build doesn't know must be refused, not read as
+    /// stream names.
+    #[test]
+    fn unknown_v7_name_mode_is_rejected() {
+        use prost::Message;
+        let mut config = EncfsConfig::standard_v7();
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        let mut proto = config.encfs_config_to_proto_v7();
+        assert_eq!(
+            proto.name_encoding.as_ref().unwrap().mode,
+            crate::config_proto::NameEncodingMode::Block32 as i32
+        );
+        proto.name_encoding.as_mut().unwrap().mode = 99;
+        let err = EncfsConfig::load_v7(&proto.encode_to_vec()).unwrap_err();
+        assert!(err.to_string().contains("name encoding mode"), "{err}");
+    }
+
+    #[test]
+    fn validate_gates_storage_formats() {
+        for (xattr, symlink) in [
+            (XattrFormat::Plaintext, SymlinkFormat::EncryptedName),
+            (XattrFormat::Encrypted, SymlinkFormat::LegacyPath),
+        ] {
+            let mut cfg = EncfsConfig::standard_v7();
+            cfg.xattr_format = xattr;
+            cfg.symlink_format = symlink;
+            cfg.minimum_reader_version = crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION;
+            assert!(
+                cfg.validate().is_err(),
+                "unaware readers must be locked out"
+            );
+            cfg.minimum_reader_version = crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
+            assert!(cfg.validate().is_ok());
+            assert_eq!(cfg.encrypts_xattrs(), xattr == XattrFormat::Encrypted);
+            assert_eq!(
+                cfg.uses_legacy_symlink_targets(),
+                symlink == SymlinkFormat::LegacyPath
+            );
+
+            let mut legacy = create_test_config();
+            legacy.xattr_format = xattr;
+            legacy.symlink_format = symlink;
+            assert!(legacy.validate().is_err(), "formats are V7-only");
+        }
+    }
+
+    /// The formats survive a V7 save/load and are covered by the config hash.
+    #[test]
+    fn storage_formats_round_trip_through_v7() -> Result<()> {
+        let config_path = std::env::temp_dir().join(format!(
+            "encfs_v7_storage_formats_test_{}.encfs7",
+            std::process::id()
+        ));
+        let mut config = EncfsConfig::standard_v7();
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        config.xattr_format = XattrFormat::Plaintext;
+        config.symlink_format = SymlinkFormat::LegacyPath;
+        config.minimum_reader_version = crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob)?;
+        config.save(&config_path)?;
+
+        let loaded = EncfsConfig::load(&config_path)?;
+        assert_eq!(loaded.xattr_format, XattrFormat::Plaintext);
+        assert_eq!(loaded.symlink_format, SymlinkFormat::LegacyPath);
+        assert!(!loaded.encrypts_xattrs());
+        assert!(loaded.uses_legacy_symlink_targets());
+        assert_eq!(
+            loaded.minimum_reader_version,
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+        );
+        loaded.get_cipher("pass")?;
+
+        let _ = std::fs::remove_file(config_path);
+        Ok(())
     }
 
     #[test]
@@ -1950,6 +2211,13 @@ mod tests {
         ));
 
         let mut config = EncfsConfig::standard_v7();
+        // Stream names, as V7 configs written before Base32 names used.
+        config.name_iface = Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 0,
+            age: 0,
+        };
         config.wide_file_iv = false;
         config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         config.block_mac_bytes = 8; // legacy block mode, matching most pre-ADR V7 configs
@@ -1983,7 +2251,9 @@ mod tests {
         config.config_type = ConfigType::V7;
         config.config_hash = None;
         config.wide_file_iv = false;
-        config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
+        config.xattr_format = XattrFormat::Plaintext;
+        config.symlink_format = SymlinkFormat::LegacyPath;
+        config.minimum_reader_version = crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
 
         config.argon2_memory_cost = Some(8);
         config.argon2_time_cost = Some(1);
@@ -2180,7 +2450,12 @@ mod tests {
                 minor: 0,
                 age: 0,
             },
-            name_iface: Interface::default(),
+            name_iface: Interface {
+                name: "nameio/stream".to_string(),
+                major: 2,
+                minor: 1,
+                age: 0,
+            },
             key_size: 192,
             block_size: 1024,
             key_data: vec![],
@@ -2199,6 +2474,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };

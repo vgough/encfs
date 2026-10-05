@@ -618,6 +618,31 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         )
     );
 
+    println!(
+        "{}{}",
+        t!("ctl.encrypted_xattrs"),
+        paint(
+            &bool_str(config.encrypts_xattrs()),
+            bool_highlight(config.encrypts_xattrs(), def.encrypts_xattrs()),
+            color
+        )
+    );
+
+    let legacy_links = config.uses_legacy_symlink_targets();
+    println!(
+        "{}{}",
+        t!("ctl.symlink_format"),
+        paint(
+            &if legacy_links {
+                t!("ctl.symlink_format_legacy")
+            } else {
+                t!("ctl.symlink_format_encrypted")
+            },
+            bool_highlight(legacy_links, def.uses_legacy_symlink_targets()),
+            color
+        )
+    );
+
     // Show KDF information. Argon2id is the current default (green); PBKDF2 is
     // the legacy KDF (red).
     use config::KdfAlgorithm;
@@ -884,7 +909,12 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
             // would silently make the upgraded volume unreadable by
             // `--legacy-file-iv`-era tooling without the user asking for it.
             config.wide_file_iv = false;
-            config.minimum_reader_version = constants::V7_BASE_CONFIG_VERSION;
+            // The upgrade only rewrites the config, so keep the legacy storage
+            // forms for extended attributes and symlink targets: the volume's
+            // existing data stays readable without being rewritten.
+            config.xattr_format = config::XattrFormat::Plaintext;
+            config.symlink_format = config::SymlinkFormat::LegacyPath;
+            config.minimum_reader_version = constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
         }
     } else {
         // Keep existing KDF or upgrade to PBKDF2 if legacy
@@ -1458,11 +1488,19 @@ fn cmd_new(
         config.unique_iv = false;
         config.wide_file_iv = false;
     }
-    if !config.wide_file_iv {
-        // Otherwise the compatibility flags would still produce a config that
-        // pre-change readers reject on the new minimum-reader-version field.
-        config.minimum_reader_version = constants::V7_BASE_CONFIG_VERSION;
+    if legacy_file_iv || no_unique_iv {
+        // The compatibility flags keep the volume readable by older builds,
+        // which predate Base32 names, so stay on stream naming.
+        config.name_iface = config::Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 0,
+            age: 0,
+        };
     }
+    // Otherwise the compatibility flags would still produce a config that
+    // older readers reject on the minimum-reader-version field.
+    config.minimum_reader_version = config.required_v7_reader_version();
     fill_random(&mut config.salt)
         .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
 
@@ -1828,44 +1866,39 @@ fn export_directory(
             } else if metadata.is_symlink() {
                 // Handle symlinks - read and decrypt the link target
                 let link_target = std::fs::read_link(entry.path())?;
-                if let Some(target_str) = link_target.to_str() {
-                    // Symlink targets are encrypted as a single filename string using the symlink's
-                    // path IV (matching `fs.rs` symlink/readlink).
-                    let link_path_iv = if config.chained_name_iv { new_iv } else { 0 };
-                    let (decrypted_target_bytes, _) =
-                        match cipher.decrypt_filename(target_str, link_path_iv) {
-                            Ok(res) => res,
-                            Err(e) => {
-                                if fail_on_error {
-                                    return Err(anyhow::anyhow!(
-                                        "{}",
-                                        t!(
-                                            "ctl.error_undecryptable_symlink_target",
-                                            path = entry.path().display(),
-                                            error = e
-                                        )
-                                    ));
-                                }
-                                eprintln!(
-                                    "Warning: Skipping symlink with undecryptable target {:?}: {}",
-                                    entry.path(),
-                                    e
-                                );
-                                return Ok(());
-                            }
-                        };
+                let link_path_iv = if config.chained_name_iv { new_iv } else { 0 };
+                let decrypted_target_bytes = match encfs::symlink_target::decrypt(
+                    cipher,
+                    config,
+                    link_target.as_os_str().as_bytes(),
+                    link_path_iv,
+                ) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        if fail_on_error {
+                            return Err(anyhow::anyhow!(
+                                "{}",
+                                t!(
+                                    "ctl.error_undecryptable_symlink_target",
+                                    path = entry.path().display(),
+                                    error = e
+                                )
+                            ));
+                        }
+                        eprintln!(
+                            "Warning: Skipping symlink with undecryptable target {:?}: {}",
+                            entry.path(),
+                            e
+                        );
+                        return Ok(());
+                    }
+                };
 
-                    #[cfg(unix)]
-                    std::os::unix::fs::symlink(
-                        std::ffi::OsStr::from_bytes(&decrypted_target_bytes),
-                        &dest_path,
-                    )?;
-                } else {
-                    eprintln!(
-                        "Warning: Skipping symlink with non-UTF-8 target: {:?}",
-                        entry.path()
-                    );
-                }
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(
+                    std::ffi::OsStr::from_bytes(&decrypted_target_bytes),
+                    &dest_path,
+                )?;
             } else if metadata.is_file() {
                 // Decrypt and copy file content
                 let src_file = std::fs::File::open(entry.path())?;
@@ -2068,6 +2101,11 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
     if !config.unique_iv {
         anyhow::bail!("V7 upgrade requires uniqueIV=1 (not supported by this implementation)");
     }
+    // Legacy unchained names MAC without the directory IV, but V7 always mixes
+    // in a (zero) IV, so the existing filenames would stop decrypting.
+    if !config.chained_name_iv {
+        anyhow::bail!("V7 upgrade requires chainedNameIV=1 (unchained filenames differ in V7)");
+    }
     // validate(): keySize
     if config.key_size <= 0 || config.key_size % 8 != 0 {
         anyhow::bail!("V7 upgrade requires keySize positive multiple of 8");
@@ -2106,10 +2144,13 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
             config.cipher_iface.name
         );
     }
-    // load_v7(): only Stream and Block name encoding are mapped
-    if config.name_iface.name != "nameio/stream" && config.name_iface.name != "nameio/block" {
+    // load_v7(): only Stream, Block and Block32 name encoding are mapped
+    if !matches!(
+        config.name_iface.name.as_str(),
+        "nameio/stream" | "nameio/block" | "nameio/block32"
+    ) {
         anyhow::bail!(
-            "V7 upgrade supports only nameio/stream or nameio/block (got {})",
+            "V7 upgrade supports only nameio/stream, nameio/block or nameio/block32 (got {})",
             config.name_iface.name
         );
     }
@@ -2197,6 +2238,7 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
         let mode = match NameEncodingMode::try_from(n.mode) {
             Ok(NameEncodingMode::Stream) => "STREAM",
             Ok(NameEncodingMode::Block) => "BLOCK",
+            Ok(NameEncodingMode::Block32) => "BLOCK32",
             _ => "NAME_ENCODING_MODE_UNSPECIFIED",
         };
         out.push_str("name_encoding {\n");
@@ -2212,6 +2254,8 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
     if let Some(ref f) = proto.feature_flags {
         out.push_str("feature_flags {\n");
         out.push_str(&format!("  allow_holes: {}\n", f.allow_holes));
+        out.push_str(&format!("  xattr_format: {}\n", f.xattr_format));
+        out.push_str(&format!("  symlink_format: {}\n", f.symlink_format));
         out.push_str("}\n");
     }
 
@@ -2564,6 +2608,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -2573,12 +2619,12 @@ mod tests {
         let symlink_target = "target_path";
 
         // Encrypt name
-        let (enc_name, name_iv) = cipher.encrypt_filename(symlink_name.as_bytes(), 0)?;
+        let (enc_name, _) = cipher.encrypt_filename(symlink_name.as_bytes(), 0)?;
 
-        // Encrypt target string (to be content of symlink)
-        // export_directory uses link_path_iv = new_iv (from name decryption) if chained_name_iv
-        let link_iv = if config.chained_name_iv { name_iv } else { 0 };
-        let (enc_target, _) = cipher.encrypt_filename(symlink_target.as_bytes(), link_iv)?;
+        // Encrypt target string (to be content of symlink). This is a V6 volume,
+        // so the target is stored the C++ way: a relative path encoded from IV 0,
+        // independent of the link's own path IV.
+        let (enc_target, _) = cipher.encrypt_filename(symlink_target.as_bytes(), 0)?;
 
         // Create the symlink in source
         // The symlink points to 'enc_target'
@@ -2669,6 +2715,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -2751,6 +2799,8 @@ mod tests {
             chained_name_iv: false, // V4 usually false
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -2952,6 +3002,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3029,6 +3081,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3076,17 +3130,18 @@ mod tests {
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+        assert_eq!(config.name_iface.name, "nameio/block32");
         assert!(config.wide_file_iv);
         assert_eq!(config.header_size(), 12);
         assert_eq!(
             config.minimum_reader_version,
-            constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
         assert_eq!(
             proto.minimum_reader_version,
-            constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -3107,6 +3162,8 @@ mod tests {
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+        // Compatibility volumes stay readable by builds without Base32 names.
+        assert_eq!(config.name_iface.name, "nameio/stream");
         assert!(!config.wide_file_iv);
         assert_eq!(config.header_size(), 8);
         assert_eq!(
@@ -3185,6 +3242,7 @@ mod tests {
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
         let raw = format_v7_config_raw(&proto);
+        assert!(raw.contains("mode: BLOCK32"), "raw info: {raw}");
         assert!(
             raw.contains("file_iv_width: FILE_IV_WIDTH_96"),
             "raw info: {raw}"
@@ -3192,8 +3250,8 @@ mod tests {
         assert!(
             raw.contains(&format!(
                 "minimum_reader_version: {} (effective: {})",
-                constants::V7_WIDE_FILE_IV_CONFIG_VERSION,
-                constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+                constants::V7_STORAGE_FORMATS_CONFIG_VERSION,
+                constants::V7_STORAGE_FORMATS_CONFIG_VERSION
             )),
             "raw info: {raw}"
         );

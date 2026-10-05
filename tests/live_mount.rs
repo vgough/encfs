@@ -684,9 +684,12 @@ fn live_symlink_standard() -> Result<()> {
     run_symlink_tests_standard()
 }
 
+/// Legacy (V6) paranoia volumes store symlink targets in the C++ EncFS path
+/// form, which doesn't depend on the link's location, so a rename just moves
+/// the link (as C++ does) and the target still reads back.
 #[test]
 #[ignore]
-fn live_symlink_rename_paranoia_is_enosys() -> Result<()> {
+fn live_symlink_rename_paranoia_legacy_keeps_target() -> Result<()> {
     require_live();
     if !live_enabled() {
         return Ok(());
@@ -697,8 +700,39 @@ fn live_symlink_rename_paranoia_is_enosys() -> Result<()> {
 
     fs::write(root.join("target.txt"), b"t")?;
     std::os::unix::fs::symlink("target.txt", root.join("lnk"))?;
-    let err = fs::rename(root.join("lnk"), root.join("lnk2")).unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::ENOSYS));
+    fs::rename(root.join("lnk"), root.join("lnk2"))?;
+    assert_eq!(fs::read_link(root.join("lnk2"))?, Path::new("target.txt"));
+    assert_eq!(fs::read(root.join("lnk2"))?, b"t");
+    Ok(())
+}
+
+/// V7 targets are encrypted under the link's path IV, so moving a link (or a
+/// directory holding one) re-encrypts the target. This used to be refused
+/// with ENOSYS when external IV chaining was on, as it is by default.
+#[test]
+#[ignore]
+fn live_symlink_rename_v7_paranoia_rewrites_target() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    // standard_v7() enables external IV chaining.
+    let (backing_root, cfg) = live::init_wide_v7_backing_root()?;
+    let mount = MountGuard::mount_existing_backing_root(cfg, false, backing_root)?;
+    let root = &mount.mount_point;
+
+    fs::write(root.join("target.txt"), b"t")?;
+    std::os::unix::fs::symlink("target.txt", root.join("lnk"))?;
+    fs::rename(root.join("lnk"), root.join("lnk2"))?;
+    assert_eq!(fs::read_link(root.join("lnk2"))?, Path::new("target.txt"));
+    assert_eq!(fs::read(root.join("lnk2"))?, b"t");
+
+    fs::create_dir(root.join("d"))?;
+    std::os::unix::fs::symlink("../target.txt", root.join("d").join("inner"))?;
+    fs::rename(root.join("d"), root.join("d2"))?;
+    let inner = root.join("d2").join("inner");
+    assert_eq!(fs::read_link(&inner)?, Path::new("../target.txt"));
+    assert_eq!(fs::read(&inner)?, b"t");
     Ok(())
 }
 

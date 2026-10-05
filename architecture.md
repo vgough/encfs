@@ -61,6 +61,7 @@ encfs/
 │   ├── config_proto.rs       # `prost`-generated V7 protobuf bindings (build-time, see build.rs)
 │   ├── constants.rs          # Global constants (defaults, buffer sizes)
 │   ├── fs.rs                 # Forward-mode FUSE filesystem implementation
+│   ├── symlink_target.rs     # Symlink target encoding (C++-compatible path form for V4-V6, single name for V7)
 │   ├── idle_lock.rs          # Inactivity lock gating data ops in on-demand mode (`encfs --touchid`)
 │   ├── touchid.rs            # macOS only: Touch ID `Authenticator` via LocalAuthentication
 │   ├── reverse_fs.rs         # Reverse-mode FUSE implementation (staged, validated writes)

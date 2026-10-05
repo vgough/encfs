@@ -35,6 +35,10 @@ pub trait Cipher: Send + Sync {
     /// `encrypt_header_with_iv`, and the AES-GCM-SIV nonce/AAD construction.
     fn set_wide_file_iv(&mut self, wide: bool);
 
+    /// Select whether filename MACs include the directory IV. Legacy (V4-V6)
+    /// volumes without `chained_name_iv` omit it, matching C++ EncFS.
+    fn set_name_mac_includes_iv(&mut self, include: bool);
+
     // --- file-content block crypto (used by BlockCodec) ---
 
     /// MAC-64 without a chained IV — the legacy per-block integrity tag.
@@ -94,6 +98,12 @@ pub trait Cipher: Send + Sync {
     /// Decrypt an encoded filename, returning `(plaintext, next_iv)`.
     fn decrypt_filename(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)>;
 
+    /// Encrypt a filename with no IV mixed in at all (C++ `iv == nullptr`).
+    fn encrypt_filename_no_iv(&self, plaintext_name: &[u8]) -> Result<String>;
+
+    /// Decrypt a filename encoded with no IV at all (C++ `iv == nullptr`).
+    fn decrypt_filename_no_iv(&self, encoded_name: &str) -> Result<Vec<u8>>;
+
     /// Maximum plaintext name length that fits within `max_encoded_len`.
     fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32;
 
@@ -146,6 +156,10 @@ impl Cipher for SslCipher {
 
     fn set_wide_file_iv(&mut self, wide: bool) {
         SslCipher::set_wide_file_iv(self, wide)
+    }
+
+    fn set_name_mac_includes_iv(&mut self, include: bool) {
+        SslCipher::set_name_mac_includes_iv(self, include)
     }
 
     fn mac_64_no_iv(&self, data: &[u8]) -> Result<u64> {
@@ -209,6 +223,14 @@ impl Cipher for SslCipher {
 
     fn decrypt_filename(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
         SslCipher::decrypt_filename(self, encoded_name, iv)
+    }
+
+    fn encrypt_filename_no_iv(&self, plaintext_name: &[u8]) -> Result<String> {
+        SslCipher::encrypt_filename_no_iv(self, plaintext_name)
+    }
+
+    fn decrypt_filename_no_iv(&self, encoded_name: &str) -> Result<Vec<u8>> {
+        SslCipher::decrypt_filename_no_iv(self, encoded_name)
     }
 
     fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32 {

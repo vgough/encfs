@@ -119,6 +119,22 @@ ctl.allow_holes:
   en: "File holes allowed: "
   fr: "Trous de fichier autorisés : "
   de: "Dateilöcher erlaubt: "
+ctl.encrypted_xattrs:
+  en: "Extended attributes encrypted: "
+  fr: "Attributs étendus chiffrés : "
+  de: "Erweiterte Attribute verschlüsselt: "
+ctl.symlink_format:
+  en: "Symlink targets: "
+  fr: "Cibles des liens symboliques : "
+  de: "Ziele symbolischer Links: "
+ctl.symlink_format_encrypted:
+  en: "encrypted as one name"
+  fr: "chiffrées comme un seul nom"
+  de: "als ein Name verschlüsselt"
+ctl.symlink_format_legacy:
+  en: "legacy EncFS path form"
+  fr: "forme de chemin EncFS historique"
+  de: "klassische EncFS-Pfadform"
 ctl.pbkdf2_iterations:
   en: "Using PBKDF2, with %{iterations} iterations"
   fr: "Utilisation de PBKDF2, avec %{iterations} itérations"

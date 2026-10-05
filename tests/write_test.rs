@@ -40,7 +40,12 @@ fn test_virtual_driver_write() {
         creator: "test".to_string(),
         version: 20100713,
         cipher_iface: iface.clone(),
-        name_iface: encfs::config::Interface::default(),
+        name_iface: encfs::config::Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 1,
+            age: 0,
+        },
         key_size: 192,
         block_size: 1024,
         key_data: vec![],
@@ -59,6 +64,8 @@ fn test_virtual_driver_write() {
         chained_name_iv: true,
         allow_holes: false,
         wide_file_iv: false,
+        xattr_format: Default::default(),
+        symlink_format: Default::default(),
         minimum_reader_version: 0,
         config_hash: None,
     };
