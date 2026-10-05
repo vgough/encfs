@@ -684,15 +684,40 @@ fn live_symlink_standard() -> Result<()> {
     run_symlink_tests_standard()
 }
 
+/// Legacy (V6) paranoia volumes store symlink targets in the C++ EncFS path
+/// form, which doesn't depend on the link's location, so a rename just moves
+/// the link (as C++ does) and the target still reads back.
 #[test]
 #[ignore]
-fn live_symlink_rename_paranoia_is_enosys() -> Result<()> {
+fn live_symlink_rename_paranoia_legacy_keeps_target() -> Result<()> {
     require_live();
     if !live_enabled() {
         return Ok(());
     }
     let cfg = load_live_config(live::LiveConfigKind::Paranoia)?;
     let mount = MountGuard::mount(cfg, false)?;
+    let root = &mount.mount_point;
+
+    fs::write(root.join("target.txt"), b"t")?;
+    std::os::unix::fs::symlink("target.txt", root.join("lnk"))?;
+    fs::rename(root.join("lnk"), root.join("lnk2"))?;
+    assert_eq!(fs::read_link(root.join("lnk2"))?, Path::new("target.txt"));
+    assert_eq!(fs::read(root.join("lnk2"))?, b"t");
+    Ok(())
+}
+
+/// V7 targets are encrypted under the link's path IV; with external IV
+/// chaining the rewrite on rename isn't supported.
+#[test]
+#[ignore]
+fn live_symlink_rename_v7_paranoia_is_enosys() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    // standard_v7() enables external IV chaining.
+    let (backing_root, cfg) = live::init_wide_v7_backing_root()?;
+    let mount = MountGuard::mount_existing_backing_root(cfg, false, backing_root)?;
     let root = &mount.mount_point;
 
     fs::write(root.join("target.txt"), b"t")?;
