@@ -160,12 +160,12 @@ Backward Compatibility
    `encfsctl new --legacy-file-iv` (or `--no-unique-iv`, which is always
    64-bit) to create a filesystem that old tooling can still read.
 
-   V7 encrypts extended attribute names and values. V4-V6 volumes store them
-   unencrypted, as C++ EncFS does. `encfsctl passwd --upgrade` only rewrites
-   the config, so it sets the `plaintext_xattrs` feature flag (reader version
-   3) to keep an upgraded volume's attributes unencrypted and readable.
-   Symlink targets on V4-V6 volumes also use the C++ encoding, which V7 does
-   not read, so the upgrade refuses volumes that contain symlinks.
+   V7 encrypts extended attribute names and values, and stores each symlink
+   target as one encrypted name under the link's path IV. V4-V6 volumes store
+   attributes unencrypted and symlink targets in the C++ EncFS path form.
+   `encfsctl passwd --upgrade` only rewrites the config, so it sets the
+   `xattr_format` and `symlink_format` feature flags (enums, reader version 3)
+   to the legacy forms, keeping an upgraded volume's existing data readable.
 
 Utility
 -------

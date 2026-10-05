@@ -94,7 +94,8 @@ fn make_encfsr_config() -> EncfsConfig {
         chained_name_iv: true,
         allow_holes: false,
         wide_file_iv: false,
-        plaintext_xattrs: false,
+        xattr_format: Default::default(),
+        symlink_format: Default::default(),
         minimum_reader_version: 0,
         config_hash: None,
     }

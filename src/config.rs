@@ -36,6 +36,28 @@ pub struct BoostSerialization {
     pub cfg: EncfsConfig,
 }
 
+/// How a V7 volume stores extended attributes (V4-V6 always pass them
+/// through unencrypted, like C++ EncFS).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum XattrFormat {
+    /// Names and values encrypted; names stored under `user.encfs.`.
+    #[default]
+    Encrypted,
+    /// Names and values passed through unchanged.
+    Plaintext,
+}
+
+/// How a V7 volume stores symlink targets (V4-V6 always use the legacy path
+/// form, like C++ EncFS). See `symlink_target`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SymlinkFormat {
+    /// The whole target encrypted as one name under the link's path IV.
+    #[default]
+    EncryptedName,
+    /// The C++ EncFS path form, independent of the link's location.
+    LegacyPath,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EncfsConfig {
@@ -118,11 +140,15 @@ pub struct EncfsConfig {
     #[serde(rename = "wideFileIV", default)]
     pub wide_file_iv: bool,
 
-    // Store extended attributes unencrypted on a V7 volume (V4-V6 always
-    // do). Set by `encfsctl passwd --upgrade` so a legacy volume's existing
-    // attributes stay readable; see `encrypts_xattrs()`.
+    // How a V7 volume stores extended attributes and symlink targets. V4-V6
+    // always use the plaintext/legacy-path forms and must leave these at the
+    // default. `encfsctl passwd --upgrade` sets the legacy forms so an
+    // upgraded volume's existing data stays readable; see `encrypts_xattrs()`
+    // and `uses_legacy_symlink_targets()`.
     #[serde(skip, default)]
-    pub plaintext_xattrs: bool,
+    pub xattr_format: XattrFormat,
+    #[serde(skip, default)]
+    pub symlink_format: SymlinkFormat,
 
     /// Effective V7 minimum-reader version (never the raw wire value, which
     /// may be 0 meaning `V7_BASE_CONFIG_VERSION`). Zero/unused for non-V7
@@ -234,7 +260,8 @@ impl EncfsConfig {
             chained_name_iv: true,
             allow_holes: true,
             wide_file_iv: true,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION,
             config_hash: None,
         }
@@ -389,14 +416,16 @@ impl EncfsConfig {
                 "wideFileIV requires uniqueIV=true and AES-GCM-SIV block mode"
             ));
         }
-        if self.plaintext_xattrs && self.config_type != ConfigType::V7 {
+        let default_formats = self.xattr_format == XattrFormat::default()
+            && self.symlink_format == SymlinkFormat::default();
+        if !default_formats && self.config_type != ConfigType::V7 {
             return Err(anyhow::anyhow!(
-                "plaintextXattrs only applies to V7 configs"
+                "xattr and symlink storage formats only apply to V7 configs"
             ));
         }
         if self.config_type == ConfigType::V7 {
-            let max_required = if self.plaintext_xattrs {
-                crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION
+            let max_required = if !default_formats {
+                crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
             } else if self.wide_file_iv {
                 crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
             } else {
@@ -521,7 +550,8 @@ impl EncfsConfig {
             chained_name_iv: false,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -617,7 +647,8 @@ impl EncfsConfig {
             chained_name_iv,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -789,11 +820,28 @@ impl EncfsConfig {
             .as_ref()
             .map(|f| f.allow_holes)
             .unwrap_or(false);
-        let plaintext_xattrs = proto
-            .feature_flags
-            .as_ref()
-            .map(|f| f.plaintext_xattrs)
-            .unwrap_or(false);
+        // Unknown values are rejected rather than defaulted: a new format
+        // must also raise minimum_reader_version, so reaching here with one
+        // means the config is inconsistent.
+        let (xattr_format, symlink_format) = match proto.feature_flags.as_ref() {
+            None => Default::default(),
+            Some(f) => {
+                use crate::config_proto::{SymlinkFormat as WireSymlink, XattrFormat as WireXattr};
+                let xattr = match WireXattr::try_from(f.xattr_format) {
+                    Ok(WireXattr::Encrypted) => XattrFormat::Encrypted,
+                    Ok(WireXattr::Plaintext) => XattrFormat::Plaintext,
+                    Err(_) => anyhow::bail!("V7: unsupported xattr format {}", f.xattr_format),
+                };
+                let symlink = match WireSymlink::try_from(f.symlink_format) {
+                    Ok(WireSymlink::EncryptedName) => SymlinkFormat::EncryptedName,
+                    Ok(WireSymlink::LegacyPath) => SymlinkFormat::LegacyPath,
+                    Err(_) => {
+                        anyhow::bail!("V7: unsupported symlink format {}", f.symlink_format)
+                    }
+                };
+                (xattr, symlink)
+            }
+        };
 
         let cfg = EncfsConfig {
             config_type: ConfigType::V7,
@@ -819,7 +867,8 @@ impl EncfsConfig {
             chained_name_iv: name_encoding.chained_name_iv,
             allow_holes,
             wide_file_iv,
-            plaintext_xattrs,
+            xattr_format,
+            symlink_format,
             minimum_reader_version: effective_min_reader,
             config_hash: Some(config_hash),
         };
@@ -973,17 +1022,17 @@ impl EncfsConfig {
     }
 
     /// Whether extended attributes are stored encrypted. Only V7 does this,
-    /// unless `plaintext_xattrs` is set; legacy (V4-V6) volumes pass
+    /// unless its `xattr_format` is `Plaintext`; legacy (V4-V6) volumes pass
     /// attributes through unchanged, as C++ EncFS does, so both
     /// implementations see the same attributes.
     pub fn encrypts_xattrs(&self) -> bool {
-        self.config_type == ConfigType::V7 && !self.plaintext_xattrs
+        self.config_type == ConfigType::V7 && self.xattr_format == XattrFormat::Encrypted
     }
 
     /// Whether symlink targets use the C++ EncFS path encoding (see
     /// `symlink_target`) rather than V7's single name under the link's path IV.
     pub fn uses_legacy_symlink_targets(&self) -> bool {
-        self.config_type != ConfigType::V7
+        self.config_type != ConfigType::V7 || self.symlink_format == SymlinkFormat::LegacyPath
     }
 
     /// Whether a symlink's stored target depends on the symlink's own path IV,
@@ -1064,7 +1113,8 @@ impl EncfsConfig {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         }
@@ -1258,7 +1308,14 @@ impl EncfsConfig {
 
         let feature_flags = Some(FeatureFlags {
             allow_holes: self.allow_holes,
-            plaintext_xattrs: self.plaintext_xattrs,
+            xattr_format: match self.xattr_format {
+                XattrFormat::Encrypted => crate::config_proto::XattrFormat::Encrypted,
+                XattrFormat::Plaintext => crate::config_proto::XattrFormat::Plaintext,
+            } as i32,
+            symlink_format: match self.symlink_format {
+                SymlinkFormat::EncryptedName => crate::config_proto::SymlinkFormat::EncryptedName,
+                SymlinkFormat::LegacyPath => crate::config_proto::SymlinkFormat::LegacyPath,
+            } as i32,
         });
 
         // Wire 0 means the base version (pre-existing V7 configs never wrote
@@ -1569,7 +1626,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         }
@@ -1785,7 +1843,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };
@@ -1985,47 +2044,61 @@ mod tests {
     }
 
     #[test]
-    fn validate_gates_plaintext_xattrs() {
-        let mut cfg = EncfsConfig::standard_v7();
-        cfg.plaintext_xattrs = true;
-        cfg.minimum_reader_version = crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION;
-        assert!(
-            cfg.validate().is_err(),
-            "unaware readers must be locked out"
-        );
-        cfg.minimum_reader_version = crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION;
-        assert!(cfg.validate().is_ok());
-        assert!(!cfg.encrypts_xattrs());
+    fn validate_gates_storage_formats() {
+        for (xattr, symlink) in [
+            (XattrFormat::Plaintext, SymlinkFormat::EncryptedName),
+            (XattrFormat::Encrypted, SymlinkFormat::LegacyPath),
+        ] {
+            let mut cfg = EncfsConfig::standard_v7();
+            cfg.xattr_format = xattr;
+            cfg.symlink_format = symlink;
+            cfg.minimum_reader_version = crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION;
+            assert!(
+                cfg.validate().is_err(),
+                "unaware readers must be locked out"
+            );
+            cfg.minimum_reader_version = crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
+            assert!(cfg.validate().is_ok());
+            assert_eq!(cfg.encrypts_xattrs(), xattr == XattrFormat::Encrypted);
+            assert_eq!(
+                cfg.uses_legacy_symlink_targets(),
+                symlink == SymlinkFormat::LegacyPath
+            );
 
-        let mut legacy = create_test_config();
-        legacy.plaintext_xattrs = true;
-        assert!(legacy.validate().is_err(), "flag is V7-only");
+            let mut legacy = create_test_config();
+            legacy.xattr_format = xattr;
+            legacy.symlink_format = symlink;
+            assert!(legacy.validate().is_err(), "formats are V7-only");
+        }
     }
 
-    /// The flag survives a V7 save/load and is covered by the config hash.
+    /// The formats survive a V7 save/load and are covered by the config hash.
     #[test]
-    fn plaintext_xattrs_round_trips_through_v7() -> Result<()> {
+    fn storage_formats_round_trip_through_v7() -> Result<()> {
         let config_path = std::env::temp_dir().join(format!(
-            "encfs_v7_plaintext_xattrs_test_{}.encfs7",
+            "encfs_v7_storage_formats_test_{}.encfs7",
             std::process::id()
         ));
         let mut config = EncfsConfig::standard_v7();
         config.argon2_memory_cost = Some(8);
         config.argon2_time_cost = Some(1);
         config.argon2_parallelism = Some(1);
-        config.plaintext_xattrs = true;
-        config.minimum_reader_version = crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION;
+        config.xattr_format = XattrFormat::Plaintext;
+        config.symlink_format = SymlinkFormat::LegacyPath;
+        config.minimum_reader_version = crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
         getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
         let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
         config.set_v7_key("pass", &volume_key_blob)?;
         config.save(&config_path)?;
 
         let loaded = EncfsConfig::load(&config_path)?;
-        assert!(loaded.plaintext_xattrs);
+        assert_eq!(loaded.xattr_format, XattrFormat::Plaintext);
+        assert_eq!(loaded.symlink_format, SymlinkFormat::LegacyPath);
         assert!(!loaded.encrypts_xattrs());
+        assert!(loaded.uses_legacy_symlink_targets());
         assert_eq!(
             loaded.minimum_reader_version,
-            crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
         loaded.get_cipher("pass")?;
 
@@ -2082,8 +2155,9 @@ mod tests {
         config.config_type = ConfigType::V7;
         config.config_hash = None;
         config.wide_file_iv = false;
-        config.plaintext_xattrs = true;
-        config.minimum_reader_version = crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION;
+        config.xattr_format = XattrFormat::Plaintext;
+        config.symlink_format = SymlinkFormat::LegacyPath;
+        config.minimum_reader_version = crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
 
         config.argon2_memory_cost = Some(8);
         config.argon2_time_cost = Some(1);
@@ -2299,7 +2373,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };

@@ -92,7 +92,7 @@ fn recode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ConfigType, Interface};
+    use crate::config::{ConfigType, Interface, SymlinkFormat};
     use crate::crypto::ssl::SslCipher;
 
     fn setup(config_type: ConfigType, chained: bool) -> (Box<dyn Cipher>, EncfsConfig) {
@@ -173,6 +173,21 @@ mod tests {
             decrypt(cipher.as_ref(), &config, &stored, 0).unwrap(),
             b"a/b"
         );
+    }
+
+    /// An upgraded V7 volume keeps the legacy form, so its existing links
+    /// decode unchanged.
+    #[test]
+    fn v7_legacy_path_format_matches_v6() {
+        let (cipher, v6) = setup(ConfigType::V6, true);
+        let (_, mut v7) = setup(ConfigType::V7, true);
+        v7.symlink_format = SymlinkFormat::LegacyPath;
+        for target in [&b"dir/foo"[..], b"/etc/hosts", b"../x"] {
+            let stored = encrypt(cipher.as_ref(), &v6, target, 5).unwrap();
+            assert_eq!(encrypt(cipher.as_ref(), &v7, target, 9).unwrap(), stored);
+            assert_eq!(decrypt(cipher.as_ref(), &v7, &stored, 9).unwrap(), target);
+        }
+        assert!(!v7.symlink_target_depends_on_path());
     }
 
     #[test]

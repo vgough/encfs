@@ -628,6 +628,21 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         )
     );
 
+    let legacy_links = config.uses_legacy_symlink_targets();
+    println!(
+        "{}{}",
+        t!("ctl.symlink_format"),
+        paint(
+            &if legacy_links {
+                t!("ctl.symlink_format_legacy")
+            } else {
+                t!("ctl.symlink_format_encrypted")
+            },
+            bool_highlight(legacy_links, def.uses_legacy_symlink_targets()),
+            color
+        )
+    );
+
     // Show KDF information. Argon2id is the current default (green); PBKDF2 is
     // the legacy KDF (red).
     use config::KdfAlgorithm;
@@ -760,13 +775,6 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     let upgrading_to_v7 = upgrade && config.config_type != config::ConfigType::V7;
     if upgrading_to_v7 {
         ensure_v7_compatible(&config)?;
-        if let Some(path) = find_legacy_symlink(rootdir)? {
-            anyhow::bail!(
-                "V7 upgrade is not possible: {} is a symlink stored in the legacy (C++ EncFS) \
-                 form, which V7 cannot read",
-                path.display()
-            );
-        }
     }
 
     // Get current password
@@ -901,10 +909,12 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
             // would silently make the upgraded volume unreadable by
             // `--legacy-file-iv`-era tooling without the user asking for it.
             config.wide_file_iv = false;
-            // Legacy volumes store extended attributes unencrypted, and the
-            // upgrade only rewrites the config, so keep them that way.
-            config.plaintext_xattrs = true;
-            config.minimum_reader_version = constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION;
+            // The upgrade only rewrites the config, so keep the legacy storage
+            // forms for extended attributes and symlink targets: the volume's
+            // existing data stays readable without being rewritten.
+            config.xattr_format = config::XattrFormat::Plaintext;
+            config.symlink_format = config::SymlinkFormat::LegacyPath;
+            config.minimum_reader_version = constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
         }
     } else {
         // Keep existing KDF or upgrade to PBKDF2 if legacy
@@ -2072,26 +2082,6 @@ fn encrypt_path_with_iv(
     Ok((rootdir.join(encrypted_path), iv))
 }
 
-/// Finds a symlink in the backing tree. Legacy (V4-V6) volumes store symlink
-/// targets in the C++ EncFS form, which V7 encodes differently, and the
-/// upgrade only rewrites the config. Returns the first symlink found.
-fn find_legacy_symlink(dir: &Path) -> Result<Option<PathBuf>> {
-    let mut pending_dirs = vec![dir.to_path_buf()];
-    while let Some(current) = pending_dirs.pop() {
-        for entry in std::fs::read_dir(&current)? {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            if file_type.is_symlink() {
-                return Ok(Some(entry.path()));
-            }
-            if file_type.is_dir() {
-                pending_dirs.push(entry.path());
-            }
-        }
-    }
-    Ok(None)
-}
-
 /// Checks that the config can be represented as V7 and will pass validate() when loaded.
 /// Must match requirements enforced by config::EncfsConfig::validate() and load_v7().
 fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
@@ -2252,7 +2242,8 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
     if let Some(ref f) = proto.feature_flags {
         out.push_str("feature_flags {\n");
         out.push_str(&format!("  allow_holes: {}\n", f.allow_holes));
-        out.push_str(&format!("  plaintext_xattrs: {}\n", f.plaintext_xattrs));
+        out.push_str(&format!("  xattr_format: {}\n", f.xattr_format));
+        out.push_str(&format!("  symlink_format: {}\n", f.symlink_format));
         out.push_str("}\n");
     }
 
@@ -2605,7 +2596,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -2662,26 +2654,6 @@ mod tests {
         Ok(())
     }
 
-    /// `passwd --upgrade` must refuse legacy volumes holding symlinks, whose
-    /// C++-form targets V7 would misread.
-    #[test]
-    fn test_find_legacy_symlink() -> Result<()> {
-        let dir = std::env::temp_dir().join(format!("encfs_legacy_scan_{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(dir.join("sub"))?;
-        fs::write(dir.join("sub").join("file"), b"x")?;
-        assert!(find_legacy_symlink(&dir)?.is_none());
-
-        std::os::unix::fs::symlink("anything", dir.join("sub").join("link"))?;
-        assert_eq!(
-            find_legacy_symlink(&dir)?,
-            Some(dir.join("sub").join("link"))
-        );
-
-        fs::remove_dir_all(&dir)?;
-        Ok(())
-    }
-
     #[test]
     fn test_export_bad_symlink_repro() -> Result<()> {
         use std::ffi::OsStr;
@@ -2731,7 +2703,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -2814,7 +2787,8 @@ mod tests {
             chained_name_iv: false, // V4 usually false
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3016,7 +2990,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3094,7 +3069,8 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
-            plaintext_xattrs: false,
+            xattr_format: Default::default(),
+            symlink_format: Default::default(),
             minimum_reader_version: 0,
             config_hash: None,
         };

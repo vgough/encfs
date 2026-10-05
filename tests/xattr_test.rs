@@ -4,7 +4,7 @@
 /// with encryption. On V7 volumes all attributes are encrypted and stored with
 /// the "user.encfs." prefix on disk; legacy (V4-V6) volumes store them as-is,
 /// like C++ EncFS.
-use encfs::config::{ConfigType, Interface};
+use encfs::config::{ConfigType, Interface, XattrFormat};
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::{EncFs, FileState};
 use std::ffi::OsStr;
@@ -26,10 +26,10 @@ fn setup_fs(root: &Path) -> EncFs {
 }
 
 fn setup_fs_with(root: &Path, config_type: ConfigType) -> EncFs {
-    setup_fs_with_flags(root, config_type, false)
+    setup_fs_with_flags(root, config_type, XattrFormat::default())
 }
 
-fn setup_fs_with_flags(root: &Path, config_type: ConfigType, plaintext_xattrs: bool) -> EncFs {
+fn setup_fs_with_flags(root: &Path, config_type: ConfigType, xattr_format: XattrFormat) -> EncFs {
     let iface = Interface {
         name: "ssl/aes".to_string(),
         major: 3,
@@ -44,7 +44,7 @@ fn setup_fs_with_flags(root: &Path, config_type: ConfigType, plaintext_xattrs: b
 
     let mut config = encfs::config::EncfsConfig::test_default();
     config.config_type = config_type;
-    config.plaintext_xattrs = plaintext_xattrs;
+    config.xattr_format = xattr_format;
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
@@ -216,18 +216,26 @@ fn list_names(encfs: &EncFs, node: &Node<FileState>) -> Vec<String> {
 /// Legacy volumes must store attributes unencrypted so C++ EncFS sees them.
 #[test]
 fn test_legacy_xattr_stored_plaintext() {
-    check_plaintext_xattrs("encfs_xattr_legacy_plain_test", ConfigType::V6, false);
+    check_plaintext_xattrs(
+        "encfs_xattr_legacy_plain_test",
+        ConfigType::V6,
+        XattrFormat::default(),
+    );
 }
 
 /// A V7 volume upgraded from a legacy one keeps attributes unencrypted.
 #[test]
-fn test_v7_plaintext_xattrs_flag() {
-    check_plaintext_xattrs("encfs_xattr_v7_plain_test", ConfigType::V7, true);
+fn test_v7_plaintext_xattr_format() {
+    check_plaintext_xattrs(
+        "encfs_xattr_v7_plain_test",
+        ConfigType::V7,
+        XattrFormat::Plaintext,
+    );
 }
 
-fn check_plaintext_xattrs(dir: &str, config_type: ConfigType, plaintext_xattrs: bool) {
+fn check_plaintext_xattrs(dir: &str, config_type: ConfigType, xattr_format: XattrFormat) {
     let tmp = fresh_dir(dir);
-    let mut encfs = setup_fs_with_flags(&tmp, config_type, plaintext_xattrs);
+    let mut encfs = setup_fs_with_flags(&tmp, config_type, xattr_format);
     let root = encfs.root_state();
     let r = req();
     let file = create_test_file(&encfs, &root, &r);

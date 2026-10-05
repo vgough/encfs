@@ -82,7 +82,8 @@ fn test_argon2id_config_creation_and_loading() -> Result<()> {
         chained_name_iv: true,
         allow_holes: true,
         wide_file_iv: false,
-        plaintext_xattrs: false,
+        xattr_format: Default::default(),
+        symlink_format: Default::default(),
         minimum_reader_version: 0,
         config_hash: None,
     };

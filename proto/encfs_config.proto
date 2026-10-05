@@ -87,14 +87,30 @@ message NameEncoding {
   bool external_iv_chaining = 3;
 }
 
+// How extended attributes are stored. The zero value is what every config
+// written before this field relied on. Any non-zero value requires
+// minimum_reader_version >= 3, and any new value must come with a further
+// minimum_reader_version bump, so unaware readers fail closed.
+enum XattrFormat {
+  // Names and values encrypted, names stored under "user.encfs.".
+  XATTR_FORMAT_ENCRYPTED = 0;
+  // Names and values passed through unchanged, as V4-V6 and C++ EncFS do.
+  // Set when a legacy volume is upgraded in place.
+  XATTR_FORMAT_PLAINTEXT = 1;
+}
+
+// How symlink targets are stored. Same versioning rules as XattrFormat.
+enum SymlinkFormat {
+  // The whole target encrypted as one name under the link's path IV.
+  SYMLINK_FORMAT_ENCRYPTED_NAME = 0;
+  // The C++ EncFS path form used by V4-V6: components encoded like a path
+  // from IV 0, "/", "." and ".." kept, absolute targets as "+" plus a name
+  // with no IV. Set when a legacy volume is upgraded in place.
+  SYMLINK_FORMAT_LEGACY_PATH = 1;
+}
+
 message FeatureFlags {
   bool allow_holes = 1;
-
-  // Store extended attributes unencrypted (names and values passed through),
-  // as V4-V6 and C++ EncFS do. Set when a legacy volume is upgraded in place,
-  // so its existing attributes stay readable. false (the zero value) means
-  // encrypted, which every config written before this field relied on.
-  // Setting it requires minimum_reader_version >= 3 so unaware readers fail
-  // closed instead of encrypting new attributes and hiding existing ones.
-  bool plaintext_xattrs = 2;
+  XattrFormat xattr_format = 2;
+  SymlinkFormat symlink_format = 3;
 }
