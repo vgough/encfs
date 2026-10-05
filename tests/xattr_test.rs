@@ -26,6 +26,10 @@ fn setup_fs(root: &Path) -> EncFs {
 }
 
 fn setup_fs_with(root: &Path, config_type: ConfigType) -> EncFs {
+    setup_fs_with_flags(root, config_type, false)
+}
+
+fn setup_fs_with_flags(root: &Path, config_type: ConfigType, plaintext_xattrs: bool) -> EncFs {
     let iface = Interface {
         name: "ssl/aes".to_string(),
         major: 3,
@@ -40,6 +44,7 @@ fn setup_fs_with(root: &Path, config_type: ConfigType) -> EncFs {
 
     let mut config = encfs::config::EncfsConfig::test_default();
     config.config_type = config_type;
+    config.plaintext_xattrs = plaintext_xattrs;
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
@@ -211,8 +216,18 @@ fn list_names(encfs: &EncFs, node: &Node<FileState>) -> Vec<String> {
 /// Legacy volumes must store attributes unencrypted so C++ EncFS sees them.
 #[test]
 fn test_legacy_xattr_stored_plaintext() {
-    let tmp = fresh_dir("encfs_xattr_legacy_plain_test");
-    let mut encfs = setup_fs_with(&tmp, ConfigType::V6);
+    check_plaintext_xattrs("encfs_xattr_legacy_plain_test", ConfigType::V6, false);
+}
+
+/// A V7 volume upgraded from a legacy one keeps attributes unencrypted.
+#[test]
+fn test_v7_plaintext_xattrs_flag() {
+    check_plaintext_xattrs("encfs_xattr_v7_plain_test", ConfigType::V7, true);
+}
+
+fn check_plaintext_xattrs(dir: &str, config_type: ConfigType, plaintext_xattrs: bool) {
+    let tmp = fresh_dir(dir);
+    let mut encfs = setup_fs_with_flags(&tmp, config_type, plaintext_xattrs);
     let root = encfs.root_state();
     let r = req();
     let file = create_test_file(&encfs, &root, &r);

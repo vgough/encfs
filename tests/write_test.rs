@@ -59,6 +59,7 @@ fn test_virtual_driver_write() {
         chained_name_iv: true,
         allow_holes: false,
         wide_file_iv: false,
+        plaintext_xattrs: false,
         minimum_reader_version: 0,
         config_hash: None,
     };

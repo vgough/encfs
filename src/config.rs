@@ -118,6 +118,12 @@ pub struct EncfsConfig {
     #[serde(rename = "wideFileIV", default)]
     pub wide_file_iv: bool,
 
+    // Store extended attributes unencrypted on a V7 volume (V4-V6 always
+    // do). Set by `encfsctl passwd --upgrade` so a legacy volume's existing
+    // attributes stay readable; see `encrypts_xattrs()`.
+    #[serde(skip, default)]
+    pub plaintext_xattrs: bool,
+
     /// Effective V7 minimum-reader version (never the raw wire value, which
     /// may be 0 meaning `V7_BASE_CONFIG_VERSION`). Zero/unused for non-V7
     /// configs. Not serialized: V7 configs are built directly rather than via
@@ -228,6 +234,7 @@ impl EncfsConfig {
             chained_name_iv: true,
             allow_holes: true,
             wide_file_iv: true,
+            plaintext_xattrs: false,
             minimum_reader_version: crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION,
             config_hash: None,
         }
@@ -382,8 +389,15 @@ impl EncfsConfig {
                 "wideFileIV requires uniqueIV=true and AES-GCM-SIV block mode"
             ));
         }
+        if self.plaintext_xattrs && self.config_type != ConfigType::V7 {
+            return Err(anyhow::anyhow!(
+                "plaintextXattrs only applies to V7 configs"
+            ));
+        }
         if self.config_type == ConfigType::V7 {
-            let max_required = if self.wide_file_iv {
+            let max_required = if self.plaintext_xattrs {
+                crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION
+            } else if self.wide_file_iv {
                 crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
             } else {
                 crate::constants::V7_BASE_CONFIG_VERSION
@@ -507,6 +521,7 @@ impl EncfsConfig {
             chained_name_iv: false,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -602,6 +617,7 @@ impl EncfsConfig {
             chained_name_iv,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -773,6 +789,11 @@ impl EncfsConfig {
             .as_ref()
             .map(|f| f.allow_holes)
             .unwrap_or(false);
+        let plaintext_xattrs = proto
+            .feature_flags
+            .as_ref()
+            .map(|f| f.plaintext_xattrs)
+            .unwrap_or(false);
 
         let cfg = EncfsConfig {
             config_type: ConfigType::V7,
@@ -798,6 +819,7 @@ impl EncfsConfig {
             chained_name_iv: name_encoding.chained_name_iv,
             allow_holes,
             wide_file_iv,
+            plaintext_xattrs,
             minimum_reader_version: effective_min_reader,
             config_hash: Some(config_hash),
         };
@@ -950,11 +972,12 @@ impl EncfsConfig {
         Ok(volume_key_blob)
     }
 
-    /// Whether extended attributes are stored encrypted. Only V7 does this;
-    /// legacy (V4-V6) volumes pass attributes through unchanged, as C++ EncFS
-    /// does, so both implementations see the same attributes.
+    /// Whether extended attributes are stored encrypted. Only V7 does this,
+    /// unless `plaintext_xattrs` is set; legacy (V4-V6) volumes pass
+    /// attributes through unchanged, as C++ EncFS does, so both
+    /// implementations see the same attributes.
     pub fn encrypts_xattrs(&self) -> bool {
-        self.config_type == ConfigType::V7
+        self.config_type == ConfigType::V7 && !self.plaintext_xattrs
     }
 
     /// Whether symlink targets use the C++ EncFS path encoding (see
@@ -1041,6 +1064,7 @@ impl EncfsConfig {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         }
@@ -1234,6 +1258,7 @@ impl EncfsConfig {
 
         let feature_flags = Some(FeatureFlags {
             allow_holes: self.allow_holes,
+            plaintext_xattrs: self.plaintext_xattrs,
         });
 
         // Wire 0 means the base version (pre-existing V7 configs never wrote
@@ -1544,6 +1569,7 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         }
@@ -1759,6 +1785,7 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };
@@ -1958,6 +1985,55 @@ mod tests {
     }
 
     #[test]
+    fn validate_gates_plaintext_xattrs() {
+        let mut cfg = EncfsConfig::standard_v7();
+        cfg.plaintext_xattrs = true;
+        cfg.minimum_reader_version = crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION;
+        assert!(
+            cfg.validate().is_err(),
+            "unaware readers must be locked out"
+        );
+        cfg.minimum_reader_version = crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION;
+        assert!(cfg.validate().is_ok());
+        assert!(!cfg.encrypts_xattrs());
+
+        let mut legacy = create_test_config();
+        legacy.plaintext_xattrs = true;
+        assert!(legacy.validate().is_err(), "flag is V7-only");
+    }
+
+    /// The flag survives a V7 save/load and is covered by the config hash.
+    #[test]
+    fn plaintext_xattrs_round_trips_through_v7() -> Result<()> {
+        let config_path = std::env::temp_dir().join(format!(
+            "encfs_v7_plaintext_xattrs_test_{}.encfs7",
+            std::process::id()
+        ));
+        let mut config = EncfsConfig::standard_v7();
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        config.plaintext_xattrs = true;
+        config.minimum_reader_version = crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION;
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob)?;
+        config.save(&config_path)?;
+
+        let loaded = EncfsConfig::load(&config_path)?;
+        assert!(loaded.plaintext_xattrs);
+        assert!(!loaded.encrypts_xattrs());
+        assert_eq!(
+            loaded.minimum_reader_version,
+            crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION
+        );
+        loaded.get_cipher("pass")?;
+
+        let _ = std::fs::remove_file(config_path);
+        Ok(())
+    }
+
+    #[test]
     fn validate_rejects_minimum_reader_version_above_current() {
         let mut cfg = EncfsConfig::standard_v7();
         cfg.minimum_reader_version = crate::constants::V7_CURRENT_CONFIG_VERSION + 1;
@@ -2006,7 +2082,8 @@ mod tests {
         config.config_type = ConfigType::V7;
         config.config_hash = None;
         config.wide_file_iv = false;
-        config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
+        config.plaintext_xattrs = true;
+        config.minimum_reader_version = crate::constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION;
 
         config.argon2_memory_cost = Some(8);
         config.argon2_time_cost = Some(1);
@@ -2222,6 +2299,7 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };

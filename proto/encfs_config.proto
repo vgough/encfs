@@ -89,4 +89,12 @@ message NameEncoding {
 
 message FeatureFlags {
   bool allow_holes = 1;
+
+  // Store extended attributes unencrypted (names and values passed through),
+  // as V4-V6 and C++ EncFS do. Set when a legacy volume is upgraded in place,
+  // so its existing attributes stay readable. false (the zero value) means
+  // encrypted, which every config written before this field relied on.
+  // Setting it requires minimum_reader_version >= 3 so unaware readers fail
+  // closed instead of encrypting new attributes and hiding existing ones.
+  bool plaintext_xattrs = 2;
 }

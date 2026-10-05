@@ -76,6 +76,7 @@ fn test_upgrade_pbkdf2_to_argon2() -> Result<()> {
         chained_name_iv: true,
         allow_holes: true,
         wide_file_iv: false,
+        plaintext_xattrs: false,
         minimum_reader_version: 0,
         config_hash: None,
     };

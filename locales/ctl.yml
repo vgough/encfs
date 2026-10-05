@@ -119,6 +119,10 @@ ctl.allow_holes:
   en: "File holes allowed: "
   fr: "Trous de fichier autorisés : "
   de: "Dateilöcher erlaubt: "
+ctl.encrypted_xattrs:
+  en: "Extended attributes encrypted: "
+  fr: "Attributs étendus chiffrés : "
+  de: "Erweiterte Attribute verschlüsselt: "
 ctl.pbkdf2_iterations:
   en: "Using PBKDF2, with %{iterations} iterations"
   fr: "Utilisation de PBKDF2, avec %{iterations} itérations"

@@ -618,6 +618,16 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         )
     );
 
+    println!(
+        "{}{}",
+        t!("ctl.encrypted_xattrs"),
+        paint(
+            &bool_str(config.encrypts_xattrs()),
+            bool_highlight(config.encrypts_xattrs(), def.encrypts_xattrs()),
+            color
+        )
+    );
+
     // Show KDF information. Argon2id is the current default (green); PBKDF2 is
     // the legacy KDF (red).
     use config::KdfAlgorithm;
@@ -750,12 +760,11 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     let upgrading_to_v7 = upgrade && config.config_type != config::ConfigType::V7;
     if upgrading_to_v7 {
         ensure_v7_compatible(&config)?;
-        if let Some((path, what)) = find_legacy_format_content(rootdir)? {
+        if let Some(path) = find_legacy_symlink(rootdir)? {
             anyhow::bail!(
-                "V7 upgrade is not possible: {} has {} stored in the legacy (C++ EncFS) form, \
-                 which V7 cannot read",
-                path.display(),
-                what
+                "V7 upgrade is not possible: {} is a symlink stored in the legacy (C++ EncFS) \
+                 form, which V7 cannot read",
+                path.display()
             );
         }
     }
@@ -892,7 +901,10 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
             // would silently make the upgraded volume unreadable by
             // `--legacy-file-iv`-era tooling without the user asking for it.
             config.wide_file_iv = false;
-            config.minimum_reader_version = constants::V7_BASE_CONFIG_VERSION;
+            // Legacy volumes store extended attributes unencrypted, and the
+            // upgrade only rewrites the config, so keep them that way.
+            config.plaintext_xattrs = true;
+            config.minimum_reader_version = constants::V7_PLAINTEXT_XATTRS_CONFIG_VERSION;
         }
     } else {
         // Keep existing KDF or upgrade to PBKDF2 if legacy
@@ -2060,48 +2072,21 @@ fn encrypt_path_with_iv(
     Ok((rootdir.join(encrypted_path), iv))
 }
 
-/// Finds backing content that legacy (V4-V6) volumes store in the C++ EncFS
-/// form and V7 would misread: symlinks (targets are encoded differently) and
-/// unencrypted user extended attributes. Returns the first such path and what
-/// it holds.
-fn find_legacy_format_content(dir: &Path) -> Result<Option<(PathBuf, &'static str)>> {
-    use typed_fuse::passthrough::{is_apple_xattr, listxattr_names_nofollow};
-
-    let c_dir = std::ffi::CString::new(dir.as_os_str().as_bytes())?;
-    let mut entries = vec![(dir.to_path_buf(), c_dir)];
+/// Finds a symlink in the backing tree. Legacy (V4-V6) volumes store symlink
+/// targets in the C++ EncFS form, which V7 encodes differently, and the
+/// upgrade only rewrites the config. Returns the first symlink found.
+fn find_legacy_symlink(dir: &Path) -> Result<Option<PathBuf>> {
     let mut pending_dirs = vec![dir.to_path_buf()];
     while let Some(current) = pending_dirs.pop() {
         for entry in std::fs::read_dir(&current)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
             if file_type.is_symlink() {
-                return Ok(Some((entry.path(), "a symlink")));
+                return Ok(Some(entry.path()));
             }
             if file_type.is_dir() {
                 pending_dirs.push(entry.path());
             }
-            let c_path = std::ffi::CString::new(entry.path().as_os_str().as_bytes())?;
-            entries.push((entry.path(), c_path));
-        }
-    }
-    for (path, c_path) in entries {
-        // Filesystems without xattr support simply have none to migrate.
-        let Ok(names) = listxattr_names_nofollow(&c_path) else {
-            continue;
-        };
-        let plain = names.iter().any(|name| {
-            let name = String::from_utf8_lossy(name);
-            // Outside macOS only the `user.` namespace is user data; other
-            // namespaces (ACLs, SELinux labels) belong to the backing system.
-            let user_data = if cfg!(target_os = "macos") {
-                !is_apple_xattr(&name)
-            } else {
-                name.starts_with("user.")
-            };
-            user_data && !name.starts_with(encfs::xattr_name::PREFIX)
-        });
-        if plain {
-            return Ok(Some((path, "an unencrypted extended attribute")));
         }
     }
     Ok(None)
@@ -2267,6 +2252,7 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
     if let Some(ref f) = proto.feature_flags {
         out.push_str("feature_flags {\n");
         out.push_str(&format!("  allow_holes: {}\n", f.allow_holes));
+        out.push_str(&format!("  plaintext_xattrs: {}\n", f.plaintext_xattrs));
         out.push_str("}\n");
     }
 
@@ -2619,6 +2605,7 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -2675,35 +2662,21 @@ mod tests {
         Ok(())
     }
 
-    /// `passwd --upgrade` must refuse legacy volumes holding content V7 would
-    /// misread: C++-form symlinks and unencrypted user attributes.
+    /// `passwd --upgrade` must refuse legacy volumes holding symlinks, whose
+    /// C++-form targets V7 would misread.
     #[test]
-    fn test_find_legacy_format_content() -> Result<()> {
-        use typed_fuse::passthrough::setxattr_nofollow;
-
+    fn test_find_legacy_symlink() -> Result<()> {
         let dir = std::env::temp_dir().join(format!("encfs_legacy_scan_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("sub"))?;
-        let file = dir.join("sub").join("file");
-        fs::write(&file, b"x")?;
-        assert!(find_legacy_format_content(&dir)?.is_none());
+        fs::write(dir.join("sub").join("file"), b"x")?;
+        assert!(find_legacy_symlink(&dir)?.is_none());
 
-        let c_file = std::ffi::CString::new(file.as_os_str().as_bytes())?;
-        let encrypted = std::ffi::CString::new(format!("{}abc", encfs::xattr_name::PREFIX))?;
-        setxattr_nofollow(&c_file, &encrypted, b"v", 0).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-        assert!(find_legacy_format_content(&dir)?.is_none());
-
-        let plain = std::ffi::CString::new("user.tag")?;
-        setxattr_nofollow(&c_file, &plain, b"v", 0).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-        let (path, _) = find_legacy_format_content(&dir)?.expect("plain xattr");
-        assert_eq!(path, file);
-
-        fs::remove_dir_all(&dir)?;
-        fs::create_dir_all(dir.join("sub"))?;
         std::os::unix::fs::symlink("anything", dir.join("sub").join("link"))?;
-        let (path, what) = find_legacy_format_content(&dir)?.expect("symlink");
-        assert_eq!(path, dir.join("sub").join("link"));
-        assert_eq!(what, "a symlink");
+        assert_eq!(
+            find_legacy_symlink(&dir)?,
+            Some(dir.join("sub").join("link"))
+        );
 
         fs::remove_dir_all(&dir)?;
         Ok(())
@@ -2758,6 +2731,7 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -2840,6 +2814,7 @@ mod tests {
             chained_name_iv: false, // V4 usually false
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3041,6 +3016,7 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3118,6 +3094,7 @@ mod tests {
             chained_name_iv: true,
             allow_holes: false,
             wide_file_iv: false,
+            plaintext_xattrs: false,
             minimum_reader_version: 0,
             config_hash: None,
         };
