@@ -706,11 +706,12 @@ fn live_symlink_rename_paranoia_legacy_keeps_target() -> Result<()> {
     Ok(())
 }
 
-/// V7 targets are encrypted under the link's path IV; with external IV
-/// chaining the rewrite on rename isn't supported.
+/// V7 targets are encrypted under the link's path IV, so moving a link (or a
+/// directory holding one) re-encrypts the target. This used to be refused
+/// with ENOSYS when external IV chaining was on, as it is by default.
 #[test]
 #[ignore]
-fn live_symlink_rename_v7_paranoia_is_enosys() -> Result<()> {
+fn live_symlink_rename_v7_paranoia_rewrites_target() -> Result<()> {
     require_live();
     if !live_enabled() {
         return Ok(());
@@ -722,8 +723,16 @@ fn live_symlink_rename_v7_paranoia_is_enosys() -> Result<()> {
 
     fs::write(root.join("target.txt"), b"t")?;
     std::os::unix::fs::symlink("target.txt", root.join("lnk"))?;
-    let err = fs::rename(root.join("lnk"), root.join("lnk2")).unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::ENOSYS));
+    fs::rename(root.join("lnk"), root.join("lnk2"))?;
+    assert_eq!(fs::read_link(root.join("lnk2"))?, Path::new("target.txt"));
+    assert_eq!(fs::read(root.join("lnk2"))?, b"t");
+
+    fs::create_dir(root.join("d"))?;
+    std::os::unix::fs::symlink("../target.txt", root.join("d").join("inner"))?;
+    fs::rename(root.join("d"), root.join("d2"))?;
+    let inner = root.join("d2").join("inner");
+    assert_eq!(fs::read_link(&inner)?, Path::new("../target.txt"));
+    assert_eq!(fs::read(&inner)?, b"t");
     Ok(())
 }
 

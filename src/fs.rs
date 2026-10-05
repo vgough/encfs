@@ -382,53 +382,47 @@ impl EncFs {
         // decrypt/encrypt the symlink target changes. A plain `rename` would therefore
         // break `readlink`. Rewrite the symlink target under the destination IV.
         // Legacy targets don't depend on the link's path, so a plain rename works.
-        if meta.is_symlink() && !self.config.uses_legacy_symlink_targets() {
-            if self.config.external_iv_chaining {
-                warn!("Renaming symlinks with external IV chaining is not supported");
-                return Err(libc::ENOSYS);
+        // External IV chaining only affects file headers, which symlinks lack.
+        if meta.is_symlink() && self.config.symlink_target_depends_on_path() {
+            let (_, source_iv) = self.encrypt_path(&source)?;
+            let (_, dest_iv) = self.encrypt_path(&dest)?;
+
+            let target =
+                fs::read_link(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            let target_str = target.to_str().ok_or(libc::EILSEQ)?;
+
+            let (plain_target, _) = self
+                .cipher
+                .decrypt_filename(target_str, source_iv)
+                .map_err(|e| {
+                    error!("Failed to decrypt symlink target during rename: {}", e);
+                    libc::EIO
+                })?;
+
+            let (enc_target, _) = self
+                .cipher
+                .encrypt_filename(&plain_target, dest_iv)
+                .map_err(|e| {
+                    error!("Failed to encrypt symlink target during rename: {}", e);
+                    libc::EIO
+                })?;
+
+            // Best-effort remove existing destination (rename(2) would replace).
+            match fs::remove_file(&real_dest) {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
             }
 
-            if self.config.symlink_target_depends_on_path() {
-                let (_, source_iv) = self.encrypt_path(&source)?;
-                let (_, dest_iv) = self.encrypt_path(&dest)?;
+            passthrough_symlink(OsStr::new(&enc_target), &real_dest).map_err(|e| e.raw())?;
+            let atime = meta.accessed().ok();
+            let mtime = meta.modified().ok();
+            let _ = passthrough::utimens_path(&real_dest, atime, mtime);
 
-                let target = fs::read_link(&real_source)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                let target_str = target.to_str().ok_or(libc::EILSEQ)?;
+            // Remove source symlink.
+            fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-                let (plain_target, _) = self
-                    .cipher
-                    .decrypt_filename(target_str, source_iv)
-                    .map_err(|e| {
-                        error!("Failed to decrypt symlink target during rename: {}", e);
-                        libc::EIO
-                    })?;
-
-                let (enc_target, _) = self
-                    .cipher
-                    .encrypt_filename(&plain_target, dest_iv)
-                    .map_err(|e| {
-                        error!("Failed to encrypt symlink target during rename: {}", e);
-                        libc::EIO
-                    })?;
-
-                // Best-effort remove existing destination (rename(2) would replace).
-                match fs::remove_file(&real_dest) {
-                    Ok(_) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
-                }
-
-                passthrough_symlink(OsStr::new(&enc_target), &real_dest).map_err(|e| e.raw())?;
-                let atime = meta.accessed().ok();
-                let mtime = meta.modified().ok();
-                let _ = passthrough::utimens_path(&real_dest, atime, mtime);
-
-                // Remove source symlink.
-                fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-                return Ok(());
-            }
+            return Ok(());
         }
 
         fs::rename(real_source, real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
@@ -523,11 +517,6 @@ impl EncFs {
             // On V7 with chained_name_iv, symlink targets are encrypted using
             // the path IV of the symlink. If the symlink's path changes (due to parent
             // directory rename), we need to re-encrypt the target with the new IV.
-            if self.config.external_iv_chaining && !self.config.uses_legacy_symlink_targets() {
-                // External IV chaining for V7 symlinks is not supported
-                return Err(libc::ENOSYS);
-            }
-
             if self.config.symlink_target_depends_on_path() {
                 // Re-encrypt symlink target with the new path IV
                 let target = fs::read_link(source.physical)
