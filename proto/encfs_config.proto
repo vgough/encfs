@@ -79,6 +79,9 @@ enum NameEncodingMode {
   NAME_ENCODING_MODE_UNSPECIFIED = 0;
   NAME_ENCODING_MODE_STREAM = 1;
   NAME_ENCODING_MODE_BLOCK = 2;
+  // Block encoding written in case-insensitive Base32 (C++ nameio/block32).
+  // Requires minimum_reader_version >= 3.
+  NAME_ENCODING_MODE_BLOCK32 = 3;
 }
 
 message NameEncoding {

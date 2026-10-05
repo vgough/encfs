@@ -147,8 +147,10 @@ Backward Compatibility
    the config (cipher params, KDF params, feature flags, etc.) invalidates the
    AAD, causing decryption to fail. The config hash is also stored and checked
    on load; a hash mismatch indicates tampering or corruption. New V7 filesystems
-   default to Argon2id KDF, AES-GCM-SIV block mode, AES-256, and a 96-bit
-   per-file IV (`wide_file_iv`).
+   default to Argon2id KDF, AES-GCM-SIV block mode, AES-256, a 96-bit
+   per-file IV (`wide_file_iv`), and `nameio/block32` filenames (block
+   encoding written in case-insensitive Base32, so names survive
+   case-insensitive filesystems; requires reader version 3).
 
    V7 also carries an authenticated `minimum_reader_version`. A build only
    opens a config whose minimum reader version it supports; a config
@@ -158,7 +160,8 @@ Backward Compatibility
    protobuf fields, so it recomputes a different config hash and fails
    closed (reported as "config hash mismatch"). Use
    `encfsctl new --legacy-file-iv` (or `--no-unique-iv`, which is always
-   64-bit) to create a filesystem that old tooling can still read.
+   64-bit) to create a filesystem that old tooling can still read; both also
+   keep stream filename encoding.
 
    V7 encrypts extended attribute names and values, and stores each symlink
    target as one encrypted name under the link's path IV. V4-V6 volumes store

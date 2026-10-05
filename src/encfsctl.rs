@@ -1488,11 +1488,19 @@ fn cmd_new(
         config.unique_iv = false;
         config.wide_file_iv = false;
     }
-    if !config.wide_file_iv {
-        // Otherwise the compatibility flags would still produce a config that
-        // pre-change readers reject on the new minimum-reader-version field.
-        config.minimum_reader_version = constants::V7_BASE_CONFIG_VERSION;
+    if legacy_file_iv || no_unique_iv {
+        // The compatibility flags keep the volume readable by older builds,
+        // which predate Base32 names, so stay on stream naming.
+        config.name_iface = config::Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 0,
+            age: 0,
+        };
     }
+    // Otherwise the compatibility flags would still produce a config that
+    // older readers reject on the minimum-reader-version field.
+    config.minimum_reader_version = config.required_v7_reader_version();
     fill_random(&mut config.salt)
         .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
 
@@ -2136,10 +2144,13 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
             config.cipher_iface.name
         );
     }
-    // load_v7(): only Stream and Block name encoding are mapped
-    if config.name_iface.name != "nameio/stream" && config.name_iface.name != "nameio/block" {
+    // load_v7(): only Stream, Block and Block32 name encoding are mapped
+    if !matches!(
+        config.name_iface.name.as_str(),
+        "nameio/stream" | "nameio/block" | "nameio/block32"
+    ) {
         anyhow::bail!(
-            "V7 upgrade supports only nameio/stream or nameio/block (got {})",
+            "V7 upgrade supports only nameio/stream, nameio/block or nameio/block32 (got {})",
             config.name_iface.name
         );
     }
@@ -2227,6 +2238,7 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
         let mode = match NameEncodingMode::try_from(n.mode) {
             Ok(NameEncodingMode::Stream) => "STREAM",
             Ok(NameEncodingMode::Block) => "BLOCK",
+            Ok(NameEncodingMode::Block32) => "BLOCK32",
             _ => "NAME_ENCODING_MODE_UNSPECIFIED",
         };
         out.push_str("name_encoding {\n");
@@ -3118,17 +3130,18 @@ mod tests {
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+        assert_eq!(config.name_iface.name, "nameio/block32");
         assert!(config.wide_file_iv);
         assert_eq!(config.header_size(), 12);
         assert_eq!(
             config.minimum_reader_version,
-            constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
         assert_eq!(
             proto.minimum_reader_version,
-            constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -3149,6 +3162,8 @@ mod tests {
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+        // Compatibility volumes stay readable by builds without Base32 names.
+        assert_eq!(config.name_iface.name, "nameio/stream");
         assert!(!config.wide_file_iv);
         assert_eq!(config.header_size(), 8);
         assert_eq!(
@@ -3227,6 +3242,7 @@ mod tests {
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
         let raw = format_v7_config_raw(&proto);
+        assert!(raw.contains("mode: BLOCK32"), "raw info: {raw}");
         assert!(
             raw.contains("file_iv_width: FILE_IV_WIDTH_96"),
             "raw info: {raw}"
@@ -3234,8 +3250,8 @@ mod tests {
         assert!(
             raw.contains(&format!(
                 "minimum_reader_version: {} (effective: {})",
-                constants::V7_WIDE_FILE_IV_CONFIG_VERSION,
-                constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+                constants::V7_STORAGE_FORMATS_CONFIG_VERSION,
+                constants::V7_STORAGE_FORMATS_CONFIG_VERSION
             )),
             "raw info: {raw}"
         );

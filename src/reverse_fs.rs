@@ -1443,7 +1443,7 @@ mod tests {
         let mut config = EncfsConfig::standard_v7();
         config.unique_iv = false;
         config.wide_file_iv = false;
-        config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
+        config.minimum_reader_version = config.required_v7_reader_version();
         config.argon2_memory_cost = Some(8);
         config.argon2_time_cost = Some(1);
         config.argon2_parallelism = Some(1);

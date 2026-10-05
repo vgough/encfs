@@ -222,7 +222,8 @@ mod kdf_algorithm_serde {
 }
 
 impl EncfsConfig {
-    /// Returns a new V7 config with standard settings (AES-256, stream naming, Argon2id).
+    /// Returns a new V7 config with standard settings (AES-256, Base32 block
+    /// naming, Argon2id).
     /// New V7 configs default to AES-GCM-SIV block mode (16-byte tag per block).
     /// Caller must set random salt and call set_v7_key before save.
     pub fn standard_v7() -> Self {
@@ -237,8 +238,8 @@ impl EncfsConfig {
                 age: 0,
             },
             name_iface: Interface {
-                name: "nameio/stream".to_string(),
-                major: 2,
+                name: "nameio/block32".to_string(),
+                major: 4,
                 minor: 0,
                 age: 0,
             },
@@ -262,7 +263,7 @@ impl EncfsConfig {
             wide_file_iv: true,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
-            minimum_reader_version: crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION,
+            minimum_reader_version: crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION,
             config_hash: None,
         }
     }
@@ -436,13 +437,7 @@ impl EncfsConfig {
             ));
         }
         if self.config_type == ConfigType::V7 {
-            let max_required = if !default_formats {
-                crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
-            } else if self.wide_file_iv {
-                crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
-            } else {
-                crate::constants::V7_BASE_CONFIG_VERSION
-            };
+            let max_required = self.required_v7_reader_version();
             if self.minimum_reader_version < max_required {
                 return Err(anyhow::anyhow!(
                     "V7 minimum reader version {} is too low for the enabled features (requires >= {})",
@@ -805,9 +800,11 @@ impl EncfsConfig {
             ),
         };
 
-        // NameEncodingMode::Stream = 1, Block = 2
+        // NameEncodingMode::Stream = 1, Block = 2, Block32 = 3. Unspecified
+        // (0) has always meant stream; any other value is a newer mode this
+        // build can't interpret, so refuse rather than misread names.
         let name_iface = match name_encoding.mode {
-            1 => Interface {
+            0 | 1 => Interface {
                 name: "nameio/stream".to_string(),
                 major: 2,
                 minor: 0,
@@ -819,12 +816,13 @@ impl EncfsConfig {
                 minor: 0,
                 age: 0,
             },
-            _ => Interface {
-                name: "nameio/stream".to_string(),
-                major: 2,
+            3 => Interface {
+                name: "nameio/block32".to_string(),
+                major: 4,
                 minor: 0,
                 age: 0,
             },
+            other => anyhow::bail!("V7: unsupported name encoding mode {}", other),
         };
 
         let allow_holes = proto
@@ -1031,6 +1029,20 @@ impl EncfsConfig {
         user_key_blob.zeroize();
 
         Ok(volume_key_blob)
+    }
+
+    /// The lowest V7 minimum-reader version that can interpret every feature
+    /// this config uses.
+    pub fn required_v7_reader_version(&self) -> u32 {
+        let default_formats = self.xattr_format == XattrFormat::default()
+            && self.symlink_format == SymlinkFormat::default();
+        if !default_formats || self.name_iface.name == "nameio/block32" {
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+        } else if self.wide_file_iv {
+            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+        } else {
+            crate::constants::V7_BASE_CONFIG_VERSION
+        }
     }
 
     /// Whether extended attributes are stored encrypted. Only V7 does this,
@@ -1301,11 +1313,11 @@ impl EncfsConfig {
             ),
         };
 
-        let mode = if self.name_iface.name == "nameio/block" {
-            NameEncodingMode::Block as i32
-        } else {
-            NameEncodingMode::Stream as i32
-        };
+        let mode = match self.name_iface.name.as_str() {
+            "nameio/block" => NameEncodingMode::Block,
+            "nameio/block32" => NameEncodingMode::Block32,
+            _ => NameEncodingMode::Stream,
+        } as i32;
 
         let name_encoding = Some(NameEncoding {
             mode,
@@ -1914,8 +1926,9 @@ mod tests {
         assert_eq!(cfg.header_size(), 12);
         assert_eq!(
             cfg.minimum_reader_version,
-            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
+        assert_eq!(cfg.name_iface.name, "nameio/block32");
         assert!(cfg.validate().is_ok());
     }
 
@@ -1938,7 +1951,7 @@ mod tests {
         }
         assert_eq!(
             proto.minimum_reader_version,
-            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
     }
 
@@ -1994,7 +2007,7 @@ mod tests {
         assert_eq!(loaded.header_size(), 12);
         assert_eq!(
             loaded.minimum_reader_version,
-            crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         );
         let _cipher = loaded.get_cipher(password)?;
 
@@ -2014,6 +2027,13 @@ mod tests {
         ));
 
         let mut config = EncfsConfig::standard_v7();
+        // Stream names, as V7 configs written before Base32 names used.
+        config.name_iface = Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 0,
+            age: 0,
+        };
         config.wide_file_iv = false;
         config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
@@ -2063,6 +2083,13 @@ mod tests {
     #[test]
     fn validate_rejects_wide_file_iv_below_required_reader_version() {
         let mut cfg = EncfsConfig::standard_v7();
+        // Stream names, as V7 configs written before Base32 names used.
+        cfg.name_iface = Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 0,
+            age: 0,
+        };
         cfg.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         assert!(cfg.validate().is_err());
 
@@ -2084,6 +2111,25 @@ mod tests {
             cfg.name_iface.name = name.to_string();
             assert!(cfg.validate().is_ok(), "{name:?} must be accepted");
         }
+    }
+
+    /// A name mode this build doesn't know must be refused, not read as
+    /// stream names.
+    #[test]
+    fn unknown_v7_name_mode_is_rejected() {
+        use prost::Message;
+        let mut config = EncfsConfig::standard_v7();
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        let mut proto = config.encfs_config_to_proto_v7();
+        assert_eq!(
+            proto.name_encoding.as_ref().unwrap().mode,
+            crate::config_proto::NameEncodingMode::Block32 as i32
+        );
+        proto.name_encoding.as_mut().unwrap().mode = 99;
+        let err = EncfsConfig::load_v7(&proto.encode_to_vec()).unwrap_err();
+        assert!(err.to_string().contains("name encoding mode"), "{err}");
     }
 
     #[test]
@@ -2165,6 +2211,13 @@ mod tests {
         ));
 
         let mut config = EncfsConfig::standard_v7();
+        // Stream names, as V7 configs written before Base32 names used.
+        config.name_iface = Interface {
+            name: "nameio/stream".to_string(),
+            major: 2,
+            minor: 0,
+            age: 0,
+        };
         config.wide_file_iv = false;
         config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         config.block_mac_bytes = 8; // legacy block mode, matching most pre-ADR V7 configs

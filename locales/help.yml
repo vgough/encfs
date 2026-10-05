@@ -221,13 +221,13 @@ help.encfsctl.new_no_chained_iv:
   fr: "Désactiver le chaînage IV pour les composants de chemin (comme EncFS V4 legacy)"
   de: "IV-Verkettung für Pfadkomponenten deaktivieren (wie Legacy EncFS V4)"
 help.encfsctl.new_no_unique_iv:
-  en: "Disable per-file IV headers (create configs intended for reverse mode / encfsr)"
-  fr: "Désactiver les en-têtes IV par fichier (crée des configurations destinées au mode inversé / encfsr)"
-  de: "Per-Datei-IV-Header deaktivieren (Konfigurationen für den Reverse-Modus / encfsr erstellen)"
+  en: "Disable per-file IV headers (create configs intended for reverse mode / encfsr); keeps stream filename encoding"
+  fr: "Désactiver les en-têtes IV par fichier (crée des configurations destinées au mode inversé / encfsr) ; conserve l'encodage de noms en flux"
+  de: "Per-Datei-IV-Header deaktivieren (Konfigurationen für den Reverse-Modus / encfsr erstellen); behält die Stream-Dateinamenkodierung bei"
 help.encfsctl.new_legacy_file_iv:
-  en: "Use a 64-bit per-file IV instead of the 96-bit default, for interoperability with older EncFS tooling"
-  fr: "Utiliser un IV par fichier de 64 bits au lieu des 96 bits par défaut, pour l'interopérabilité avec les anciens outils EncFS"
-  de: "64-Bit-IV pro Datei statt der 96-Bit-Vorgabe verwenden, für Interoperabilität mit älteren EncFS-Tools"
+  en: "Use a 64-bit per-file IV and stream filename encoding instead of the 96-bit IV and Base32 block names, for interoperability with older EncFS tooling"
+  fr: "Utiliser un IV par fichier de 64 bits et l'encodage de noms en flux au lieu de l'IV de 96 bits et des noms en blocs Base32, pour l'interopérabilité avec les anciens outils EncFS"
+  de: "64-Bit-IV pro Datei und Stream-Dateinamenkodierung statt 96-Bit-IV und Base32-Blocknamen verwenden, für Interoperabilität mit älteren EncFS-Tools"
 help.encfsctl.speed:
   en: "Print version info and benchmark supported cipher algorithms"
   fr: "Afficher la version et mesurer les performances des algorithmes de chiffrement pris en charge"

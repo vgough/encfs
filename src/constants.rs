@@ -35,7 +35,8 @@ pub const V7_BASE_CONFIG_VERSION: u32 = 1;
 pub const V7_WIDE_FILE_IV_CONFIG_VERSION: u32 = 2;
 
 /// V7 minimum-reader version at which the `xattr_format` and `symlink_format`
-/// feature flags become interpretable.
+/// feature flags and the Base32 (`nameio/block32`) name mode become
+/// interpretable.
 pub const V7_STORAGE_FORMATS_CONFIG_VERSION: u32 = 3;
 
 /// Highest V7 minimum-reader version this build understands.
