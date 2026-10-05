@@ -750,6 +750,14 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
     let upgrading_to_v7 = upgrade && config.config_type != config::ConfigType::V7;
     if upgrading_to_v7 {
         ensure_v7_compatible(&config)?;
+        if let Some((path, what)) = find_legacy_format_content(rootdir)? {
+            anyhow::bail!(
+                "V7 upgrade is not possible: {} has {} stored in the legacy (C++ EncFS) form, \
+                 which V7 cannot read",
+                path.display(),
+                what
+            );
+        }
     }
 
     // Get current password
@@ -2052,6 +2060,53 @@ fn encrypt_path_with_iv(
     Ok((rootdir.join(encrypted_path), iv))
 }
 
+/// Finds backing content that legacy (V4-V6) volumes store in the C++ EncFS
+/// form and V7 would misread: symlinks (targets are encoded differently) and
+/// unencrypted user extended attributes. Returns the first such path and what
+/// it holds.
+fn find_legacy_format_content(dir: &Path) -> Result<Option<(PathBuf, &'static str)>> {
+    use typed_fuse::passthrough::{is_apple_xattr, listxattr_names_nofollow};
+
+    let c_dir = std::ffi::CString::new(dir.as_os_str().as_bytes())?;
+    let mut entries = vec![(dir.to_path_buf(), c_dir)];
+    let mut pending_dirs = vec![dir.to_path_buf()];
+    while let Some(current) = pending_dirs.pop() {
+        for entry in std::fs::read_dir(&current)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                return Ok(Some((entry.path(), "a symlink")));
+            }
+            if file_type.is_dir() {
+                pending_dirs.push(entry.path());
+            }
+            let c_path = std::ffi::CString::new(entry.path().as_os_str().as_bytes())?;
+            entries.push((entry.path(), c_path));
+        }
+    }
+    for (path, c_path) in entries {
+        // Filesystems without xattr support simply have none to migrate.
+        let Ok(names) = listxattr_names_nofollow(&c_path) else {
+            continue;
+        };
+        let plain = names.iter().any(|name| {
+            let name = String::from_utf8_lossy(name);
+            // Outside macOS only the `user.` namespace is user data; other
+            // namespaces (ACLs, SELinux labels) belong to the backing system.
+            let user_data = if cfg!(target_os = "macos") {
+                !is_apple_xattr(&name)
+            } else {
+                name.starts_with("user.")
+            };
+            user_data && !name.starts_with(encfs::xattr_name::PREFIX)
+        });
+        if plain {
+            return Ok(Some((path, "an unencrypted extended attribute")));
+        }
+    }
+    Ok(None)
+}
+
 /// Checks that the config can be represented as V7 and will pass validate() when loaded.
 /// Must match requirements enforced by config::EncfsConfig::validate() and load_v7().
 fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
@@ -2617,6 +2672,40 @@ mod tests {
         // Cleanup
         let _ = fs::remove_dir_all(temp_dir);
 
+        Ok(())
+    }
+
+    /// `passwd --upgrade` must refuse legacy volumes holding content V7 would
+    /// misread: C++-form symlinks and unencrypted user attributes.
+    #[test]
+    fn test_find_legacy_format_content() -> Result<()> {
+        use typed_fuse::passthrough::setxattr_nofollow;
+
+        let dir = std::env::temp_dir().join(format!("encfs_legacy_scan_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("sub"))?;
+        let file = dir.join("sub").join("file");
+        fs::write(&file, b"x")?;
+        assert!(find_legacy_format_content(&dir)?.is_none());
+
+        let c_file = std::ffi::CString::new(file.as_os_str().as_bytes())?;
+        let encrypted = std::ffi::CString::new(format!("{}abc", encfs::xattr_name::PREFIX))?;
+        setxattr_nofollow(&c_file, &encrypted, b"v", 0).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        assert!(find_legacy_format_content(&dir)?.is_none());
+
+        let plain = std::ffi::CString::new("user.tag")?;
+        setxattr_nofollow(&c_file, &plain, b"v", 0).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        let (path, _) = find_legacy_format_content(&dir)?.expect("plain xattr");
+        assert_eq!(path, file);
+
+        fs::remove_dir_all(&dir)?;
+        fs::create_dir_all(dir.join("sub"))?;
+        std::os::unix::fs::symlink("anything", dir.join("sub").join("link"))?;
+        let (path, what) = find_legacy_format_content(&dir)?.expect("symlink");
+        assert_eq!(path, dir.join("sub").join("link"));
+        assert_eq!(what, "a symlink");
+
+        fs::remove_dir_all(&dir)?;
         Ok(())
     }
 

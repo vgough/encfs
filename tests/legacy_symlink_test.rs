@@ -1,7 +1,10 @@
 //! Symlink targets on legacy (V4-V6) volumes must use the C++ EncFS encoding
 //! (`DirNode::relativeCipherPath`), so links are readable by both
-//! implementations. The golden values below are the C++ `NameIO::encodePath`
-//! output for the `encfs6-std.xml` fixture (password "test").
+//! implementations. The golden values below were derived for the
+//! `encfs6-std.xml` fixture (password "test") by applying C++
+//! `NameIO::recodePath` (read from the v1.9.5 source) to this port's filename
+//! encryption, which the C++-generated fixtures verify; they were not produced
+//! by running the C++ binary.
 
 use encfs::config::EncfsConfig;
 use encfs::fs::EncFs;
