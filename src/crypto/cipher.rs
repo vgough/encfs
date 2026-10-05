@@ -35,6 +35,10 @@ pub trait Cipher: Send + Sync {
     /// `encrypt_header_with_iv`, and the AES-GCM-SIV nonce/AAD construction.
     fn set_wide_file_iv(&mut self, wide: bool);
 
+    /// Select whether filename MACs include the directory IV. Legacy (V4-V6)
+    /// volumes without `chained_name_iv` omit it, matching C++ EncFS.
+    fn set_name_mac_includes_iv(&mut self, include: bool);
+
     // --- file-content block crypto (used by BlockCodec) ---
 
     /// MAC-64 without a chained IV — the legacy per-block integrity tag.
@@ -146,6 +150,10 @@ impl Cipher for SslCipher {
 
     fn set_wide_file_iv(&mut self, wide: bool) {
         SslCipher::set_wide_file_iv(self, wide)
+    }
+
+    fn set_name_mac_includes_iv(&mut self, include: bool) {
+        SslCipher::set_name_mac_includes_iv(self, include)
     }
 
     fn mac_64_no_iv(&self, data: &[u8]) -> Result<u64> {

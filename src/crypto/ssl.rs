@@ -108,6 +108,11 @@ pub struct SslCipher {
     /// `decrypt_header` / the AES-GCM-SIV nonce and AAD. Defaults to the
     /// legacy 64-bit representation.
     wide_file_iv: bool,
+    /// Whether the filename MAC folds in the parent directory IV. Legacy C++
+    /// EncFS omits the IV from the HMAC entirely when `chainedNameIV` is off
+    /// (it passes a null IV pointer), which yields different names than
+    /// mixing in an all-zero IV.
+    name_mac_includes_iv: bool,
 }
 
 impl Drop for SslCipher {
@@ -152,6 +157,7 @@ impl SslCipher {
             name_encoding: NameEncoding::Stream, // Default
             iface: iface.clone(),
             wide_file_iv: false,
+            name_mac_includes_iv: true,
         })
     }
 
@@ -165,6 +171,22 @@ impl SslCipher {
 
     pub fn set_wide_file_iv(&mut self, wide: bool) {
         self.wide_file_iv = wide;
+    }
+
+    pub fn set_name_mac_includes_iv(&mut self, include: bool) {
+        self.name_mac_includes_iv = include;
+    }
+
+    /// Filename checksum: MAC_16 over `data`, with the directory IV mixed in
+    /// only when `name_mac_includes_iv` is set (see the field docs).
+    fn name_mac_16(&self, data: &[u8], iv: u64) -> Result<(u16, u64)> {
+        if self.name_mac_includes_iv {
+            return self.mac_16(data, iv);
+        }
+        let mac64 = self.mac_64_no_iv(data)?;
+        let mac32 = ((mac64 >> 32) as u32) ^ (mac64 as u32);
+        let mac16 = ((mac32 >> 16) as u16) ^ (mac32 as u16);
+        Ok((mac16, mac64))
     }
 
     fn block_size(&self) -> usize {
@@ -593,7 +615,7 @@ impl SslCipher {
         self.legacy_stream_decode(&mut name_data, name_iv, &self.key, &self.iv)?;
 
         // 4. Verify Checksum
-        let (calculated_mac, new_iv) = self.mac_16(&name_data, iv)?;
+        let (calculated_mac, new_iv) = self.name_mac_16(&name_data, iv)?;
         if calculated_mac != checksum {
             return Err(anyhow!(
                 "Checksum mismatch in filename: expected {:04x}, got {:04x}",
@@ -632,7 +654,7 @@ impl SslCipher {
         // 4. Verify MAC (over decrypted data INCLUDING padding)
         // Fix Padding Oracle: Verify MAC *before* checking padding.
 
-        let (calculated_mac, new_iv) = self.mac_16(&block_data, iv)?;
+        let (calculated_mac, new_iv) = self.name_mac_16(&block_data, iv)?;
         if calculated_mac != checksum {
             return Err(anyhow!(
                 "Checksum mismatch in filename: expected {:04x}, got {:04x}",
@@ -679,7 +701,7 @@ impl SslCipher {
 
     fn encrypt_filename_stream(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)> {
         // 1. Calculate Checksum
-        let (checksum, new_iv) = self.mac_16(plaintext_name, iv)?;
+        let (checksum, new_iv) = self.name_mac_16(plaintext_name, iv)?;
 
         // 2. Construct Buffer
         let mut data = Vec::with_capacity(2 + plaintext_name.len());
@@ -720,7 +742,7 @@ impl SslCipher {
         }
 
         // 3. Calculate MAC (over Plaintext + Padding)
-        let (checksum, new_iv) = self.mac_16(&data[2..], iv)?;
+        let (checksum, new_iv) = self.name_mac_16(&data[2..], iv)?;
 
         // Store MAC
         data[0] = (checksum >> 8) as u8;
@@ -1986,6 +2008,50 @@ mod tests {
             mac, expected,
             "MAC folding/endian behavior must remain unchanged"
         );
+    }
+
+    /// Issue #706: without `chainedNameIV`, C++ EncFS computes the filename
+    /// MAC over the name alone. Covers both name codecs, since each computes
+    /// its checksum separately.
+    #[test]
+    fn unchained_name_mac_omits_iv() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        for codec in ["nameio/stream", "nameio/block"] {
+            let mut cipher = SslCipher::new(&iface, 256).expect("cipher");
+            cipher.set_key(&[0x33u8; 32], &[0x44u8; 16]);
+            cipher.set_name_encoding(&Interface {
+                name: codec.to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            });
+            let (chained, _) = cipher.encrypt_filename(b"file_2", 0).expect("encrypt");
+
+            cipher.set_name_mac_includes_iv(false);
+            let (unchained, _) = cipher.encrypt_filename(b"file_2", 0).expect("encrypt");
+            assert_ne!(chained, unchained, "{codec}: zero IV must not be mixed in");
+
+            let data = SslCipher::filename_base64_decode(&unchained).expect("b64");
+            let checksum = ((data[0] as u16) << 8) | data[1] as u16;
+            let (name, _) = cipher.decrypt_filename(&unchained, 0).expect("decrypt");
+            assert_eq!(name, b"file_2", "{codec}: round-trip");
+            let mac_input = if codec == "nameio/block" {
+                let mut padded = b"file_2".to_vec();
+                padded.resize(16, 10);
+                padded
+            } else {
+                b"file_2".to_vec()
+            };
+            let mac64 = cipher.mac_64_no_iv(&mac_input).expect("mac");
+            let mac32 = ((mac64 >> 32) as u32) ^ (mac64 as u32);
+            assert_eq!(checksum, ((mac32 >> 16) as u16) ^ (mac32 as u16), "{codec}");
+            assert!(cipher.decrypt_filename(&chained, 0).is_err(), "{codec}");
+        }
     }
 
     #[test]

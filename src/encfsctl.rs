@@ -2068,6 +2068,11 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
     if !config.unique_iv {
         anyhow::bail!("V7 upgrade requires uniqueIV=1 (not supported by this implementation)");
     }
+    // Legacy unchained names MAC without the directory IV, but V7 always mixes
+    // in a (zero) IV, so the existing filenames would stop decrypting.
+    if !config.chained_name_iv {
+        anyhow::bail!("V7 upgrade requires chainedNameIV=1 (unchained filenames differ in V7)");
+    }
     // validate(): keySize
     if config.key_size <= 0 || config.key_size % 8 != 0 {
         anyhow::bail!("V7 upgrade requires keySize positive multiple of 8");

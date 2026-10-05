@@ -850,6 +850,10 @@ impl EncfsConfig {
         volume_key_blob.zeroize();
         cipher.set_name_encoding(&self.name_iface);
         cipher.set_wide_file_iv(self.wide_file_iv);
+        // C++ EncFS drops the IV from the filename MAC when names are not
+        // chained. V7 is Rust-only and has always mixed in a zero IV, so keep
+        // that to stay readable for existing `--no-chained-iv` V7 volumes.
+        cipher.set_name_mac_includes_iv(self.chained_name_iv || self.config_type == ConfigType::V7);
 
         Ok(Box::new(cipher))
     }

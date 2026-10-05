@@ -16,6 +16,10 @@
 //! for root entries (e.g. `1QpokPhaq2sP9fqnVyHb63oP` for `file_2`), rather than the
 //! C++ v1.9.5 unchained filename (`w3kY9smoitBQoQpRpJ,0XN97`).
 //! Rust also fails to decrypt filesystems created by C++ with `chainedNameIV = 0`.
+//!
+//! Fixed by omitting the IV from the filename MAC for legacy (V4-V6) configs
+//! without `chained_name_iv`. V7 keeps the zero-IV MAC so existing
+//! `encfsctl new --no-chained-iv` volumes stay readable.
 
 use anyhow::Context;
 use encfs::config::EncfsConfig;
@@ -178,5 +182,37 @@ fn test_verify_cpp_algorithm_produces_expected_ciphertext() -> anyhow::Result<()
         "Decrypted plaintext must match 'file_2'"
     );
 
+    Ok(())
+}
+
+/// V7 is Rust-only, and its unchained volumes were always written with the
+/// zero-IV MAC; the issue #706 fix must not change their filenames.
+#[test]
+fn test_v7_unchained_names_keep_zero_iv_mac() -> anyhow::Result<()> {
+    let mut config = EncfsConfig::standard_v7();
+    config.chained_name_iv = false;
+    config.external_iv_chaining = false;
+    config.argon2_memory_cost = Some(8);
+    config.argon2_time_cost = Some(1);
+    config.argon2_parallelism = Some(1);
+    config.salt = vec![7u8; 16];
+    let volume_key = vec![0x5au8; (config.key_size / 8) as usize + 16];
+    config.set_v7_key("pw", &volume_key)?;
+
+    let mut reference = encfs::crypto::ssl::SslCipher::new(&config.cipher_iface, config.key_size)?;
+    reference.set_key(&volume_key[..32], &volume_key[32..48]);
+    reference.set_name_encoding(&config.name_iface);
+    let (zero_iv_name, _) = reference.encrypt_filename(b"file_2", 0)?;
+
+    let cipher = config.get_cipher("pw")?;
+    let encfs = EncFs::new(PathBuf::from("/nonexistent"), cipher, config);
+    let (encrypted_path, _) = encfs
+        .encrypt_path(Path::new("file_2"))
+        .map_err(|e| anyhow::anyhow!("encrypt_path failed with error {}", e))?;
+
+    assert_eq!(
+        encrypted_path.file_name().and_then(|s| s.to_str()),
+        Some(zero_iv_name.as_str())
+    );
     Ok(())
 }
