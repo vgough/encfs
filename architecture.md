@@ -61,6 +61,7 @@ encfs/
 │   ├── config_proto.rs       # `prost`-generated V7 protobuf bindings (build-time, see build.rs)
 │   ├── constants.rs          # Global constants (defaults, buffer sizes)
 │   ├── fs.rs                 # Forward-mode FUSE filesystem implementation
+│   ├── diriv.rs              # Directory IV mode (V7): `.encfs.diriv` sidecars, IV derivation walk helpers, validated cache
 │   ├── symlink_target.rs     # Symlink target encoding (C++-compatible path form for V4-V6, single name for V7)
 │   ├── idle_lock.rs          # Inactivity lock gating data ops in on-demand mode (`encfs --touchid`)
 │   ├── touchid.rs            # macOS only: Touch ID `Authenticator` via LocalAuthentication
@@ -84,7 +85,8 @@ encfs/
 ```
 Forward mount (encfs):
   FUSE op → typed-fuse PathFilesystem adapter (fs.rs)
-    → path encrypt/decrypt (IV chaining: chained_name_iv / external_iv_chaining)
+    → path encrypt/decrypt (IV chaining: chained_name_iv / external_iv_chaining,
+      or per-directory sidecar IVs in directory IV mode via diriv.rs)
     → crypto/file.rs (header IV, block boundaries)
     → dyn Cipher (crypto/cipher.rs trait, crypto/ssl.rs impl — legacy CBC/CFB+MAC
       or V7 AES-GCM-SIV, mode picked via crypto/block.rs::BlockMode)
@@ -125,6 +127,13 @@ Do not conflate the 64-bit *file seed* (the header/path-derived value above) wit
 
 - **Legacy (V4-V6):** block = `[MAC: block_mac_bytes (0-8)] [Random: block_mac_rand_bytes] [Data]`. `block_mac_rand_bytes` must be 0 (not implemented). MAC is optional.
 - **V7 (AES-GCM-SIV, default for new filesystems):** block = `[Ciphertext][16-byte tag]`; nonce/AAD derived from file IV + block number (narrow: 12-byte nonce / 16-byte AAD; wide: 12-byte nonce / 20-byte AAD — see ADR 0001 for the exact byte layout). Authentication is always on, no separate MAC/Random fields.
+
+Directory IV mode (V7, the `encfsctl new` default, ADR 0002): every
+ciphertext directory, including the root, holds `.encfs.diriv`, 16 random
+plaintext bytes. Names inside the directory are encrypted under an IV derived
+from it (`HMAC-SHA256(key, "encfs.diriv.v1\0" || diriv)`), so they depend only
+on the parent directory and a directory rename is one rename(2). Requires
+`minimum_reader_version >= 4`.
 
 Full rationale and byte-level detail: `docs/DESIGN.md`.
 

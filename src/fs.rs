@@ -2,6 +2,7 @@ use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::{FileDecoder, FileEncoder};
 use crate::crypto::file_iv::FileIv;
+use crate::diriv::{self, CachedDir, DirIvCache, DirIvs};
 use crate::idle_lock::{Access, IdleLock};
 use crate::symlink_target;
 use crate::xattr_name;
@@ -9,12 +10,12 @@ use libc;
 use log::{debug, error, warn};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ffi::{OsStr, OsString};
+use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
-use std::os::unix::io::AsRawFd;
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use std::time::SystemTime;
@@ -204,6 +205,172 @@ struct PathInfo<'a> {
     iv: u64,
 }
 
+/// Where an entry is about to be created (or renamed into place): its backing
+/// path and path IV, plus the directory and name to hand to `*at` calls.
+///
+/// In directory IV mode the parent directory is held open, and the name was
+/// encrypted under that very directory's IVs (see [`EncFs::new_entry`]).
+/// Creating through the descriptor puts the entry in that directory or
+/// nowhere, even if another directory has since replaced it at its path,
+/// where the name would be unreadable. In other modes names depend only on
+/// the path, and the entry is addressed by its full path.
+struct NewEntry {
+    real_path: PathBuf,
+    iv: u64,
+    /// The pinned parent directory, in directory IV mode.
+    dir: Option<File>,
+    /// The encrypted name within `dir`, or the full backing path without one.
+    name: CString,
+}
+
+impl NewEntry {
+    /// An entry addressed by its full backing path.
+    fn from_path(real_path: PathBuf, iv: u64) -> Result<Self, libc::c_int> {
+        let name = c_path(&real_path).map_err(|e| e.raw())?;
+        Ok(Self {
+            real_path,
+            iv,
+            dir: None,
+            name,
+        })
+    }
+
+    fn dirfd(&self) -> RawFd {
+        self.dir
+            .as_ref()
+            .map_or(libc::AT_FDCWD, |dir| dir.as_raw_fd())
+    }
+
+    /// openat(2), always close-on-exec.
+    fn open(&self, flags: libc::c_int, mode: u32) -> Result<File, libc::c_int> {
+        let fd = unsafe {
+            libc::openat(
+                self.dirfd(),
+                self.name.as_ptr(),
+                flags | libc::O_CLOEXEC,
+                mode as libc::c_uint,
+            )
+        };
+        if fd < 0 {
+            return Err(last_errno());
+        }
+        Ok(unsafe { File::from_raw_fd(fd) })
+    }
+
+    /// Creates a FIFO, device, or socket node.
+    fn mknod(&self, mode: u32, rdev: u32) -> OpResult {
+        let mode_t = mode as libc::mode_t;
+        let kind = mode_t & libc::S_IFMT;
+        if kind == libc::S_IFIFO {
+            check(unsafe { libc::mkfifoat(self.dirfd(), self.name.as_ptr(), mode_t) })
+        } else if kind == libc::S_IFCHR || kind == libc::S_IFBLK || kind == libc::S_IFSOCK {
+            check(unsafe {
+                libc::mknodat(
+                    self.dirfd(),
+                    self.name.as_ptr(),
+                    mode_t,
+                    rdev as libc::dev_t,
+                )
+            })
+        } else {
+            Err(libc::EINVAL)
+        }
+    }
+
+    /// Creates the entry as a symlink to `target`, an arbitrary byte string.
+    fn symlink(&self, target: &OsStr) -> OpResult {
+        let target = CString::new(target.as_bytes()).map_err(|_| libc::EINVAL)?;
+        check(unsafe { libc::symlinkat(target.as_ptr(), self.dirfd(), self.name.as_ptr()) })
+    }
+
+    /// Creates the entry as a hard link to `real_source`.
+    fn link_from(&self, real_source: &Path) -> OpResult {
+        let source = c_path(real_source).map_err(|e| e.raw())?;
+        check(unsafe {
+            libc::linkat(
+                libc::AT_FDCWD,
+                source.as_ptr(),
+                self.dirfd(),
+                self.name.as_ptr(),
+                0,
+            )
+        })
+    }
+
+    /// Moves `real_source` to the entry, replacing it as rename(2) does.
+    fn rename_from(&self, real_source: &Path) -> OpResult {
+        let source = c_path(real_source).map_err(|e| e.raw())?;
+        check(unsafe {
+            libc::renameat(
+                libc::AT_FDCWD,
+                source.as_ptr(),
+                self.dirfd(),
+                self.name.as_ptr(),
+            )
+        })
+    }
+
+    /// Removes the entry, if it is not a directory.
+    fn unlink(&self) -> OpResult {
+        check(unsafe { libc::unlinkat(self.dirfd(), self.name.as_ptr(), 0) })
+    }
+
+    /// As `set_ownership_path`: gives the entry the caller's uid and gid when
+    /// they differ from this process's, ignoring `EPERM`.
+    fn set_ownership(&self, caller: &Request) -> OpResult {
+        if caller.uid == unsafe { libc::getuid() } && caller.gid == unsafe { libc::getgid() } {
+            return Ok(());
+        }
+        match check(unsafe {
+            libc::fchownat(
+                self.dirfd(),
+                self.name.as_ptr(),
+                caller.uid as libc::uid_t,
+                caller.gid as libc::gid_t,
+                libc::AT_SYMLINK_NOFOLLOW,
+            )
+        }) {
+            Err(libc::EPERM) => Ok(()),
+            other => other,
+        }
+    }
+}
+
+fn last_errno() -> libc::c_int {
+    std::io::Error::last_os_error()
+        .raw_os_error()
+        .unwrap_or(libc::EIO)
+}
+
+/// The result of a libc call returning 0 on success and -1 with `errno`.
+fn check(ret: libc::c_int) -> OpResult {
+    if ret == 0 { Ok(()) } else { Err(last_errno()) }
+}
+
+/// Opens a backing directory to pin it for `*at` calls. Asks only for search
+/// access where the platform allows, so a directory without read permission
+/// can still be written into.
+fn open_dir(dir: &Path) -> Result<File, libc::c_int> {
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+    const PIN: libc::c_int = libc::O_PATH;
+    #[cfg(target_os = "macos")]
+    const PIN: libc::c_int = libc::O_SEARCH;
+    #[cfg(not(any(target_os = "linux", target_os = "freebsd", target_os = "macos")))]
+    const PIN: libc::c_int = libc::O_RDONLY;
+
+    let c_dir = c_path(dir).map_err(|e| e.raw())?;
+    let flags = libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+    let mut fd = unsafe { libc::open(c_dir.as_ptr(), flags | PIN) };
+    // Kernels older than the search-only flag reject it.
+    if fd < 0 && PIN != libc::O_RDONLY && last_errno() == libc::EINVAL {
+        fd = unsafe { libc::open(c_dir.as_ptr(), flags | libc::O_RDONLY) };
+    }
+    if fd < 0 {
+        return Err(last_errno());
+    }
+    Ok(unsafe { File::from_raw_fd(fd) })
+}
+
 /// The main FUSE filesystem implementation.
 ///
 /// Handles mapping of FUSE operations to the underlying encrypted directory.
@@ -219,7 +386,33 @@ pub struct EncFs {
     file_states: FileStates,
     /// Optional inactivity lock gating data access (on-demand mode).
     idle_lock: Option<IdleLock>,
+    /// Derived directory IVs (directory IV mode only). Trusted without
+    /// rereading: while mounted, every change to the backing directory comes
+    /// through this filesystem, which updates the cache as it makes them.
+    diriv_cache: DirIvCache,
+    /// Orders directory lifecycle against sidecar reads (directory IV mode).
+    /// Held for write by mkdir, rmdir, and directory rename, which create,
+    /// remove, or move sidecars and update the cache to match, and for read
+    /// while reading a sidecar into the cache on a miss. In-process lookups
+    /// therefore never observe a directory between its creation and its
+    /// sidecar's, and a miss can't cache a path a rename just vacated.
+    /// Never held while resolving a path: the lock is not reentrant.
+    ///
+    /// The lock does not keep a directory in place while an operation uses
+    /// its IVs. Operations that write IV-dependent names or attributes bind
+    /// those IVs to the directory itself instead: entry creation through a
+    /// pinned parent ([`EncFs::new_entry`]); mkdir and directory rename by
+    /// encrypting the new name under the write lock they already take; and
+    /// directory xattr writes under the read lock.
+    sidecar_lock: RwLock<()>,
+    /// Runs once at the point where an entry's name has been derived but not
+    /// yet created, so tests can replace the parent directory there.
+    #[cfg(test)]
+    race_hook: Mutex<Option<RaceHook>>,
 }
+
+#[cfg(test)]
+type RaceHook = Box<dyn FnOnce(&EncFs) + Send>;
 
 impl EncFs {
     pub fn new(root: PathBuf, cipher: Box<dyn Cipher>, config: crate::config::EncfsConfig) -> Self {
@@ -230,6 +423,10 @@ impl EncFs {
             read_only: false,
             file_states: FileStates::default(),
             idle_lock: None,
+            diriv_cache: DirIvCache::default(),
+            sidecar_lock: RwLock::new(()),
+            #[cfg(test)]
+            race_hook: Mutex::new(None),
         }
     }
 
@@ -262,10 +459,12 @@ impl EncFs {
 
     /// Encrypts a plaintext path (from FUSE request) to an encrypted path (on disk).
     ///
-    /// This walks the path component by component, encrypting each filename.
-    /// If IV chaining is enabled (standard), the IV of a directory is derived from
-    /// its parent's IV and its encrypted filename.
-    /// Returns the full encrypted path and the IV of the final directory.
+    /// This walks the path component by component, encrypting each filename
+    /// under the IV for names in its parent directory (see [`EncFs::names_iv`]):
+    /// the parent's path IV with IV chaining (standard), 0 without, or the
+    /// parent's sidecar IV in directory IV mode.
+    /// Returns the full encrypted path and the path IV of the final component
+    /// (its entry IV in directory IV mode; 0 for the root).
     pub fn encrypt_path(&self, path: &Path) -> Result<(PathBuf, u64), libc::c_int> {
         let mut encrypted_path = PathBuf::new();
         let mut iv = 0u64;
@@ -275,15 +474,20 @@ impl EncFs {
                 std::path::Component::CurDir => {}
                 std::path::Component::Normal(name) => {
                     let name_bytes = name.as_bytes();
-                    let (encrypted_name, new_iv) =
-                        self.cipher.encrypt_filename(name_bytes, iv).map_err(|e| {
+                    let names_iv = if self.config.directory_iv {
+                        self.dir_ivs(&self.root.join(&encrypted_path))?.name_iv
+                    } else {
+                        iv
+                    };
+                    let (encrypted_name, new_iv) = self
+                        .cipher
+                        .encrypt_filename(name_bytes, names_iv)
+                        .map_err(|e| {
                             error!("Encrypt filename failed: {}", e);
                             libc::EIO
                         })?;
                     encrypted_path.push(encrypted_name);
-                    if self.config.chained_name_iv {
-                        iv = new_iv;
-                    }
+                    iv = diriv::child_path_iv(&self.config, new_iv);
                 }
                 _ => return Err(libc::EINVAL),
             }
@@ -297,26 +501,196 @@ impl EncFs {
     /// plaintext requests to encrypted paths via `encrypt_path`.
     pub fn decrypt_path(&self, encrypted_path: &Path) -> Result<(PathBuf, u64), libc::c_int> {
         let mut decrypted_path = PathBuf::new();
+        let mut backing_dir = self.root.clone();
         let mut iv = 0u64;
         for component in encrypted_path.components() {
             match component {
                 std::path::Component::RootDir => {}
                 std::path::Component::Normal(name) => {
                     let name_str = name.to_str().ok_or(libc::EILSEQ)?;
-                    let (decrypted_name_bytes, new_iv) =
-                        self.cipher.decrypt_filename(name_str, iv).map_err(|e| {
+                    let names_iv = self.names_iv(&backing_dir, iv)?;
+                    let (decrypted_name_bytes, new_iv) = self
+                        .cipher
+                        .decrypt_filename(name_str, names_iv)
+                        .map_err(|e| {
                             error!("Failed to decrypt filename {}: {}", name_str, e);
                             libc::EIO
                         })?;
                     decrypted_path.push(OsStr::from_bytes(&decrypted_name_bytes));
-                    if self.config.chained_name_iv {
-                        iv = new_iv;
-                    }
+                    backing_dir.push(name);
+                    iv = diriv::child_path_iv(&self.config, new_iv);
                 }
                 _ => return Err(libc::EINVAL),
             }
         }
         Ok((decrypted_path, iv))
+    }
+
+    /// The IVs of a backing directory's sidecar (directory IV mode), from the
+    /// cache when its sidecar is unchanged.
+    fn dir_ivs(&self, backing_dir: &Path) -> Result<DirIvs, libc::c_int> {
+        if let Some(cached) = self.diriv_cache.get(backing_dir) {
+            return Ok(cached.ivs);
+        }
+        let _guard = self.sidecar_read_lock();
+        Ok(self.dir_ivs_locked(backing_dir)?.ivs)
+    }
+
+    /// As [`EncFs::dir_ivs`], with the directory's identity, for callers
+    /// already holding the sidecar lock (for read or write).
+    fn dir_ivs_locked(&self, backing_dir: &Path) -> Result<CachedDir, libc::c_int> {
+        if let Some(cached) = self.diriv_cache.get(backing_dir) {
+            return Ok(cached);
+        }
+        self.diriv_cache
+            .load(self.cipher.as_ref(), backing_dir)
+            .map_err(|e| {
+                if e.is_damaged() {
+                    error!("Directory {:?} is unreadable: {}", backing_dir, e);
+                } else {
+                    debug!("No directory IVs for {:?}: {}", backing_dir, e);
+                }
+                e.errno()
+            })
+    }
+
+    /// The IVs of `dir`, a directory opened at `backing_dir`.
+    ///
+    /// Fails with `ENOENT` if they are cached for a different directory than
+    /// `dir`: another directory has replaced it at that path since it was
+    /// opened (or the replacement is mid-way), so names encrypted for one
+    /// would be unreadable in the other. The entry is dropped so that a retry
+    /// reloads it.
+    fn pinned_dir_ivs(&self, backing_dir: &Path, dir: &File) -> Result<DirIvs, libc::c_int> {
+        let meta = dir
+            .metadata()
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let id = (meta.dev(), meta.ino());
+        let cached = match self.diriv_cache.get(backing_dir) {
+            Some(cached) => cached,
+            None => {
+                let _guard = self.sidecar_read_lock();
+                self.dir_ivs_locked(backing_dir)?
+            }
+        };
+        if cached.id != id {
+            debug!("Directory {:?} was replaced while in use", backing_dir);
+            self.diriv_cache.forget_if(backing_dir, cached.id);
+            return Err(libc::ENOENT);
+        }
+        Ok(cached.ivs)
+    }
+
+    /// Resolves the plaintext path of an entry about to be created, or
+    /// renamed into place. In directory IV mode the parent is opened first
+    /// and its name IV bound to it, so the entry can only be created in the
+    /// directory its name was encrypted for. See [`NewEntry`].
+    fn new_entry(&self, path: &Path) -> Result<NewEntry, libc::c_int> {
+        if !self.config.directory_iv {
+            let (real_path, iv) = self.encrypt_path(path)?;
+            return NewEntry::from_path(real_path, iv);
+        }
+        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+            return Err(libc::EINVAL);
+        };
+        let (real_parent, _) = self.encrypt_path(parent)?;
+        let dir = open_dir(&real_parent)?;
+        let ivs = self.pinned_dir_ivs(&real_parent, &dir)?;
+        let (encrypted_name, next_iv) = self
+            .cipher
+            .encrypt_filename(name.as_bytes(), ivs.name_iv)
+            .map_err(|e| {
+                error!("Encrypt filename failed: {}", e);
+                libc::EIO
+            })?;
+
+        #[cfg(test)]
+        {
+            let hook = self
+                .race_hook
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .take();
+            if let Some(hook) = hook {
+                hook(self);
+            }
+        }
+
+        let real_path = real_parent.join(&encrypted_name);
+        let name = c_path(Path::new(&encrypted_name)).map_err(|e| e.raw())?;
+        Ok(NewEntry {
+            real_path,
+            iv: diriv::child_path_iv(&self.config, next_iv),
+            dir: Some(dir),
+            name,
+        })
+    }
+
+    /// The backing path of `name` inside the backing directory `real_parent`
+    /// (directory IV mode). The caller holds the sidecar write lock, which
+    /// keeps `real_parent` the directory the name is encrypted for until the
+    /// lock is released.
+    fn encrypt_name_in(&self, real_parent: &Path, name: &OsStr) -> Result<PathBuf, libc::c_int> {
+        let ivs = self.dir_ivs_locked(real_parent)?.ivs;
+        let (encrypted_name, _) = self
+            .cipher
+            .encrypt_filename(name.as_bytes(), ivs.name_iv)
+            .map_err(|e| {
+                error!("Encrypt filename failed: {}", e);
+                libc::EIO
+            })?;
+        Ok(real_parent.join(encrypted_name))
+    }
+
+    /// The IV for the names inside `backing_dir`, whose own path IV is
+    /// `path_iv`. See [`diriv::names_iv`]; this is the cached form.
+    fn names_iv(&self, backing_dir: &Path, path_iv: u64) -> Result<u64, libc::c_int> {
+        if self.config.directory_iv {
+            Ok(self.dir_ivs(backing_dir)?.name_iv)
+        } else {
+            Ok(path_iv)
+        }
+    }
+
+    /// The IV for the extended attributes of the entry at `backing_path`,
+    /// whose path IV is `entry_iv`. See [`diriv::xattr_iv`]; this is the
+    /// cached form.
+    fn xattr_iv(&self, backing_path: &Path, entry_iv: u64) -> Result<u64, libc::c_int> {
+        if self.has_own_xattr_iv(backing_path)? {
+            Ok(self.dir_ivs(backing_path)?.node_iv)
+        } else {
+            Ok(entry_iv)
+        }
+    }
+
+    /// As [`EncFs::xattr_iv`], for callers holding the sidecar lock. Writers
+    /// of attributes hold it so that a directory can't be replaced between
+    /// reading its `node_iv` and storing attributes encrypted under it.
+    fn xattr_iv_locked(&self, backing_path: &Path, entry_iv: u64) -> Result<u64, libc::c_int> {
+        if self.has_own_xattr_iv(backing_path)? {
+            Ok(self.dir_ivs_locked(backing_path)?.ivs.node_iv)
+        } else {
+            Ok(entry_iv)
+        }
+    }
+
+    /// Whether the entry at `backing_path` is a directory whose attributes
+    /// are keyed by its own sidecar (directory IV mode).
+    fn has_own_xattr_iv(&self, backing_path: &Path) -> Result<bool, libc::c_int> {
+        if !self.config.directory_iv {
+            return Ok(false);
+        }
+        let metadata = fs::symlink_metadata(backing_path)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        Ok(metadata.is_dir())
+    }
+
+    fn sidecar_read_lock(&self) -> RwLockReadGuard<'_, ()> {
+        self.sidecar_lock.read().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn sidecar_write_lock(&self) -> RwLockWriteGuard<'_, ()> {
+        self.sidecar_lock.write().unwrap_or_else(|p| p.into_inner())
     }
 
     fn rename_internal(
@@ -334,8 +708,21 @@ impl EncFs {
         let source = parent.join(name);
         let dest = newparent.join(newname);
 
-        let (real_source, _) = self.encrypt_path(&source)?;
-        let (real_dest, _) = self.encrypt_path(&dest)?;
+        let (real_source, source_iv) = self.encrypt_path(&source)?;
+
+        if self.config.directory_iv {
+            let meta = fs::symlink_metadata(&real_source)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            return self.rename_with_directory_ivs(
+                &real_source,
+                source_iv,
+                newparent,
+                newname,
+                &meta,
+            );
+        }
+
+        let (real_dest, dest_iv) = self.encrypt_path(&dest)?;
 
         let meta = fs::symlink_metadata(&real_source)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -343,9 +730,6 @@ impl EncFs {
         if (meta.is_dir() && (self.config.chained_name_iv || self.config.external_iv_chaining))
             || (meta.is_file() && self.config.external_iv_chaining)
         {
-            let (_, source_iv) = self.encrypt_path(&source)?;
-            let (_, dest_iv) = self.encrypt_path(&dest)?;
-
             if let Err(e) = self.copy_recursive(
                 PathInfo {
                     logical: &source,
@@ -384,40 +768,8 @@ impl EncFs {
         // Legacy targets don't depend on the link's path, so a plain rename works.
         // External IV chaining only affects file headers, which symlinks lack.
         if meta.is_symlink() && self.config.symlink_target_depends_on_path() {
-            let (_, source_iv) = self.encrypt_path(&source)?;
-            let (_, dest_iv) = self.encrypt_path(&dest)?;
-
-            let target =
-                fs::read_link(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            let target_str = target.to_str().ok_or(libc::EILSEQ)?;
-
-            let (plain_target, _) = self
-                .cipher
-                .decrypt_filename(target_str, source_iv)
-                .map_err(|e| {
-                    error!("Failed to decrypt symlink target during rename: {}", e);
-                    libc::EIO
-                })?;
-
-            let (enc_target, _) = self
-                .cipher
-                .encrypt_filename(&plain_target, dest_iv)
-                .map_err(|e| {
-                    error!("Failed to encrypt symlink target during rename: {}", e);
-                    libc::EIO
-                })?;
-
-            // Best-effort remove existing destination (rename(2) would replace).
-            match fs::remove_file(&real_dest) {
-                Ok(_) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
-            }
-
-            passthrough_symlink(OsStr::new(&enc_target), &real_dest).map_err(|e| e.raw())?;
-            let atime = meta.accessed().ok();
-            let mtime = meta.modified().ok();
-            let _ = passthrough::utimens_path(&real_dest, atime, mtime);
+            let dest_entry = NewEntry::from_path(real_dest, dest_iv)?;
+            self.recreate_symlink(&real_source, &dest_entry, source_iv, &meta)?;
 
             // Remove source symlink.
             fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -426,6 +778,262 @@ impl EncFs {
         }
 
         fs::rename(real_source, real_dest).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
+    }
+
+    /// Re-creates the symlink at `real_source` as `dest`, with its target
+    /// re-encrypted from the source path IV to the destination's. Replaces
+    /// any existing destination, as rename(2) would. The source is left in
+    /// place.
+    fn recreate_symlink(
+        &self,
+        real_source: &Path,
+        dest: &NewEntry,
+        source_iv: u64,
+        meta: &fs::Metadata,
+    ) -> OpResult {
+        let target =
+            fs::read_link(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let target_str = target.to_str().ok_or(libc::EILSEQ)?;
+
+        let (plain_target, _) = self
+            .cipher
+            .decrypt_filename(target_str, source_iv)
+            .map_err(|e| {
+                error!("Failed to decrypt symlink target during rename: {}", e);
+                libc::EIO
+            })?;
+
+        let (enc_target, _) = self
+            .cipher
+            .encrypt_filename(&plain_target, dest.iv)
+            .map_err(|e| {
+                error!("Failed to encrypt symlink target during rename: {}", e);
+                libc::EIO
+            })?;
+
+        // Best-effort remove existing destination (rename(2) would replace).
+        match dest.unlink() {
+            Ok(()) | Err(libc::ENOENT) => {}
+            Err(e) => return Err(e),
+        }
+
+        dest.symlink(OsStr::new(&enc_target))?;
+        let atime = meta.accessed().ok();
+        let mtime = meta.modified().ok();
+        let _ = passthrough::utimens_path(&dest.real_path, atime, mtime);
+        Ok(())
+    }
+
+    /// Rename in directory IV mode. Nothing below a directory depends on its
+    /// name or location, so a directory moves with one rename(2). Entries
+    /// whose own IVs derive from their entry IV are moved as in chained mode,
+    /// and their encrypted xattrs are re-keyed to the new entry IV.
+    fn rename_with_directory_ivs(
+        &self,
+        real_source: &Path,
+        source_iv: u64,
+        newparent: &Path,
+        newname: &OsStr,
+        meta: &fs::Metadata,
+    ) -> OpResult {
+        if meta.is_dir() {
+            let (real_parent, _) = self.encrypt_path(newparent)?;
+            return self.rename_directory_with_sidecar(real_source, &real_parent, newname, meta);
+        }
+
+        let dest = self.new_entry(&newparent.join(newname))?;
+
+        if meta.is_file() && self.config.external_iv_chaining {
+            // A copy rather than rename + in-place header rewrite: the copy
+            // leaves the source readable if we die partway.
+            if let Err(e) = self.copy_file_with_header_rewrite(real_source, &dest, source_iv) {
+                let _ = dest.unlink();
+                return Err(e);
+            }
+            self.rekey_xattrs_best_effort(real_source, &dest.real_path, source_iv, dest.iv);
+            return fs::remove_file(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO));
+        }
+
+        if meta.is_symlink() && self.config.symlink_target_depends_on_path() {
+            self.recreate_symlink(real_source, &dest, source_iv, meta)?;
+            self.rekey_xattrs_best_effort(real_source, &dest.real_path, source_iv, dest.iv);
+            return fs::remove_file(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO));
+        }
+
+        dest.rename_from(real_source)?;
+        self.rekey_xattrs_best_effort(&dest.real_path, &dest.real_path, source_iv, dest.iv);
+        Ok(())
+    }
+
+    /// Directory rename in directory IV mode: a single rename(2). Replacing
+    /// an existing directory requires it to be empty but for its sidecar,
+    /// which is removed first (so rename(2) sees an empty directory) and put
+    /// back if the rename fails.
+    fn rename_directory_with_sidecar(
+        &self,
+        real_source: &Path,
+        real_dest_parent: &Path,
+        newname: &OsStr,
+        source_meta: &fs::Metadata,
+    ) -> OpResult {
+        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
+        // Held across the rename and the cache update, so a concurrent cache
+        // miss can't re-insert the old path in between. The new name is
+        // encrypted under it too, so the destination's parent can't be
+        // replaced between choosing the name and moving into it.
+        let _guard = self.sidecar_write_lock();
+        let real_dest = &self.encrypt_name_in(real_dest_parent, newname)?;
+        let removed = match fs::symlink_metadata(real_dest) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(errno(e)),
+            Ok(dest_meta) if !dest_meta.is_dir() => return Err(libc::ENOTDIR),
+            Ok(dest_meta)
+                if (dest_meta.dev(), dest_meta.ino()) == (source_meta.dev(), source_meta.ino()) =>
+            {
+                // Renaming a directory onto itself does nothing.
+                return Ok(());
+            }
+            Ok(_) => Some(self.remove_sidecar_of_empty_dir(real_dest)?),
+        };
+        match fs::rename(real_source, real_dest) {
+            Ok(()) => {
+                self.diriv_cache.rename_tree(real_source, real_dest);
+                Ok(())
+            }
+            Err(e) => {
+                if let Some(removed) = removed {
+                    removed.restore(real_dest);
+                }
+                Err(errno(e))
+            }
+        }
+    }
+
+    /// Removes the sidecar of `dir`, which must hold nothing else, so the
+    /// directory can be removed or replaced. Caller holds the sidecar write
+    /// lock. Returns what is needed to put it back if that then fails.
+    fn remove_sidecar_of_empty_dir(&self, dir: &Path) -> Result<RemovedSidecar, libc::c_int> {
+        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
+        for entry in fs::read_dir(dir).map_err(errno)? {
+            if entry.map_err(errno)?.file_name() != diriv::SIDECAR_NAME {
+                return Err(libc::ENOTEMPTY);
+            }
+        }
+
+        let sidecar = diriv::sidecar_path(dir);
+        let (bytes, owner) = match diriv::read_sidecar(dir) {
+            Ok(bytes) => {
+                let owner = fs::symlink_metadata(&sidecar)
+                    .ok()
+                    .map(|m| (m.uid(), m.gid()));
+                (Some(bytes), owner)
+            }
+            // An empty directory without a sidecar is what a crash
+            // between the two steps of rmdir leaves behind.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (None, None),
+            Err(e) => {
+                error!(
+                    "Cannot remove {:?}: damaged {}: {}",
+                    dir,
+                    diriv::SIDECAR_NAME,
+                    e
+                );
+                return Err(libc::EIO);
+            }
+        };
+
+        // Unlinking needs write and search access to the directory itself,
+        // which a read-only directory denies even though removing it doesn't.
+        let original_mode = grant_dir_access(dir)?;
+        let removed = RemovedSidecar {
+            bytes,
+            owner,
+            original_mode,
+        };
+        if removed.bytes.is_some()
+            && let Err(e) = fs::remove_file(&sidecar)
+        {
+            restore_dir_mode(dir, original_mode);
+            return Err(errno(e));
+        }
+        Ok(removed)
+    }
+
+    /// Re-encrypts the encrypted xattrs of `real_src` from `old_iv` to
+    /// `new_iv` and stores them on `real_dst` (which may be the same entry,
+    /// after a rename). Failures are logged rather than failing the rename
+    /// that has already happened.
+    fn rekey_xattrs_best_effort(&self, real_src: &Path, real_dst: &Path, old_iv: u64, new_iv: u64) {
+        if !self.config.encrypts_xattrs() || (real_src == real_dst && old_iv == new_iv) {
+            return;
+        }
+        if let Err(e) = self.rekey_xattrs(real_src, real_dst, old_iv, new_iv) {
+            warn!(
+                "Failed to carry extended attributes from {:?} to {:?}: errno {}",
+                real_src, real_dst, e
+            );
+        }
+    }
+
+    fn rekey_xattrs(&self, real_src: &Path, real_dst: &Path, old_iv: u64, new_iv: u64) -> OpResult {
+        let c_src = c_path(real_src).map_err(|e| e.raw())?;
+        let c_dst = c_path(real_dst).map_err(|e| e.raw())?;
+        let names = match passthrough::listxattr_names_nofollow(&c_src) {
+            Ok(names) => names,
+            // No xattr support on the backing filesystem: nothing to carry.
+            Err(e) if e.raw() == libc::ENOTSUP => return Ok(()),
+            Err(e) => return Err(e.raw()),
+        };
+        let mut first_error = None;
+        for stored_name in names {
+            let Some(encoded) = std::str::from_utf8(&stored_name)
+                .ok()
+                .and_then(|n| n.strip_prefix(xattr_name::PREFIX))
+            else {
+                continue;
+            };
+            let result = (|| -> OpResult {
+                let encrypted_name = xattr_name::decode(encoded).ok_or(libc::EINVAL)?;
+                let name = self
+                    .cipher
+                    .decrypt_xattr_name(&encrypted_name, old_iv)
+                    .map_err(|_| libc::EIO)?;
+                let c_old =
+                    std::ffi::CString::new(stored_name.clone()).map_err(|_| libc::EINVAL)?;
+                let value =
+                    passthrough::getxattr_value_nofollow(&c_src, &c_old).map_err(|e| e.raw())?;
+                let value = self
+                    .cipher
+                    .decrypt_xattr_value(&value, old_iv)
+                    .map_err(|_| libc::EIO)?;
+
+                let new_name = xattr_name::encode(
+                    &self
+                        .cipher
+                        .encrypt_xattr_name(&name, new_iv)
+                        .map_err(|_| libc::EIO)?,
+                );
+                let new_value = self
+                    .cipher
+                    .encrypt_xattr_value(&value, new_iv)
+                    .map_err(|_| libc::EIO)?;
+                let c_new = std::ffi::CString::new(new_name).map_err(|_| libc::EINVAL)?;
+                passthrough::setxattr_nofollow(&c_dst, &c_new, &new_value, 0)
+                    .map_err(|e| e.raw())?;
+                if real_src == real_dst && c_new != c_old {
+                    passthrough::removexattr_nofollow(&c_src, &c_old).map_err(|e| e.raw())?;
+                }
+                Ok(())
+            })();
+            if let Err(e) = result {
+                warn!(
+                    "Skipping xattr {:?} on {:?}: errno {}",
+                    encoded, real_src, e
+                );
+                first_error.get_or_insert(e);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
     }
 
     fn copy_recursive(
@@ -511,7 +1119,8 @@ impl EncFs {
             let mtime = meta.modified().ok();
             let _ = passthrough::utimens_path(dest.physical, atime, mtime);
         } else if self.config.external_iv_chaining && meta.is_file() {
-            self.copy_file_with_header_rewrite(source.physical, dest.physical, source.iv, dest.iv)?;
+            let dest_entry = NewEntry::from_path(dest.physical.to_path_buf(), dest.iv)?;
+            self.copy_file_with_header_rewrite(source.physical, &dest_entry, source.iv)?;
         } else if meta.is_symlink() {
             // Handle symlinks during recursive directory copies.
             // On V7 with chained_name_iv, symlink targets are encrypted using
@@ -578,22 +1187,17 @@ impl EncFs {
     fn copy_file_with_header_rewrite(
         &self,
         real_src: &Path,
-        real_dest: &Path,
+        dest: &NewEntry,
         src_iv: u64,
-        dst_iv: u64,
     ) -> OpResult {
+        let real_dest = &dest.real_path;
+        let dst_iv = dest.iv;
         // 1. Open both ends. The destination is opened without O_TRUNC so that,
         //    as in `open_impl`, it is reset under the lock rather than by
         //    open(2) — otherwise the reset lands on top of an in-flight
         //    read-modify-write by whoever already has it open.
         let mut src_f = File::open(real_src).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let mut dst_f = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(real_dest)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let mut dst_f = dest.open(libc::O_RDWR | libc::O_CREAT, 0o666)?;
 
         // Serialize against concurrent writes at both ends: a write landing
         // mid-copy on the source would produce a torn destination block, and a
@@ -679,6 +1283,67 @@ impl EncFs {
 
 fn headerless_file_iv(header_size: u64, external_iv: u64) -> FileIv {
     FileIv::from_u64(if header_size == 0 { external_iv } else { 0 })
+}
+
+/// A sidecar removed so its directory could be removed or replaced, with what
+/// is needed to put it back.
+struct RemovedSidecar {
+    /// `None` when the directory had no sidecar to begin with.
+    bytes: Option<diriv::Sidecar>,
+    owner: Option<(u32, u32)>,
+    /// Mode to restore if write access was granted temporarily.
+    original_mode: Option<u32>,
+}
+
+impl RemovedSidecar {
+    /// Re-creates the sidecar with the same bytes, so the names already in
+    /// the directory stay valid, and restores the directory's mode.
+    fn restore(self, dir: &Path) {
+        if let Some(bytes) = self.bytes {
+            match diriv::create_sidecar(dir, &bytes) {
+                Ok(()) => {
+                    if let Some((uid, gid)) = self.owner {
+                        let _ = std::os::unix::fs::lchown(
+                            diriv::sidecar_path(dir),
+                            Some(uid),
+                            Some(gid),
+                        );
+                    }
+                }
+                Err(e) => error!(
+                    "Failed to restore {} in {:?}; its names are now unreadable: {}",
+                    diriv::SIDECAR_NAME,
+                    dir,
+                    e
+                ),
+            }
+        }
+        restore_dir_mode(dir, self.original_mode);
+    }
+}
+
+/// Adds owner write and search permission to `dir` when this process lacks
+/// them, returning the original mode to restore afterwards.
+fn grant_dir_access(dir: &Path) -> Result<Option<u32>, libc::c_int> {
+    use std::os::unix::fs::PermissionsExt;
+    let c_dir = c_path(dir).map_err(|e| e.raw())?;
+    if unsafe { libc::access(c_dir.as_ptr(), libc::W_OK | libc::X_OK) } == 0 {
+        return Ok(None);
+    }
+    let mode = fs::symlink_metadata(dir)
+        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
+        .mode()
+        & 0o7777;
+    fs::set_permissions(dir, fs::Permissions::from_mode(mode | 0o700))
+        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+    Ok(Some(mode))
+}
+
+fn restore_dir_mode(dir: &Path, original_mode: Option<u32>) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Some(mode) = original_mode {
+        let _ = fs::set_permissions(dir, fs::Permissions::from_mode(mode));
+    }
 }
 
 impl EncFs {
@@ -1095,11 +1760,7 @@ impl EncFs {
 
         let new_path = newparent.join(newname);
         let (real_path, _) = self.encrypt_path(path)?;
-        let (real_new_path, _) = self.encrypt_path(&new_path)?;
-
-        if let Err(e) = std::fs::hard_link(&real_path, &real_new_path) {
-            return Err(e.raw_os_error().unwrap_or(libc::EIO));
-        }
+        self.new_entry(&new_path)?.link_from(&real_path)?;
 
         self.attr_for_path(Some(&new_path), None)
     }
@@ -1114,20 +1775,20 @@ impl EncFs {
         self.ensure_writable()?;
 
         let path = parent.join(name);
-        let (real_path, path_iv) = self.encrypt_path(&path)?;
+        let entry = self.new_entry(&path)?;
 
         let enc_target = symlink_target::encrypt(
             self.cipher.as_ref(),
             &self.config,
             target.as_os_str().as_bytes(),
-            path_iv,
+            entry.iv,
         )
         .map_err(|e| {
             error!("Failed to encrypt symlink target: {}", e);
             libc::EIO
         })?;
 
-        passthrough_symlink(OsStr::from_bytes(&enc_target), &real_path).map_err(|e| e.raw())?;
+        entry.symlink(OsStr::from_bytes(&enc_target))?;
 
         // Return the attributes of the entry we just created.
         self.entry_for_path(&path)
@@ -1197,7 +1858,8 @@ impl EncFs {
     }
 
     fn directory_snapshot(&self, path: &Path) -> Result<DirBuffer<FileState>, libc::c_int> {
-        let (real_path, dir_iv) = self.encrypt_path(path)?;
+        let (real_path, path_iv) = self.encrypt_path(path)?;
+        let dir_iv = self.names_iv(&real_path, path_iv)?;
 
         let entries =
             fs::read_dir(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -1407,24 +2069,17 @@ impl EncFs {
         );
         self.ensure_writable()?;
         let path = parent.join(name);
-        let (real_path, path_iv) = self.encrypt_path(&path)?;
+        let entry = self.new_entry(&path)?;
+        let path_iv = entry.iv;
 
         // O_EXCL: fail if file already exists (POSIX open(2)).
-        if (flags as i32 & libc::O_EXCL) != 0 && real_path.exists() {
-            return Err(libc::EEXIST);
+        let mut open_flags = libc::O_RDWR | libc::O_CREAT;
+        if (flags as i32 & libc::O_EXCL) != 0 {
+            open_flags |= libc::O_EXCL;
         }
-
-        use std::os::unix::fs::OpenOptionsExt;
-        // Not `.truncate(true)`: as in `open_impl`, resetting an existing file
-        // has to happen under the per-file lock rather than inside open(2).
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .mode(mode)
-            .open(&real_path)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        // Not O_TRUNC: as in `open_impl`, resetting an existing file has to
+        // happen under the per-file lock rather than inside open(2).
+        let file = entry.open(open_flags, mode)?;
 
         let header_size = self.config.header_size();
         let external_iv = if self.config.external_iv_chaining {
@@ -1483,17 +2138,78 @@ impl EncFs {
         let path = parent.join(name);
         debug!("mkdir: {:?} mode={:o}", path, mode);
         self.ensure_writable()?;
-        let (real_path, _) = self.encrypt_path(&path)?;
 
+        if self.config.directory_iv {
+            let (real_parent, _) = self.encrypt_path(parent)?;
+            self.mkdir_with_sidecar(&req, &real_parent, name, mode)?;
+        } else {
+            use std::os::unix::fs::DirBuilderExt;
+            let (real_path, _) = self.encrypt_path(&path)?;
+            std::fs::DirBuilder::new()
+                .mode(mode)
+                .create(&real_path)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
+        }
+
+        // Outside the sidecar lock: resolving the path may need to take it.
+        self.entry_for_path(&path)
+    }
+
+    /// Creates directory `name` in `real_parent`, with its sidecar, under the
+    /// sidecar write lock, removing the directory again if the sidecar cannot
+    /// be written. The name is encrypted under the lock as well, so the
+    /// parent can't be replaced by a directory it would be unreadable in.
+    fn mkdir_with_sidecar(
+        &self,
+        req: &Request,
+        real_parent: &Path,
+        name: &OsStr,
+        mode: u32,
+    ) -> OpResult {
         use std::os::unix::fs::DirBuilderExt;
+        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
+        let bytes = diriv::new_sidecar().map_err(|e| {
+            error!("Failed to generate directory IV: {}", e);
+            libc::EIO
+        })?;
+        let ivs = diriv::derive(self.cipher.as_ref(), &bytes).map_err(|e| {
+            error!("Failed to derive directory IVs: {}", e);
+            libc::EIO
+        })?;
+
+        let _guard = self.sidecar_write_lock();
+        let real_path = &self.encrypt_name_in(real_parent, name)?;
         std::fs::DirBuilder::new()
             .mode(mode)
-            .create(&real_path)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            .create(real_path)
+            .map_err(errno)?;
 
-        set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
-
-        self.entry_for_path(&path)
+        let result = grant_dir_access(real_path).and_then(|original_mode| {
+            let created = diriv::create_sidecar(real_path, &bytes).map_err(errno);
+            restore_dir_mode(real_path, original_mode);
+            created
+        });
+        if let Err(e) = result {
+            error!(
+                "Failed to create {} in {:?}: errno {}",
+                diriv::SIDECAR_NAME,
+                real_path,
+                e
+            );
+            let _ = fs::remove_file(diriv::sidecar_path(real_path));
+            let _ = fs::remove_dir(real_path);
+            return Err(e);
+        }
+        // Best effort, like the directory's own ownership.
+        let _ = set_ownership_path(&diriv::sidecar_path(real_path), req);
+        // Uncached if this fails; the first use loads it instead.
+        if let Ok(id) = diriv::dir_id(real_path) {
+            self.diriv_cache.insert(real_path, CachedDir { ivs, id });
+        }
+        // Still under the lock, so this can't land on a directory that has
+        // replaced the new one.
+        set_ownership_path(real_path, req).map_err(|e| e.raw())
     }
 
     fn mknod_impl(
@@ -1507,27 +2223,21 @@ impl EncFs {
         let path = parent.join(name);
         debug!("mknod: {:?} mode={:o} rdev={}", path, mode, rdev);
         self.ensure_writable()?;
-        let (real_path, path_iv) = self.encrypt_path(&path)?;
+        let entry = self.new_entry(&path)?;
 
         let mode_t = mode as libc::mode_t;
         let mode_bits = mode_t & libc::S_IFMT;
         if mode_bits != libc::S_IFREG {
-            passthrough::mknod(&real_path, mode, rdev).map_err(|e| e.raw())?;
+            entry.mknod(mode, rdev)?;
         } else {
             use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
             let header_size = self.config.header_size();
             let external_iv = if self.config.external_iv_chaining {
-                path_iv
+                entry.iv
             } else {
                 0
             };
-            let mut f = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(mode)
-                .open(&real_path)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            let mut f = entry.open(libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL, mode & 0o7777)?;
             if header_size > 0 {
                 let (header, _iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
                     error!("Failed to generate header for mknod: {}", e);
@@ -1538,7 +2248,7 @@ impl EncFs {
             }
         }
 
-        set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
+        entry.set_ownership(&req)?;
 
         self.entry_for_path(&path)
     }
@@ -1548,7 +2258,33 @@ impl EncFs {
         debug!("rmdir: {:?}", path);
         self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
+        if self.config.directory_iv {
+            return self.rmdir_with_sidecar(&real_path);
+        }
         fs::remove_dir(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
+    }
+
+    /// Removes a directory whose only entry is its sidecar. If the removal
+    /// still fails (say, an entry appeared behind the mount), the sidecar is
+    /// put back with the same bytes so existing names stay valid.
+    fn rmdir_with_sidecar(&self, real_path: &Path) -> OpResult {
+        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
+        let _guard = self.sidecar_write_lock();
+        let meta = fs::symlink_metadata(real_path).map_err(errno)?;
+        if !meta.is_dir() {
+            return Err(libc::ENOTDIR);
+        }
+        let removed = self.remove_sidecar_of_empty_dir(real_path)?;
+        match fs::remove_dir(real_path) {
+            Ok(()) => {
+                self.diriv_cache.forget_tree(real_path);
+                Ok(())
+            }
+            Err(e) => {
+                removed.restore(real_path);
+                Err(errno(e))
+            }
+        }
     }
 
     fn setxattr_impl(
@@ -1569,7 +2305,10 @@ impl EncFs {
         );
         self.ensure_writable()?;
 
-        let (real_path, path_iv) = self.encrypt_path(path)?;
+        let (real_path, entry_iv) = self.encrypt_path(path)?;
+        // Held until the attribute is written: see `xattr_iv_locked`.
+        let _guard = self.config.directory_iv.then(|| self.sidecar_read_lock());
+        let path_iv = self.xattr_iv_locked(&real_path, entry_iv)?;
 
         let name_bytes = name.as_bytes();
 
@@ -1620,7 +2359,8 @@ impl EncFs {
     fn getxattr_impl(&self, path: &Path, name: &OsStr) -> Result<Vec<u8>, libc::c_int> {
         debug!("getxattr: {:?} name={:?}", path, name);
 
-        let (real_path, path_iv) = self.encrypt_path(path)?;
+        let (real_path, entry_iv) = self.encrypt_path(path)?;
+        let path_iv = self.xattr_iv(&real_path, entry_iv)?;
 
         let name_bytes = name.as_bytes();
 
@@ -1681,7 +2421,8 @@ impl EncFs {
     fn listxattr_impl(&self, path: &Path) -> Result<Vec<u8>, libc::c_int> {
         debug!("listxattr: {:?}", path);
 
-        let (real_path, path_iv) = self.encrypt_path(path)?;
+        let (real_path, entry_iv) = self.encrypt_path(path)?;
+        let path_iv = self.xattr_iv(&real_path, entry_iv)?;
 
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
@@ -1748,7 +2489,10 @@ impl EncFs {
         debug!("removexattr: {:?} name={:?}", path, name);
         self.ensure_writable()?;
 
-        let (real_path, path_iv) = self.encrypt_path(path)?;
+        let (real_path, entry_iv) = self.encrypt_path(path)?;
+        // Held until the attribute is written: see `xattr_iv_locked`.
+        let _guard = self.config.directory_iv.then(|| self.sidecar_read_lock());
+        let path_iv = self.xattr_iv_locked(&real_path, entry_iv)?;
 
         let name_bytes = name.as_bytes();
 
@@ -2184,9 +2928,11 @@ mod tests {
     use crate::config::{EncfsConfig, Interface};
     use crate::crypto::file_iv::FileIv;
     use crate::crypto::ssl::SslCipher;
+    use std::ffi::{OsStr, OsString};
     use std::fs::File;
     use std::os::fd::FromRawFd;
-    use std::path::PathBuf;
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
 
@@ -2349,5 +3095,242 @@ mod tests {
         assert!(fs.flush(node(), &handle, &caller).is_ok());
         assert!(fs.fsync(node(), &handle, false, &caller).is_err());
         assert!(fs.fsync(node(), &handle, true, &caller).is_err());
+    }
+
+    /// A directory IV volume in a fresh temporary directory.
+    struct DirIvVolume {
+        root: PathBuf,
+        config: EncfsConfig,
+        fs: EncFs,
+    }
+
+    impl DirIvVolume {
+        fn new(name: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "encfs_fs_diriv_{}_{}",
+                name,
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir(&root).unwrap();
+            crate::diriv::ensure_root(&root, true).unwrap();
+            let mut config = EncfsConfig::standard_v7();
+            config.chained_name_iv = false;
+            config.directory_iv = true;
+            config.external_iv_chaining = false;
+            config.minimum_reader_version = config.required_v7_reader_version();
+            let fs = Self::mount(&root, &config);
+            Self { root, config, fs }
+        }
+
+        fn mount(root: &Path, config: &EncfsConfig) -> EncFs {
+            let interface = Interface {
+                name: "ssl/aes".to_string(),
+                major: 3,
+                minor: 0,
+                age: 0,
+            };
+            let mut cipher = SslCipher::new(&interface, config.key_size).unwrap();
+            cipher.set_key(&[3u8; 32], &[4u8; 16]);
+            cipher.set_name_encoding(&config.name_iface);
+            cipher.set_wide_file_iv(config.wide_file_iv);
+            cipher.set_name_mac_includes_iv(true);
+            EncFs::new(root.to_path_buf(), Box::new(cipher), config.clone())
+        }
+
+        /// Asserts that every entry in plaintext directory `dir` decodes on a
+        /// fresh mount, and returns their names.
+        fn names_after_remount(&self, dir: &str) -> Vec<OsString> {
+            let fs = Self::mount(&self.root, &self.config);
+            let (real_dir, _) = fs.encrypt_path(Path::new(dir)).unwrap();
+            let mut names = Vec::new();
+            for entry in std::fs::read_dir(&real_dir).unwrap() {
+                let name = entry.unwrap().file_name();
+                if name.as_bytes().starts_with(b".") {
+                    continue;
+                }
+                let relative = real_dir.strip_prefix(&self.root).unwrap().join(&name);
+                let (plain, _) = fs
+                    .decrypt_path(&relative)
+                    .unwrap_or_else(|e| panic!("{:?} in {} is unreadable: errno {}", name, dir, e));
+                names.push(plain.file_name().unwrap().to_os_string());
+            }
+            names.sort();
+            names
+        }
+    }
+
+    impl Drop for DirIvVolume {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn caller() -> Caller {
+        Caller {
+            pid: 1,
+            gid: unsafe { libc::getgid() },
+            uid: unsafe { libc::getuid() },
+            umask: 0,
+        }
+    }
+
+    /// Ways of putting a different directory at `/dst`.
+    #[derive(Clone, Copy, Debug)]
+    enum Replace {
+        /// `rename /src /dst`, onto the empty `/dst`.
+        RenameOver,
+        /// `rmdir /dst; mkdir /dst`.
+        Recreate,
+    }
+
+    impl Replace {
+        fn run(self, fs: &EncFs) {
+            match self {
+                Replace::RenameOver => fs
+                    .rename_internal(
+                        Path::new("/"),
+                        OsStr::new("src"),
+                        Path::new("/"),
+                        OsStr::new("dst"),
+                    )
+                    .unwrap(),
+                Replace::Recreate => {
+                    fs.rmdir_impl(Path::new("/"), OsStr::new("dst")).unwrap();
+                    fs.mkdir_impl(caller(), Path::new("/"), OsStr::new("dst"), 0o755)
+                        .unwrap();
+                }
+            }
+        }
+    }
+
+    type CreateOp = fn(&EncFs) -> Result<(), libc::c_int>;
+
+    /// Ways of creating `/dst/new`.
+    const CREATE_OPS: &[(&str, CreateOp)] = &[
+        ("create", |fs| {
+            fs.create_impl(caller(), Path::new("/dst"), OsStr::new("new"), 0o644, 0)
+                .map(drop)
+        }),
+        ("mknod", |fs| {
+            fs.mknod_impl(
+                caller(),
+                Path::new("/dst"),
+                OsStr::new("new"),
+                libc::S_IFREG as u32 | 0o644,
+                0,
+            )
+            .map(drop)
+        }),
+        ("mkfifo", |fs| {
+            fs.mknod_impl(
+                caller(),
+                Path::new("/dst"),
+                OsStr::new("new"),
+                libc::S_IFIFO as u32 | 0o644,
+                0,
+            )
+            .map(drop)
+        }),
+        ("symlink", |fs| {
+            fs.symlink_impl(Path::new("/dst"), OsStr::new("new"), Path::new("target"))
+                .map(drop)
+        }),
+        ("link", |fs| {
+            fs.link_impl(Path::new("/file"), Path::new("/dst"), OsStr::new("new"))
+                .map(drop)
+        }),
+        ("rename", |fs| {
+            fs.rename_internal(
+                Path::new("/"),
+                OsStr::new("file"),
+                Path::new("/dst"),
+                OsStr::new("new"),
+            )
+        }),
+    ];
+
+    /// The review scenario: `/dst` is replaced after an operation has
+    /// encrypted a name for it but before the backing entry is created. The
+    /// operation must fail rather than leave a name encrypted for the old
+    /// directory inside the new one.
+    #[test]
+    fn creation_fails_when_its_directory_is_replaced_midway() {
+        for replace in [Replace::RenameOver, Replace::Recreate] {
+            for (op_name, op) in CREATE_OPS {
+                let vol = DirIvVolume::new(&format!("race_{:?}_{}", replace, op_name));
+                let fs = &vol.fs;
+                let root = Path::new("/");
+                fs.mkdir_impl(caller(), root, OsStr::new("dst"), 0o755)
+                    .unwrap();
+                fs.mkdir_impl(caller(), root, OsStr::new("src"), 0o755)
+                    .unwrap();
+                fs.create_impl(caller(), Path::new("/src"), OsStr::new("kept"), 0o644, 0)
+                    .unwrap();
+                fs.create_impl(caller(), root, OsStr::new("file"), 0o644, 0)
+                    .unwrap();
+
+                *fs.race_hook.lock().unwrap() = Some(Box::new(move |fs: &EncFs| replace.run(fs)));
+                let result = op(fs);
+                assert!(
+                    fs.race_hook.lock().unwrap().is_none(),
+                    "{op_name}: the hook never ran"
+                );
+                assert_eq!(result, Err(libc::ENOENT), "{replace:?} during {op_name}");
+
+                let expected: Vec<OsString> = match replace {
+                    Replace::RenameOver => vec!["kept".into()],
+                    Replace::Recreate => vec![],
+                };
+                assert_eq!(
+                    vol.names_after_remount("/dst"),
+                    expected,
+                    "{replace:?} during {op_name}"
+                );
+            }
+        }
+    }
+
+    /// Without the race, the same operations go through.
+    #[test]
+    fn creation_succeeds_in_an_unreplaced_directory() {
+        for (op_name, op) in CREATE_OPS {
+            let vol = DirIvVolume::new(&format!("norace_{}", op_name));
+            let fs = &vol.fs;
+            fs.mkdir_impl(caller(), Path::new("/"), OsStr::new("dst"), 0o755)
+                .unwrap();
+            fs.create_impl(caller(), Path::new("/"), OsStr::new("file"), 0o644, 0)
+                .unwrap();
+            assert_eq!(op(fs), Ok(()), "{op_name}");
+            assert_eq!(vol.names_after_remount("/dst"), vec![OsString::from("new")]);
+        }
+    }
+
+    /// A cached IV for a path now holding another directory (here, swapped
+    /// behind the mount) fails the operation once, then is reloaded.
+    #[test]
+    fn stale_cache_entry_fails_once_and_is_reloaded() {
+        let vol = DirIvVolume::new("stale_cache");
+        let fs = &vol.fs;
+        let root = Path::new("/");
+        fs.mkdir_impl(caller(), root, OsStr::new("dst"), 0o755)
+            .unwrap();
+        fs.mkdir_impl(caller(), root, OsStr::new("other"), 0o755)
+            .unwrap();
+        fs.create_impl(caller(), Path::new("/dst"), OsStr::new("a"), 0o644, 0)
+            .unwrap();
+
+        let (real_dst, _) = fs.encrypt_path(Path::new("/dst")).unwrap();
+        let (real_other, _) = fs.encrypt_path(Path::new("/other")).unwrap();
+        std::fs::rename(&real_dst, vol.root.join("moved-away")).unwrap();
+        std::fs::rename(&real_other, &real_dst).unwrap();
+
+        let create = || {
+            fs.create_impl(caller(), Path::new("/dst"), OsStr::new("b"), 0o644, 0)
+                .map(drop)
+        };
+        assert_eq!(create(), Err(libc::ENOENT));
+        assert_eq!(create(), Ok(()));
+        assert_eq!(vol.names_after_remount("/dst"), vec![OsString::from("b")]);
     }
 }

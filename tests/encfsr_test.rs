@@ -82,6 +82,8 @@ fn write_v7_config(path: &Path, unique_iv: bool, password: &str) {
     use encfs::config::EncfsConfig;
 
     let mut config = EncfsConfig::standard_v7();
+    // Reverse mode cannot use per-directory IV files.
+    config.use_chained_name_iv();
     config.unique_iv = unique_iv;
     if !unique_iv {
         // Headerless configs cannot use the wide file-IV format.
@@ -181,6 +183,7 @@ fn write_valid_encfsr_config(dir: &Path, password: &str) {
         unique_iv: false,
         external_iv_chaining: false,
         chained_name_iv: true,
+        directory_iv: false,
         allow_holes: false,
         wide_file_iv: false,
         xattr_format: Default::default(),
@@ -544,4 +547,40 @@ fn test_encfsctl_no_unique_iv_creates_writable_reverse_config() {
     );
     assert!(config.chained_name_iv);
     assert!(config.external_iv_chaining);
+}
+
+/// Reverse mode has nowhere to keep per-directory IV files, so a directory IV
+/// config (the `encfsctl new` default) is refused before any password is read.
+#[test]
+fn test_encfsr_rejects_directory_iv() {
+    let dir = live::unique_temp_dir("encfsr_test_directory_iv").expect("failed to create temp dir");
+    let source_dir = dir.join("source");
+    let mount_dir = dir.join("mnt");
+    std::fs::create_dir_all(&mount_dir).expect("failed to create mount dir");
+
+    let status = Command::new(encfsctl_bin())
+        .args(["new", "--extpass", "echo test"])
+        .arg(&source_dir)
+        .stdout(Stdio::null())
+        .status()
+        .expect("failed to run encfsctl new");
+    assert!(status.success(), "encfsctl new failed");
+
+    let config_path = source_dir.join(".encfs7");
+    let (success, _stdout, stderr) = run_encfsr(
+        &[
+            config_path.to_str().unwrap(),
+            source_dir.to_str().unwrap(),
+            mount_dir.to_str().unwrap(),
+        ],
+        None,
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+
+    assert!(!success, "encfsr must refuse directory IV configs");
+    assert!(
+        stderr.contains("directory IV mode is not supported in reverse mode"),
+        "stderr: {stderr}"
+    );
 }

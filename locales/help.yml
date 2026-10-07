@@ -217,17 +217,21 @@ help.encfsctl.new_stdinpass:
   fr: "Lire le mot de passe depuis stdin (création non interactive)"
   de: "Passwort von stdin lesen (nicht-interaktive Erstellung)"
 help.encfsctl.new_no_chained_iv:
-  en: "Disable IV chaining for path components (like legacy EncFS V4)"
-  fr: "Désactiver le chaînage IV pour les composants de chemin (comme EncFS V4 legacy)"
-  de: "IV-Verkettung für Pfadkomponenten deaktivieren (wie Legacy EncFS V4)"
+  en: "Disable external IV chaining, so file contents no longer depend on their path; with --no-directory-iv, also disable IV chaining for path components (like legacy EncFS V4)"
+  fr: "Désactiver le chaînage IV externe, afin que le contenu des fichiers ne dépende plus de leur chemin ; avec --no-directory-iv, désactiver aussi le chaînage IV pour les composants de chemin (comme EncFS V4 legacy)"
+  de: "Externe IV-Verkettung deaktivieren, sodass Dateiinhalte nicht mehr von ihrem Pfad abhängen; mit --no-directory-iv auch die IV-Verkettung für Pfadkomponenten deaktivieren (wie Legacy EncFS V4)"
 help.encfsctl.new_no_unique_iv:
-  en: "Disable per-file IV headers (create configs intended for reverse mode / encfsr); keeps stream filename encoding"
-  fr: "Désactiver les en-têtes IV par fichier (crée des configurations destinées au mode inversé / encfsr) ; conserve l'encodage de noms en flux"
-  de: "Per-Datei-IV-Header deaktivieren (Konfigurationen für den Reverse-Modus / encfsr erstellen); behält die Stream-Dateinamenkodierung bei"
+  en: "Disable per-file IV headers (create configs intended for reverse mode / encfsr); keeps stream filename encoding and path-chained filename IVs"
+  fr: "Désactiver les en-têtes IV par fichier (crée des configurations destinées au mode inversé / encfsr) ; conserve l'encodage de noms en flux et les IV de noms chaînés depuis le chemin"
+  de: "Per-Datei-IV-Header deaktivieren (Konfigurationen für den Reverse-Modus / encfsr erstellen); behält die Stream-Dateinamenkodierung und vom Pfad verkettete Dateinamen-IVs bei"
 help.encfsctl.new_legacy_file_iv:
-  en: "Use a 64-bit per-file IV and stream filename encoding instead of the 96-bit IV and Base32 block names, for interoperability with older EncFS tooling"
-  fr: "Utiliser un IV par fichier de 64 bits et l'encodage de noms en flux au lieu de l'IV de 96 bits et des noms en blocs Base32, pour l'interopérabilité avec les anciens outils EncFS"
-  de: "64-Bit-IV pro Datei und Stream-Dateinamenkodierung statt 96-Bit-IV und Base32-Blocknamen verwenden, für Interoperabilität mit älteren EncFS-Tools"
+  en: "Use a 64-bit per-file IV, stream filename encoding and path-chained filename IVs instead of the 96-bit IV, Base32 block names and per-directory IVs, for interoperability with older EncFS tooling"
+  fr: "Utiliser un IV par fichier de 64 bits, l'encodage de noms en flux et des IV de noms chaînés depuis le chemin au lieu de l'IV de 96 bits, des noms en blocs Base32 et des IV par répertoire, pour l'interopérabilité avec les anciens outils EncFS"
+  de: "64-Bit-IV pro Datei, Stream-Dateinamenkodierung und vom Pfad verkettete Dateinamen-IVs statt 96-Bit-IV, Base32-Blocknamen und IVs pro Verzeichnis verwenden, für Interoperabilität mit älteren EncFS-Tools"
+help.encfsctl.new_no_directory_iv:
+  en: "Chain filename IVs from the path, as V7 filesystems did before per-directory IVs became the default, instead of keeping a random IV in a .encfs.diriv file in each directory. Renaming a directory then rewrites everything below it, but older EncFS builds can read the filesystem"
+  fr: "Chaîner les IV des noms de fichiers depuis le chemin, comme les systèmes de fichiers V7 avant que les IV par répertoire ne deviennent la valeur par défaut, au lieu de conserver un IV aléatoire dans un fichier .encfs.diriv de chaque répertoire. Renommer un répertoire réécrit alors tout son contenu, mais les anciennes versions d'EncFS peuvent lire le système de fichiers"
+  de: "Dateinamen-IVs aus dem Pfad verketten, wie V7-Dateisysteme vor der Einführung von IVs pro Verzeichnis als Standard, statt einen zufälligen IV in einer .encfs.diriv-Datei in jedem Verzeichnis zu speichern. Das Umbenennen eines Verzeichnisses schreibt dann alles darunter neu, aber ältere EncFS-Versionen können das Dateisystem lesen"
 help.encfsctl.speed:
   en: "Print version info and benchmark supported cipher algorithms"
   fr: "Afficher la version et mesurer les performances des algorithmes de chiffrement pris en charge"

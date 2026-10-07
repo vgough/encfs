@@ -39,8 +39,12 @@ pub const V7_WIDE_FILE_IV_CONFIG_VERSION: u32 = 2;
 /// interpretable.
 pub const V7_STORAGE_FORMATS_CONFIG_VERSION: u32 = 3;
 
+/// V7 minimum-reader version at which the `directory_iv` name-encoding mode
+/// (per-directory `.encfs.diriv` sidecar files) becomes interpretable.
+pub const V7_DIRECTORY_IV_CONFIG_VERSION: u32 = 4;
+
 /// Highest V7 minimum-reader version this build understands.
-pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_STORAGE_FORMATS_CONFIG_VERSION;
+pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_DIRECTORY_IV_CONFIG_VERSION;
 
 /// Line length for Base64 encoded data in XML config
 pub const XML_BASE64_LINE_LEN: usize = 76;

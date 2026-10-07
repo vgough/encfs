@@ -92,6 +92,7 @@ fn make_encfsr_config() -> EncfsConfig {
         unique_iv: false,
         external_iv_chaining: false,
         chained_name_iv: true,
+        directory_iv: false,
         allow_holes: false,
         wide_file_iv: false,
         xattr_format: Default::default(),
@@ -751,6 +752,7 @@ fn test_encfsr_v7_aes_gcm_siv_round_trip() -> Result<()> {
 
     // Create V7 config (standard_v7 uses AES-GCM-SIV, 16-byte tag)
     let mut config = EncfsConfig::standard_v7();
+    config.use_chained_name_iv(); // Required by encfsr
     config.unique_iv = false; // Required by encfsr
     config.wide_file_iv = false; // headerless configs cannot use the wide format
     config.argon2_memory_cost = Some(8);
@@ -806,6 +808,7 @@ fn test_encfsr_v7_write_through_forward_mount() -> Result<()> {
     fs::create_dir_all(&source_dir)?;
 
     let mut config = EncfsConfig::standard_v7();
+    config.use_chained_name_iv(); // reverse mode cannot use per-directory IVs
     config.unique_iv = false;
     config.wide_file_iv = false; // headerless configs cannot use the wide format
     config.argon2_memory_cost = Some(8);

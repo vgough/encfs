@@ -190,6 +190,7 @@ fn test_verify_cpp_algorithm_produces_expected_ciphertext() -> anyhow::Result<()
 #[test]
 fn test_v7_unchained_names_keep_zero_iv_mac() -> anyhow::Result<()> {
     let mut config = EncfsConfig::standard_v7();
+    config.use_chained_name_iv();
     config.chained_name_iv = false;
     config.external_iv_chaining = false;
     config.argon2_memory_cost = Some(8);

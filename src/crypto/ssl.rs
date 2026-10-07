@@ -22,6 +22,10 @@ use zeroize::Zeroize;
 
 type HmacSha1 = Hmac<Sha1>;
 
+/// Domain separation for [`SslCipher::directory_ivs`]. Versioned so a future
+/// derivation cannot collide with this one.
+const DIRECTORY_IV_LABEL: &[u8] = b"encfs.diriv.v1\0";
+
 /// A symmetric block-cipher algorithm, abstracted over CBC (full file blocks)
 /// and CFB (partial blocks / stream) modes. One implementation per algorithm:
 /// adding a cipher is adding a `Primitive<NewAlgorithm>`, not another arm in a
@@ -503,6 +507,22 @@ impl SslCipher {
 
     pub fn mac_64(&self, data: &[u8], iv: u64) -> Result<u64> {
         Self::mac_64_with_key(data, iv, &self.key)
+    }
+
+    /// Derives `(name_iv, node_iv)` from a directory's sidecar bytes:
+    /// `HMAC-SHA256(key, "encfs.diriv.v1\0" || diriv)`, with each IV read as a
+    /// little-endian u64 from the first and second 8 bytes of the digest.
+    pub fn directory_ivs(&self, diriv: &[u8]) -> Result<(u64, u64)> {
+        type HmacSha256 = Hmac<sha2::Sha256>;
+        let mut mac = <HmacSha256 as HmacKeyInit>::new_from_slice(&self.key)
+            .map_err(|e| anyhow!("Failed to initialize HMAC-SHA256: {}", e))?;
+        mac.update(DIRECTORY_IV_LABEL);
+        mac.update(diriv);
+        let digest = mac.finalize().into_bytes();
+        let half = |range: std::ops::Range<usize>| {
+            u64::from_le_bytes(digest[range].try_into().expect("8-byte slice"))
+        };
+        Ok((half(0..8), half(8..16)))
     }
     /// Standard stream decoding for EncFS.
     ///
@@ -1377,6 +1397,48 @@ mod tests {
     use crate::constants::{
         DEFAULT_ARGON2_MEMORY_COST, DEFAULT_ARGON2_PARALLELISM, DEFAULT_ARGON2_TIME_COST,
     };
+
+    fn aes256_with_key(key_byte: u8) -> SslCipher {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 256).unwrap();
+        cipher.set_key(&[key_byte; 32], &[0x55; 16]);
+        cipher
+    }
+
+    /// Pinned so the on-disk meaning of a sidecar cannot drift. The vector is
+    /// HMAC-SHA256 computed independently (Python `hmac`).
+    #[test]
+    fn directory_ivs_golden_vector() {
+        let cipher = aes256_with_key(0x44);
+        let diriv: Vec<u8> = (0..16).collect();
+        assert_eq!(
+            cipher.directory_ivs(&diriv).unwrap(),
+            (0xbf20_b180_1adf_d2c8, 0x9fd1_c614_a596_0779)
+        );
+    }
+
+    #[test]
+    fn directory_ivs_depend_on_sidecar_and_key() {
+        let cipher = aes256_with_key(0x44);
+        let a = cipher.directory_ivs(&[1u8; 16]).unwrap();
+        assert_eq!(a, cipher.directory_ivs(&[1u8; 16]).unwrap());
+        assert_ne!(a, cipher.directory_ivs(&[2u8; 16]).unwrap());
+        assert_ne!(a, aes256_with_key(0x45).directory_ivs(&[1u8; 16]).unwrap());
+        assert_ne!(a.0, a.1, "name and node IVs must be independent");
+
+        // The same plaintext name encodes differently in two directories.
+        let (name_iv_a, _) = a;
+        let (name_iv_b, _) = cipher.directory_ivs(&[2u8; 16]).unwrap();
+        assert_ne!(
+            cipher.encrypt_filename(b"same.txt", name_iv_a).unwrap().0,
+            cipher.encrypt_filename(b"same.txt", name_iv_b).unwrap().0
+        );
+    }
 
     /// Shared cipher configuration for all encryption mode tests
     struct CipherTestConfig {

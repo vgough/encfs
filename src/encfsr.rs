@@ -161,6 +161,13 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
+    // Directory IV mode keeps its IVs in sidecar files inside ciphertext
+    // directories, which reverse mode has no place to store.
+    if config.directory_iv {
+        eprintln!("{}", t!("encfsr.directory_iv_rejected"));
+        std::process::exit(1);
+    }
+
     // --- Password acquisition (matches main.rs pattern) ---
     let mut password = if let Some(prog) = args.extpass {
         use std::process::Command;

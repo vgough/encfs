@@ -107,6 +107,11 @@ pub trait Cipher: Send + Sync {
     /// Maximum plaintext name length that fits within `max_encoded_len`.
     fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32;
 
+    /// Derive `(name_iv, node_iv)` from a directory's `.encfs.diriv` sidecar
+    /// bytes (directory IV mode): the IV for the names inside the directory
+    /// and the IV for the directory's own extended attributes.
+    fn directory_ivs(&self, diriv: &[u8]) -> Result<(u64, u64)>;
+
     // --- xattr crypto (used by the filesystem layers) ---
 
     fn encrypt_xattr_name(&self, name: &[u8], path_iv: u64) -> Result<Vec<u8>>;
@@ -235,6 +240,10 @@ impl Cipher for SslCipher {
 
     fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32 {
         SslCipher::max_plaintext_name_len(self, max_encoded_len)
+    }
+
+    fn directory_ivs(&self, diriv: &[u8]) -> Result<(u64, u64)> {
+        SslCipher::directory_ivs(self, diriv)
     }
 
     fn encrypt_xattr_name(&self, name: &[u8], path_iv: u64) -> Result<Vec<u8>> {

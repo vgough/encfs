@@ -75,6 +75,10 @@ ctl.external_iv_chaining:
   en: "External IV chaining (paranoia mode): "
   fr: "Chaînage IV externe (mode paranoïa) : "
   de: "Externe IV-Verkettung (Paranoia-Modus): "
+ctl.directory_iv:
+  en: "Per-directory name IVs: "
+  fr: "IV de noms par répertoire : "
+  de: "Namens-IVs pro Verzeichnis: "
 ctl.block_mode:
   en: "Block mode: "
   fr: "Mode de bloc : "
@@ -427,3 +431,19 @@ ctl.new_config_created:
   en: "Created new EncFS V7 config at %{path}"
   fr: "Nouvelle configuration EncFS V7 créée dans %{path}"
   de: "Neue EncFS-V7-Konfiguration unter %{path} erstellt"
+ctl.error_failed_to_create_diriv:
+  en: "Failed to create the root directory IV file"
+  fr: "Échec de la création du fichier d'IV de répertoire racine"
+  de: "Erstellen der Verzeichnis-IV-Datei des Wurzelverzeichnisses fehlgeschlagen"
+ctl.error_directory_iv:
+  en: "Cannot read the directory IV of %{path}"
+  fr: "Impossible de lire l'IV de répertoire de %{path}"
+  de: "Verzeichnis-IV von %{path} kann nicht gelesen werden"
+ctl.diriv_unreadable:
+  en: "%{path} (directory IV unreadable: %{error}; names in this directory cannot be decoded)"
+  fr: "%{path} (IV de répertoire illisible : %{error} ; les noms de ce répertoire ne peuvent pas être décodés)"
+  de: "%{path} (Verzeichnis-IV nicht lesbar: %{error}; Namen in diesem Verzeichnis können nicht dekodiert werden)"
+ctl.warning_skipping_directory:
+  en: "Warning: Skipping directory: %{error}"
+  fr: "Avertissement : répertoire ignoré : %{error}"
+  de: "Warnung: Verzeichnis wird übersprungen: %{error}"

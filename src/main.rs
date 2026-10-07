@@ -219,6 +219,13 @@ fn main() -> Result<()> {
                 .canonicalize()
                 .with_context(|| format!("invalid mount point {}", args.mount_point.display()))?;
 
+            // In directory IV mode the root's sidecar must exist before any
+            // name can be resolved. Checked here so a damaged volume fails
+            // on the terminal rather than after daemonizing.
+            if config.directory_iv {
+                encfs::diriv::ensure_root(&root, !args.read_only)?;
+            }
+
             // On-demand mode: Touch ID once before the mount comes up, then
             // again whenever the idle lock engages.
             #[cfg(target_os = "macos")]

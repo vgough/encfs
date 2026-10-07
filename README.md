@@ -71,7 +71,7 @@ with EncFS 1.9.x, config formats V4/V5/V6) and newly created filesystems
 | Block encryption | AES or Blowfish in CBC mode with an optional per-block MAC of at most 8 bytes (encrypt-then-MAC, 64-bit MACs) | AES-256-GCM-SIV authenticated encryption with a 16-byte tag per block (misuse-resistant AEAD) |
 | Confidentiality + integrity | Separate cipher + weak MAC; integrity optional and truncated | Integrated AEAD; every block is authenticated |
 | Block overhead | Up to 8-byte MAC header per block | 16-byte tag per block (default block size 4080 of 4096 bytes) |
-| Filenames | Stream (CFB, multi-pass) or block mode, IV from HMAC of the name | Unchanged — still legacy stream/block filename modes for compatibility |
+| Filenames | Stream (CFB, multi-pass) or block mode, IV from HMAC of the name, chained from the parent path | Same stream/block filename modes (Base32 block names by default), but the IV for the names in each directory comes from a random per-directory `.encfs.diriv` file, so renaming a directory is a single rename (`encfsctl new --no-directory-iv` keeps path-chained IVs) |
 | Volume key wrap | Encrypted with the PBKDF2-derived user key | Wrapped with a 32-byte Argon2id-derived AEAD key |
 | Per-file IV (with `uniqueIV`) | 64-bit, stored in an 8-byte file header | 96-bit by default, stored in a 12-byte file header (`encfsctl new --legacy-file-iv` opts back into the 64-bit/8-byte form for interop with older tooling) |
 
@@ -180,7 +180,9 @@ an untrusted or cloud storage) without storing plaintext there.
 - Config should be created **without** per-file IV headers: use
   `encfsctl new --no-unique-iv ...`.  This is required by encfsr, including
   writable reverse mounts; authenticated V7 block encryption and IV chaining
-  remain supported. Headerless configs always use the 64-bit path-derived
+  remain supported. Such configs use path-chained filename IVs, since
+  reverse mode cannot use the per-directory IV files that are otherwise the
+  default. Headerless configs always use the 64-bit path-derived
   file IV — the 96-bit wide-header format only applies when `uniqueIV` is
   enabled, so it never applies to reverse mode.
 
@@ -239,9 +241,20 @@ Blowfish-CBC (legacy)       180.26 MB/s  (deprecated)
 ### Filesystem benchmark
 
 The repository includes an automated filesystem benchmark based on `mdtest`,
-which is distributed as part of IOR. It creates a fresh V7 EncFS filesystem,
-mounts it with the release binaries, runs all of mdtest's standard directory and
-file phases, unmounts it, and removes its temporary files. The benchmark requires:
+which is distributed as part of IOR. It measures fresh V7 EncFS filesystems of
+two kinds:
+
+- `no-unique-iv`: `encfsctl new --no-unique-iv` (headerless files and
+  path-chained names, the layout reverse mode uses). This is the variant the
+  baseline records, to track performance across changes.
+- `directory-iv`: the `encfsctl new` default (per-directory name IVs, per-file
+  IV headers). Each comparison run also measures this one and reports it
+  relative to the `no-unique-iv` result from the same run, to show the
+  overhead of the default layout.
+
+For each, it mounts the filesystem with the release binaries, runs all of
+mdtest's standard directory and file phases, unmounts it, and removes its
+temporary files. The benchmark requires:
 
 - a working FUSE installation and permission to mount a FUSE filesystem;
 - `mdtest` on `PATH` (or an explicit `MDTEST_BIN`);
@@ -257,8 +270,9 @@ task benchmark
 The default workload uses one rank, 1,000 items per iteration, five iterations,
 and 4,096-byte writes and reads. Results are normalized as mean operations per
 second for every operation in mdtest's `SUMMARY rate` table. Comparisons print
-every baseline/current/delta value, but performance changes are informational and
-never fail the command. Command failures, invalid output, mount/unmount failures,
+two tables, the `no-unique-iv` baseline against this run and the `directory-iv`
+overhead against this run's `no-unique-iv` numbers, but changes are
+informational and never fail the command. Command failures, invalid output, mount/unmount failures,
 and missing or incompatible baselines do fail with a diagnostic.
 
 Task variables can select another baseline or workload. For example:
@@ -275,7 +289,9 @@ The supported variables are `BENCH_BASELINE`, `BENCH_ITEMS`,
 and `BENCH_MOUNT_TIMEOUT_SECS`. The default baseline is
 `.benchmarks/filesystem-baseline.json`, which is ignored by Git. Baselines are
 machine-specific: compare results on the same host under similar load. The tool
-warns if the recorded host context or mdtest version differs.
+warns if the recorded host context or mdtest version differs. Baselines saved
+before they recorded the `no-unique-iv` variant measured a different
+configuration and must be saved again.
 
 ### FUSE Support
 
@@ -323,5 +339,32 @@ been [reports](https://github.com/vgough/encfs/issues/388)
 of a pathological interaction of IV chaining mode with Dropbox' rename
 detection.
 
-IV chaining is on by default, so it must be disabled when creating a new
-filesystem: `encfsctl new --no-chained-iv ...`
+New V7 filesystems already rename directories in place (per-directory name
+IVs), but external IV chaining is on by default, which turns a file rename
+into a copy. Disable it when creating a new filesystem:
+
+```bash
+encfsctl new --no-chained-iv ~/Dropbox/encrypted
+```
+
+This assumes the usual setup, where Dropbox only uploads what you change
+through the mount. While a filesystem with per-directory name IVs is mounted,
+EncFS caches each directory's IV, so every change to the encrypted directory
+must go through the mount.
+
+If Dropbox also writes into the encrypted directory while it is mounted (for
+example, applying changes made on another machine), a directory it renames,
+or removes and recreates, can keep a stale IV until the next mount: files in
+it can be misnamed, or written under the wrong IV and become unreadable. EncFS
+does not optimize for this setup, but supports it if per-directory name IVs
+are turned off as well:
+
+```bash
+encfsctl new --no-directory-iv --no-chained-iv ~/Dropbox/encrypted
+```
+
+Names then use no per-directory IVs and no IV chaining at all, so there is
+nothing to go stale and renames stay plain renames. The trade-off is that
+identical filenames in different directories encrypt to identical names.
+(`--no-directory-iv` alone would also be safe, but would chain names from
+the path again, turning every directory rename into a copy of its contents.)

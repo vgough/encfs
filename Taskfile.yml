@@ -78,7 +78,7 @@ tasks:
       - "{{.CARGO}} clippy --target aarch64-unknown-linux-gnu --all-targets --all-features -- -D warnings"
 
   benchmark:
-    desc: Run the EncFS filesystem benchmark and compare it with the local baseline
+    desc: Compare a no-unique-iv volume with the local baseline, and show directory-iv overhead relative to it
     deps: [build-release]
     preconditions:
       - sh: test -f '{{.BENCH_BASELINE}}'
@@ -93,7 +93,7 @@ tasks:
           {{.CARGO}} bench --bench filesystem
 
   benchmark-save-baseline:
-    desc: Run the EncFS filesystem benchmark and atomically replace the local baseline
+    desc: Benchmark a no-unique-iv volume and atomically replace the local baseline with it
     deps: [build-release]
     cmds:
       - |

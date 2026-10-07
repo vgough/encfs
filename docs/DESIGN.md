@@ -74,6 +74,12 @@ Technology
    cases with an initialization vector based on the HMAC checksum of the
    filename.
  
+   Legacy volumes chain the IV from the parent path, so a name depends on
+   every directory above it. New V7 volumes instead keep 16 random bytes in a
+   `.encfs.diriv` file in each encrypted directory and derive the IV for the
+   names inside it from them, so names depend only on their directory and a
+   directory rename is a single rename (see docs/adr/0002).
+
    Using a deterministic initial vector allows fast directory lookups, as no
    salt value needs to be looked up when converting from plaintext name to
    encrypted name.  It also means very similar filenames (such as "foo1" and

@@ -84,10 +84,23 @@ enum NameEncodingMode {
   NAME_ENCODING_MODE_BLOCK32 = 3;
 }
 
+// Where the IV for the names inside a directory comes from. The zero value is
+// what every config written before this field relied on, and is omitted on
+// the wire, so those configs keep their encoding and hash. Any non-zero value
+// requires minimum_reader_version >= 4, and any new value must come with a
+// further minimum_reader_version bump, so unaware readers fail closed.
+enum DirectoryIvMode {
+  // chained_name_iv decides: the IV chains from the parent path, or is 0.
+  DIRECTORY_IV_MODE_NONE = 0;
+  // A random 16-byte ".encfs.diriv" file in each ciphertext directory.
+  DIRECTORY_IV_MODE_SIDECAR = 1;
+}
+
 message NameEncoding {
   NameEncodingMode mode = 1;
   bool chained_name_iv = 2;
   bool external_iv_chaining = 3;
+  DirectoryIvMode directory_iv = 4;
 }
 
 // How extended attributes are stored. The zero value is what every config

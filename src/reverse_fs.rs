@@ -1441,6 +1441,7 @@ mod tests {
     fn reverse_fs(root: &Path) -> ReverseFs {
         let config_path = root.join(".encfs7");
         let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
         config.unique_iv = false;
         config.wide_file_iv = false;
         config.minimum_reader_version = config.required_v7_reader_version();

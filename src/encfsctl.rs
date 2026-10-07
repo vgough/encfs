@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use encfs::{
     config, constants, crypto::cipher::Cipher, crypto::file_iv::FileIv, crypto::ssl::SslCipher,
+    diriv,
 };
 use getrandom::fill as fill_random;
 use rpassword::prompt_password;
@@ -177,6 +178,10 @@ fn help_new_legacy_file_iv() -> String {
     t!("help.encfsctl.new_legacy_file_iv").to_string()
 }
 
+fn help_new_no_directory_iv() -> String {
+    t!("help.encfsctl.new_no_directory_iv").to_string()
+}
+
 fn help_speed() -> String {
     t!("help.encfsctl.speed").to_string()
 }
@@ -278,6 +283,8 @@ enum Command {
         no_unique_iv: bool,
         #[arg(long, help = help_new_legacy_file_iv())]
         legacy_file_iv: bool,
+        #[arg(long, help = help_new_no_directory_iv())]
+        no_directory_iv: bool,
     },
     #[command(about = help_speed())]
     Speed,
@@ -326,6 +333,7 @@ fn main() -> Result<()> {
             no_chained_iv,
             no_unique_iv,
             legacy_file_iv,
+            no_directory_iv,
         }) => cmd_new(
             &rootdir,
             extpass,
@@ -333,6 +341,7 @@ fn main() -> Result<()> {
             no_chained_iv,
             no_unique_iv,
             legacy_file_iv,
+            no_directory_iv,
         ),
         Some(Command::Speed) => cmd_speed(),
         None => {
@@ -544,6 +553,17 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
             color
         )
     );
+    if config.config_type == ConfigType::V7 {
+        println!(
+            "{}{}",
+            t!("ctl.directory_iv"),
+            paint(
+                &bool_str(config.directory_iv),
+                bool_highlight(config.directory_iv, def.directory_iv),
+                color
+            )
+        );
+    }
 
     let block_mode = config.block_mode();
     let block_mode_str = match (block_mode, config.cipher_iface.name.as_str()) {
@@ -1047,8 +1067,8 @@ fn cmd_showcruft(rootdir: &Path) -> Result<()> {
         rootdir,
         rootdir,
         cipher.as_ref(),
-        config.chained_name_iv,
-        0, // Initial IV for root directory
+        &config,
+        0, // Initial path IV for root directory
         &mut stats,
     )?;
 
@@ -1092,7 +1112,7 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
             if encoded_path.is_empty() {
                 continue;
             }
-            match decode_path_string(cipher.as_ref(), encoded_path, config.chained_name_iv) {
+            match decode_path_string(rootdir, cipher.as_ref(), &config, encoded_path) {
                 Ok(decoded) => println!("{}", decoded),
                 Err(e) => eprintln!(
                     "{}",
@@ -1103,7 +1123,7 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
     } else {
         // Decode command line arguments
         for name in names {
-            match decode_path_string(cipher.as_ref(), &name, config.chained_name_iv) {
+            match decode_path_string(rootdir, cipher.as_ref(), &config, &name) {
                 Ok(decoded) => println!("{}", decoded),
                 Err(e) => eprintln!("{}", t!("ctl.error_decoding", path = name, error = e)),
             }
@@ -1129,7 +1149,7 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
             if plaintext_path.is_empty() {
                 continue;
             }
-            match encode_path_string(cipher.as_ref(), plaintext_path, config.chained_name_iv) {
+            match encode_path_string(rootdir, cipher.as_ref(), &config, plaintext_path) {
                 Ok(encoded) => println!("{}", encoded),
                 Err(e) => eprintln!(
                     "{}",
@@ -1140,7 +1160,7 @@ fn cmd_encode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
     } else {
         // Encode command line arguments
         for name in names {
-            match encode_path_string(cipher.as_ref(), &name, config.chained_name_iv) {
+            match encode_path_string(rootdir, cipher.as_ref(), &config, &name) {
                 Ok(encoded) => println!("{}", encoded),
                 Err(e) => eprintln!("{}", t!("ctl.error_encoding", path = name, error = e)),
             }
@@ -1232,8 +1252,15 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
 
     // Encrypt the path to get the real directory path
     let plaintext_path = PathBuf::from(path);
-    let (encrypted_dir_path, dir_iv) =
+    let (encrypted_dir_path, path_iv) =
         encrypt_path_with_iv(rootdir, &plaintext_path, cipher.as_ref(), &config)?;
+    let dir_iv = diriv::names_iv(&config, cipher.as_ref(), &encrypted_dir_path, path_iv)
+        .with_context(|| {
+            t!(
+                "ctl.error_directory_iv",
+                path = encrypted_dir_path.display()
+            )
+        })?;
 
     let entries =
         std::fs::read_dir(&encrypted_dir_path).context(t!("ctl.error_failed_to_read_directory"))?;
@@ -1444,6 +1471,7 @@ fn cmd_new(
     no_chained_iv: bool,
     no_unique_iv: bool,
     legacy_file_iv: bool,
+    no_directory_iv: bool,
 ) -> Result<()> {
     // Create directory if it doesn't exist
     if !rootdir.exists() {
@@ -1475,7 +1503,15 @@ fn cmd_new(
     }
 
     let mut config = config::EncfsConfig::standard_v7();
+    if no_directory_iv || no_unique_iv || legacy_file_iv {
+        // Reverse mode (encfsr) has nowhere to keep per-directory IV files,
+        // and older readers can't interpret them, so the compatibility flags
+        // fall back to names chained from the path.
+        config.use_chained_name_iv();
+    }
     if no_chained_iv {
+        // Turns off external IV chaining, plus path chaining of names when
+        // per-directory IVs are off (the legacy unchained form).
         config.chained_name_iv = false;
         config.external_iv_chaining = false;
     }
@@ -1542,11 +1578,27 @@ fn cmd_new(
         .set_v7_key(&password, &volume_key_blob)
         .context(t!("ctl.error_failed_to_save_config"))?;
     zeroize::Zeroize::zeroize(&mut password);
+    if config.directory_iv {
+        create_root_sidecar(rootdir)?;
+    }
     config.save(&v7_path)?;
 
     println!("{}", t!("ctl.new_config_created", path = v7_path.display()));
 
     Ok(())
+}
+
+/// Writes the volume root's directory IV sidecar for a new volume, keeping an
+/// existing valid one (left by an earlier attempt that failed later on).
+fn create_root_sidecar(rootdir: &Path) -> Result<()> {
+    let bytes = diriv::new_sidecar().context(t!("ctl.error_failed_to_create_diriv"))?;
+    match diriv::create_sidecar(rootdir, &bytes) {
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            diriv::read_sidecar(rootdir).context(t!("ctl.error_failed_to_create_diriv"))?;
+            Ok(())
+        }
+        other => other.context(t!("ctl.error_failed_to_create_diriv")),
+    }
 }
 
 /// Returns the CPU brand string (e.g. "Apple M2" or "Intel(R) Core(TM)
@@ -1768,11 +1820,32 @@ fn export_directory(
     current_dest_dir: &Path,
     cipher: &dyn Cipher,
     config: &config::EncfsConfig,
-    dir_iv: u64,
+    path_iv: u64,
     fail_on_error: bool,
 ) -> Result<()> {
     use encfs::crypto::file::FileDecoder;
     use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
+
+    let dir_iv = match diriv::names_iv(config, cipher, current_encrypted_dir, path_iv) {
+        Ok(iv) => iv,
+        Err(e) => {
+            let err = anyhow::Error::new(e).context(t!(
+                "ctl.error_directory_iv",
+                path = current_encrypted_dir.display()
+            ));
+            if fail_on_error {
+                return Err(err);
+            }
+            eprintln!(
+                "{}",
+                t!(
+                    "ctl.warning_skipping_directory",
+                    error = format!("{:#}", err)
+                )
+            );
+            return Ok(());
+        }
+    };
 
     let entries = std::fs::read_dir(current_encrypted_dir)
         .context(t!("ctl.error_failed_to_read_directory"))?;
@@ -1854,7 +1927,7 @@ fn export_directory(
                 )?;
 
                 // Recurse into subdirectory
-                let next_iv = if config.chained_name_iv { new_iv } else { 0 };
+                let next_iv = diriv::child_path_iv(config, new_iv);
                 export_directory(
                     &entry.path(),
                     &dest_path,
@@ -1866,7 +1939,7 @@ fn export_directory(
             } else if metadata.is_symlink() {
                 // Handle symlinks - read and decrypt the link target
                 let link_target = std::fs::read_link(entry.path())?;
-                let link_path_iv = if config.chained_name_iv { new_iv } else { 0 };
+                let link_path_iv = diriv::child_path_iv(config, new_iv);
                 let decrypted_target_bytes = match encfs::symlink_target::decrypt(
                     cipher,
                     config,
@@ -1919,8 +1992,8 @@ fn export_directory(
                     }
 
                     // Calculate path IV for external IV chaining
-                    let path_iv = if config.external_iv_chaining && config.chained_name_iv {
-                        new_iv
+                    let path_iv = if config.external_iv_chaining {
+                        diriv::child_path_iv(config, new_iv)
                     } else {
                         0
                     };
@@ -1992,25 +2065,48 @@ fn export_directory(
     Ok(())
 }
 
-fn decode_path_string(cipher: &dyn Cipher, encoded_path: &str, chained_iv: bool) -> Result<String> {
-    // Decode an encrypted path by decoding each component with IV chaining across path components.
-    // Note: IV chaining is per-path-component, not across unrelated sibling names.
-    let mut out = PathBuf::new();
+/// Walks `path` from `rootdir` one component at a time, encrypting
+/// (`encrypt`) or decrypting each name under the IV for names in its parent
+/// directory. Returns the backing path, the plaintext path relative to the
+/// root, and the path IV of the final component.
+///
+/// In directory IV mode the parent directories' IVs are read from their
+/// sidecars, so every directory along the path must exist on disk.
+fn walk_path(
+    rootdir: &Path,
+    path: &Path,
+    cipher: &dyn Cipher,
+    config: &config::EncfsConfig,
+    encrypt: bool,
+) -> Result<(PathBuf, PathBuf, u64)> {
+    let mut backing = rootdir.to_path_buf();
+    let mut plaintext = PathBuf::new();
     let mut iv = 0u64;
 
-    for component in Path::new(encoded_path).components() {
+    for component in path.components() {
         match component {
             std::path::Component::RootDir => {}
             std::path::Component::CurDir => {}
             std::path::Component::Normal(name) => {
-                let name_str = name
-                    .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_invalid_utf8")))?;
-                let (decrypted_name_bytes, new_iv) = cipher.decrypt_filename(name_str, iv)?;
-                out.push(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
-                if chained_iv {
-                    iv = new_iv;
-                }
+                let names_iv = diriv::names_iv(config, cipher, &backing, iv)
+                    .with_context(|| t!("ctl.error_directory_iv", path = backing.display()))?;
+                let next_iv = if encrypt {
+                    let (encrypted_name, next_iv) =
+                        cipher.encrypt_filename(name.as_bytes(), names_iv)?;
+                    backing.push(encrypted_name);
+                    plaintext.push(name);
+                    next_iv
+                } else {
+                    let name_str = name
+                        .to_str()
+                        .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_invalid_utf8")))?;
+                    let (decrypted_name_bytes, next_iv) =
+                        cipher.decrypt_filename(name_str, names_iv)?;
+                    backing.push(name);
+                    plaintext.push(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
+                    next_iv
+                };
+                iv = diriv::child_path_iv(config, next_iv);
             }
             _ => {
                 return Err(anyhow::anyhow!(
@@ -2021,40 +2117,28 @@ fn decode_path_string(cipher: &dyn Cipher, encoded_path: &str, chained_iv: bool)
         }
     }
 
-    Ok(out.to_string_lossy().to_string())
+    Ok((backing, plaintext, iv))
+}
+
+fn decode_path_string(
+    rootdir: &Path,
+    cipher: &dyn Cipher,
+    config: &config::EncfsConfig,
+    encoded_path: &str,
+) -> Result<String> {
+    let (_, plaintext, _) = walk_path(rootdir, Path::new(encoded_path), cipher, config, false)?;
+    Ok(plaintext.to_string_lossy().to_string())
 }
 
 fn encode_path_string(
+    rootdir: &Path,
     cipher: &dyn Cipher,
+    config: &config::EncfsConfig,
     plaintext_path: &str,
-    chained_iv: bool,
 ) -> Result<String> {
-    // Encode a plaintext path by encoding each component with IV chaining across path components.
-    let mut out = PathBuf::new();
-    let mut iv = 0u64;
-
-    for component in Path::new(plaintext_path).components() {
-        match component {
-            std::path::Component::RootDir => {}
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(name) => {
-                let name_bytes = name.as_bytes();
-                let (encrypted_name, new_iv) = cipher.encrypt_filename(name_bytes, iv)?;
-                out.push(encrypted_name);
-                if chained_iv {
-                    iv = new_iv;
-                }
-            }
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "{}",
-                    t!("ctl.error_invalid_path_component")
-                ));
-            }
-        }
-    }
-
-    Ok(out.to_string_lossy().to_string())
+    let (backing, _, _) = walk_path(rootdir, Path::new(plaintext_path), cipher, config, true)?;
+    let encoded = backing.strip_prefix(rootdir).unwrap_or(&backing);
+    Ok(encoded.to_string_lossy().to_string())
 }
 
 fn encrypt_path_with_iv(
@@ -2063,31 +2147,8 @@ fn encrypt_path_with_iv(
     cipher: &dyn Cipher,
     config: &config::EncfsConfig,
 ) -> Result<(PathBuf, u64)> {
-    let mut encrypted_path = PathBuf::new();
-    let mut iv = 0u64;
-
-    for component in plaintext_path.components() {
-        match component {
-            std::path::Component::RootDir => {}
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(name) => {
-                let name_bytes = name.as_bytes();
-                let (encrypted_name, new_iv) = cipher.encrypt_filename(name_bytes, iv)?;
-                encrypted_path.push(encrypted_name);
-                if config.chained_name_iv {
-                    iv = new_iv;
-                }
-            }
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "{}",
-                    t!("ctl.error_invalid_path_component")
-                ));
-            }
-        }
-    }
-
-    Ok((rootdir.join(encrypted_path), iv))
+    let (backing, _, iv) = walk_path(rootdir, plaintext_path, cipher, config, true)?;
+    Ok((backing, iv))
 }
 
 /// Checks that the config can be represented as V7 and will pass validate() when loaded.
@@ -2248,6 +2309,12 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
             "  external_iv_chaining: {}\n",
             n.external_iv_chaining
         ));
+        let directory_iv = match encfs::config_proto::DirectoryIvMode::try_from(n.directory_iv) {
+            Ok(encfs::config_proto::DirectoryIvMode::None) => "NONE".to_string(),
+            Ok(encfs::config_proto::DirectoryIvMode::Sidecar) => "SIDECAR".to_string(),
+            Err(_) => format!("UNKNOWN({})", n.directory_iv),
+        };
+        out.push_str(&format!("  directory_iv: {}\n", directory_iv));
         out.push_str("}\n");
     }
 
@@ -2403,15 +2470,36 @@ fn find_undecodable_files(
     rootdir: &Path,
     current_dir: &Path,
     cipher: &dyn Cipher,
-    chained_iv: bool,
-    dir_iv: u64,
+    config: &config::EncfsConfig,
+    path_iv: u64,
     stats: &mut ShowcruftStats,
 ) -> Result<()> {
+    stats.dirs_checked += 1;
+    let mut showed_dir = false;
+
+    // A directory whose IV cannot be read has no decodable names at all, so
+    // report it as one issue and don't descend.
+    let dir_iv = match diriv::names_iv(config, cipher, current_dir, path_iv) {
+        Ok(iv) => iv,
+        Err(e) => {
+            let rel_path = current_dir.strip_prefix(rootdir).unwrap_or(current_dir);
+            println!("{}", t!("ctl.in_directory", path = rel_path.display()));
+            println!(
+                "{}",
+                t!(
+                    "ctl.diriv_unreadable",
+                    path = diriv::sidecar_path(current_dir).display(),
+                    error = e
+                )
+            );
+            stats.issues_found += 1;
+            return Ok(());
+        }
+    };
+
     let entries =
         std::fs::read_dir(current_dir).context(t!("ctl.error_failed_to_read_directory"))?;
 
-    stats.dirs_checked += 1;
-    let mut showed_dir = false;
     let mut dirs_to_recurse = Vec::new();
 
     for entry in entries {
@@ -2459,7 +2547,7 @@ fn find_undecodable_files(
                 if let Ok(file_type) = entry.file_type() {
                     if file_type.is_dir() {
                         // Store both the path and the IV for recursion
-                        let next_iv = if chained_iv { new_iv } else { 0 };
+                        let next_iv = diriv::child_path_iv(config, new_iv);
                         dirs_to_recurse.push((entry.path(), next_iv));
                     }
                 } else {
@@ -2484,7 +2572,7 @@ fn find_undecodable_files(
 
     // Recurse into successfully decoded directories
     for (dir_path, next_iv) in dirs_to_recurse {
-        find_undecodable_files(rootdir, &dir_path, cipher, chained_iv, next_iv, stats)?;
+        find_undecodable_files(rootdir, &dir_path, cipher, config, next_iv, stats)?;
     }
 
     Ok(())
@@ -2496,12 +2584,17 @@ fn resolve_file_path(
     cipher: &dyn Cipher,
     config: &config::EncfsConfig,
 ) -> Result<(PathBuf, u64)> {
-    // Try as plaintext path first
+    // Try as plaintext path first. In directory IV mode this fails outright
+    // when the plaintext directories don't exist, which just means the path
+    // isn't a plaintext one.
     let plaintext_path = PathBuf::from(path);
-    let (encrypted_path, path_iv) = encrypt_path_with_iv(rootdir, &plaintext_path, cipher, config)?;
-
-    if encrypted_path.exists() {
-        return Ok((encrypted_path, path_iv));
+    match encrypt_path_with_iv(rootdir, &plaintext_path, cipher, config) {
+        Ok((encrypted_path, path_iv)) if encrypted_path.exists() => {
+            return Ok((encrypted_path, path_iv));
+        }
+        Ok(_) => {}
+        Err(_) if config.directory_iv => {}
+        Err(e) => return Err(e),
     }
 
     // Try as encrypted path - need to decrypt to get IV
@@ -2509,7 +2602,7 @@ fn resolve_file_path(
     if encrypted_path.exists() {
         // Decrypt the path to get the IV
         let rel_path = PathBuf::from(path);
-        let (_, path_iv) = decrypt_path_with_iv(&rel_path, cipher, config)?;
+        let (_, path_iv) = decrypt_path_with_iv(rootdir, &rel_path, cipher, config)?;
         return Ok((encrypted_path, path_iv));
     }
 
@@ -2520,37 +2613,13 @@ fn resolve_file_path(
 }
 
 fn decrypt_path_with_iv(
+    rootdir: &Path,
     encrypted_path: &Path,
     cipher: &dyn Cipher,
     config: &config::EncfsConfig,
 ) -> Result<(PathBuf, u64)> {
-    let mut decrypted_path = PathBuf::new();
-    let mut iv = 0u64;
-
-    for component in encrypted_path.components() {
-        match component {
-            std::path::Component::RootDir => {}
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(name) => {
-                let name_str = name
-                    .to_str()
-                    .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_invalid_utf8")))?;
-                let (decrypted_name_bytes, new_iv) = cipher.decrypt_filename(name_str, iv)?;
-                decrypted_path.push(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
-                if config.chained_name_iv {
-                    iv = new_iv;
-                }
-            }
-            _ => {
-                return Err(anyhow::anyhow!(
-                    "{}",
-                    t!("ctl.error_invalid_path_component")
-                ));
-            }
-        }
-    }
-
-    Ok((decrypted_path, iv))
+    let (_, plaintext, iv) = walk_path(rootdir, encrypted_path, cipher, config, false)?;
+    Ok((plaintext, iv))
 }
 
 #[cfg(test)]
@@ -2606,6 +2675,7 @@ mod tests {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -2713,6 +2783,7 @@ mod tests {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -2797,6 +2868,7 @@ mod tests {
             unique_iv: false, // Critical for this test
             external_iv_chaining: false,
             chained_name_iv: false, // V4 usually false
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -2916,11 +2988,13 @@ mod tests {
         };
 
         // Run find_undecodable_files
+        let mut config = EncfsConfig::test_default();
+        config.chained_name_iv = false;
         find_undecodable_files(
             &temp_dir,
             &temp_dir,
             cipher.as_ref(),
-            false,
+            &config,
             dir_iv,
             &mut stats,
         )?;
@@ -3000,6 +3074,7 @@ mod tests {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -3079,6 +3154,7 @@ mod tests {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -3127,21 +3203,26 @@ mod tests {
             false,
             false,
             false,
+            false,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
         assert_eq!(config.name_iface.name, "nameio/block32");
         assert!(config.wide_file_iv);
         assert_eq!(config.header_size(), 12);
+        assert!(config.directory_iv);
+        assert!(!config.chained_name_iv);
+        assert!(config.external_iv_chaining);
+        diriv::read_sidecar(&dir)?;
         assert_eq!(
             config.minimum_reader_version,
-            constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+            constants::V7_DIRECTORY_IV_CONFIG_VERSION
         );
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
         assert_eq!(
             proto.minimum_reader_version,
-            constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+            constants::V7_DIRECTORY_IV_CONFIG_VERSION
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -3159,13 +3240,18 @@ mod tests {
             false,
             false,
             true, // legacy_file_iv
+            false,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
-        // Compatibility volumes stay readable by builds without Base32 names.
+        // Compatibility volumes stay readable by builds without Base32 names
+        // or per-directory IVs.
         assert_eq!(config.name_iface.name, "nameio/stream");
         assert!(!config.wide_file_iv);
         assert_eq!(config.header_size(), 8);
+        assert!(config.chained_name_iv);
+        assert!(!config.directory_iv);
+        assert!(!dir.join(diriv::SIDECAR_NAME).exists());
         assert_eq!(
             config.minimum_reader_version,
             constants::V7_BASE_CONFIG_VERSION
@@ -3191,12 +3277,17 @@ mod tests {
             false,
             true, // no_unique_iv
             false,
+            false,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
         assert!(!config.unique_iv);
         assert!(!config.wide_file_iv);
         assert_eq!(config.header_size(), 0);
+        // Reverse mode keeps no sidecars, so names chain from the path.
+        assert!(config.chained_name_iv);
+        assert!(!config.directory_iv);
+        assert!(!dir.join(diriv::SIDECAR_NAME).exists());
 
         let _ = fs::remove_dir_all(&dir);
         Ok(())
@@ -3213,6 +3304,7 @@ mod tests {
             false,
             true, // no_unique_iv
             true, // legacy_file_iv
+            false,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3238,6 +3330,7 @@ mod tests {
             false,
             false,
             false,
+            false,
         )?;
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
@@ -3250,13 +3343,201 @@ mod tests {
         assert!(
             raw.contains(&format!(
                 "minimum_reader_version: {} (effective: {})",
-                constants::V7_STORAGE_FORMATS_CONFIG_VERSION,
-                constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+                constants::V7_DIRECTORY_IV_CONFIG_VERSION,
+                constants::V7_DIRECTORY_IV_CONFIG_VERSION
             )),
             "raw info: {raw}"
         );
+        assert!(raw.contains("directory_iv: SIDECAR"), "raw info: {raw}");
 
         let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    fn new_with_flags(
+        name: &str,
+        no_chained_iv: bool,
+        no_directory_iv: bool,
+    ) -> Result<EncfsConfig> {
+        let dir = new_config_dir(name);
+        let _ = fs::remove_dir_all(&dir);
+        cmd_new(
+            &dir,
+            Some("echo test_password".to_string()),
+            false,
+            no_chained_iv,
+            false,
+            false,
+            no_directory_iv,
+        )?;
+        let config = EncfsConfig::load(&dir.join(".encfs7"))?;
+        assert_eq!(
+            config.directory_iv,
+            dir.join(diriv::SIDECAR_NAME).is_file(),
+            "a root sidecar exactly when directory IVs are on"
+        );
+        let _ = fs::remove_dir_all(&dir);
+        Ok(config)
+    }
+
+    /// `--no-directory-iv` restores the earlier chained default, and
+    /// `--no-chained-iv` turns off external IV chaining, plus path chaining
+    /// of names when directory IVs are off too.
+    #[test]
+    fn cmd_new_name_iv_flags() -> Result<()> {
+        let modes = |c: &EncfsConfig| (c.directory_iv, c.chained_name_iv, c.external_iv_chaining);
+
+        let chained = new_with_flags("no_directory_iv", false, true)?;
+        assert_eq!(modes(&chained), (false, true, true));
+        assert_eq!(
+            chained.minimum_reader_version,
+            constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+        );
+
+        let unchained_external = new_with_flags("no_chained_iv", true, false)?;
+        assert_eq!(modes(&unchained_external), (true, false, false));
+
+        let unchained = new_with_flags("no_chained_no_directory_iv", true, true)?;
+        assert_eq!(modes(&unchained), (false, false, false));
+        Ok(())
+    }
+
+    /// A default `new` writes the directory IV flag and the root sidecar, and
+    /// every tool resolves names the way the mounted filesystem does.
+    #[test]
+    fn directory_iv_tools_agree_with_filesystem() -> Result<()> {
+        use encfs::fs::EncFs;
+        use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
+
+        let dir = new_config_dir("directory_iv");
+        let export = new_config_dir("directory_iv_export");
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&export);
+        cmd_new(
+            &dir,
+            Some("echo test_password".to_string()),
+            false,
+            false,
+            false,
+            false,
+            false,
+        )?;
+
+        let config = EncfsConfig::load(&dir.join(".encfs7"))?;
+        assert!(config.directory_iv);
+        assert!(!config.chained_name_iv);
+        assert!(config.external_iv_chaining);
+        assert_eq!(
+            config.minimum_reader_version,
+            constants::V7_DIRECTORY_IV_CONFIG_VERSION
+        );
+        diriv::read_sidecar(&dir)?;
+        let raw = format_v7_config_raw(&EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?);
+        assert!(raw.contains("directory_iv: SIDECAR"), "raw info: {raw}");
+
+        // Populate the volume through the filesystem.
+        let mut efs = EncFs::new(
+            dir.clone(),
+            config.get_cipher("test_password")?,
+            config.clone(),
+        );
+        let root = efs.root_state();
+        let caller = Caller {
+            pid: 1,
+            uid: unsafe { libc::getuid() },
+            gid: unsafe { libc::getgid() },
+            umask: 0,
+        };
+        let at = |path: &'static str| PathNodeRef::new(Some(Path::new(path)), &root);
+        efs.mkdir(at("/"), "docs".as_ref(), 0o755, 0, &caller)
+            .unwrap();
+        efs.mkdir(at("/docs"), "sub".as_ref(), 0o755, 0, &caller)
+            .unwrap();
+        let (entry, opened) = efs
+            .create(
+                at("/docs/sub"),
+                "note.txt".as_ref(),
+                0o644,
+                0,
+                libc::O_CREAT | libc::O_RDWR,
+                &caller,
+            )
+            .unwrap();
+        let note = || PathNodeRef::new(Some(Path::new("/docs/sub/note.txt")), &entry.state);
+        efs.write(note(), &opened.handle, b"hello", 0, &caller)
+            .unwrap();
+        efs.release(note(), opened.handle, &caller).unwrap();
+        efs.symlink(
+            at("/docs"),
+            "link".as_ref(),
+            Path::new("sub/note.txt"),
+            &caller,
+        )
+        .unwrap();
+        let cipher = efs.cipher.as_ref();
+
+        // encode / decode
+        let (backing, entry_iv) = efs
+            .encrypt_path(Path::new("/docs/sub/note.txt"))
+            .map_err(|e| anyhow::anyhow!("errno {e}"))?;
+        let encoded = encode_path_string(&dir, cipher, &config, "docs/sub/note.txt")?;
+        assert_eq!(dir.join(&encoded), backing);
+        assert_eq!(
+            decode_path_string(&dir, cipher, &config, &encoded)?,
+            "docs/sub/note.txt"
+        );
+
+        // cat resolves plaintext and encrypted paths to the same entry IV.
+        assert_eq!(
+            resolve_file_path(&dir, "docs/sub/note.txt", cipher, &config)?,
+            (backing.clone(), entry_iv)
+        );
+        assert_eq!(
+            resolve_file_path(&dir, &encoded, cipher, &config)?,
+            (backing.clone(), entry_iv)
+        );
+
+        // ls lists /docs under the directory's own sidecar IV.
+        let (docs, path_iv) = encrypt_path_with_iv(&dir, Path::new("docs"), cipher, &config)?;
+        let names_iv = diriv::names_iv(&config, cipher, &docs, path_iv)?;
+        let mut listed: Vec<_> = fs::read_dir(&docs)?
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|n| !n.starts_with(".encfs"))
+            .map(|n| String::from_utf8(cipher.decrypt_filename(&n, names_iv).unwrap().0).unwrap())
+            .collect();
+        listed.sort();
+        assert_eq!(listed, ["link", "sub"]);
+
+        // export decrypts names, file contents and symlink targets, and
+        // carries no sidecars along.
+        fs::create_dir_all(&export)?;
+        export_directory(&dir, &export, cipher, &config, 0, true)?;
+        assert_eq!(fs::read(export.join("docs/sub/note.txt"))?, b"hello");
+        assert_eq!(
+            fs::read_link(export.join("docs/link"))?,
+            PathBuf::from("sub/note.txt")
+        );
+        assert!(!export.join("docs").join(diriv::SIDECAR_NAME).exists());
+
+        // showcruft: clean, then one issue for a directory whose sidecar is
+        // gone, without descending into it.
+        let new_stats = || ShowcruftStats {
+            files_checked: 0,
+            dirs_checked: 0,
+            issues_found: 0,
+        };
+        let mut stats = new_stats();
+        find_undecodable_files(&dir, &dir, cipher, &config, 0, &mut stats)?;
+        assert_eq!((stats.dirs_checked, stats.issues_found), (3, 0));
+
+        fs::remove_file(diriv::sidecar_path(backing.parent().unwrap()))?;
+        let mut stats = new_stats();
+        find_undecodable_files(&dir, &dir, cipher, &config, 0, &mut stats)?;
+        assert_eq!((stats.dirs_checked, stats.issues_found), (3, 1));
+        assert!(encode_path_string(&dir, cipher, &config, "docs/sub/note.txt").is_err());
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&export);
         Ok(())
     }
 }

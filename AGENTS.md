@@ -200,7 +200,7 @@ fn live_smoke_mount_unmount_standard() -> Result<()> {
 ## Important Gotchas and Non-Obvious Patterns
 
 ### 1. Config Format Compatibility
-- **V7 (Protobuf)**: Current default for new filesystems, `.encfs7` file. Argon2id KDF, AES-256-GCM key wrap, AES-GCM-SIV per-block crypto.
+- **V7 (Protobuf)**: Current default for new filesystems, `.encfs7` file. Argon2id KDF, AES-256-GCM key wrap, AES-GCM-SIV per-block crypto, per-directory name IVs.
 - **V6 (XML)**: `.encfs6.xml` file. Still fully supported (read/write).
 - **V5 (Binary)**: Legacy format, `.encfs5` file - READ ONLY (save not implemented)
 - **V4 (Binary)**: Older format, `.encfs4` file - READ ONLY
@@ -220,6 +220,27 @@ Two types of IV chaining affect how paths are encrypted:
   - Means file headers must be decrypted with path IV, not just 0
 
 **Critical**: When decrypting files in paranoia mode, you MUST use the path IV from `decrypt_path()`, not 0!
+
+**Directory IV mode** (V7 only, ADR 0002) is the default for new V7
+filesystems (`EncfsConfig::standard_v7()`, `encfsctl new`; opt out with
+`--no-directory-iv` or `use_chained_name_iv()`, which reverse-mode configs
+need). It replaces `chained_name_iv` (the two are mutually exclusive): each ciphertext
+directory holds a `.encfs.diriv` sidecar whose bytes set the IV for the names
+inside it (`src/diriv.rs`). The IV `encrypt_path` returns for a directory is
+then its *entry IV*, not the IV for its children; use `names_iv` /
+`diriv::names_iv` to list or walk a directory. Directory xattrs use the
+sidecar's `node_iv`. `encfsr` rejects these configs.
+The IV cache in `EncFs` (`diriv::DirIvCache`) never rereads sidecars, on the
+premise that nothing modifies the backing directory behind a live mount; any
+code path that creates, removes, or moves a directory must update it
+(`insert`, `forget_tree`, `rename_tree`) under the sidecar write lock.
+That keeps entries true of each *path*, but a directory can still be replaced
+at its path mid-operation. Code that writes an IV-dependent name into a
+directory must bind the IV to that directory: resolve it with
+`EncFs::new_entry` and create through the returned `NewEntry` (`*at` calls on
+the pinned parent, `ENOENT` if it was replaced), or encrypt the name under the
+sidecar write lock (`encrypt_name_in`, as mkdir and directory rename do).
+Don't encrypt a name with `encrypt_path` and then create it by path.
 
 ### 3. File Structure
 Encrypted files share the header layout `[Header: 8 bytes if unique_iv] [Block 0] [Block 1] ... [Block N]`,
@@ -276,6 +297,7 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
 - `key_size` must be positive and multiple of 8
 - `block_size` must be positive and larger than the block's crypto overhead
 - `block_mac_bytes` must be 0-8 for legacy formats, or exactly 16 (the AES-GCM-SIV tag) for V7
+- `directory_iv` requires V7, excludes `chained_name_iv`, and needs `minimum_reader_version >= 4`
 
 ### 11. Logging
 - Uses `env_logger` crate
