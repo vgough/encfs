@@ -35,8 +35,6 @@ pub type Sidecar = [u8; SIDECAR_LEN];
 pub struct DirIvs {
     /// IV for the names inside the directory.
     pub name_iv: u64,
-    /// IV for the directory's own extended attributes.
-    pub node_iv: u64,
 }
 
 /// Why a directory's IVs could not be determined.
@@ -166,10 +164,10 @@ pub fn create_sidecar(dir: &Path, bytes: &Sidecar) -> io::Result<()> {
 
 /// The IVs a sidecar's contents yield.
 pub fn derive(cipher: &dyn Cipher, bytes: &Sidecar) -> Result<DirIvs, Error> {
-    let (name_iv, node_iv) = cipher
+    let (name_iv, _reserved) = cipher
         .directory_ivs(bytes)
         .map_err(|e| Error::Io(io::Error::other(e.to_string())))?;
-    Ok(DirIvs { name_iv, node_iv })
+    Ok(DirIvs { name_iv })
 }
 
 /// Turns a failed sidecar read into an [`Error`], checking whether the
@@ -224,25 +222,6 @@ pub fn child_path_iv(config: &EncfsConfig, next_iv: u64) -> u64 {
         next_iv
     } else {
         0
-    }
-}
-
-/// The IV for the extended attributes of an entry whose path IV is
-/// `entry_iv`: a directory's own `node_iv` in directory IV mode (so its
-/// attributes survive renames), else `entry_iv`.
-pub fn xattr_iv(
-    config: &EncfsConfig,
-    cipher: &dyn Cipher,
-    backing_path: &Path,
-    entry_iv: u64,
-) -> Result<u64, Error> {
-    if !config.directory_iv {
-        return Ok(entry_iv);
-    }
-    match fs::symlink_metadata(backing_path) {
-        Ok(m) if m.is_dir() => Ok(load(cipher, backing_path)?.node_iv),
-        Ok(_) => Ok(entry_iv),
-        Err(e) => Err(Error::NoDirectory(e)),
     }
 }
 
@@ -501,7 +480,6 @@ mod tests {
         let nowhere = Path::new("/nonexistent/encfs/diriv");
         assert_eq!(names_iv(&config, cipher.as_ref(), nowhere, 42).unwrap(), 42);
         assert_eq!(child_path_iv(&config, 42), 42);
-        assert_eq!(xattr_iv(&config, cipher.as_ref(), nowhere, 42).unwrap(), 42);
         config.chained_name_iv = false;
         assert_eq!(child_path_iv(&config, 42), 0);
         config.directory_iv = true;
@@ -511,10 +489,7 @@ mod tests {
 
     fn ivs(n: u64) -> CachedDir {
         CachedDir {
-            ivs: DirIvs {
-                name_iv: n,
-                node_iv: n + 100,
-            },
+            ivs: DirIvs { name_iv: n },
             id: (1, n),
         }
     }

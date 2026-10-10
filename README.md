@@ -71,7 +71,7 @@ with EncFS 1.9.x, config formats V4/V5/V6) and newly created filesystems
 | Block encryption | AES or Blowfish in CBC mode with an optional per-block MAC of at most 8 bytes (encrypt-then-MAC, 64-bit MACs) | AES-256-GCM-SIV authenticated encryption with a 16-byte tag per block (misuse-resistant AEAD) |
 | Confidentiality + integrity | Separate cipher + weak MAC; integrity optional and truncated | Integrated AEAD; every block is authenticated |
 | Block overhead | Up to 8-byte MAC header per block | 16-byte tag per block (default block size 4080 of 4096 bytes) |
-| Filenames | Stream (CFB, multi-pass) or block mode, IV from HMAC of the name, chained from the parent path | Same stream/block filename modes (Base32 block names by default), but the IV for the names in each directory comes from a random per-directory `.encfs.diriv` file, so renaming a directory is a single rename (`encfsctl new --no-directory-iv` keeps path-chained IVs) |
+| Filenames | Stream (CFB, multi-pass) or block mode, IV from HMAC of the name, chained from the parent path | Same stream/block filename modes (Base32 block names by default on case-insensitive filesystems, stream names elsewhere), but the IV for the names in each directory comes from a random per-directory `.encfs.diriv` file, so renaming a directory is a single rename (`encfsctl new --no-directory-iv` keeps path-chained IVs) |
 | Volume key wrap | Encrypted with the PBKDF2-derived user key | Wrapped with a 32-byte Argon2id-derived AEAD key |
 | Per-file IV (with `uniqueIV`) | 64-bit, stored in an 8-byte file header | 96-bit by default, stored in a 12-byte file header (`encfsctl new --legacy-file-iv` opts back into the 64-bit/8-byte form for interop with older tooling) |
 
@@ -161,6 +161,19 @@ What does and does not count:
 - Requests from background services (Spotlight, Time Machine, Quick Look
   thumbnails, XProtect, and similar) never count as activity or prompt; while
   locked they are refused. Add more with `--idle-ignore <process-name>`.
+
+### Skipping macOS metadata attributes (macOS)
+
+```bash
+encfs --no-apple-xattr ~/encrypted ~/mount
+```
+
+macOS tags every file it creates with `com.apple.*` extended attributes
+(provenance, Finder info) and reads them back on open. `--no-apple-xattr`
+mounts with macFUSE's `noapplexattr`, so those attributes are refused before
+they reach encfs: file creation and reads get noticeably faster, but
+quarantine flags, Finder tags and similar metadata are not kept on the volume.
+Other extended attributes are unaffected.
 
 
 ## Reverse encryption mode (encfsr)

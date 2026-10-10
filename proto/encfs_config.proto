@@ -108,11 +108,18 @@ message NameEncoding {
 // minimum_reader_version >= 3, and any new value must come with a further
 // minimum_reader_version bump, so unaware readers fail closed.
 enum XattrFormat {
-  // Names and values encrypted, names stored under "user.encfs.".
-  XATTR_FORMAT_ENCRYPTED = 0;
+  // Names and values encrypted under the entry's path IV, names stored under
+  // "user.encfs.". No longer supported: readers treat it as
+  // XATTR_FORMAT_ENCRYPTED_INODE_IV and warn, so attributes stored this way
+  // can no longer be read.
+  XATTR_FORMAT_ENCRYPTED_PATH_IV = 0;
   // Names and values passed through unchanged, as V4-V6 and C++ EncFS do.
   // Set when a legacy volume is upgraded in place.
   XATTR_FORMAT_PLAINTEXT = 1;
+  // Names and values encrypted, names stored under "user.encfs.", under an IV
+  // derived from 16 random bytes stored on the same inode as
+  // "user.encfs.~iv". Requires minimum_reader_version >= 5.
+  XATTR_FORMAT_ENCRYPTED_INODE_IV = 2;
 }
 
 // How symlink targets are stored. Same versioning rules as XattrFormat.

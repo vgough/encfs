@@ -24,3 +24,7 @@ lib.diriv_root_invalid:
   en: "The volume root's directory IV file (%{path}) is damaged: it must be a regular file of exactly 16 bytes."
   fr: "Le fichier d'IV de répertoire de la racine du volume (%{path}) est endommagé : il doit s'agir d'un fichier ordinaire d'exactement 16 octets."
   de: "Die Verzeichnis-IV-Datei des Volume-Wurzelverzeichnisses (%{path}) ist beschädigt: Sie muss eine reguläre Datei von genau 16 Bytes sein."
+lib.legacy_xattr_format:
+  en: "warning: extended attributes are unavailable on this filesystem. Its config uses the extended attribute format of EncFS versions before 2.0.0-beta.7, which this version does not support. Existing attributes are left untouched, so an earlier version can still read them."
+  fr: "avertissement : les attributs étendus ne sont pas disponibles sur ce système de fichiers. Sa configuration utilise le format d'attributs étendus des versions d'EncFS antérieures à 2.0.0-beta.7, que cette version ne prend pas en charge. Les attributs existants sont laissés intacts, afin qu'une version antérieure puisse toujours les lire."
+  de: "Warnung: Erweiterte Attribute sind auf diesem Dateisystem nicht verfügbar. Seine Konfiguration verwendet das Format für erweiterte Attribute von EncFS-Versionen vor 2.0.0-beta.7, das diese Version nicht unterstützt. Vorhandene Attribute bleiben unverändert, sodass eine frühere Version sie weiterhin lesen kann."

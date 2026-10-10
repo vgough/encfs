@@ -150,6 +150,9 @@ fn main() -> Result<()> {
         );
         std::process::exit(1);
     });
+    if let Some(warning) = config.legacy_xattr_warning() {
+        eprintln!("{}", warning);
+    }
 
     // encfsr exposes the config inside the virtual filesystem as ".encfs7", so it must be a
     // true V7 protobuf config on disk. Reject legacy V4/V5/V6 configs here.
@@ -233,6 +236,8 @@ fn main() -> Result<()> {
         );
         std::process::exit(1);
     });
+    #[cfg(target_os = "macos")]
+    let xattrs_available = config.xattrs_available();
     let fs = encfs::reverse_fs::ReverseFs::new(
         args.source,
         cipher,
@@ -251,6 +256,12 @@ fn main() -> Result<()> {
         default_permissions: true,
         ..typed_fuse::mount::MountConfig::new("encfsr")
     };
+    // Where extended attributes are unavailable, macFUSE would store them in
+    // AppleDouble `._` files instead; refuse those (see `encfs`).
+    #[cfg(target_os = "macos")]
+    if !xattrs_available {
+        mount_config.extra_options.push("noappledouble".to_string());
+    }
 
     // Parse user-provided "-o option[,option...]" pairs into raw option
     // words; MountConfig knows which words map to its fields and which pass

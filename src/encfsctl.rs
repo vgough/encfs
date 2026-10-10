@@ -182,6 +182,10 @@ fn help_new_no_directory_iv() -> String {
     t!("help.encfsctl.new_no_directory_iv").to_string()
 }
 
+fn help_new_name_encoding() -> String {
+    t!("help.encfsctl.new_name_encoding").to_string()
+}
+
 fn help_speed() -> String {
     t!("help.encfsctl.speed").to_string()
 }
@@ -285,6 +289,8 @@ enum Command {
         legacy_file_iv: bool,
         #[arg(long, help = help_new_no_directory_iv())]
         no_directory_iv: bool,
+        #[arg(long, value_enum, default_value_t = NameEncodingChoice::Auto, help = help_new_name_encoding())]
+        name_encoding: NameEncodingChoice,
     },
     #[command(about = help_speed())]
     Speed,
@@ -334,6 +340,7 @@ fn main() -> Result<()> {
             no_unique_iv,
             legacy_file_iv,
             no_directory_iv,
+            name_encoding,
         }) => cmd_new(
             &rootdir,
             extpass,
@@ -342,6 +349,7 @@ fn main() -> Result<()> {
             no_unique_iv,
             legacy_file_iv,
             no_directory_iv,
+            name_encoding,
         ),
         Some(Command::Speed) => cmd_speed(),
         None => {
@@ -358,7 +366,7 @@ fn main() -> Result<()> {
 }
 
 /// How a setting shown by `info` compares to the current recommended defaults.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Highlight {
     /// Matches what a freshly created filesystem would use — shown in green.
     Default,
@@ -397,12 +405,116 @@ fn bool_highlight(value: bool, default: bool) -> Highlight {
     }
 }
 
+/// How `info` describes a volume's extended attribute storage. The per-inode
+/// format new filesystems use is the default; the retired path-IV format,
+/// whose stored attributes this build can't read, and unencrypted storage
+/// (V4-V6, or a V7 volume upgraded from one) are flagged.
+fn xattr_format_display(config: &config::EncfsConfig) -> (String, Highlight) {
+    use config::{ConfigType, XattrFormat};
+    match (config.config_type, config.xattr_format) {
+        (ConfigType::V7, XattrFormat::Encrypted) => (
+            t!("ctl.xattr_format_inode_iv").to_string(),
+            Highlight::Default,
+        ),
+        (ConfigType::V7, XattrFormat::EncryptedPathIv) => (
+            t!("ctl.xattr_format_path_iv").to_string(),
+            Highlight::Deprecated,
+        ),
+        _ => (
+            t!("ctl.xattr_format_plaintext").to_string(),
+            Highlight::Deprecated,
+        ),
+    }
+}
+
+/// How `info` describes where filename IVs come from. `chained_name_iv` and
+/// `directory_iv` are mutually exclusive, so they read as one setting. Chained
+/// names are what V4-V6 and reverse mode can use, so only having no name IV
+/// at all is flagged.
+fn name_iv_display(config: &config::EncfsConfig) -> (String, Highlight) {
+    if config.directory_iv {
+        (t!("ctl.name_iv_sidecar").to_string(), Highlight::Default)
+    } else if config.chained_name_iv {
+        (t!("ctl.name_iv_chained").to_string(), Highlight::Plain)
+    } else {
+        (t!("ctl.name_iv_none").to_string(), Highlight::Deprecated)
+    }
+}
+
+/// How `info` describes the per-file IV header: absent without `unique_iv`,
+/// otherwise 96 bits with `wide_file_iv` and 64 bits without. A 64-bit header
+/// is only flagged where the 96-bit one was an option (AES-GCM-SIV).
+fn file_iv_display(config: &config::EncfsConfig) -> (String, Highlight) {
+    use encfs::crypto::block::BlockMode;
+    if !config.unique_iv {
+        return (
+            t!("ctl.file_iv_header_none").to_string(),
+            Highlight::Deprecated,
+        );
+    }
+    let bits = if config.wide_file_iv { 96 } else { 64 };
+    let hl = if config.wide_file_iv {
+        Highlight::Default
+    } else if config.block_mode() == BlockMode::AesGcmSiv {
+        Highlight::Deprecated
+    } else {
+        Highlight::Plain
+    };
+    (t!("ctl.file_iv_header_bits", bits = bits).to_string(), hl)
+}
+
+/// How `info` describes external IV chaining. It binds file IVs to the path
+/// IV, which is always 0 when names have no IV, so the setting is then noted
+/// as having no effect.
+fn external_iv_display(config: &config::EncfsConfig) -> (String, Highlight) {
+    let def = config::EncfsConfig::standard_v7().external_iv_chaining;
+    if !config.external_iv_chaining {
+        (t!("ctl.bool_false").to_string(), bool_highlight(false, def))
+    } else if config.chained_name_iv || config.directory_iv {
+        (t!("ctl.bool_true").to_string(), bool_highlight(true, def))
+    } else {
+        (
+            t!("ctl.external_iv_no_effect").to_string(),
+            Highlight::Deprecated,
+        )
+    }
+}
+
+/// How `info` describes the block mode together with its per-block MAC or tag,
+/// whose size the mode determines (AES-GCM-SIV always has a 16-byte tag).
+fn block_mode_display(config: &config::EncfsConfig) -> (String, Highlight) {
+    use encfs::crypto::block::BlockMode;
+    let bytes = config.block_mac_bytes;
+    if config.block_mode() == BlockMode::AesGcmSiv {
+        let line = format!(
+            "{} ({})",
+            t!("ctl.block_mode_aes_gcm_siv"),
+            t!("ctl.block_tag", bytes = bytes)
+        );
+        return (line, Highlight::Default);
+    }
+    let mode = match config.cipher_iface.name.as_str() {
+        "ssl/aes" => t!("ctl.block_mode_legacy_aes"),
+        "ssl/blowfish" => t!("ctl.block_mode_legacy_blowfish"),
+        _ => t!("ctl.block_mode_legacy"),
+    };
+    let mac = if bytes > 0 {
+        t!("ctl.block_mac", bytes = bytes)
+    } else {
+        t!("ctl.block_mac_none")
+    };
+    (format!("{mode} ({mac})"), Highlight::Deprecated)
+}
+
 fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     use config::ConfigType;
 
     let config_path = find_config_file(rootdir)?;
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
+    if let Some(warning) = config.legacy_xattr_warning() {
+        eprintln!("{}", warning);
+    }
 
     if raw {
         if config.config_type != ConfigType::V7 {
@@ -508,10 +620,12 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     let key_line = t!("ctl.key_size", size = config.key_size);
     println!("  {}", paint(&key_line, key_hl, color));
 
-    let name_hl = if config.name_iface.name == def.name_iface.name
-        && config.name_iface.major == def.name_iface.major
-        && config.name_iface.minor == def.name_iface.minor
-    {
+    // `new` picks either encoding, depending on the backing filesystem.
+    let name_hl = if [block32_name_iface(), stream_name_iface()].iter().any(|d| {
+        config.name_iface.name == d.name
+            && config.name_iface.major == d.major
+            && config.name_iface.minor == d.minor
+    }) {
         Highlight::Default
     } else {
         Highlight::Plain
@@ -524,67 +638,16 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     );
     println!("{}", paint(&name_line, name_hl, color));
 
-    // Boolean security settings: matching the current default is green, otherwise red.
-    let bool_str = |v: bool| t!(if v { "ctl.bool_true" } else { "ctl.bool_false" });
-    println!(
-        "{}{}",
-        t!("ctl.unique_iv_header"),
-        paint(
-            &bool_str(config.unique_iv),
-            bool_highlight(config.unique_iv, def.unique_iv),
-            color
-        )
-    );
-    println!(
-        "{}{}",
-        t!("ctl.chained_name_iv"),
-        paint(
-            &bool_str(config.chained_name_iv),
-            bool_highlight(config.chained_name_iv, def.chained_name_iv),
-            color
-        )
-    );
-    println!(
-        "{}{}",
-        t!("ctl.external_iv_chaining"),
-        paint(
-            &bool_str(config.external_iv_chaining),
-            bool_highlight(config.external_iv_chaining, def.external_iv_chaining),
-            color
-        )
-    );
-    if config.config_type == ConfigType::V7 {
-        println!(
-            "{}{}",
-            t!("ctl.directory_iv"),
-            paint(
-                &bool_str(config.directory_iv),
-                bool_highlight(config.directory_iv, def.directory_iv),
-                color
-            )
-        );
+    // IV and block settings: each line folds together options that are
+    // mutually exclusive or only meaningful in combination.
+    for (label, (value, hl)) in [
+        (t!("ctl.name_iv_mode"), name_iv_display(&config)),
+        (t!("ctl.file_iv_header"), file_iv_display(&config)),
+        (t!("ctl.external_iv_chaining"), external_iv_display(&config)),
+        (t!("ctl.block_mode"), block_mode_display(&config)),
+    ] {
+        println!("{}{}", label, paint(&value, hl, color));
     }
-
-    let block_mode = config.block_mode();
-    let block_mode_str = match (block_mode, config.cipher_iface.name.as_str()) {
-        (encfs::crypto::block::BlockMode::AesGcmSiv, _) => t!("ctl.block_mode_aes_gcm_siv"),
-        (encfs::crypto::block::BlockMode::Legacy, "ssl/aes") => t!("ctl.block_mode_legacy_aes"),
-        (encfs::crypto::block::BlockMode::Legacy, "ssl/blowfish") => {
-            t!("ctl.block_mode_legacy_blowfish")
-        }
-        _ => t!("ctl.block_mode_legacy"),
-    };
-    let is_default_block_mode = block_mode == encfs::crypto::block::BlockMode::AesGcmSiv;
-    let block_mode_hl = if is_default_block_mode {
-        Highlight::Default
-    } else {
-        Highlight::Deprecated
-    };
-    println!(
-        "{}{}",
-        t!("ctl.block_mode"),
-        paint(&block_mode_str, block_mode_hl, color)
-    );
 
     let block_size_hl = if config.block_size == def.block_size {
         Highlight::Default
@@ -593,29 +656,6 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
     };
     let block_size_line = t!("ctl.block_size", size = config.block_size);
     println!("{}", paint(&block_size_line, block_size_hl, color));
-
-    // The MAC size is tied to the block mode; the AES-GCM-SIV default uses a 16-byte tag.
-    let block_mac_hl = if is_default_block_mode {
-        Highlight::Default
-    } else {
-        Highlight::Plain
-    };
-    let block_mac_line = t!("ctl.block_mac", bytes = config.block_mac_bytes);
-    println!("{}", paint(&block_mac_line, block_mac_hl, color));
-
-    if block_mode == encfs::crypto::block::BlockMode::AesGcmSiv {
-        let file_iv_width = if config.wide_file_iv {
-            t!("ctl.file_iv_width_wide")
-        } else {
-            t!("ctl.file_iv_width_narrow")
-        };
-        let file_iv_hl = bool_highlight(config.wide_file_iv, def.wide_file_iv);
-        println!(
-            "{}{}",
-            t!("ctl.file_iv_width"),
-            paint(&file_iv_width, file_iv_hl, color)
-        );
-    }
 
     if config.config_type == ConfigType::V7 {
         println!(
@@ -628,6 +668,7 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         );
     }
 
+    let bool_str = |v: bool| t!(if v { "ctl.bool_true" } else { "ctl.bool_false" });
     println!(
         "{}{}",
         t!("ctl.allow_holes"),
@@ -638,14 +679,11 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         )
     );
 
+    let (xattr_label, xattr_hl) = xattr_format_display(&config);
     println!(
         "{}{}",
-        t!("ctl.encrypted_xattrs"),
-        paint(
-            &bool_str(config.encrypts_xattrs()),
-            bool_highlight(config.encrypts_xattrs(), def.encrypts_xattrs()),
-            color
-        )
+        t!("ctl.xattr_format"),
+        paint(&xattr_label, xattr_hl, color)
     );
 
     let legacy_links = config.uses_legacy_symlink_targets();
@@ -1464,6 +1502,86 @@ fn cmd_autopasswd(rootdir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Filename encoding requested with `encfsctl new --name-encoding`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum NameEncodingChoice {
+    // Chosen by `new_name_iface` from the flags and the backing filesystem
+    // (not a doc comment: clap would show it untranslated in --help).
+    Auto,
+    Stream,
+    Block32,
+}
+
+fn stream_name_iface() -> config::Interface {
+    config::Interface {
+        name: "nameio/stream".to_string(),
+        major: 2,
+        minor: 0,
+        age: 0,
+    }
+}
+
+fn block32_name_iface() -> config::Interface {
+    config::Interface {
+        name: "nameio/block32".to_string(),
+        major: 4,
+        minor: 0,
+        age: 0,
+    }
+}
+
+/// The filename encoding `new` writes. `Auto` keeps the compatibility flags
+/// (`compat`) on stream names, since the older builds they target predate
+/// Base32 names. Otherwise it asks `case_sensitive` whether the backing
+/// filesystem distinguishes case: Base32 block names survive case folding,
+/// where two Base64 stream names differing only in case would collide, and
+/// the shorter stream names are safe elsewhere. An unknown answer picks
+/// Base32, which is safe either way.
+fn new_name_iface(
+    choice: NameEncodingChoice,
+    compat: bool,
+    case_sensitive: impl FnOnce() -> Option<bool>,
+) -> config::Interface {
+    match choice {
+        NameEncodingChoice::Stream => stream_name_iface(),
+        NameEncodingChoice::Block32 => block32_name_iface(),
+        NameEncodingChoice::Auto if compat => stream_name_iface(),
+        NameEncodingChoice::Auto => match case_sensitive() {
+            Some(true) => stream_name_iface(),
+            Some(false) | None => block32_name_iface(),
+        },
+    }
+}
+
+/// Whether the filesystem holding `dir` distinguishes names by case, found
+/// by creating a file in `dir` and looking it up under another case. `None`
+/// when the probe can't run (e.g. `dir` isn't writable).
+fn dir_is_case_sensitive(dir: &Path) -> Option<bool> {
+    use std::os::unix::fs::MetadataExt;
+
+    let mut suffix = [0u8; 8];
+    fill_random(&mut suffix).ok()?;
+    let hex: String = suffix.iter().map(|b| format!("{b:02x}")).collect();
+    let lower = dir.join(format!(".encfs-case-probe-{hex}"));
+    let upper = dir.join(format!(".ENCFS-CASE-PROBE-{}", hex.to_uppercase()));
+
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lower)
+        .ok()?;
+    let probe = file.metadata();
+    drop(file);
+    let result = match (probe, std::fs::symlink_metadata(&upper)) {
+        (Ok(probe), Ok(found)) => Some(probe.dev() != found.dev() || probe.ino() != found.ino()),
+        (Ok(_), Err(e)) if e.kind() == io::ErrorKind::NotFound => Some(true),
+        _ => None,
+    };
+    let _ = std::fs::remove_file(&lower);
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
 fn cmd_new(
     rootdir: &Path,
     extpass: Option<String>,
@@ -1472,6 +1590,7 @@ fn cmd_new(
     no_unique_iv: bool,
     legacy_file_iv: bool,
     no_directory_iv: bool,
+    name_encoding: NameEncodingChoice,
 ) -> Result<()> {
     // Create directory if it doesn't exist
     if !rootdir.exists() {
@@ -1524,18 +1643,21 @@ fn cmd_new(
         config.unique_iv = false;
         config.wide_file_iv = false;
     }
-    if legacy_file_iv || no_unique_iv {
-        // The compatibility flags keep the volume readable by older builds,
-        // which predate Base32 names, so stay on stream naming.
-        config.name_iface = config::Interface {
-            name: "nameio/stream".to_string(),
-            major: 2,
-            minor: 0,
-            age: 0,
-        };
-    }
-    // Otherwise the compatibility flags would still produce a config that
-    // older readers reject on the minimum-reader-version field.
+    // The compatibility flags keep the on-disk name and file formats of
+    // older builds, unless a name encoding is asked for. The per-inode xattr
+    // format still applies, so opening the volume takes a reader that
+    // implements it.
+    config.name_iface = new_name_iface(name_encoding, legacy_file_iv || no_unique_iv, || {
+        let sensitive = dir_is_case_sensitive(rootdir);
+        let path = rootdir.display();
+        match sensitive {
+            Some(true) => println!("{}", t!("ctl.new_case_sensitive", path = path)),
+            Some(false) => println!("{}", t!("ctl.new_case_insensitive", path = path)),
+            None => eprintln!("{}", t!("ctl.new_case_unknown", path = path)),
+        }
+        sensitive
+    });
+    // Recomputed for the features the flags left on.
     config.minimum_reader_version = config.required_v7_reader_version();
     fill_random(&mut config.salt)
         .map_err(|e| anyhow::anyhow!("{}: {}", t!("ctl.error_failed_to_generate_salt"), e))?;
@@ -2321,7 +2443,11 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
     if let Some(ref f) = proto.feature_flags {
         out.push_str("feature_flags {\n");
         out.push_str(&format!("  allow_holes: {}\n", f.allow_holes));
-        out.push_str(&format!("  xattr_format: {}\n", f.xattr_format));
+        let xattr_format = match encfs::config_proto::XattrFormat::try_from(f.xattr_format) {
+            Ok(format) => format.as_str_name().to_string(),
+            Err(_) => format!("UNKNOWN({})", f.xattr_format),
+        };
+        out.push_str(&format!("  xattr_format: {}\n", xattr_format));
         out.push_str(&format!("  symlink_format: {}\n", f.symlink_format));
         out.push_str("}\n");
     }
@@ -3193,6 +3319,76 @@ mod tests {
     }
 
     #[test]
+    fn new_name_iface_choices() {
+        use NameEncodingChoice::{Auto, Block32, Stream};
+        let name = |choice, compat, sensitive: Option<bool>| {
+            new_name_iface(choice, compat, || sensitive).name
+        };
+        // Auto: stream only where names can't collide by case.
+        assert_eq!(name(Auto, false, Some(true)), "nameio/stream");
+        assert_eq!(name(Auto, false, Some(false)), "nameio/block32");
+        assert_eq!(name(Auto, false, None), "nameio/block32");
+        // The compatibility flags stay on stream names without probing.
+        let probed = std::cell::Cell::new(false);
+        let compat = new_name_iface(Auto, true, || {
+            probed.set(true);
+            Some(false)
+        });
+        assert_eq!(compat.name, "nameio/stream");
+        assert!(!probed.get());
+        // An explicit choice wins over both.
+        assert_eq!(name(Stream, false, Some(false)), "nameio/stream");
+        assert_eq!(name(Block32, true, Some(true)), "nameio/block32");
+        assert_eq!(new_name_iface(Stream, false, || None), stream_name_iface());
+        assert_eq!(
+            new_name_iface(Block32, false, || None),
+            block32_name_iface()
+        );
+    }
+
+    #[test]
+    fn dir_is_case_sensitive_cleans_up() -> Result<()> {
+        let dir = new_config_dir("case_probe");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir)?;
+        assert!(dir_is_case_sensitive(&dir).is_some());
+        assert_eq!(fs::read_dir(&dir)?.count(), 0, "probe file left behind");
+        // A missing directory can't be probed.
+        assert_eq!(dir_is_case_sensitive(&dir.join("missing")), None);
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[test]
+    fn cmd_new_explicit_name_encoding() -> Result<()> {
+        for (choice, expected) in [
+            (NameEncodingChoice::Stream, "nameio/stream"),
+            (NameEncodingChoice::Block32, "nameio/block32"),
+        ] {
+            let dir = new_config_dir(&format!("name_encoding_{expected}").replace('/', "_"));
+            let _ = fs::remove_dir_all(&dir);
+            cmd_new(
+                &dir,
+                Some("echo test_password".to_string()),
+                false,
+                false,
+                false,
+                false,
+                false,
+                choice,
+            )?;
+            let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
+            assert_eq!(config.name_iface.name, expected);
+            assert_eq!(
+                config.minimum_reader_version,
+                constants::V7_INODE_XATTR_IV_CONFIG_VERSION
+            );
+            let _ = fs::remove_dir_all(&dir);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn cmd_new_defaults_to_wide_file_iv() -> Result<()> {
         let dir = new_config_dir("wide");
         let _ = fs::remove_dir_all(&dir);
@@ -3204,25 +3400,32 @@ mod tests {
             false,
             false,
             false,
+            NameEncodingChoice::Auto,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
-        assert_eq!(config.name_iface.name, "nameio/block32");
+        // Stream names on case-sensitive filesystems, Base32 elsewhere.
+        let expected = match dir_is_case_sensitive(&dir) {
+            Some(true) => "nameio/stream",
+            _ => "nameio/block32",
+        };
+        assert_eq!(config.name_iface.name, expected);
         assert!(config.wide_file_iv);
         assert_eq!(config.header_size(), 12);
         assert!(config.directory_iv);
         assert!(!config.chained_name_iv);
         assert!(config.external_iv_chaining);
         diriv::read_sidecar(&dir)?;
+        assert_eq!(config.xattr_format, encfs::config::XattrFormat::Encrypted);
         assert_eq!(
             config.minimum_reader_version,
-            constants::V7_DIRECTORY_IV_CONFIG_VERSION
+            constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
         assert_eq!(
             proto.minimum_reader_version,
-            constants::V7_DIRECTORY_IV_CONFIG_VERSION
+            constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -3241,6 +3444,7 @@ mod tests {
             false,
             true, // legacy_file_iv
             false,
+            NameEncodingChoice::Auto,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3252,15 +3456,13 @@ mod tests {
         assert!(config.chained_name_iv);
         assert!(!config.directory_iv);
         assert!(!dir.join(diriv::SIDECAR_NAME).exists());
+        // Every new volume stores xattrs in the per-inode format, which
+        // only readers that implement it can open.
+        assert_eq!(config.xattr_format, encfs::config::XattrFormat::Encrypted);
         assert_eq!(
             config.minimum_reader_version,
-            constants::V7_BASE_CONFIG_VERSION
+            constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
-
-        // Base-version configs re-encode the wire field as 0, matching a
-        // pre-this-ADR V7 config byte-for-byte in that respect.
-        let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
-        assert_eq!(proto.minimum_reader_version, 0);
 
         let _ = fs::remove_dir_all(&dir);
         Ok(())
@@ -3278,6 +3480,7 @@ mod tests {
             true, // no_unique_iv
             false,
             false,
+            NameEncodingChoice::Auto,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3305,6 +3508,7 @@ mod tests {
             true, // no_unique_iv
             true, // legacy_file_iv
             false,
+            NameEncodingChoice::Auto,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3312,11 +3516,200 @@ mod tests {
         assert!(!config.wide_file_iv);
         assert_eq!(
             config.minimum_reader_version,
-            constants::V7_BASE_CONFIG_VERSION
+            constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
 
         let _ = fs::remove_dir_all(&dir);
         Ok(())
+    }
+
+    /// `info` names each way a volume can store extended attributes, and
+    /// flags all but the one new filesystems use.
+    #[test]
+    fn info_shows_the_xattr_format() {
+        use encfs::config::XattrFormat;
+        let label = |config_type, format| {
+            let mut config = EncfsConfig::standard_v7();
+            config.config_type = config_type;
+            config.xattr_format = format;
+            let (text, highlight) = xattr_format_display(&config);
+            (text, highlight == Highlight::Default)
+        };
+        assert_eq!(
+            label(ConfigType::V7, XattrFormat::Encrypted),
+            (t!("ctl.xattr_format_inode_iv").to_string(), true)
+        );
+        assert_eq!(
+            label(ConfigType::V7, XattrFormat::EncryptedPathIv),
+            (t!("ctl.xattr_format_path_iv").to_string(), false)
+        );
+        assert_eq!(
+            label(ConfigType::V7, XattrFormat::Plaintext),
+            (t!("ctl.xattr_format_plaintext").to_string(), false)
+        );
+        // V4-V6 store attributes unencrypted whatever the field says.
+        assert_eq!(
+            label(ConfigType::V6, XattrFormat::Encrypted),
+            (t!("ctl.xattr_format_plaintext").to_string(), false)
+        );
+        // Every label resolves to text, not a missing-key placeholder.
+        for key in [
+            "ctl.xattr_format",
+            "ctl.xattr_format_inode_iv",
+            "ctl.xattr_format_path_iv",
+            "ctl.xattr_format_plaintext",
+        ] {
+            assert!(!t!(key).contains("ctl."), "{key} is untranslated");
+        }
+    }
+
+    /// `info` shows coupled IV and block options as one line each, and flags
+    /// everything weaker than what new filesystems use.
+    #[test]
+    fn info_merges_coupled_options() {
+        let v7 = EncfsConfig::standard_v7;
+        let text = |(s, _): (String, Highlight)| s;
+        let hl = |(_, h): (String, Highlight)| h;
+
+        // Filename IVs: directory_iv and chained_name_iv are one setting.
+        let mut config = v7();
+        assert_eq!(
+            name_iv_display(&config),
+            (t!("ctl.name_iv_sidecar").to_string(), Highlight::Default)
+        );
+        config.use_chained_name_iv();
+        assert_eq!(
+            name_iv_display(&config),
+            (t!("ctl.name_iv_chained").to_string(), Highlight::Plain)
+        );
+        config.chained_name_iv = false;
+        assert_eq!(
+            name_iv_display(&config),
+            (t!("ctl.name_iv_none").to_string(), Highlight::Deprecated)
+        );
+
+        // External chaining has no effect once names have no IV.
+        assert_eq!(
+            external_iv_display(&config),
+            (
+                t!("ctl.external_iv_no_effect").to_string(),
+                Highlight::Deprecated
+            )
+        );
+        assert_eq!(
+            external_iv_display(&v7()),
+            (t!("ctl.bool_true").to_string(), Highlight::Default)
+        );
+        config.external_iv_chaining = false;
+        assert_eq!(hl(external_iv_display(&config)), Highlight::Deprecated);
+
+        // File IV header: unique_iv and wide_file_iv are one setting.
+        let mut config = v7();
+        assert_eq!(
+            file_iv_display(&config),
+            (
+                t!("ctl.file_iv_header_bits", bits = 96).to_string(),
+                Highlight::Default
+            )
+        );
+        config.wide_file_iv = false;
+        assert_eq!(
+            file_iv_display(&config),
+            (
+                t!("ctl.file_iv_header_bits", bits = 64).to_string(),
+                Highlight::Deprecated
+            )
+        );
+        config.unique_iv = false;
+        assert_eq!(
+            file_iv_display(&config),
+            (
+                t!("ctl.file_iv_header_none").to_string(),
+                Highlight::Deprecated
+            )
+        );
+        // 64 bits is the most a legacy header holds, so it isn't flagged there.
+        let legacy = EncfsConfig::test_default();
+        assert!(legacy.unique_iv);
+        assert_eq!(hl(file_iv_display(&legacy)), Highlight::Plain);
+
+        // Block mode carries its MAC or tag size.
+        assert_eq!(
+            block_mode_display(&v7()),
+            (
+                format!(
+                    "{} ({})",
+                    t!("ctl.block_mode_aes_gcm_siv"),
+                    t!("ctl.block_tag", bytes = 16)
+                ),
+                Highlight::Default
+            )
+        );
+        let mut legacy = EncfsConfig::test_default();
+        legacy.block_mac_bytes = 8;
+        assert_eq!(
+            block_mode_display(&legacy),
+            (
+                format!(
+                    "{} ({})",
+                    t!("ctl.block_mode_legacy_aes"),
+                    t!("ctl.block_mac", bytes = 8)
+                ),
+                Highlight::Deprecated
+            )
+        );
+        legacy.block_mac_bytes = 0;
+        assert!(
+            text(block_mode_display(&legacy)).ends_with(&format!("({})", t!("ctl.block_mac_none")))
+        );
+
+        for key in [
+            "ctl.name_iv_mode",
+            "ctl.name_iv_sidecar",
+            "ctl.name_iv_chained",
+            "ctl.name_iv_none",
+            "ctl.file_iv_header",
+            "ctl.file_iv_header_bits",
+            "ctl.file_iv_header_none",
+            "ctl.external_iv_chaining",
+            "ctl.external_iv_no_effect",
+            "ctl.block_tag",
+            "ctl.block_mac",
+            "ctl.block_mac_none",
+        ] {
+            assert!(!t!(key).contains("ctl."), "{key} is untranslated");
+        }
+    }
+
+    /// `info --raw` names the stored xattr format rather than printing its
+    /// wire number, for every format.
+    #[test]
+    fn raw_info_names_the_xattr_format() {
+        use encfs::config_proto::{Config, FeatureFlags, XattrFormat};
+        let raw = |xattr_format: i32| {
+            format_v7_config_raw(&Config {
+                feature_flags: Some(FeatureFlags {
+                    xattr_format,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+        };
+        for (format, name) in [
+            (
+                XattrFormat::EncryptedInodeIv,
+                "XATTR_FORMAT_ENCRYPTED_INODE_IV",
+            ),
+            (
+                XattrFormat::EncryptedPathIv,
+                "XATTR_FORMAT_ENCRYPTED_PATH_IV",
+            ),
+            (XattrFormat::Plaintext, "XATTR_FORMAT_PLAINTEXT"),
+        ] {
+            let out = raw(format as i32);
+            assert!(out.contains(&format!("xattr_format: {name}\n")), "{out}");
+        }
+        assert!(raw(99).contains("xattr_format: UNKNOWN(99)"));
     }
 
     #[test]
@@ -3331,6 +3724,8 @@ mod tests {
             false,
             false,
             false,
+            // Fixed, since `Auto` depends on the temp directory's filesystem.
+            NameEncodingChoice::Block32,
         )?;
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
@@ -3343,12 +3738,16 @@ mod tests {
         assert!(
             raw.contains(&format!(
                 "minimum_reader_version: {} (effective: {})",
-                constants::V7_DIRECTORY_IV_CONFIG_VERSION,
-                constants::V7_DIRECTORY_IV_CONFIG_VERSION
+                constants::V7_INODE_XATTR_IV_CONFIG_VERSION,
+                constants::V7_INODE_XATTR_IV_CONFIG_VERSION
             )),
             "raw info: {raw}"
         );
         assert!(raw.contains("directory_iv: SIDECAR"), "raw info: {raw}");
+        assert!(
+            raw.contains("xattr_format: XATTR_FORMAT_ENCRYPTED_INODE_IV"),
+            "raw info: {raw}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
         Ok(())
@@ -3369,6 +3768,7 @@ mod tests {
             false,
             false,
             no_directory_iv,
+            NameEncodingChoice::Auto,
         )?;
         let config = EncfsConfig::load(&dir.join(".encfs7"))?;
         assert_eq!(
@@ -3391,7 +3791,7 @@ mod tests {
         assert_eq!(modes(&chained), (false, true, true));
         assert_eq!(
             chained.minimum_reader_version,
-            constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+            constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
 
         let unchained_external = new_with_flags("no_chained_iv", true, false)?;
@@ -3421,6 +3821,7 @@ mod tests {
             false,
             false,
             false,
+            NameEncodingChoice::Auto,
         )?;
 
         let config = EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3429,7 +3830,7 @@ mod tests {
         assert!(config.external_iv_chaining);
         assert_eq!(
             config.minimum_reader_version,
-            constants::V7_DIRECTORY_IV_CONFIG_VERSION
+            constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
         diriv::read_sidecar(&dir)?;
         let raw = format_v7_config_raw(&EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?);

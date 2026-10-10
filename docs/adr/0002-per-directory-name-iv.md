@@ -9,7 +9,9 @@ Directory IV mode is the default for new V7 filesystems (`encfsctl new`;
 `--no-directory-iv` opts out), which settles open question 2. Questions 1, 3
 and 4 remain open; this implementation keeps the proposed answers (64-bit
 derived tweak, crash-safe copy for externally chained files, reverse mode
-rejected).
+rejected). How extended attributes are keyed has since moved to a per-inode
+seed (ADR 0003); the xattr rows below are kept as originally decided and
+marked superseded.
 
 ## Context
 
@@ -95,7 +97,7 @@ values the existing interfaces need, using a keyed PRF:
 ```
 d        = HMAC-SHA256(volume_key, "encfs.diriv.v1\0" || diriv)
 name_iv  = LE64(d[0..8])     // IV for names inside this directory
-node_iv  = LE64(d[8..16])    // IV for this directory's own xattrs
+node_iv  = LE64(d[8..16])    // unused since ADR 0003 (was: this directory's xattrs)
 ```
 
 This is exposed as one new `Cipher` trait method. Name ciphertext format,
@@ -124,9 +126,9 @@ parent directory and its own name:
 | File header external IV (`external_iv_chaining`) | `entry_iv` |
 | File IV when `unique_iv = false` | `entry_iv` (if `external_iv_chaining`) |
 | Symlink target (V7 encrypted-name form) | `entry_iv` |
-| Xattrs on a file, symlink, or special file | `entry_iv` |
-| Xattrs on a directory | `node_iv` of that directory |
-| Volume root | `entry_iv = 0`; xattrs use `node_iv(root)` |
+| Xattrs on a file, symlink, or special file | `entry_iv` (superseded: per-inode seed, ADR 0003) |
+| Xattrs on a directory | `node_iv` of that directory (superseded: per-inode seed, ADR 0003) |
+| Volume root | `entry_iv = 0` |
 
 Nothing below a directory depends on that directory's name or location, and a
 directory's own xattrs depend only on its sidecar. `EncfsConfig::
@@ -206,7 +208,8 @@ IV-dependent names or attributes bind the IV to the directory:
   directory, where creation fails with `ENOENT`.
 - mkdir and directory rename encrypt the new name under the write lock they
   already hold, which keeps the parent in place.
-- setxattr and removexattr hold the read lock while reading a directory's
+- (Superseded by ADR 0003, where attribute IVs come from the inode itself.)
+  setxattr and removexattr held the read lock while reading a directory's
   `node_iv` and writing the attribute.
 
 Read-only operations are left alone: a stale IV there only yields a
@@ -236,8 +239,8 @@ transient `ENOENT` or decode error.
 |---|---|
 | Directory, destination absent | one `rename(2)` |
 | Directory, destination an empty directory | remove the destination's sidecar under the sidecar lock, `rename(2)`, restore the sidecar if that fails |
-| Regular file, no external IV chaining | `rename(2)`, then re-key its encrypted xattrs from the old entry IV to the new one |
-| Regular file, external IV chaining | existing `copy_file_with_header_rewrite` (crash-safe copy with the header re-encrypted under the new entry IV), carry xattrs across re-keyed, remove the source |
+| Regular file, no external IV chaining | `rename(2)`; xattrs are keyed by the inode (ADR 0003) and need nothing |
+| Regular file, external IV chaining | existing `copy_file_with_header_rewrite` (crash-safe copy with the header re-encrypted under the new entry IV), copy the xattrs and their seed before restoring the mode, remove the source |
 | Symlink | existing re-create with the target re-encrypted under the new entry IV |
 
 `copy_recursive` is never entered for a directory in this mode. Legacy configs
@@ -321,8 +324,9 @@ Costs and trade-offs:
   entry (and rewriting externally chained headers); the supported path is to
   create a new volume and copy.
 - Limitations shared with chained mode remain: hard links to a file whose
-  xattrs or content IV derive from its entry IV are only consistent under one
-  of the names, and `link` stays `EPERM` under `external_iv_chaining`.
+  content IV derives from its entry IV are only consistent under one of the
+  names, and `link` stays `EPERM` under `external_iv_chaining`. (Xattrs were
+  in the same position until ADR 0003 keyed them by inode.)
 
 ## Open questions
 

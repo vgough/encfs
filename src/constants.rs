@@ -43,8 +43,13 @@ pub const V7_STORAGE_FORMATS_CONFIG_VERSION: u32 = 3;
 /// (per-directory `.encfs.diriv` sidecar files) becomes interpretable.
 pub const V7_DIRECTORY_IV_CONFIG_VERSION: u32 = 4;
 
+/// V7 minimum-reader version at which the per-inode encrypted xattr format
+/// (`XattrFormat::Encrypted`, keyed by a seed stored on each inode) becomes
+/// interpretable.
+pub const V7_INODE_XATTR_IV_CONFIG_VERSION: u32 = 5;
+
 /// Highest V7 minimum-reader version this build understands.
-pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_DIRECTORY_IV_CONFIG_VERSION;
+pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_INODE_XATTR_IV_CONFIG_VERSION;
 
 /// Line length for Base64 encoded data in XML config
 pub const XML_BASE64_LINE_LEN: usize = 76;

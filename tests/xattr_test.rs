@@ -265,45 +265,43 @@ fn check_plaintext_xattrs(dir: &str, config_type: ConfigType, xattr_format: Xatt
     fs::remove_dir_all(&tmp).unwrap();
 }
 
-/// Attributes an earlier build stored encrypted on a legacy volume stay
-/// readable and removable, and setting the attribute again replaces the
-/// encrypted copy with a plaintext one.
+/// Attributes an earlier build stored encrypted on a legacy volume are no
+/// longer read there: they are neither listed nor returned, and setting the
+/// attribute stores a plaintext one beside them.
 #[test]
-fn test_legacy_xattr_reads_encrypted_copy() {
-    let tmp = fresh_dir("encfs_xattr_legacy_migrate_test");
+fn test_legacy_volume_ignores_encrypted_copies() {
+    let tmp = fresh_dir("encfs_xattr_legacy_ignore_test");
     let mut v7 = setup_fs_with(&tmp, ConfigType::V7);
     let root = v7.root_state();
     let r = req();
     let file = create_test_file(&v7, &root, &r);
     v7.setxattr(file.as_node(), OsStr::new("user.foo"), b"old", 0, &r)
         .expect("setxattr failed");
-    v7.setxattr(file.as_node(), OsStr::new("user.gone"), b"x", 0, &r)
-        .expect("setxattr failed");
 
     let legacy = setup_fs_with(&tmp, ConfigType::V6);
-    assert_eq!(get_value(&legacy, &file, "user.foo"), b"old");
-    let listed = list_names(&legacy, &file);
-    assert!(listed.contains(&"user.foo".to_string()), "{listed:?}");
+    assert!(
+        legacy
+            .getxattr(file.as_node(), OsStr::new("user.foo"), XATTR_BUF_SIZE, &r)
+            .is_err()
+    );
+    // macOS may add com.apple.* attributes of its own.
+    let user_names = |names: Vec<String>| -> Vec<String> {
+        names
+            .into_iter()
+            .filter(|n| !n.starts_with("com.apple."))
+            .collect()
+    };
+    assert!(user_names(list_names(&legacy, &file)).is_empty());
 
-    legacy
-        .removexattr(file.as_node(), OsStr::new("user.gone"), &r)
-        .expect("removexattr failed");
     legacy
         .setxattr(file.as_node(), OsStr::new("user.foo"), b"new", 0, &r)
         .expect("setxattr failed");
     assert_eq!(get_value(&legacy, &file, "user.foo"), b"new");
-
-    let names = backing_xattr_names(&only_backing_file(&tmp));
-    assert!(
-        !names.iter().any(|n| n.starts_with(ON_DISK_PREFIX)),
-        "{names:?}"
-    );
-    let listed = list_names(&legacy, &file);
     assert_eq!(
-        listed.iter().filter(|n| *n == "user.foo").count(),
-        1,
-        "{listed:?}"
+        user_names(list_names(&legacy, &file)),
+        vec!["user.foo".to_string()]
     );
+    assert!(backing_xattr_names(&only_backing_file(&tmp)).contains(&"user.foo".to_string()));
 
     fs::remove_dir_all(&tmp).unwrap();
 }

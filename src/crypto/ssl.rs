@@ -26,6 +26,12 @@ type HmacSha1 = Hmac<Sha1>;
 /// derivation cannot collide with this one.
 const DIRECTORY_IV_LABEL: &[u8] = b"encfs.diriv.v1\0";
 
+/// Domain separation for [`SslCipher::xattr_iv`].
+const XATTR_IV_LABEL: &[u8] = b"encfs.xattriv.v1\0";
+
+/// Domain separation for [`SslCipher::reverse_xattr_seed`].
+const REVERSE_XATTR_SEED_LABEL: &[u8] = b"encfs.xattrseed.reverse.v1\0";
+
 /// A symmetric block-cipher algorithm, abstracted over CBC (full file blocks)
 /// and CFB (partial blocks / stream) modes. One implementation per algorithm:
 /// adding a cipher is adding a `Primitive<NewAlgorithm>`, not another arm in a
@@ -509,20 +515,42 @@ impl SslCipher {
         Self::mac_64_with_key(data, iv, &self.key)
     }
 
-    /// Derives `(name_iv, node_iv)` from a directory's sidecar bytes:
+    /// Derives `(name_iv, reserved)` from a directory's sidecar bytes:
     /// `HMAC-SHA256(key, "encfs.diriv.v1\0" || diriv)`, with each IV read as a
     /// little-endian u64 from the first and second 8 bytes of the digest.
     pub fn directory_ivs(&self, diriv: &[u8]) -> Result<(u64, u64)> {
-        type HmacSha256 = Hmac<sha2::Sha256>;
-        let mut mac = <HmacSha256 as HmacKeyInit>::new_from_slice(&self.key)
-            .map_err(|e| anyhow!("Failed to initialize HMAC-SHA256: {}", e))?;
-        mac.update(DIRECTORY_IV_LABEL);
-        mac.update(diriv);
-        let digest = mac.finalize().into_bytes();
+        let digest = self.labeled_hmac_sha256(DIRECTORY_IV_LABEL, diriv)?;
         let half = |range: std::ops::Range<usize>| {
             u64::from_le_bytes(digest[range].try_into().expect("8-byte slice"))
         };
         Ok((half(0..8), half(8..16)))
+    }
+
+    /// Derives the IV for an inode's encrypted extended attributes from the
+    /// seed stored on it: `HMAC-SHA256(key, "encfs.xattriv.v1\0" || seed)`,
+    /// read as a little-endian u64 from the first 8 bytes of the digest.
+    pub fn xattr_iv(&self, seed: &[u8]) -> Result<u64> {
+        let digest = self.labeled_hmac_sha256(XATTR_IV_LABEL, seed)?;
+        Ok(u64::from_le_bytes(
+            digest[0..8].try_into().expect("8-byte slice"),
+        ))
+    }
+
+    /// The xattr IV seed reverse mode presents for the entry whose path IV is
+    /// `path_iv`, which has no stored seed: the first 16 bytes of
+    /// `HMAC-SHA256(key, "encfs.xattrseed.reverse.v1\0" || LE64(path_iv))`.
+    pub fn reverse_xattr_seed(&self, path_iv: u64) -> Result<[u8; 16]> {
+        let digest = self.labeled_hmac_sha256(REVERSE_XATTR_SEED_LABEL, &path_iv.to_le_bytes())?;
+        Ok(digest[0..16].try_into().expect("16-byte slice"))
+    }
+
+    fn labeled_hmac_sha256(&self, label: &[u8], data: &[u8]) -> Result<[u8; 32]> {
+        type HmacSha256 = Hmac<sha2::Sha256>;
+        let mut mac = <HmacSha256 as HmacKeyInit>::new_from_slice(&self.key)
+            .map_err(|e| anyhow!("Failed to initialize HMAC-SHA256: {}", e))?;
+        mac.update(label);
+        mac.update(data);
+        Ok(mac.finalize().into_bytes().into())
     }
     /// Standard stream decoding for EncFS.
     ///
@@ -1420,6 +1448,33 @@ mod tests {
             cipher.directory_ivs(&diriv).unwrap(),
             (0xbf20_b180_1adf_d2c8, 0x9fd1_c614_a596_0779)
         );
+    }
+
+    /// Pinned so the meaning of a stored xattr IV seed cannot drift. The
+    /// vectors are HMAC-SHA256 computed independently (Python `hmac`).
+    #[test]
+    fn xattr_iv_golden_vectors() {
+        let cipher = aes256_with_key(0x44);
+        let seed: Vec<u8> = (0..16).collect();
+        assert_eq!(cipher.xattr_iv(&seed).unwrap(), 0x8650_dd2c_5b04_bb97);
+        assert_eq!(
+            cipher.reverse_xattr_seed(0x1122_3344_5566_7788).unwrap(),
+            [
+                0xb1, 0x3a, 0x66, 0xa6, 0x10, 0xc4, 0x60, 0x37, 0x6b, 0xa9, 0xa4, 0x9c, 0xdf, 0xfc,
+                0x21, 0xef
+            ]
+        );
+    }
+
+    #[test]
+    fn xattr_iv_depends_on_seed_and_key() {
+        let cipher = aes256_with_key(0x44);
+        let a = cipher.xattr_iv(&[1u8; 16]).unwrap();
+        assert_eq!(a, cipher.xattr_iv(&[1u8; 16]).unwrap());
+        assert_ne!(a, cipher.xattr_iv(&[2u8; 16]).unwrap());
+        assert_ne!(a, aes256_with_key(0x45).xattr_iv(&[1u8; 16]).unwrap());
+        // Not the directory derivation under another name.
+        assert_ne!(a, cipher.directory_ivs(&[1u8; 16]).unwrap().0);
     }
 
     #[test]

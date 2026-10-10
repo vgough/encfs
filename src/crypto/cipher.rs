@@ -107,10 +107,19 @@ pub trait Cipher: Send + Sync {
     /// Maximum plaintext name length that fits within `max_encoded_len`.
     fn max_plaintext_name_len(&self, max_encoded_len: u32) -> u32;
 
-    /// Derive `(name_iv, node_iv)` from a directory's `.encfs.diriv` sidecar
-    /// bytes (directory IV mode): the IV for the names inside the directory
-    /// and the IV for the directory's own extended attributes.
+    /// Derive `(name_iv, reserved)` from a directory's `.encfs.diriv` sidecar
+    /// bytes (directory IV mode): the IV for the names inside the directory,
+    /// and a second IV that nothing uses (it keyed directory xattrs before
+    /// they moved to a per-inode seed).
     fn directory_ivs(&self, diriv: &[u8]) -> Result<(u64, u64)>;
+
+    /// Derive the IV for an inode's encrypted extended attributes from the
+    /// seed stored on it (`crate::xattr_name::IV_SEED_NAME`).
+    fn xattr_iv(&self, seed: &[u8]) -> Result<u64>;
+
+    /// The xattr IV seed reverse mode presents for an entry with path IV
+    /// `path_iv`, where no seed is stored.
+    fn reverse_xattr_seed(&self, path_iv: u64) -> Result<[u8; 16]>;
 
     // --- xattr crypto (used by the filesystem layers) ---
 
@@ -244,6 +253,14 @@ impl Cipher for SslCipher {
 
     fn directory_ivs(&self, diriv: &[u8]) -> Result<(u64, u64)> {
         SslCipher::directory_ivs(self, diriv)
+    }
+
+    fn xattr_iv(&self, seed: &[u8]) -> Result<u64> {
+        SslCipher::xattr_iv(self, seed)
+    }
+
+    fn reverse_xattr_seed(&self, path_iv: u64) -> Result<[u8; 16]> {
+        SslCipher::reverse_xattr_seed(self, path_iv)
     }
 
     fn encrypt_xattr_name(&self, name: &[u8], path_iv: u64) -> Result<Vec<u8>> {

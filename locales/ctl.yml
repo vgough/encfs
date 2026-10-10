@@ -63,22 +63,42 @@ ctl.bool_false:
   en: "no"
   fr: "non"
   de: "nein"
-ctl.unique_iv_header:
-  en: "Unique IV in file header: "
-  fr: "IV unique dans l'en-tête de fichier : "
-  de: "Eindeutiger IV in Dateikopf: "
-ctl.chained_name_iv:
-  en: "Filename IV chaining: "
-  fr: "Chaînage IV des noms de fichiers : "
-  de: "IV-Verkettung für Dateinamen: "
+ctl.name_iv_mode:
+  en: "Filename IVs: "
+  fr: "IV des noms de fichiers : "
+  de: "Dateinamen-IVs: "
+ctl.name_iv_sidecar:
+  en: "per-directory sidecar"
+  fr: "fichier annexe par répertoire"
+  de: "Begleitdatei pro Verzeichnis"
+ctl.name_iv_chained:
+  en: "chained from parent path"
+  fr: "chaînés depuis le chemin parent"
+  de: "vom übergeordneten Pfad verkettet"
+ctl.name_iv_none:
+  en: "none"
+  fr: "aucun"
+  de: "keine"
+ctl.file_iv_header:
+  en: "File IV header: "
+  fr: "En-tête IV de fichier : "
+  de: "Datei-IV-Kopf: "
+ctl.file_iv_header_bits:
+  en: "%{bits}-bit random"
+  fr: "aléatoire, %{bits} bits"
+  de: "zufällig, %{bits} Bit"
+ctl.file_iv_header_none:
+  en: "none"
+  fr: "aucun"
+  de: "keiner"
 ctl.external_iv_chaining:
   en: "External IV chaining (paranoia mode): "
   fr: "Chaînage IV externe (mode paranoïa) : "
   de: "Externe IV-Verkettung (Paranoia-Modus): "
-ctl.directory_iv:
-  en: "Per-directory name IVs: "
-  fr: "IV de noms par répertoire : "
-  de: "Namens-IVs pro Verzeichnis: "
+ctl.external_iv_no_effect:
+  en: "yes (no effect without filename IVs)"
+  fr: "oui (sans effet sans IV des noms de fichiers)"
+  de: "ja (ohne Dateinamen-IVs wirkungslos)"
 ctl.block_mode:
   en: "Block mode: "
   fr: "Mode de bloc : "
@@ -99,22 +119,18 @@ ctl.block_mode_legacy:
   en: "legacy"
   fr: "hérité"
   de: "Legacy"
+ctl.block_tag:
+  en: "%{bytes}-byte tag"
+  fr: "étiquette de %{bytes} octets"
+  de: "%{bytes}-Byte-Tag"
 ctl.block_mac:
-  en: "Block MAC: %{bytes} bytes"
-  fr: "MAC de bloc : %{bytes} octets"
-  de: "Block-MAC: %{bytes} Bytes"
-ctl.file_iv_width:
-  en: "File IV width: "
-  fr: "Largeur de l'IV de fichier : "
-  de: "Datei-IV-Breite: "
-ctl.file_iv_width_wide:
-  en: "96-bit"
-  fr: "96 bits"
-  de: "96-Bit"
-ctl.file_iv_width_narrow:
-  en: "64-bit"
-  fr: "64 bits"
-  de: "64-Bit"
+  en: "%{bytes}-byte MAC"
+  fr: "MAC de %{bytes} octets"
+  de: "%{bytes}-Byte-MAC"
+ctl.block_mac_none:
+  en: "no MAC"
+  fr: "sans MAC"
+  de: "ohne MAC"
 ctl.v7_min_reader_version:
   en: "V7 minimum reader version: %{effective} (build supports through %{max})"
   fr: "Version minimale de lecteur V7 : %{effective} (cette version prend en charge jusqu'à %{max})"
@@ -123,10 +139,22 @@ ctl.allow_holes:
   en: "File holes allowed: "
   fr: "Trous de fichier autorisés : "
   de: "Dateilöcher erlaubt: "
-ctl.encrypted_xattrs:
-  en: "Extended attributes encrypted: "
-  fr: "Attributs étendus chiffrés : "
-  de: "Erweiterte Attribute verschlüsselt: "
+ctl.xattr_format:
+  en: "Extended attributes: "
+  fr: "Attributs étendus : "
+  de: "Erweiterte Attribute: "
+ctl.xattr_format_inode_iv:
+  en: "encrypted, per-inode IV"
+  fr: "chiffrés, IV par inode"
+  de: "verschlüsselt, IV pro Inode"
+ctl.xattr_format_path_iv:
+  en: "encrypted, path IV (format of versions before 2.0.0-beta.7; unavailable in this version)"
+  fr: "chiffrés, IV de chemin (format des versions antérieures à 2.0.0-beta.7 ; indisponibles dans cette version)"
+  de: "verschlüsselt, Pfad-IV (Format der Versionen vor 2.0.0-beta.7; in dieser Version nicht verfügbar)"
+ctl.xattr_format_plaintext:
+  en: "not encrypted"
+  fr: "non chiffrés"
+  de: "nicht verschlüsselt"
 ctl.symlink_format:
   en: "Symlink targets: "
   fr: "Cibles des liens symboliques : "
@@ -427,6 +455,18 @@ ctl.new_verify_password:
   en: "Verify password: "
   fr: "Vérifiez le mot de passe : "
   de: "Passwort bestätigen: "
+ctl.new_case_sensitive:
+  en: "%{path} is on a case-sensitive filesystem; using stream filename encoding"
+  fr: "%{path} se trouve sur un système de fichiers sensible à la casse ; utilisation de l'encodage de noms en flux"
+  de: "%{path} liegt auf einem Dateisystem, das Groß- und Kleinschreibung unterscheidet; Stream-Dateinamenkodierung wird verwendet"
+ctl.new_case_insensitive:
+  en: "%{path} is on a case-insensitive filesystem; using Base32 block filename encoding"
+  fr: "%{path} se trouve sur un système de fichiers insensible à la casse ; utilisation de l'encodage de noms en blocs Base32"
+  de: "%{path} liegt auf einem Dateisystem, das Groß- und Kleinschreibung nicht unterscheidet; Base32-Block-Dateinamenkodierung wird verwendet"
+ctl.new_case_unknown:
+  en: "Could not determine whether %{path} is on a case-sensitive filesystem; using Base32 block filename encoding"
+  fr: "Impossible de déterminer si %{path} se trouve sur un système de fichiers sensible à la casse ; utilisation de l'encodage de noms en blocs Base32"
+  de: "Konnte nicht feststellen, ob %{path} auf einem Dateisystem liegt, das Groß- und Kleinschreibung unterscheidet; Base32-Block-Dateinamenkodierung wird verwendet"
 ctl.new_config_created:
   en: "Created new EncFS V7 config at %{path}"
   fr: "Nouvelle configuration EncFS V7 créée dans %{path}"

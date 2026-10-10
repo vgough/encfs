@@ -10,7 +10,7 @@ use libc;
 use log::{debug, error, warn};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ffi::{CString, OsStr, OsString};
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::os::unix::ffi::OsStrExt;
@@ -72,6 +72,12 @@ struct FileMeta {
 pub struct FileState {
     key: FileKey,
     meta: RwLock<FileMeta>,
+    /// IV for the inode's encrypted xattrs, once derived from its seed, so
+    /// each attribute operation doesn't reread the seed. A seed never changes
+    /// in place; this is cleared wherever the inode behind a key may be a new
+    /// one (creation) or have been given another seed (a rename's copy). See
+    /// [`EncFs::xattr_iv`].
+    xattr_iv: Mutex<Option<u64>>,
 }
 
 impl FileState {
@@ -79,7 +85,16 @@ impl FileState {
         Self {
             key,
             meta: RwLock::new(FileMeta::default()),
+            xattr_iv: Mutex::new(None),
         }
+    }
+
+    fn cached_xattr_iv(&self) -> Option<u64> {
+        *self.xattr_iv.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    fn set_cached_xattr_iv(&self, iv: Option<u64>) {
+        *self.xattr_iv.lock().unwrap_or_else(|p| p.into_inner()) = iv;
     }
 
     /// Shared access, for operations that only read the file.
@@ -135,6 +150,22 @@ impl FileStates {
             e.raw_os_error().unwrap_or(libc::EIO)
         })?;
         Ok(self.get_by_key((metadata.dev(), metadata.ino())))
+    }
+
+    /// Forgets the state for `key`, whose inode is gone, so a new inode that
+    /// is given the same number gets a state of its own. Nodes holding the
+    /// old state keep it.
+    fn detach(&self, key: FileKey) {
+        let mut table = self.table.lock().unwrap_or_else(|p| p.into_inner());
+        table.entries.remove(&key);
+    }
+
+    /// Drops the cached xattr IV of the live state for `key`, if any.
+    fn forget_xattr_iv(&self, key: FileKey) {
+        let table = self.table.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(state) = table.entries.get(&key).and_then(Weak::upgrade) {
+            state.set_cached_xattr_iv(None);
+        }
     }
 
     fn get_by_key(&self, key: FileKey) -> Arc<FileState> {
@@ -401,10 +432,15 @@ pub struct EncFs {
     /// The lock does not keep a directory in place while an operation uses
     /// its IVs. Operations that write IV-dependent names or attributes bind
     /// those IVs to the directory itself instead: entry creation through a
-    /// pinned parent ([`EncFs::new_entry`]); mkdir and directory rename by
-    /// encrypting the new name under the write lock they already take; and
-    /// directory xattr writes under the read lock.
+    /// pinned parent ([`EncFs::new_entry`]); and mkdir and directory rename by
+    /// encrypting the new name under the write lock they already take.
     sidecar_lock: RwLock<()>,
+    /// Serializes creating xattr IV seeds on FreeBSD, which only emulates
+    /// `XATTR_CREATE` with a check before the write: two first writers could
+    /// each store a seed, and one would key its attribute under a lost one.
+    /// Elsewhere `XATTR_CREATE` is atomic and creation needs no lock.
+    #[cfg(target_os = "freebsd")]
+    xattr_seed_lock: Mutex<()>,
     /// Runs once at the point where an entry's name has been derived but not
     /// yet created, so tests can replace the parent directory there.
     #[cfg(test)]
@@ -425,6 +461,8 @@ impl EncFs {
             idle_lock: None,
             diriv_cache: DirIvCache::default(),
             sidecar_lock: RwLock::new(()),
+            #[cfg(target_os = "freebsd")]
+            xattr_seed_lock: Mutex::new(()),
             #[cfg(test)]
             race_hook: Mutex::new(None),
         }
@@ -652,39 +690,6 @@ impl EncFs {
         }
     }
 
-    /// The IV for the extended attributes of the entry at `backing_path`,
-    /// whose path IV is `entry_iv`. See [`diriv::xattr_iv`]; this is the
-    /// cached form.
-    fn xattr_iv(&self, backing_path: &Path, entry_iv: u64) -> Result<u64, libc::c_int> {
-        if self.has_own_xattr_iv(backing_path)? {
-            Ok(self.dir_ivs(backing_path)?.node_iv)
-        } else {
-            Ok(entry_iv)
-        }
-    }
-
-    /// As [`EncFs::xattr_iv`], for callers holding the sidecar lock. Writers
-    /// of attributes hold it so that a directory can't be replaced between
-    /// reading its `node_iv` and storing attributes encrypted under it.
-    fn xattr_iv_locked(&self, backing_path: &Path, entry_iv: u64) -> Result<u64, libc::c_int> {
-        if self.has_own_xattr_iv(backing_path)? {
-            Ok(self.dir_ivs_locked(backing_path)?.ivs.node_iv)
-        } else {
-            Ok(entry_iv)
-        }
-    }
-
-    /// Whether the entry at `backing_path` is a directory whose attributes
-    /// are keyed by its own sidecar (directory IV mode).
-    fn has_own_xattr_iv(&self, backing_path: &Path) -> Result<bool, libc::c_int> {
-        if !self.config.directory_iv {
-            return Ok(false);
-        }
-        let metadata = fs::symlink_metadata(backing_path)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        Ok(metadata.is_dir())
-    }
-
     fn sidecar_read_lock(&self) -> RwLockReadGuard<'_, ()> {
         self.sidecar_lock.read().unwrap_or_else(|p| p.into_inner())
     }
@@ -730,6 +735,7 @@ impl EncFs {
         if (meta.is_dir() && (self.config.chained_name_iv || self.config.external_iv_chaining))
             || (meta.is_file() && self.config.external_iv_chaining)
         {
+            let mut copied = Vec::new();
             if let Err(e) = self.copy_recursive(
                 PathInfo {
                     logical: &source,
@@ -742,6 +748,7 @@ impl EncFs {
                     iv: dest_iv,
                 },
                 &meta,
+                &mut copied,
             ) {
                 // Best-effort cleanup on failure
                 if meta.is_dir() {
@@ -752,13 +759,14 @@ impl EncFs {
                 return Err(e);
             }
 
-            if meta.is_dir() {
-                return fs::remove_dir_all(real_source)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO));
+            let removed = if meta.is_dir() {
+                fs::remove_dir_all(real_source)
             } else {
-                return fs::remove_file(real_source)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO));
-            }
+                fs::remove_file(real_source)
+            };
+            removed.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            self.forget_removed_inodes(&copied);
+            return Ok(());
         }
 
         // V7 symlink targets are encrypted using a path-derived IV (see `symlink`/`readlink`).
@@ -773,6 +781,7 @@ impl EncFs {
 
             // Remove source symlink.
             fs::remove_file(&real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            self.forget_removed_inodes(&[removed_inode(&meta)]);
 
             return Ok(());
         }
@@ -781,9 +790,9 @@ impl EncFs {
     }
 
     /// Re-creates the symlink at `real_source` as `dest`, with its target
-    /// re-encrypted from the source path IV to the destination's. Replaces
-    /// any existing destination, as rename(2) would. The source is left in
-    /// place.
+    /// re-encrypted from the source path IV to the destination's and its
+    /// encrypted xattrs carried over. Replaces any existing destination, as
+    /// rename(2) would. The source is left in place.
     fn recreate_symlink(
         &self,
         real_source: &Path,
@@ -818,6 +827,10 @@ impl EncFs {
         }
 
         dest.symlink(OsStr::new(&enc_target))?;
+        if let Err(e) = self.copy_encrypted_xattrs(real_source, &dest.real_path) {
+            let _ = dest.unlink();
+            return Err(e);
+        }
         let atime = meta.accessed().ok();
         let mtime = meta.modified().ok();
         let _ = passthrough::utimens_path(&dest.real_path, atime, mtime);
@@ -826,8 +839,9 @@ impl EncFs {
 
     /// Rename in directory IV mode. Nothing below a directory depends on its
     /// name or location, so a directory moves with one rename(2). Entries
-    /// whose own IVs derive from their entry IV are moved as in chained mode,
-    /// and their encrypted xattrs are re-keyed to the new entry IV.
+    /// whose own IVs derive from their entry IV are moved as in chained mode.
+    /// Encrypted xattrs are keyed by a seed on the inode, so a rename(2)
+    /// leaves them valid and the copying paths carry them over.
     fn rename_with_directory_ivs(
         &self,
         real_source: &Path,
@@ -850,19 +864,19 @@ impl EncFs {
                 let _ = dest.unlink();
                 return Err(e);
             }
-            self.rekey_xattrs_best_effort(real_source, &dest.real_path, source_iv, dest.iv);
-            return fs::remove_file(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO));
+            fs::remove_file(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            self.forget_removed_inodes(&[removed_inode(meta)]);
+            return Ok(());
         }
 
         if meta.is_symlink() && self.config.symlink_target_depends_on_path() {
             self.recreate_symlink(real_source, &dest, source_iv, meta)?;
-            self.rekey_xattrs_best_effort(real_source, &dest.real_path, source_iv, dest.iv);
-            return fs::remove_file(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO));
+            fs::remove_file(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            self.forget_removed_inodes(&[removed_inode(meta)]);
+            return Ok(());
         }
 
-        dest.rename_from(real_source)?;
-        self.rekey_xattrs_best_effort(&dest.real_path, &dest.real_path, source_iv, dest.iv);
-        Ok(())
+        dest.rename_from(real_source)
     }
 
     /// Directory rename in directory IV mode: a single rename(2). Replacing
@@ -959,89 +973,31 @@ impl EncFs {
         Ok(removed)
     }
 
-    /// Re-encrypts the encrypted xattrs of `real_src` from `old_iv` to
-    /// `new_iv` and stores them on `real_dst` (which may be the same entry,
-    /// after a rename). Failures are logged rather than failing the rename
-    /// that has already happened.
-    fn rekey_xattrs_best_effort(&self, real_src: &Path, real_dst: &Path, old_iv: u64, new_iv: u64) {
-        if !self.config.encrypts_xattrs() || (real_src == real_dst && old_iv == new_iv) {
-            return;
-        }
-        if let Err(e) = self.rekey_xattrs(real_src, real_dst, old_iv, new_iv) {
-            warn!(
-                "Failed to carry extended attributes from {:?} to {:?}: errno {}",
-                real_src, real_dst, e
-            );
-        }
-    }
-
-    fn rekey_xattrs(&self, real_src: &Path, real_dst: &Path, old_iv: u64, new_iv: u64) -> OpResult {
-        let c_src = c_path(real_src).map_err(|e| e.raw())?;
-        let c_dst = c_path(real_dst).map_err(|e| e.raw())?;
-        let names = match passthrough::listxattr_names_nofollow(&c_src) {
-            Ok(names) => names,
-            // No xattr support on the backing filesystem: nothing to carry.
-            Err(e) if e.raw() == libc::ENOTSUP => return Ok(()),
-            Err(e) => return Err(e.raw()),
-        };
-        let mut first_error = None;
-        for stored_name in names {
-            let Some(encoded) = std::str::from_utf8(&stored_name)
-                .ok()
-                .and_then(|n| n.strip_prefix(xattr_name::PREFIX))
-            else {
-                continue;
-            };
-            let result = (|| -> OpResult {
-                let encrypted_name = xattr_name::decode(encoded).ok_or(libc::EINVAL)?;
-                let name = self
-                    .cipher
-                    .decrypt_xattr_name(&encrypted_name, old_iv)
-                    .map_err(|_| libc::EIO)?;
-                let c_old =
-                    std::ffi::CString::new(stored_name.clone()).map_err(|_| libc::EINVAL)?;
-                let value =
-                    passthrough::getxattr_value_nofollow(&c_src, &c_old).map_err(|e| e.raw())?;
-                let value = self
-                    .cipher
-                    .decrypt_xattr_value(&value, old_iv)
-                    .map_err(|_| libc::EIO)?;
-
-                let new_name = xattr_name::encode(
-                    &self
-                        .cipher
-                        .encrypt_xattr_name(&name, new_iv)
-                        .map_err(|_| libc::EIO)?,
-                );
-                let new_value = self
-                    .cipher
-                    .encrypt_xattr_value(&value, new_iv)
-                    .map_err(|_| libc::EIO)?;
-                let c_new = std::ffi::CString::new(new_name).map_err(|_| libc::EINVAL)?;
-                passthrough::setxattr_nofollow(&c_dst, &c_new, &new_value, 0)
-                    .map_err(|e| e.raw())?;
-                if real_src == real_dst && c_new != c_old {
-                    passthrough::removexattr_nofollow(&c_src, &c_old).map_err(|e| e.raw())?;
-                }
-                Ok(())
-            })();
-            if let Err(e) = result {
-                warn!(
-                    "Skipping xattr {:?} on {:?}: errno {}",
-                    encoded, real_src, e
-                );
-                first_error.get_or_insert(e);
+    /// Detaches the states of inodes a rename copied and then removed. The
+    /// renamed entry's node keeps the source's state (its cached xattr IV is
+    /// still right: the copy carried the seed), but the source inode is gone
+    /// and the backing filesystem may give its number to a new inode, which
+    /// must not share that state. A file with other hard links still exists
+    /// under them and keeps its entry.
+    fn forget_removed_inodes(&self, inodes: &[RemovedInode]) {
+        for inode in inodes {
+            if inode.is_dir || inode.nlink <= 1 {
+                self.file_states.detach(inode.key);
             }
         }
-        first_error.map_or(Ok(()), Err)
     }
 
+    /// Copies `source` to `dest`, recursively for a directory, recording in
+    /// `copied` each source inode the caller will remove afterwards (see
+    /// [`EncFs::forget_removed_inodes`]).
     fn copy_recursive(
         &self,
         source: PathInfo,
         dest: PathInfo,
         meta: &std::fs::Metadata,
+        copied: &mut Vec<RemovedInode>,
     ) -> OpResult {
+        copied.push(removed_inode(meta));
         if meta.is_dir() {
             // Create dest dir
             if let Err(e) = fs::create_dir(dest.physical) {
@@ -1112,8 +1068,10 @@ impl EncFs {
                         iv: child_dest_iv,
                     },
                     &child_meta,
+                    copied,
                 )?;
             }
+            self.copy_encrypted_xattrs(source.physical, dest.physical)?;
             let _ = fs::set_permissions(dest.physical, meta.permissions());
             let atime = meta.accessed().ok();
             let mtime = meta.modified().ok();
@@ -1168,6 +1126,7 @@ impl EncFs {
                     .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
                 passthrough_symlink(target.as_os_str(), dest.physical).map_err(|e| e.raw())?;
             }
+            self.copy_encrypted_xattrs(source.physical, dest.physical)?;
             let atime = meta.accessed().ok();
             let mtime = meta.modified().ok();
             let _ = passthrough::utimens_path(dest.physical, atime, mtime);
@@ -1175,6 +1134,17 @@ impl EncFs {
             // Standard copy for regular files without external IV chaining
             fs::copy(source.physical, dest.physical)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            if self.config.encrypts_xattrs() {
+                // fs::copy gives the copy the source's mode, which may deny
+                // the owner the write access storing an attribute needs.
+                if meta.mode() & 0o200 == 0 {
+                    use std::os::unix::fs::PermissionsExt;
+                    let writable = fs::Permissions::from_mode((meta.mode() & 0o7777) | 0o200);
+                    fs::set_permissions(dest.physical, writable)
+                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                }
+                self.copy_encrypted_xattrs(source.physical, dest.physical)?;
+            }
             // Best effort metadata copy
             let _ = fs::set_permissions(dest.physical, meta.permissions());
             let atime = meta.accessed().ok();
@@ -1269,7 +1239,9 @@ impl EncFs {
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         }
 
-        // 8. Copy permissions and timestamps
+        // 8. Carry the encrypted xattrs while the destination is still
+        //    writable, then copy permissions and timestamps.
+        self.copy_encrypted_xattrs(real_src, real_dest)?;
         if let Some(meta) = metadata {
             let _ = fs::set_permissions(real_dest, meta.permissions());
             let atime = meta.accessed().ok();
@@ -1279,6 +1251,83 @@ impl EncFs {
 
         Ok(())
     }
+}
+
+/// An inode a rename copied and then removed, as recorded before removal.
+struct RemovedInode {
+    key: FileKey,
+    is_dir: bool,
+    nlink: u64,
+}
+
+fn removed_inode(meta: &fs::Metadata) -> RemovedInode {
+    RemovedInode {
+        key: (meta.dev(), meta.ino()),
+        is_dir: meta.is_dir(),
+        nlink: meta.nlink(),
+    }
+}
+
+/// `XATTR_CREATE` for [`passthrough::setxattr_nofollow`]. FreeBSD has no such
+/// flag; the passthrough layer emulates the Linux value there.
+#[cfg(target_os = "freebsd")]
+const XATTR_CREATE: libc::c_int = 0x1;
+#[cfg(not(target_os = "freebsd"))]
+const XATTR_CREATE: libc::c_int = libc::XATTR_CREATE;
+
+/// `XATTR_REPLACE`, as it arrives in a FUSE `setxattr` and as
+/// [`passthrough::setxattr_nofollow`] takes it; see [`XATTR_CREATE`].
+#[cfg(target_os = "freebsd")]
+const XATTR_REPLACE: libc::c_int = 0x2;
+#[cfg(not(target_os = "freebsd"))]
+const XATTR_REPLACE: libc::c_int = libc::XATTR_REPLACE;
+
+/// Buffer for a first attempt at reading an attribute value. Encrypted values
+/// of the attributes systems set routinely (macOS provenance and Finder info)
+/// fit, so they take one syscall rather than a size probe and a read.
+const XATTR_READ_GUESS: usize = 256;
+
+/// Reads a stored attribute value, in one syscall when it fits in
+/// [`XATTR_READ_GUESS`] bytes. A read that fills the buffer may be truncated
+/// (FreeBSD truncates rather than failing with `ERANGE`), so it is redone at
+/// the probed size.
+fn read_stored_xattr(c_path: &CStr, c_name: &CStr) -> Result<Vec<u8>, Errno> {
+    let mut value = vec![0u8; XATTR_READ_GUESS];
+    match passthrough::getxattr_nofollow(c_path, c_name, &mut value) {
+        Ok(len) if len < value.len() => {
+            value.truncate(len);
+            Ok(value)
+        }
+        Ok(_) => passthrough::getxattr_value_nofollow(c_path, c_name),
+        Err(e) if e.raw() == libc::ERANGE => passthrough::getxattr_value_nofollow(c_path, c_name),
+        Err(e) => Err(e),
+    }
+}
+
+/// Reads the xattr IV seed of the inode at `c_path` in one syscall. `None`
+/// when it has none; `EIO` when the stored seed is not exactly
+/// [`xattr_name::IV_SEED_LEN`] bytes. The buffer has a spare byte, so a read
+/// that fills it shows an oversized seed even where reads truncate.
+fn read_iv_seed(c_path: &CStr) -> Result<Option<[u8; xattr_name::IV_SEED_LEN]>, libc::c_int> {
+    let mut buf = [0u8; xattr_name::IV_SEED_LEN + 1];
+    let len = match passthrough::getxattr_nofollow(c_path, xattr_name::IV_SEED_CNAME, &mut buf) {
+        Ok(len) => len,
+        Err(e) if e == Errno::ENOATTR => return Ok(None),
+        Err(e) if e.raw() == libc::ERANGE => buf.len(),
+        Err(e) => return Err(e.raw()),
+    };
+    if len != xattr_name::IV_SEED_LEN {
+        error!(
+            "Damaged {} on {:?}: {} bytes",
+            xattr_name::IV_SEED_NAME,
+            c_path,
+            len
+        );
+        return Err(libc::EIO);
+    }
+    let mut seed = [0u8; xattr_name::IV_SEED_LEN];
+    seed.copy_from_slice(&buf[..xattr_name::IV_SEED_LEN]);
+    Ok(Some(seed))
 }
 
 fn headerless_file_iv(header_size: u64, external_iv: u64) -> FileIv {
@@ -1791,7 +1840,7 @@ impl EncFs {
         entry.symlink(OsStr::from_bytes(&enc_target))?;
 
         // Return the attributes of the entry we just created.
-        self.entry_for_path(&path)
+        self.entry_for_new_inode(&path)
     }
 
     fn attr_for_path(
@@ -1838,6 +1887,15 @@ impl EncFs {
     fn entry_for_path(&self, path: &Path) -> Result<PathEntry<FileState>, libc::c_int> {
         let (attr, key) = self.attr_and_key_for_path(Some(path), None)?;
         Ok(PathEntry::new(attr, self.file_states.get_by_key(key)))
+    }
+
+    /// As [`EncFs::entry_for_path`], for an inode this operation just
+    /// created. Its number may be one a deleted inode had, whose state is
+    /// still alive; nothing cached for that one applies.
+    fn entry_for_new_inode(&self, path: &Path) -> Result<PathEntry<FileState>, libc::c_int> {
+        let entry = self.entry_for_path(path)?;
+        entry.state.set_cached_xattr_iv(None);
+        Ok(entry)
     }
 
     fn attr_from_metadata(&self, metadata: &fs::Metadata) -> FileAttr {
@@ -2090,6 +2148,8 @@ impl EncFs {
         let headerless_iv = headerless_file_iv(header_size, external_iv);
 
         let state = self.file_states.get(&file)?;
+        // Possibly a new inode under the number of a deleted one.
+        state.set_cached_xattr_iv(None);
         let mut meta = state.write();
 
         file.set_len(0)
@@ -2153,7 +2213,7 @@ impl EncFs {
         }
 
         // Outside the sidecar lock: resolving the path may need to take it.
-        self.entry_for_path(&path)
+        self.entry_for_new_inode(&path)
     }
 
     /// Creates directory `name` in `real_parent`, with its sidecar, under the
@@ -2250,7 +2310,7 @@ impl EncFs {
 
         entry.set_ownership(&req)?;
 
-        self.entry_for_path(&path)
+        self.entry_for_new_inode(&path)
     }
 
     fn rmdir_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
@@ -2289,6 +2349,7 @@ impl EncFs {
 
     fn setxattr_impl(
         &self,
+        state: &FileState,
         path: &Path,
         name: &OsStr,
         value: &[u8],
@@ -2304,41 +2365,38 @@ impl EncFs {
             position
         );
         self.ensure_writable()?;
+        if !self.config.xattrs_available() {
+            return Err(libc::ENOTSUP);
+        }
 
-        let (real_path, entry_iv) = self.encrypt_path(path)?;
-        // Held until the attribute is written: see `xattr_iv_locked`.
-        let _guard = self.config.directory_iv.then(|| self.sidecar_read_lock());
-        let path_iv = self.xattr_iv_locked(&real_path, entry_iv)?;
-
+        let (real_path, _) = self.encrypt_path(path)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
         if !self.config.encrypts_xattrs() {
             // Legacy volumes store attributes as-is, like C++ EncFS.
             let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
-            let c_path = c_path(&real_path).map_err(|e| e.raw())?;
-            passthrough::setxattr_nofollow(&c_path, &c_name, value, flags as i32)
-                .map_err(|e| e.raw())?;
-            // Drop any encrypted copy an earlier build stored, so the name
-            // isn't listed twice.
-            let _ = self.remove_encrypted_xattr(&real_path, name_bytes, path_iv);
-            return Ok(());
+            return passthrough::setxattr_nofollow(&c_path, &c_name, value, flags as i32)
+                .map_err(|e| e.raw());
         }
 
-        // Encrypt all attributes
-        // Store them with "user.encfs." prefix on disk
-        // Encrypt the full xattr name
+        // Without a seed nothing is stored yet, so a replace must fail as it
+        // would on any file without the attribute, leaving no seed behind.
+        let xattr_iv = if flags as libc::c_int & XATTR_REPLACE != 0 {
+            self.xattr_iv(state, &c_path)?.ok_or(Errno::ENOATTR.raw())?
+        } else {
+            self.xattr_iv_or_create(state, &c_path)?
+        };
         let encrypted_name = self
             .cipher
-            .encrypt_xattr_name(name_bytes, path_iv)
+            .encrypt_xattr_name(name_bytes, xattr_iv)
             .map_err(|e| {
                 error!("Failed to encrypt xattr name: {}", e);
                 libc::EIO
             })?;
-
-        // Encrypt xattr value
         let encrypted_value = self
             .cipher
-            .encrypt_xattr_value(value, path_iv)
+            .encrypt_xattr_value(value, xattr_iv)
             .map_err(|e| {
                 error!("Failed to encrypt xattr value: {}", e);
                 libc::EIO
@@ -2346,204 +2404,297 @@ impl EncFs {
 
         // Store under the "user.encfs." prefix, with the encrypted name
         // base64-encoded so it is a legal attribute name everywhere.
-        let final_name = xattr_name::encode(&encrypted_name);
-
-        let c_name = std::ffi::CString::new(final_name).map_err(|_| libc::EINVAL)?;
-        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
-
-        // Set xattr on underlying filesystem
+        let c_name = std::ffi::CString::new(xattr_name::encode(&encrypted_name))
+            .map_err(|_| libc::EINVAL)?;
         passthrough::setxattr_nofollow(&c_path, &c_name, &encrypted_value, flags as i32)
             .map_err(|e| e.raw())
     }
 
-    fn getxattr_impl(&self, path: &Path, name: &OsStr) -> Result<Vec<u8>, libc::c_int> {
+    fn getxattr_impl(
+        &self,
+        state: &FileState,
+        path: &Path,
+        name: &OsStr,
+    ) -> Result<Vec<u8>, libc::c_int> {
         debug!("getxattr: {:?} name={:?}", path, name);
+        if !self.config.xattrs_available() {
+            return Err(libc::ENOTSUP);
+        }
 
-        let (real_path, entry_iv) = self.encrypt_path(path)?;
-        let path_iv = self.xattr_iv(&real_path, entry_iv)?;
-
+        let (real_path, _) = self.encrypt_path(path)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
         if !self.config.encrypts_xattrs() {
-            // Legacy volumes store attributes as-is, like C++ EncFS. Fall back
-            // to an encrypted copy written by an earlier build.
+            // Legacy volumes store attributes as-is, like C++ EncFS.
             let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
-            let c_path = c_path(&real_path).map_err(|e| e.raw())?;
-            match passthrough::getxattr_value_nofollow(&c_path, &c_name) {
-                Err(e) if e == Errno::ENOATTR => {}
-                other => return other.map_err(|e| e.raw()),
-            }
+            return passthrough::getxattr_value_nofollow(&c_path, &c_name).map_err(|e| e.raw());
         }
 
-        // Encrypt all attributes
-        // Look them up with "user.encfs." prefix on disk
-        // Encrypt the full xattr name to find it on disk
+        // No seed means no attribute was ever stored in this format.
+        let xattr_iv = self.xattr_iv(state, &c_path)?.ok_or(Errno::ENOATTR.raw())?;
         let encrypted_name = self
             .cipher
-            .encrypt_xattr_name(name_bytes, path_iv)
+            .encrypt_xattr_name(name_bytes, xattr_iv)
             .map_err(|e| {
                 error!("Failed to encrypt xattr name: {}", e);
                 libc::EIO
             })?;
+        let c_name = std::ffi::CString::new(xattr_name::encode(&encrypted_name))
+            .map_err(|_| libc::EINVAL)?;
 
-        // Encode encrypted name for storage lookup
-        let lookup_name = xattr_name::encode(&encrypted_name);
-
-        let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
-        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
-
-        // Read the on-disk (encrypted) value; the caller's size limit is
-        // applied by the trait wrapper against the decrypted length.
-        let encrypted_value = match passthrough::getxattr_value_nofollow(&c_path, &c_name) {
-            Ok(value) => value,
-            // An attribute written before the alphabet change carries the
-            // older spelling; try that before reporting it missing.
-            Err(e) if e == Errno::ENOATTR => {
-                let legacy = xattr_name::encode_legacy(&encrypted_name);
-                let c_legacy = std::ffi::CString::new(legacy).map_err(|_| libc::EINVAL)?;
-                passthrough::getxattr_value_nofollow(&c_path, &c_legacy).map_err(|e| e.raw())?
-            }
-            Err(e) => return Err(e.raw()),
-        };
-
-        // Decrypt value
-        let decrypted_value = self
-            .cipher
-            .decrypt_xattr_value(&encrypted_value, path_iv)
+        // The caller's size limit is applied by the trait wrapper against the
+        // decrypted length.
+        let encrypted_value = read_stored_xattr(&c_path, &c_name).map_err(|e| e.raw())?;
+        self.cipher
+            .decrypt_xattr_value(&encrypted_value, xattr_iv)
             .map_err(|e| {
                 error!("Failed to decrypt xattr value: {}", e);
                 libc::EIO
-            })?;
-
-        Ok(decrypted_value)
+            })
     }
 
-    fn listxattr_impl(&self, path: &Path) -> Result<Vec<u8>, libc::c_int> {
+    fn listxattr_impl(&self, state: &FileState, path: &Path) -> Result<Vec<u8>, libc::c_int> {
         debug!("listxattr: {:?}", path);
+        if !self.config.xattrs_available() {
+            // As on a filesystem without extended attributes.
+            return Ok(Vec::new());
+        }
 
-        let (real_path, entry_iv) = self.encrypt_path(path)?;
-        let path_iv = self.xattr_iv(&real_path, entry_iv)?;
-
+        let (real_path, _) = self.encrypt_path(path)?;
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
-        // Read the on-disk list of xattr names; the caller's size limit is
-        // applied by the trait wrapper against the decrypted list length.
+        // The caller's size limit is applied by the trait wrapper against the
+        // decrypted list length.
         let names = passthrough::listxattr_names_nofollow(&c_path).map_err(|e| e.raw())?;
-
-        // Process all xattr names in the list
         let mut decrypted_list = Vec::new();
 
-        for name_bytes in names {
-            let name_str = match std::str::from_utf8(&name_bytes) {
-                Ok(s) => s,
-                Err(_) if !self.config.encrypts_xattrs() => {
-                    decrypted_list.extend_from_slice(&name_bytes);
+        if !self.config.encrypts_xattrs() {
+            // Legacy volumes store attributes as-is, like C++ EncFS. Names
+            // under the encfs prefix are encrypted copies an earlier build
+            // stored, which nothing reads any more.
+            for name in names {
+                if !name.starts_with(xattr_name::PREFIX.as_bytes()) {
+                    decrypted_list.extend_from_slice(&name);
                     decrypted_list.push(0);
-                    continue;
                 }
-                Err(_) => continue, // Invalid UTF-8, skip
-            };
+            }
+            return Ok(decrypted_list);
+        }
 
-            if let Some(encoded_part) = name_str.strip_prefix(xattr_name::PREFIX) {
-                // This is an encrypted encfs attribute stored on disk
-                // Extract the base64-encoded encrypted name
-                match xattr_name::decode(encoded_part) {
-                    Some(encrypted_name_bytes) => {
-                        match self
-                            .cipher
-                            .decrypt_xattr_name(&encrypted_name_bytes, path_iv)
-                        {
-                            Ok(decrypted_name) => {
-                                // Return the decrypted name without the "user.encfs." prefix
-                                decrypted_list.extend_from_slice(&decrypted_name);
-                                decrypted_list.push(0); // null separator
-                            }
-                            Err(e) => {
-                                warn!("Failed to decrypt xattr name: {}", e);
-                                // Skip this name but continue
-                            }
-                        }
-                    }
-                    None => {
-                        warn!("Failed to decode base64 xattr name: {}", name_str);
-                        // Skip this name but continue
-                    }
+        // Only read the seed when there is something to decrypt with it.
+        // Reading it needs read access to the entry, which listing names
+        // doesn't; without that access the encrypted names are left out
+        // (reading their values would be refused anyway) rather than failing
+        // the whole list.
+        let xattr_iv = if names.iter().any(|n| xattr_name::is_encrypted_name(n)) {
+            match self.xattr_iv(state, &c_path) {
+                Err(libc::EACCES) => {
+                    debug!(
+                        "Seed of {:?} unreadable; listing plain names only",
+                        real_path
+                    );
+                    None
                 }
-            } else if !self.config.encrypts_xattrs() {
-                // Legacy volumes store attributes as-is, like C++ EncFS.
-                decrypted_list.extend_from_slice(&name_bytes);
-                decrypted_list.push(0);
-            } else {
-                // Non-encfs attribute (shouldn't happen if we encrypt all), skip it
-                // or pass through if there are any legacy unencrypted attributes
+                other => other?,
+            }
+        } else {
+            None
+        };
+
+        for name_bytes in names {
+            if name_bytes == xattr_name::IV_SEED_NAME.as_bytes() {
+                continue;
+            }
+            let Ok(name_str) = std::str::from_utf8(&name_bytes) else {
+                continue;
+            };
+            let Some(encoded) = name_str.strip_prefix(xattr_name::PREFIX) else {
+                // Not stored by encfs (the system adds some on macOS).
                 if !is_apple_xattr(name_str) {
                     warn!("Found non-encfs xattr on disk: {}, skipping", name_str);
                 }
+                continue;
+            };
+            let Some(xattr_iv) = xattr_iv else {
+                // Stored in the retired path-IV format; unreadable.
+                debug!(
+                    "Skipping xattr without a seed on {:?}: {}",
+                    real_path, name_str
+                );
+                continue;
+            };
+            let decrypted = xattr_name::decode(encoded)
+                .and_then(|encrypted| self.cipher.decrypt_xattr_name(&encrypted, xattr_iv).ok());
+            match decrypted {
+                Some(name) => {
+                    decrypted_list.extend_from_slice(&name);
+                    decrypted_list.push(0);
+                }
+                None => warn!("Failed to decrypt xattr name: {}", name_str),
             }
         }
 
         Ok(decrypted_list)
     }
 
-    fn removexattr_impl(&self, path: &Path, name: &OsStr) -> OpResult {
+    fn removexattr_impl(&self, state: &FileState, path: &Path, name: &OsStr) -> OpResult {
         debug!("removexattr: {:?} name={:?}", path, name);
         self.ensure_writable()?;
+        if !self.config.xattrs_available() {
+            return Err(libc::ENOTSUP);
+        }
 
-        let (real_path, entry_iv) = self.encrypt_path(path)?;
-        // Held until the attribute is written: see `xattr_iv_locked`.
-        let _guard = self.config.directory_iv.then(|| self.sidecar_read_lock());
-        let path_iv = self.xattr_iv_locked(&real_path, entry_iv)?;
-
+        let (real_path, _) = self.encrypt_path(path)?;
+        let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
         if !self.config.encrypts_xattrs() {
-            // Legacy volumes store attributes as-is, like C++ EncFS. Fall back
-            // to an encrypted copy written by an earlier build.
+            // Legacy volumes store attributes as-is, like C++ EncFS.
             let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
-            let c_path = c_path(&real_path).map_err(|e| e.raw())?;
-            match passthrough::removexattr_nofollow(&c_path, &c_name) {
-                Err(e) if e == Errno::ENOATTR => {}
-                other => return other.map_err(|e| e.raw()),
-            }
+            return passthrough::removexattr_nofollow(&c_path, &c_name).map_err(|e| e.raw());
         }
 
-        self.remove_encrypted_xattr(&real_path, name_bytes, path_iv)
-    }
-
-    /// Removes the encrypted (`user.encfs.`-prefixed) form of attribute `name`.
-    fn remove_encrypted_xattr(
-        &self,
-        real_path: &Path,
-        name_bytes: &[u8],
-        path_iv: u64,
-    ) -> OpResult {
-        // Encrypt all attributes
-        // Look them up with "user.encfs." prefix on disk
-        // Encrypt the full xattr name
+        // The seed stays after the last attribute goes: it is harmless, and
+        // removing it would race a concurrent setxattr that just read it.
+        let xattr_iv = self.xattr_iv(state, &c_path)?.ok_or(Errno::ENOATTR.raw())?;
         let encrypted_name = self
             .cipher
-            .encrypt_xattr_name(name_bytes, path_iv)
+            .encrypt_xattr_name(name_bytes, xattr_iv)
             .map_err(|e| {
                 error!("Failed to encrypt xattr name: {}", e);
                 libc::EIO
             })?;
+        let c_name = std::ffi::CString::new(xattr_name::encode(&encrypted_name))
+            .map_err(|_| libc::EINVAL)?;
+        passthrough::removexattr_nofollow(&c_path, &c_name).map_err(|e| e.raw())
+    }
 
-        // Encode encrypted name for storage lookup
-        let lookup_name = xattr_name::encode(&encrypted_name);
-
-        let c_name = std::ffi::CString::new(lookup_name).map_err(|_| libc::EINVAL)?;
-        let c_path = c_path(real_path).map_err(|e| e.raw())?;
-
-        // Remove xattr from underlying filesystem, falling back to the older
-        // spelling for attributes written before the alphabet change.
-        match passthrough::removexattr_nofollow(&c_path, &c_name) {
-            Err(e) if e == Errno::ENOATTR => {
-                let legacy = xattr_name::encode_legacy(&encrypted_name);
-                let c_legacy = std::ffi::CString::new(legacy).map_err(|_| libc::EINVAL)?;
-                passthrough::removexattr_nofollow(&c_path, &c_legacy).map_err(|e| e.raw())
-            }
-            other => other.map_err(|e| e.raw()),
+    /// The IV for the encrypted extended attributes of the inode at
+    /// `c_path`, whose node state is `state`, derived from the seed stored on
+    /// it (see [`xattr_name::IV_SEED_NAME`]) and cached in `state`. `None`
+    /// when it has no seed, and so no attributes this build can read.
+    ///
+    /// The node state stands for the inode at `c_path` even after a rename
+    /// that copied the entry to a new inode: the copy carries the seed, so
+    /// the IV is the same.
+    fn xattr_iv(&self, state: &FileState, c_path: &CStr) -> Result<Option<u64>, libc::c_int> {
+        if let Some(iv) = state.cached_xattr_iv() {
+            return Ok(Some(iv));
         }
+        let Some(seed) = read_iv_seed(c_path)? else {
+            return Ok(None);
+        };
+        let iv = self.xattr_iv_from_seed(&seed)?;
+        state.set_cached_xattr_iv(Some(iv));
+        Ok(Some(iv))
+    }
+
+    /// As [`EncFs::xattr_iv`], first storing a fresh random seed on an inode
+    /// that has none. Concurrent callers agree on one seed: it is created
+    /// exclusively, and a caller that loses reads the winner's.
+    fn xattr_iv_or_create(&self, state: &FileState, c_path: &CStr) -> Result<u64, libc::c_int> {
+        if let Some(iv) = self.xattr_iv(state, c_path)? {
+            return Ok(iv);
+        }
+        #[cfg(target_os = "freebsd")]
+        let _guard = self
+            .xattr_seed_lock
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let mut seed = [0u8; xattr_name::IV_SEED_LEN];
+        getrandom::fill(&mut seed).map_err(|e| {
+            error!("Failed to generate xattr IV seed: {}", e);
+            libc::EIO
+        })?;
+        match passthrough::setxattr_nofollow(c_path, xattr_name::IV_SEED_CNAME, &seed, XATTR_CREATE)
+        {
+            Ok(()) => {
+                let iv = self.xattr_iv_from_seed(&seed)?;
+                state.set_cached_xattr_iv(Some(iv));
+                Ok(iv)
+            }
+            Err(e) if e == Errno::EEXIST => self.xattr_iv(state, c_path)?.ok_or(libc::EIO),
+            Err(e) => Err(e.raw()),
+        }
+    }
+
+    fn xattr_iv_from_seed(&self, seed: &[u8; xattr_name::IV_SEED_LEN]) -> Result<u64, libc::c_int> {
+        self.cipher.xattr_iv(seed).map_err(|e| {
+            error!("Failed to derive xattr IV: {}", e);
+            libc::EIO
+        })
+    }
+
+    /// Makes the encrypted extended attributes of `real_dst`, a copy of
+    /// `real_src` that a rename just made, match the source's, seed included.
+    /// The stored bytes carry over unchanged and still decrypt under the
+    /// copied seed. Names the destination has that the source lacks (keyed by
+    /// its old seed) are removed, and values it already holds, as after a
+    /// copy that cloned attributes (`fs::copy` on macOS), aren't rewritten.
+    /// Everything is read from the source before the destination changes.
+    /// `real_dst` must be writable by its owner if anything needs writing.
+    fn copy_encrypted_xattrs(&self, real_src: &Path, real_dst: &Path) -> OpResult {
+        if !self.config.encrypts_xattrs() {
+            return Ok(());
+        }
+        let c_src = c_path(real_src).map_err(|e| e.raw())?;
+        let c_dst = c_path(real_dst).map_err(|e| e.raw())?;
+        let prefixed = |path: &CStr| -> Result<Vec<CString>, libc::c_int> {
+            match passthrough::listxattr_names_nofollow(path) {
+                Ok(names) => Ok(names
+                    .into_iter()
+                    .filter(|n| n.starts_with(xattr_name::PREFIX.as_bytes()))
+                    .filter_map(|n| CString::new(n).ok())
+                    .collect()),
+                // No xattr support on the backing filesystem: nothing to carry.
+                Err(e) if e.raw() == libc::ENOTSUP => Ok(Vec::new()),
+                Err(e) => Err(e.raw()),
+            }
+        };
+
+        let mut source = Vec::new();
+        for name in prefixed(&c_src)? {
+            let value = read_stored_xattr(&c_src, &name).map_err(|e| e.raw())?;
+            source.push((name, value));
+        }
+        // The seed first, so the destination's attributes are never left
+        // without the seed that keys them by a failure in between.
+        source.sort_by_key(|(name, _)| name.as_c_str() != xattr_name::IV_SEED_CNAME);
+        let existing = prefixed(&c_dst)?;
+
+        for (name, value) in &source {
+            if existing.contains(name)
+                && read_stored_xattr(&c_dst, name).is_ok_and(|current| current == *value)
+            {
+                continue;
+            }
+            passthrough::setxattr_nofollow(&c_dst, name, value, 0).map_err(|e| {
+                warn!(
+                    "Failed to carry xattr {:?} from {:?} to {:?}: {}",
+                    name, real_src, real_dst, e
+                );
+                e.raw()
+            })?;
+        }
+        for name in existing {
+            if source.iter().any(|(kept, _)| *kept == name) {
+                continue;
+            }
+            match passthrough::removexattr_nofollow(&c_dst, &name) {
+                Ok(()) => {}
+                Err(e) if e == Errno::ENOATTR => {}
+                Err(e) => return Err(e.raw()),
+            }
+        }
+
+        // The destination may be an existing inode whose seed was just
+        // replaced, or a new one under a deleted inode's number: a live state
+        // for it must not keep an IV cached before.
+        let meta =
+            fs::symlink_metadata(real_dst).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        self.file_states.forget_xattr_iv((meta.dev(), meta.ino()));
+        Ok(())
     }
 }
 
@@ -2881,7 +3032,7 @@ impl PathFilesystem for EncFs {
     ) -> Result<(), Errno> {
         self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
-        Ok(self.setxattr_impl(path, name, value, flags as u32, 0)?)
+        Ok(self.setxattr_impl(node.state(), path, name, value, flags as u32, 0)?)
     }
 
     fn getxattr(
@@ -2893,7 +3044,7 @@ impl PathFilesystem for EncFs {
     ) -> Result<ReplyXAttr, Errno> {
         self.check_idle_lock(Access::XattrRead, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
-        ReplyXAttr::sized(self.getxattr_impl(path, name)?, size)
+        ReplyXAttr::sized(self.getxattr_impl(node.state(), path, name)?, size)
     }
 
     fn listxattr(
@@ -2904,7 +3055,7 @@ impl PathFilesystem for EncFs {
     ) -> Result<ReplyXAttr, Errno> {
         self.check_idle_lock(Access::XattrRead, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
-        ReplyXAttr::sized(self.listxattr_impl(path)?, size)
+        ReplyXAttr::sized(self.listxattr_impl(node.state(), path)?, size)
     }
 
     fn removexattr(
@@ -2915,15 +3066,15 @@ impl PathFilesystem for EncFs {
     ) -> Result<(), Errno> {
         self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
-        Ok(self.removexattr_impl(path, name)?)
+        Ok(self.removexattr_impl(node.state(), path, name)?)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        EncFs, FILE_STATE_SWEEP_FLOOR, FileHandle, FileState, FileStates, headerless_file_iv,
-        is_apple_xattr, lock_source_and_dest,
+        EncFs, FILE_STATE_SWEEP_FLOOR, FileHandle, FileState, FileStates, XATTR_READ_GUESS,
+        headerless_file_iv, is_apple_xattr, lock_source_and_dest, read_iv_seed, read_stored_xattr,
     };
     use crate::config::{EncfsConfig, Interface};
     use crate::crypto::file_iv::FileIv;
@@ -2934,7 +3085,7 @@ mod tests {
     use std::os::unix::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
-    use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
+    use typed_fuse::{Caller, Errno, PathFilesystem, PathNodeRef};
 
     fn table_len(states: &FileStates) -> usize {
         states.table.lock().unwrap().entries.len()
@@ -3119,6 +3270,22 @@ mod tests {
             config.directory_iv = true;
             config.external_iv_chaining = false;
             config.minimum_reader_version = config.required_v7_reader_version();
+            let fs = Self::mount(&root, &config);
+            Self { root, config, fs }
+        }
+
+        /// A volume with `config`, in either name IV mode.
+        fn with_config(name: &str, config: EncfsConfig) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "encfs_fs_volume_{}_{}",
+                name,
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir(&root).unwrap();
+            if config.directory_iv {
+                crate::diriv::ensure_root(&root, true).unwrap();
+            }
             let fs = Self::mount(&root, &config);
             Self { root, config, fs }
         }
@@ -3332,5 +3499,355 @@ mod tests {
         assert_eq!(create(), Err(libc::ENOENT));
         assert_eq!(create(), Ok(()));
         assert_eq!(vol.names_after_remount("/dst"), vec![OsString::from("b")]);
+    }
+
+    fn c_path(path: &Path) -> std::ffi::CString {
+        std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap()
+    }
+
+    fn set_raw_xattr(path: &Path, name: &std::ffi::CStr, value: &[u8]) {
+        typed_fuse::passthrough::setxattr_nofollow(&c_path(path), name, value, 0).unwrap();
+    }
+
+    /// Values below, at and above the first-read buffer all come back whole,
+    /// including one that exactly fills it (which FreeBSD would truncate).
+    #[test]
+    fn stored_xattr_reads_handle_every_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("f");
+        std::fs::write(&file, b"").unwrap();
+        for len in [
+            0,
+            1,
+            XATTR_READ_GUESS - 1,
+            XATTR_READ_GUESS,
+            XATTR_READ_GUESS + 1,
+            3000,
+        ] {
+            let value: Vec<u8> = (0..len).map(|i| i as u8).collect();
+            set_raw_xattr(&file, c"user.size", &value);
+            assert_eq!(
+                read_stored_xattr(&c_path(&file), c"user.size").unwrap(),
+                value,
+                "{len} bytes"
+            );
+        }
+    }
+
+    #[test]
+    fn iv_seed_reads_reject_damaged_seeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("f");
+        std::fs::write(&file, b"").unwrap();
+        let seed_name = crate::xattr_name::IV_SEED_CNAME;
+        assert_eq!(read_iv_seed(&c_path(&file)), Ok(None));
+        set_raw_xattr(&file, seed_name, &[5u8; 16]);
+        assert_eq!(read_iv_seed(&c_path(&file)), Ok(Some([5u8; 16])));
+        for len in [15, 17, 64] {
+            set_raw_xattr(&file, seed_name, &vec![5u8; len]);
+            assert_eq!(read_iv_seed(&c_path(&file)), Err(libc::EIO), "{len} bytes");
+        }
+    }
+
+    fn caller_of(fs: &EncFs, path: &str) -> Arc<FileState> {
+        let (real, _) = fs.encrypt_path(Path::new(path)).unwrap();
+        let meta = std::fs::symlink_metadata(real).unwrap();
+        use std::os::unix::fs::MetadataExt;
+        fs.file_states.get_by_key((meta.dev(), meta.ino()))
+    }
+
+    /// The node state caches the derived IV, so later operations on the inode
+    /// don't reread the seed.
+    #[test]
+    fn xattr_iv_is_cached_in_the_node_state() {
+        let vol = DirIvVolume::new("xattr_iv_cache");
+        let fs = &vol.fs;
+        fs.create_impl(caller(), Path::new("/"), OsStr::new("f"), 0o644, 0)
+            .unwrap();
+        let state = caller_of(fs, "/f");
+        assert_eq!(state.cached_xattr_iv(), None);
+        fs.setxattr_impl(&state, Path::new("/f"), OsStr::new("user.a"), b"1", 0, 0)
+            .unwrap();
+        let iv = state.cached_xattr_iv().expect("cached by the first write");
+
+        // Reads go through the cache: a seed changed behind the mount isn't
+        // seen while the state lives.
+        let (real, _) = fs.encrypt_path(Path::new("/f")).unwrap();
+        set_raw_xattr(&real, crate::xattr_name::IV_SEED_CNAME, &[9u8; 16]);
+        assert_eq!(
+            fs.getxattr_impl(&state, Path::new("/f"), OsStr::new("user.a"))
+                .unwrap(),
+            b"1"
+        );
+        assert_eq!(state.cached_xattr_iv(), Some(iv));
+
+        // A fresh state rereads it.
+        drop(state);
+        let fresh = caller_of(fs, "/f");
+        assert_eq!(fresh.cached_xattr_iv(), None);
+        assert!(
+            fs.getxattr_impl(&fresh, Path::new("/f"), OsStr::new("user.a"))
+                .is_err()
+        );
+        assert_ne!(fresh.cached_xattr_iv(), Some(iv));
+    }
+
+    /// An inode number can come back for a new inode while a deleted one's
+    /// state is alive; every creation drops what that state cached.
+    #[test]
+    fn creation_drops_a_cached_xattr_iv() {
+        let vol = DirIvVolume::new("xattr_iv_creation");
+        let fs = &vol.fs;
+        let root = Path::new("/");
+
+        fs.create_impl(caller(), root, OsStr::new("f"), 0o644, 0)
+            .unwrap();
+        let state = caller_of(fs, "/f");
+        state.set_cached_xattr_iv(Some(1));
+        // create on an existing name opens the same inode
+        let (entry, _) = fs
+            .create_impl(caller(), root, OsStr::new("f"), 0o644, 0)
+            .unwrap();
+        assert!(Arc::ptr_eq(&entry.state, &state));
+        assert_eq!(state.cached_xattr_iv(), None);
+
+        // mkdir, symlink and mknod hand back their new inode's state
+        // through `entry_for_new_inode`.
+        let state = caller_of(fs, "/f");
+        state.set_cached_xattr_iv(Some(1));
+        let entry = fs.entry_for_new_inode(Path::new("/f")).unwrap();
+        assert!(Arc::ptr_eq(&entry.state, &state));
+        assert_eq!(state.cached_xattr_iv(), None);
+        // A lookup keeps what is cached.
+        state.set_cached_xattr_iv(Some(1));
+        fs.entry_for_path(Path::new("/f")).unwrap();
+        assert_eq!(state.cached_xattr_iv(), Some(1));
+    }
+
+    fn key_of(fs: &EncFs, path: &str) -> (u64, u64) {
+        use std::os::unix::fs::MetadataExt;
+        let (real, _) = fs.encrypt_path(Path::new(path)).unwrap();
+        let meta = std::fs::symlink_metadata(real).unwrap();
+        (meta.dev(), meta.ino())
+    }
+
+    /// A rename that copies leaves the renamed entry's node on the source
+    /// inode's state. Once the source is removed its number is free for the
+    /// backing filesystem to reuse; a new inode given it must get a state of
+    /// its own, not share the renamed entry's (and its cached xattr IV).
+    #[test]
+    fn copy_renames_detach_the_removed_source_states() {
+        let root = Path::new("/");
+        for (label, external, directory_iv) in [
+            ("diriv_external", true, true),
+            ("chained_external", true, false),
+            ("chained", false, false),
+        ] {
+            let mut config = EncfsConfig::standard_v7();
+            if !directory_iv {
+                config.use_chained_name_iv();
+            }
+            config.external_iv_chaining = external;
+            config.minimum_reader_version = config.required_v7_reader_version();
+            let vol = DirIvVolume::with_config(&format!("detach_{label}"), config);
+            let fs = &vol.fs;
+
+            fs.mkdir_impl(caller(), root, OsStr::new("dir"), 0o755)
+                .unwrap();
+            fs.create_impl(caller(), Path::new("/dir"), OsStr::new("f"), 0o644, 0)
+                .unwrap();
+            fs.create_impl(caller(), root, OsStr::new("file"), 0o644, 0)
+                .unwrap();
+            let held_file = caller_of(fs, "/file");
+            let held_child = caller_of(fs, "/dir/f");
+            let file_key = key_of(fs, "/file");
+            let child_key = key_of(fs, "/dir/f");
+            fs.setxattr_impl(
+                &held_file,
+                Path::new("/file"),
+                OsStr::new("user.a"),
+                b"1",
+                0,
+                0,
+            )
+            .unwrap();
+
+            fs.rename_internal(root, OsStr::new("file"), root, OsStr::new("moved"))
+                .unwrap();
+            fs.rename_internal(root, OsStr::new("dir"), root, OsStr::new("dir2"))
+                .unwrap();
+
+            let copied_file = key_of(fs, "/moved") != file_key;
+            let copied_child = key_of(fs, "/dir2/f") != child_key;
+            assert_eq!(copied_file, external, "{label}: file copied");
+            assert_eq!(copied_child, !directory_iv, "{label}: subtree copied");
+            // What a new inode reusing each number would be handed.
+            let reused = |key| fs.file_states.get_by_key(key);
+            assert_eq!(
+                Arc::ptr_eq(&reused(file_key), &held_file),
+                !copied_file,
+                "{label}: file state"
+            );
+            assert_eq!(
+                Arc::ptr_eq(&reused(child_key), &held_child),
+                !copied_child,
+                "{label}: child state"
+            );
+            // The renamed entry's node still reads its attributes.
+            assert_eq!(
+                fs.getxattr_impl(&held_file, Path::new("/moved"), OsStr::new("user.a"))
+                    .unwrap(),
+                b"1",
+                "{label}"
+            );
+        }
+    }
+
+    /// A file that still has another hard link isn't gone after the copy, so
+    /// its state stays shared with that link.
+    #[test]
+    fn copy_renames_keep_states_of_hard_linked_files() {
+        let root = Path::new("/");
+        let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
+        config.external_iv_chaining = false;
+        config.minimum_reader_version = config.required_v7_reader_version();
+        let vol = DirIvVolume::with_config("detach_linked", config);
+        let fs = &vol.fs;
+        fs.mkdir_impl(caller(), root, OsStr::new("dir"), 0o755)
+            .unwrap();
+        fs.create_impl(caller(), Path::new("/dir"), OsStr::new("f"), 0o644, 0)
+            .unwrap();
+        fs.link_impl(Path::new("/dir/f"), root, OsStr::new("other"))
+            .unwrap();
+        let held = caller_of(fs, "/other");
+        let key = key_of(fs, "/other");
+
+        fs.rename_internal(root, OsStr::new("dir"), root, OsStr::new("dir2"))
+            .unwrap();
+        assert_eq!(key_of(fs, "/other"), key);
+        assert!(Arc::ptr_eq(&fs.file_states.get_by_key(key), &held));
+    }
+
+    /// A replace on an inode with no seed fails without creating one.
+    #[test]
+    fn xattr_replace_without_a_seed_creates_none() {
+        let vol = DirIvVolume::new("xattr_replace");
+        let fs = &vol.fs;
+        fs.create_impl(caller(), Path::new("/"), OsStr::new("f"), 0o644, 0)
+            .unwrap();
+        let state = caller_of(fs, "/f");
+        let (real, _) = fs.encrypt_path(Path::new("/f")).unwrap();
+        let flags = super::XATTR_REPLACE as u32;
+        assert_eq!(
+            fs.setxattr_impl(
+                &state,
+                Path::new("/f"),
+                OsStr::new("user.a"),
+                b"1",
+                flags,
+                0
+            ),
+            Err(Errno::ENOATTR.raw())
+        );
+        assert_eq!(read_iv_seed(&c_path(&real)), Ok(None));
+
+        // With a seed and the attribute present, a replace works as usual.
+        fs.setxattr_impl(&state, Path::new("/f"), OsStr::new("user.a"), b"1", 0, 0)
+            .unwrap();
+        fs.setxattr_impl(
+            &state,
+            Path::new("/f"),
+            OsStr::new("user.a"),
+            b"2",
+            flags,
+            0,
+        )
+        .unwrap();
+        assert_eq!(
+            fs.getxattr_impl(&state, Path::new("/f"), OsStr::new("user.a"))
+                .unwrap(),
+            b"2"
+        );
+    }
+
+    /// Listing names needs no read access on Linux, but reading the seed
+    /// does: the plain names are listed and the encrypted ones left out.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn listxattr_without_read_access_lists_plain_names() {
+        use std::os::unix::fs::PermissionsExt;
+        let vol = DirIvVolume::new("xattr_list_unreadable");
+        let fs = &vol.fs;
+        fs.create_impl(caller(), Path::new("/"), OsStr::new("f"), 0o644, 0)
+            .unwrap();
+        let state = caller_of(fs, "/f");
+        fs.setxattr_impl(&state, Path::new("/f"), OsStr::new("user.a"), b"1", 0, 0)
+            .unwrap();
+        drop(state);
+        let (real, _) = fs.encrypt_path(Path::new("/f")).unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o200)).unwrap();
+        if std::fs::File::open(&real).is_ok() {
+            return; // running with CAP_DAC_OVERRIDE (root): nothing is denied
+        }
+        let fresh = caller_of(fs, "/f");
+        assert_eq!(fs.listxattr_impl(&fresh, Path::new("/f")), Ok(Vec::new()));
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    fn raw_xattrs(path: &Path) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let c = c_path(path);
+        let mut out: Vec<_> = typed_fuse::passthrough::listxattr_names_nofollow(&c)
+            .unwrap()
+            .into_iter()
+            .filter(|n| n.starts_with(crate::xattr_name::PREFIX.as_bytes()))
+            .map(|n| {
+                let name = std::ffi::CString::new(n.clone()).unwrap();
+                (n, read_stored_xattr(&c, &name).unwrap())
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// The copy a rename makes ends with exactly the source's encrypted
+    /// attributes, and writes nothing when the destination already has them
+    /// (as after `fs::copy` on macOS, which clones attributes).
+    #[test]
+    fn copied_xattrs_are_reconciled_not_rewritten() {
+        use std::os::unix::fs::MetadataExt;
+        let vol = DirIvVolume::new("xattr_reconcile");
+        let src = vol.root.join("src");
+        let dst = vol.root.join("dst");
+        std::fs::write(&src, b"").unwrap();
+        std::fs::write(&dst, b"").unwrap();
+        let seed = crate::xattr_name::IV_SEED_CNAME;
+        for path in [&src, &dst] {
+            set_raw_xattr(path, seed, &[1u8; 16]);
+            set_raw_xattr(path, c"user.encfs.AAAA", b"same");
+        }
+        set_raw_xattr(&src, c"user.encfs.BBBB", b"source");
+        set_raw_xattr(&dst, c"user.encfs.BBBB", b"stale value");
+        set_raw_xattr(&dst, c"user.encfs.CCCC", b"only on dst");
+        set_raw_xattr(&dst, c"user.unrelated", b"left alone");
+
+        vol.fs.copy_encrypted_xattrs(&src, &dst).unwrap();
+        assert_eq!(raw_xattrs(&dst), raw_xattrs(&src));
+        let c_dst = c_path(&dst);
+        assert_eq!(
+            read_stored_xattr(&c_dst, c"user.unrelated").unwrap(),
+            b"left alone"
+        );
+
+        // Already identical: nothing is written.
+        let before = std::fs::metadata(&dst).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        vol.fs.copy_encrypted_xattrs(&src, &dst).unwrap();
+        let after = std::fs::metadata(&dst).unwrap();
+        assert_eq!(
+            (after.ctime(), after.ctime_nsec()),
+            (before.ctime(), before.ctime_nsec()),
+            "an identical copy rewrote attributes"
+        );
     }
 }

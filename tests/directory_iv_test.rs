@@ -257,6 +257,60 @@ impl Volume {
         }
     }
 
+    fn try_getxattr(&self, path: &str, name: &str) -> Result<Vec<u8>, Errno> {
+        let target = node(&self.fs, &self.root_state, path, &req());
+        match self
+            .fs
+            .getxattr(target.as_node(), OsStr::new(name), 65536, &req())?
+        {
+            XattrReply::Data(data) => Ok(data),
+            other => panic!("unexpected reply {other:?}"),
+        }
+    }
+
+    /// Attribute names listed for `path`, without those macOS adds itself.
+    fn listxattr(&self, path: &str) -> BTreeSet<String> {
+        let target = node(&self.fs, &self.root_state, path, &req());
+        match self
+            .fs
+            .listxattr(target.as_node(), 65536, &req())
+            .unwrap_or_else(|e| panic!("listxattr {path}: {e}"))
+        {
+            XattrReply::Data(data) => String::from_utf8(data)
+                .unwrap()
+                .split('\0')
+                .filter(|n| !n.is_empty() && !n.starts_with("com.apple."))
+                .map(str::to_string)
+                .collect(),
+            other => panic!("unexpected reply {other:?}"),
+        }
+    }
+
+    fn link(&self, from: &str, to: &str) -> Result<(), Errno> {
+        let (new_parent, new_name) = Self::parent_and_name(to);
+        let target = node(&self.fs, &self.root_state, from, &req());
+        let new_parent = node(&self.fs, &self.root_state, new_parent, &req());
+        self.fs
+            .link(target.as_node(), new_parent.as_node(), new_name, &req())
+            .map(|_| ())
+    }
+
+    /// Opens `path` with `O_TRUNC`, as `> path` in a shell does.
+    fn truncate_open(&self, path: &str) {
+        let file = node(&self.fs, &self.root_state, path, &req());
+        let opened = self
+            .fs
+            .open(file.as_node(), libc::O_WRONLY | libc::O_TRUNC, &req())
+            .unwrap_or_else(|e| panic!("open {path}: {e}"));
+        self.fs
+            .release(file.as_node(), opened.handle, &req())
+            .unwrap();
+    }
+
+    fn chmod_backing(&self, path: &str, mode: u32) {
+        fs::set_permissions(self.backing(path), fs::Permissions::from_mode(mode)).unwrap();
+    }
+
     /// Plaintext names in `path`, without `.` and `..`.
     fn list(&self, path: &str) -> BTreeSet<OsString> {
         let dir = node(&self.fs, &self.root_state, path, &req());
@@ -594,11 +648,297 @@ fn file_and_symlink_moves_across_directories_with_external_iv() {
 }
 
 #[test]
-fn root_xattrs_use_the_root_sidecar() {
+fn root_xattrs_survive_a_remount() {
     let vol = Volume::new("root_xattr", directory_iv_config(true));
     vol.setxattr("/", "user.root", b"root value");
     let vol = vol.remount();
     assert_eq!(vol.getxattr("/", "user.root"), b"root value");
+}
+
+/// Encrypted xattrs are keyed by a seed on the inode, so they come through
+/// every way a rename can move an entry: rename(2) in place, or a copy where
+/// the file header or the parent's name IV changes.
+fn xattr_configs() -> Vec<(&'static str, EncfsConfig)> {
+    let mut chained_internal = chained_v7_config();
+    chained_internal.external_iv_chaining = false;
+    vec![
+        ("diriv", directory_iv_config(false)),
+        ("diriv_external", directory_iv_config(true)),
+        ("chained", chained_internal),
+        ("chained_external", chained_v7_config()),
+    ]
+}
+
+fn names_set(names: &[&str]) -> BTreeSet<String> {
+    names.iter().map(|n| n.to_string()).collect()
+}
+
+/// The review case: a read-only file denies even its owner `setxattr`, so
+/// nothing may need to write attributes after the mode is restored.
+#[test]
+fn read_only_file_keeps_xattrs_through_rename() {
+    for (label, config) in xattr_configs() {
+        let vol = Volume::new(&format!("ro_xattr_{label}"), config);
+        vol.mkdir("/d1");
+        vol.mkdir("/d2");
+        vol.write_file("/d1/file", b"read only");
+        vol.setxattr("/d1/file", "user.one", b"1");
+        vol.setxattr("/d1/file", "user.two", b"2");
+        vol.chmod_backing("/d1/file", 0o444);
+
+        vol.rename("/d1/file", "/d2/moved")
+            .unwrap_or_else(|e| panic!("{label}: rename: {e}"));
+
+        let vol = vol.remount();
+        assert_eq!(vol.read_file("/d2/moved"), b"read only", "{label}");
+        assert_eq!(vol.getxattr("/d2/moved", "user.one"), b"1", "{label}");
+        assert_eq!(vol.getxattr("/d2/moved", "user.two"), b"2", "{label}");
+        assert_eq!(
+            vol.listxattr("/d2/moved"),
+            names_set(&["user.one", "user.two"]),
+            "{label}"
+        );
+        let mode = fs::metadata(vol.backing("/d2/moved")).unwrap().mode();
+        assert_eq!(mode & 0o777, 0o444, "{label}: mode restored");
+        assert_eq!(vol.list("/d1"), names(&[]), "{label}");
+    }
+}
+
+/// A destination's own attributes are keyed by its own seed; after the
+/// rename only the source's remain, all readable.
+#[test]
+fn rename_over_a_file_replaces_its_xattrs() {
+    for (label, config) in xattr_configs() {
+        let vol = Volume::new(&format!("over_xattr_{label}"), config);
+        vol.write_file("/src", b"source");
+        vol.setxattr("/src", "user.src", b"from source");
+        vol.write_file("/dst", b"destination");
+        vol.setxattr("/dst", "user.dst", b"from destination");
+        vol.setxattr("/dst", "user.both", b"destination's");
+        vol.setxattr("/src", "user.both", b"source's");
+
+        vol.rename("/src", "/dst")
+            .unwrap_or_else(|e| panic!("{label}: rename: {e}"));
+
+        let vol = vol.remount();
+        assert_eq!(vol.read_file("/dst"), b"source", "{label}");
+        assert_eq!(
+            vol.listxattr("/dst"),
+            names_set(&["user.src", "user.both"]),
+            "{label}"
+        );
+        assert_eq!(vol.getxattr("/dst", "user.both"), b"source's", "{label}");
+        assert_eq!(
+            vol.try_getxattr("/dst", "user.dst"),
+            Err(Errno::ENOATTR),
+            "{label}"
+        );
+    }
+}
+
+/// A rename's copy can give an existing destination inode the source's
+/// seed. A state for that inode kept alive elsewhere (an open handle, say)
+/// must not go on using the IV it cached from the old seed.
+#[test]
+fn rename_over_a_file_whose_state_is_held_rereads_its_seed() {
+    for (label, config) in xattr_configs() {
+        let vol = Volume::new(&format!("held_xattr_{label}"), config);
+        vol.write_file("/src", b"source");
+        vol.setxattr("/src", "user.src", b"from source");
+        vol.write_file("/dst", b"destination");
+        vol.setxattr("/dst", "user.dst", b"from destination");
+
+        let held = node(&vol.fs, &vol.root_state, "/dst", &req());
+        // Caches the destination's IV in the held state.
+        assert_eq!(vol.getxattr("/dst", "user.dst"), b"from destination");
+
+        vol.rename("/src", "/dst")
+            .unwrap_or_else(|e| panic!("{label}: rename: {e}"));
+        assert_eq!(vol.getxattr("/dst", "user.src"), b"from source", "{label}");
+        assert_eq!(vol.listxattr("/dst"), names_set(&["user.src"]), "{label}");
+        drop(held);
+    }
+}
+
+#[test]
+fn directory_xattrs_survive_rename() {
+    for (label, config) in xattr_configs() {
+        let vol = Volume::new(&format!("dir_xattr_{label}"), config);
+        vol.mkdir("/a");
+        vol.mkdir("/a/sub");
+        vol.write_file("/a/sub/file", b"inside");
+        vol.setxattr("/a", "user.dir", b"on a");
+        vol.setxattr("/a/sub", "user.sub", b"on sub");
+        vol.setxattr("/a/sub/file", "user.file", b"on file");
+
+        vol.rename("/a", "/b")
+            .unwrap_or_else(|e| panic!("{label}: rename: {e}"));
+
+        let vol = vol.remount();
+        assert_eq!(vol.getxattr("/b", "user.dir"), b"on a", "{label}");
+        assert_eq!(vol.getxattr("/b/sub", "user.sub"), b"on sub", "{label}");
+        assert_eq!(
+            vol.getxattr("/b/sub/file", "user.file"),
+            b"on file",
+            "{label}"
+        );
+    }
+}
+
+/// Opening with `O_TRUNC` writes a new file header; the attributes don't
+/// depend on it.
+#[test]
+fn xattrs_survive_a_truncating_open() {
+    for (label, config) in xattr_configs() {
+        let vol = Volume::new(&format!("trunc_xattr_{label}"), config);
+        vol.write_file("/file", b"before");
+        vol.setxattr("/file", "user.kept", b"still here");
+        vol.truncate_open("/file");
+        assert_eq!(vol.read_file("/file"), b"", "{label}");
+        assert_eq!(vol.getxattr("/file", "user.kept"), b"still here", "{label}");
+    }
+}
+
+/// Hard links share an inode, and so its seed and attributes.
+#[test]
+fn hard_links_share_xattrs() {
+    for (label, config) in xattr_configs() {
+        if config.external_iv_chaining {
+            continue; // link is refused there
+        }
+        let vol = Volume::new(&format!("link_xattr_{label}"), config);
+        vol.mkdir("/d");
+        vol.write_file("/file", b"linked");
+        vol.setxattr("/file", "user.first", b"1");
+        vol.link("/file", "/d/other")
+            .unwrap_or_else(|e| panic!("{label}: link: {e}"));
+        vol.setxattr("/d/other", "user.second", b"2");
+
+        assert_eq!(vol.getxattr("/file", "user.second"), b"2", "{label}");
+        assert_eq!(vol.getxattr("/d/other", "user.first"), b"1", "{label}");
+        assert_eq!(
+            vol.listxattr("/file"),
+            names_set(&["user.first", "user.second"]),
+            "{label}"
+        );
+    }
+}
+
+fn backing_xattr_names(path: &Path) -> Vec<Vec<u8>> {
+    let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+    typed_fuse::passthrough::listxattr_names_nofollow(&c_path).unwrap()
+}
+
+/// The seed is stored once per inode and never listed.
+#[test]
+fn the_xattr_seed_is_hidden() {
+    let vol = Volume::new("seed_hidden", directory_iv_config(true));
+    vol.write_file("/file", b"x");
+    assert!(
+        !backing_xattr_names(&vol.backing("/file"))
+            .iter()
+            .any(|n| n.starts_with(encfs::xattr_name::PREFIX.as_bytes())),
+        "no seed before the first attribute"
+    );
+    vol.setxattr("/file", "user.a", b"1");
+    vol.setxattr("/file", "user.b", b"2");
+
+    let stored = backing_xattr_names(&vol.backing("/file"));
+    let seed = encfs::xattr_name::IV_SEED_NAME.as_bytes();
+    assert_eq!(stored.iter().filter(|n| *n == seed).count(), 1);
+    assert_eq!(vol.listxattr("/file"), names_set(&["user.a", "user.b"]));
+    assert_eq!(
+        vol.try_getxattr("/file", encfs::xattr_name::IV_SEED_NAME),
+        Err(Errno::ENOATTR),
+        "the plaintext name doesn't reach the stored seed"
+    );
+}
+
+/// On a volume whose config names the path-IV format of earlier versions,
+/// extended attributes are unavailable: nothing is read, written or removed,
+/// so going back to such a version finds its attributes as it left them,
+/// and renames carry their stored bytes across.
+#[test]
+fn path_iv_volumes_leave_extended_attributes_alone() {
+    let c = |s: &str| std::ffi::CString::new(s).unwrap();
+    let raw_xattrs = |path: &Path| -> Vec<(Vec<u8>, Vec<u8>)> {
+        let c_path = c(path.to_str().unwrap());
+        let mut out: Vec<_> = backing_xattr_names(path)
+            .into_iter()
+            .filter(|n| n.starts_with(encfs::xattr_name::PREFIX.as_bytes()))
+            .map(|n| {
+                let name = std::ffi::CString::new(n.clone()).unwrap();
+                let value =
+                    typed_fuse::passthrough::getxattr_value_nofollow(&c_path, &name).unwrap();
+                (n, value)
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    for (label, mut config) in xattr_configs() {
+        config.xattr_format = encfs::config::XattrFormat::EncryptedPathIv;
+        let vol = Volume::new(&format!("path_iv_{label}"), config);
+        vol.mkdir("/d");
+        vol.write_file("/d/file", b"x");
+        // What an earlier version stored: an encrypted name, no seed.
+        let backing = vol.backing("/d/file");
+        let old_name = c(&encfs::xattr_name::encode(&[7u8; 16]));
+        let c_backing = c(backing.to_str().unwrap());
+        typed_fuse::passthrough::setxattr_nofollow(&c_backing, &old_name, &[9u8; 16], 0).unwrap();
+        let stored = raw_xattrs(&backing);
+
+        let target = node(&vol.fs, &vol.root_state, "/d/file", &req());
+        let enotsup = Errno::from(libc::ENOTSUP);
+        assert_eq!(
+            vol.fs
+                .setxattr(target.as_node(), OsStr::new("user.a"), b"1", 0, &req()),
+            Err(enotsup),
+            "{label}"
+        );
+        assert_eq!(
+            vol.try_getxattr("/d/file", "user.a"),
+            Err(enotsup),
+            "{label}"
+        );
+        assert_eq!(
+            vol.fs
+                .removexattr(target.as_node(), OsStr::new("user.a"), &req()),
+            Err(enotsup),
+            "{label}"
+        );
+        assert_eq!(vol.listxattr("/d/file"), names_set(&[]), "{label}");
+        drop(target);
+        assert_eq!(raw_xattrs(&backing), stored, "{label}: untouched");
+
+        vol.rename("/d/file", "/moved")
+            .unwrap_or_else(|e| panic!("{label}: rename: {e}"));
+        vol.rename("/d", "/d2")
+            .unwrap_or_else(|e| panic!("{label}: rename: {e}"));
+        assert_eq!(
+            raw_xattrs(&vol.backing("/moved")),
+            stored,
+            "{label}: carried by the rename"
+        );
+    }
+}
+
+/// Attributes stored under the retired path-IV format have no seed beside
+/// them: they are not listed or returned, and new ones work alongside.
+#[test]
+fn attributes_without_a_seed_are_not_read() {
+    let vol = Volume::new("seedless", chained_v7_config());
+    vol.write_file("/file", b"x");
+    let backing = vol.backing("/file");
+    let c_path = std::ffi::CString::new(backing.as_os_str().as_encoded_bytes()).unwrap();
+    let old_name = std::ffi::CString::new(encfs::xattr_name::encode(&[7u8; 16])).unwrap();
+    typed_fuse::passthrough::setxattr_nofollow(&c_path, &old_name, &[9u8; 16], 0).unwrap();
+
+    assert_eq!(vol.listxattr("/file"), names_set(&[]));
+    vol.setxattr("/file", "user.new", b"current");
+    assert_eq!(vol.listxattr("/file"), names_set(&["user.new"]));
+    assert_eq!(vol.getxattr("/file", "user.new"), b"current");
+    assert!(backing_xattr_names(&backing).contains(&old_name.into_bytes()));
 }
 
 /// Chained mode is untouched: no sidecars anywhere, and a directory rename
@@ -704,7 +1044,7 @@ fn password_change_keeps_directory_iv_mode() {
     assert!(!config.chained_name_iv);
     assert_eq!(
         config.minimum_reader_version,
-        encfs::constants::V7_DIRECTORY_IV_CONFIG_VERSION
+        encfs::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
     );
     assert_eq!(diriv::read_sidecar(&root).unwrap(), root_sidecar);
 

@@ -60,6 +60,11 @@ fn help_main_mount_point() -> String {
 }
 
 #[cfg(target_os = "macos")]
+fn help_main_no_apple_xattr() -> String {
+    t!("help.encfs.no_apple_xattr").to_string()
+}
+
+#[cfg(target_os = "macos")]
 fn help_main_touchid() -> String {
     t!("help.encfs.touchid").to_string()
 }
@@ -103,6 +108,10 @@ struct Args {
 
     #[arg(long, help = help_main_no_default_permissions())]
     no_default_permissions: bool,
+
+    #[cfg(target_os = "macos")]
+    #[arg(long, help = help_main_no_apple_xattr())]
+    no_apple_xattr: bool,
 
     #[cfg(target_os = "macos")]
     #[arg(long, help = help_main_touchid())]
@@ -178,6 +187,11 @@ fn main() -> Result<()> {
 
     let config =
         config::EncfsConfig::load(&config_path).context(t!("main.failed_to_load_config"))?;
+    if let Some(warning) = config.legacy_xattr_warning() {
+        eprintln!("{}", warning);
+    }
+    #[cfg(target_os = "macos")]
+    let xattrs_available = config.xattrs_available();
 
     let mut password = if let Some(prog) = args.extpass {
         use std::process::Command;
@@ -285,12 +299,27 @@ fn main() -> Result<()> {
                 None => fs,
             };
 
-            let mount_config = mount::MountConfig {
+            #[allow(unused_mut)] // only macOS adds options here
+            let mut mount_config = mount::MountConfig {
                 allow_other: args.public,
                 default_permissions: !args.no_default_permissions,
                 read_only: args.read_only,
                 ..mount::MountConfig::new("encfs")
             };
+            // macFUSE then refuses `com.apple.*` attributes itself, so the
+            // per-file provenance and Finder metadata macOS manages never
+            // reach the filesystem (or its encrypted xattr storage).
+            #[cfg(target_os = "macos")]
+            if args.no_apple_xattr {
+                mount_config.extra_options.push("noapplexattr".to_string());
+            }
+            // Where extended attributes are unavailable, macFUSE would store
+            // them in AppleDouble `._` files instead; refuse those so the
+            // volume stays as an earlier version left it.
+            #[cfg(target_os = "macos")]
+            if !xattrs_available {
+                mount_config.extra_options.push("noappledouble".to_string());
+            }
 
             mount::mount_blocking(fs, &mount_point, &mount_config, args.single_thread)?;
         }
