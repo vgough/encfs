@@ -1109,6 +1109,100 @@ fn live_read_only_mount_is_ero_fs() -> Result<()> {
     Ok(())
 }
 
+/// Inode numbers of every ciphertext entry in the backing store. A directory
+/// rename that copied anything would introduce new ones.
+fn backing_inodes(backing_root: &Path) -> Result<std::collections::BTreeSet<u64>> {
+    use std::os::unix::fs::MetadataExt;
+    live::list_non_dot_entries_recursive(backing_root)?
+        .into_iter()
+        .map(|p| Ok(fs::symlink_metadata(&p)?.ino()))
+        .collect()
+}
+
+fn sorted_names(path: &Path) -> Result<Vec<String>> {
+    let mut names = read_directory_names(path)?;
+    names.sort();
+    Ok(names)
+}
+
+fn run_directory_iv_rename(external_iv_chaining: bool) -> Result<()> {
+    let (backing, cfg) = live::init_directory_iv_v7_backing_root(external_iv_chaining)?;
+    {
+        let mount = MountGuard::mount_existing_backing_root(cfg.clone(), false, backing.clone())
+            .context("mount (phase1) failed")?;
+        assert!(
+            backing.join(encfs::diriv::SIDECAR_NAME).is_file(),
+            "mounting an empty volume must create the root sidecar"
+        );
+        let root = &mount.mount_point;
+
+        fs::create_dir_all(root.join("a/b/c"))?;
+        fs::create_dir(root.join("z"))?;
+        fs::write(root.join("a/b/c/file.txt"), b"deep payload")?;
+        std::os::unix::fs::symlink("c/file.txt", root.join("a/b/link"))?;
+        assert_eq!(sorted_names(root)?, vec!["a", "z"]);
+
+        let before = backing_inodes(&backing)?;
+        fs::rename(root.join("a"), root.join("z/moved"))?;
+        assert_eq!(
+            backing_inodes(&backing)?,
+            before,
+            "a directory rename must move entries, not copy them"
+        );
+        assert_eq!(
+            fs::read(root.join("z/moved/b/c/file.txt"))?,
+            b"deep payload"
+        );
+        assert_eq!(
+            fs::read_link(root.join("z/moved/b/link"))?,
+            PathBuf::from("c/file.txt")
+        );
+
+        let err = fs::remove_dir(root.join("z/moved/b")).unwrap_err();
+        assert_eq!(err.raw_os_error(), Some(libc::ENOTEMPTY));
+        fs::create_dir(root.join("empty"))?;
+        assert!(sorted_names(&root.join("empty"))?.is_empty());
+        fs::remove_dir(root.join("empty"))?;
+
+        // Onto an existing empty directory.
+        fs::create_dir(root.join("target"))?;
+        fs::rename(root.join("z/moved"), root.join("target"))?;
+        assert_eq!(sorted_names(root)?, vec!["target", "z"]);
+    }
+    {
+        let mount = MountGuard::mount_existing_backing_root(cfg, false, backing.clone())
+            .context("mount (phase2) failed")?;
+        let root = &mount.mount_point;
+        assert_eq!(fs::read(root.join("target/b/c/file.txt"))?, b"deep payload");
+        assert_eq!(
+            fs::read_link(root.join("target/b/link"))?,
+            PathBuf::from("c/file.txt")
+        );
+    }
+    let _ = fs::remove_dir_all(&backing);
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn live_directory_iv_rename() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    run_directory_iv_rename(false)
+}
+
+#[test]
+#[ignore]
+fn live_directory_iv_rename_external_iv() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    run_directory_iv_rename(true)
+}
+
 #[test]
 #[ignore]
 fn live_wrong_password_fails_to_mount() -> Result<()> {

@@ -22,6 +22,16 @@ use zeroize::Zeroize;
 
 type HmacSha1 = Hmac<Sha1>;
 
+/// Domain separation for [`SslCipher::directory_ivs`]. Versioned so a future
+/// derivation cannot collide with this one.
+const DIRECTORY_IV_LABEL: &[u8] = b"encfs.diriv.v1\0";
+
+/// Domain separation for [`SslCipher::xattr_iv`].
+const XATTR_IV_LABEL: &[u8] = b"encfs.xattriv.v1\0";
+
+/// Domain separation for [`SslCipher::reverse_xattr_seed`].
+const REVERSE_XATTR_SEED_LABEL: &[u8] = b"encfs.xattrseed.reverse.v1\0";
+
 /// A symmetric block-cipher algorithm, abstracted over CBC (full file blocks)
 /// and CFB (partial blocks / stream) modes. One implementation per algorithm:
 /// adding a cipher is adding a `Primitive<NewAlgorithm>`, not another arm in a
@@ -503,6 +513,44 @@ impl SslCipher {
 
     pub fn mac_64(&self, data: &[u8], iv: u64) -> Result<u64> {
         Self::mac_64_with_key(data, iv, &self.key)
+    }
+
+    /// Derives `(name_iv, reserved)` from a directory's sidecar bytes:
+    /// `HMAC-SHA256(key, "encfs.diriv.v1\0" || diriv)`, with each IV read as a
+    /// little-endian u64 from the first and second 8 bytes of the digest.
+    pub fn directory_ivs(&self, diriv: &[u8]) -> Result<(u64, u64)> {
+        let digest = self.labeled_hmac_sha256(DIRECTORY_IV_LABEL, diriv)?;
+        let half = |range: std::ops::Range<usize>| {
+            u64::from_le_bytes(digest[range].try_into().expect("8-byte slice"))
+        };
+        Ok((half(0..8), half(8..16)))
+    }
+
+    /// Derives the IV for an inode's encrypted extended attributes from the
+    /// seed stored on it: `HMAC-SHA256(key, "encfs.xattriv.v1\0" || seed)`,
+    /// read as a little-endian u64 from the first 8 bytes of the digest.
+    pub fn xattr_iv(&self, seed: &[u8]) -> Result<u64> {
+        let digest = self.labeled_hmac_sha256(XATTR_IV_LABEL, seed)?;
+        Ok(u64::from_le_bytes(
+            digest[0..8].try_into().expect("8-byte slice"),
+        ))
+    }
+
+    /// The xattr IV seed reverse mode presents for the entry whose path IV is
+    /// `path_iv`, which has no stored seed: the first 16 bytes of
+    /// `HMAC-SHA256(key, "encfs.xattrseed.reverse.v1\0" || LE64(path_iv))`.
+    pub fn reverse_xattr_seed(&self, path_iv: u64) -> Result<[u8; 16]> {
+        let digest = self.labeled_hmac_sha256(REVERSE_XATTR_SEED_LABEL, &path_iv.to_le_bytes())?;
+        Ok(digest[0..16].try_into().expect("16-byte slice"))
+    }
+
+    fn labeled_hmac_sha256(&self, label: &[u8], data: &[u8]) -> Result<[u8; 32]> {
+        type HmacSha256 = Hmac<sha2::Sha256>;
+        let mut mac = <HmacSha256 as HmacKeyInit>::new_from_slice(&self.key)
+            .map_err(|e| anyhow!("Failed to initialize HMAC-SHA256: {}", e))?;
+        mac.update(label);
+        mac.update(data);
+        Ok(mac.finalize().into_bytes().into())
     }
     /// Standard stream decoding for EncFS.
     ///
@@ -1377,6 +1425,75 @@ mod tests {
     use crate::constants::{
         DEFAULT_ARGON2_MEMORY_COST, DEFAULT_ARGON2_PARALLELISM, DEFAULT_ARGON2_TIME_COST,
     };
+
+    fn aes256_with_key(key_byte: u8) -> SslCipher {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher = SslCipher::new(&iface, 256).unwrap();
+        cipher.set_key(&[key_byte; 32], &[0x55; 16]);
+        cipher
+    }
+
+    /// Pinned so the on-disk meaning of a sidecar cannot drift. The vector is
+    /// HMAC-SHA256 computed independently (Python `hmac`).
+    #[test]
+    fn directory_ivs_golden_vector() {
+        let cipher = aes256_with_key(0x44);
+        let diriv: Vec<u8> = (0..16).collect();
+        assert_eq!(
+            cipher.directory_ivs(&diriv).unwrap(),
+            (0xbf20_b180_1adf_d2c8, 0x9fd1_c614_a596_0779)
+        );
+    }
+
+    /// Pinned so the meaning of a stored xattr IV seed cannot drift. The
+    /// vectors are HMAC-SHA256 computed independently (Python `hmac`).
+    #[test]
+    fn xattr_iv_golden_vectors() {
+        let cipher = aes256_with_key(0x44);
+        let seed: Vec<u8> = (0..16).collect();
+        assert_eq!(cipher.xattr_iv(&seed).unwrap(), 0x8650_dd2c_5b04_bb97);
+        assert_eq!(
+            cipher.reverse_xattr_seed(0x1122_3344_5566_7788).unwrap(),
+            [
+                0xb1, 0x3a, 0x66, 0xa6, 0x10, 0xc4, 0x60, 0x37, 0x6b, 0xa9, 0xa4, 0x9c, 0xdf, 0xfc,
+                0x21, 0xef
+            ]
+        );
+    }
+
+    #[test]
+    fn xattr_iv_depends_on_seed_and_key() {
+        let cipher = aes256_with_key(0x44);
+        let a = cipher.xattr_iv(&[1u8; 16]).unwrap();
+        assert_eq!(a, cipher.xattr_iv(&[1u8; 16]).unwrap());
+        assert_ne!(a, cipher.xattr_iv(&[2u8; 16]).unwrap());
+        assert_ne!(a, aes256_with_key(0x45).xattr_iv(&[1u8; 16]).unwrap());
+        // Not the directory derivation under another name.
+        assert_ne!(a, cipher.directory_ivs(&[1u8; 16]).unwrap().0);
+    }
+
+    #[test]
+    fn directory_ivs_depend_on_sidecar_and_key() {
+        let cipher = aes256_with_key(0x44);
+        let a = cipher.directory_ivs(&[1u8; 16]).unwrap();
+        assert_eq!(a, cipher.directory_ivs(&[1u8; 16]).unwrap());
+        assert_ne!(a, cipher.directory_ivs(&[2u8; 16]).unwrap());
+        assert_ne!(a, aes256_with_key(0x45).directory_ivs(&[1u8; 16]).unwrap());
+        assert_ne!(a.0, a.1, "name and node IVs must be independent");
+
+        // The same plaintext name encodes differently in two directories.
+        let (name_iv_a, _) = a;
+        let (name_iv_b, _) = cipher.directory_ivs(&[2u8; 16]).unwrap();
+        assert_ne!(
+            cipher.encrypt_filename(b"same.txt", name_iv_a).unwrap().0,
+            cipher.encrypt_filename(b"same.txt", name_iv_b).unwrap().0
+        );
+    }
 
     /// Shared cipher configuration for all encryption mode tests
     struct CipherTestConfig {

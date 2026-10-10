@@ -84,10 +84,23 @@ enum NameEncodingMode {
   NAME_ENCODING_MODE_BLOCK32 = 3;
 }
 
+// Where the IV for the names inside a directory comes from. The zero value is
+// what every config written before this field relied on, and is omitted on
+// the wire, so those configs keep their encoding and hash. Any non-zero value
+// requires minimum_reader_version >= 4, and any new value must come with a
+// further minimum_reader_version bump, so unaware readers fail closed.
+enum DirectoryIvMode {
+  // chained_name_iv decides: the IV chains from the parent path, or is 0.
+  DIRECTORY_IV_MODE_NONE = 0;
+  // A random 16-byte ".encfs.diriv" file in each ciphertext directory.
+  DIRECTORY_IV_MODE_SIDECAR = 1;
+}
+
 message NameEncoding {
   NameEncodingMode mode = 1;
   bool chained_name_iv = 2;
   bool external_iv_chaining = 3;
+  DirectoryIvMode directory_iv = 4;
 }
 
 // How extended attributes are stored. The zero value is what every config
@@ -95,11 +108,18 @@ message NameEncoding {
 // minimum_reader_version >= 3, and any new value must come with a further
 // minimum_reader_version bump, so unaware readers fail closed.
 enum XattrFormat {
-  // Names and values encrypted, names stored under "user.encfs.".
-  XATTR_FORMAT_ENCRYPTED = 0;
+  // Names and values encrypted under the entry's path IV, names stored under
+  // "user.encfs.". No longer supported: readers treat it as
+  // XATTR_FORMAT_ENCRYPTED_INODE_IV and warn, so attributes stored this way
+  // can no longer be read.
+  XATTR_FORMAT_ENCRYPTED_PATH_IV = 0;
   // Names and values passed through unchanged, as V4-V6 and C++ EncFS do.
   // Set when a legacy volume is upgraded in place.
   XATTR_FORMAT_PLAINTEXT = 1;
+  // Names and values encrypted, names stored under "user.encfs.", under an IV
+  // derived from 16 random bytes stored on the same inode as
+  // "user.encfs.~iv". Requires minimum_reader_version >= 5.
+  XATTR_FORMAT_ENCRYPTED_INODE_IV = 2;
 }
 
 // How symlink targets are stored. Same versioning rules as XattrFormat.

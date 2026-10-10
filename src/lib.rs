@@ -3,6 +3,7 @@ pub mod config_binary;
 pub mod config_proto;
 pub mod constants;
 pub mod crypto;
+pub mod diriv;
 pub mod fs;
 pub mod idle_lock;
 pub mod reverse_fs;

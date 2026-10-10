@@ -12,3 +12,19 @@ lib.error_unsupported_cipher:
   fr: "Chiffrement non pris en charge : %{name} %{key_size}"
   de: "Nicht unterstützte Verschlüsselung: %{name} %{key_size}"
 
+lib.diriv_root_missing:
+  en: "The volume root has no directory IV file (%{path}) but already contains encrypted names; they cannot be decrypted without it. Restore the file from a backup."
+  fr: "La racine du volume n'a pas de fichier d'IV de répertoire (%{path}) mais contient déjà des noms chiffrés ; ils ne peuvent pas être déchiffrés sans lui. Restaurez le fichier depuis une sauvegarde."
+  de: "Das Wurzelverzeichnis des Volumes hat keine Verzeichnis-IV-Datei (%{path}), enthält aber bereits verschlüsselte Namen; ohne sie können diese nicht entschlüsselt werden. Stellen Sie die Datei aus einer Sicherung wieder her."
+lib.diriv_root_missing_read_only:
+  en: "The volume root has no directory IV file (%{path}) and the mount is read-only, so it cannot be created. Mount read-write once to create it."
+  fr: "La racine du volume n'a pas de fichier d'IV de répertoire (%{path}) et le montage est en lecture seule, il ne peut donc pas être créé. Montez une fois en lecture-écriture pour le créer."
+  de: "Das Wurzelverzeichnis des Volumes hat keine Verzeichnis-IV-Datei (%{path}) und das Einhängen ist schreibgeschützt, daher kann sie nicht erstellt werden. Hängen Sie einmal mit Schreibzugriff ein, um sie zu erstellen."
+lib.diriv_root_invalid:
+  en: "The volume root's directory IV file (%{path}) is damaged: it must be a regular file of exactly 16 bytes."
+  fr: "Le fichier d'IV de répertoire de la racine du volume (%{path}) est endommagé : il doit s'agir d'un fichier ordinaire d'exactement 16 octets."
+  de: "Die Verzeichnis-IV-Datei des Volume-Wurzelverzeichnisses (%{path}) ist beschädigt: Sie muss eine reguläre Datei von genau 16 Bytes sein."
+lib.legacy_xattr_format:
+  en: "warning: extended attributes are unavailable on this filesystem. Its config uses the extended attribute format of EncFS versions before 2.0.0-beta.7, which this version does not support. Existing attributes are left untouched, so an earlier version can still read them."
+  fr: "avertissement : les attributs étendus ne sont pas disponibles sur ce système de fichiers. Sa configuration utilise le format d'attributs étendus des versions d'EncFS antérieures à 2.0.0-beta.7, que cette version ne prend pas en charge. Les attributs existants sont laissés intacts, afin qu'une version antérieure puisse toujours les lire."
+  de: "Warnung: Erweiterte Attribute sind auf diesem Dateisystem nicht verfügbar. Seine Konfiguration verwendet das Format für erweiterte Attribute von EncFS-Versionen vor 2.0.0-beta.7, das diese Version nicht unterstützt. Vorhandene Attribute bleiben unverändert, sodass eine frühere Version sie weiterhin lesen kann."

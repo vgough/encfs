@@ -716,23 +716,49 @@ impl ReverseFs {
         Ok(result)
     }
 
-    fn decrypt_xattr_name(&self, name: &OsStr, path_iv: u64) -> Result<Vec<u8>, libc::c_int> {
+    fn decrypt_xattr_name(&self, name: &OsStr, xattr_iv: u64) -> Result<Vec<u8>, libc::c_int> {
         let name = name.to_str().ok_or(libc::EILSEQ)?;
         let encoded = name
             .strip_prefix(xattr_name::PREFIX)
             .ok_or(Errno::ENOATTR.raw())?;
         let encrypted = xattr_name::decode(encoded).ok_or(Errno::ENOATTR.raw())?;
         self.cipher
-            .decrypt_xattr_name(&encrypted, path_iv)
+            .decrypt_xattr_name(&encrypted, xattr_iv)
             .map_err(|_| Errno::ENOATTR.raw())
     }
 
-    fn encrypted_xattr_name(&self, name: &[u8], path_iv: u64) -> Result<String, libc::c_int> {
+    fn encrypted_xattr_name(&self, name: &[u8], xattr_iv: u64) -> Result<String, libc::c_int> {
         let encrypted = self
             .cipher
-            .encrypt_xattr_name(name, path_iv)
+            .encrypt_xattr_name(name, xattr_iv)
             .map_err(|_| libc::EIO)?;
         Ok(xattr_name::encode(&encrypted))
+    }
+
+    /// The xattr IV seed the encrypted view presents for the entry with path
+    /// IV `path_iv`, and the IV it yields. The source stores no seed, so one
+    /// is derived from the path; a forward mount of the view's ciphertext
+    /// reads it back like a stored one.
+    fn xattr_seed_and_iv(&self, path_iv: u64) -> Result<([u8; 16], u64), libc::c_int> {
+        let seed = self
+            .cipher
+            .reverse_xattr_seed(path_iv)
+            .map_err(|_| libc::EIO)?;
+        let iv = self.cipher.xattr_iv(&seed).map_err(|_| libc::EIO)?;
+        Ok((seed, iv))
+    }
+
+    /// The source attributes the encrypted view lists.
+    fn source_xattr_names(&self, c_path: &std::ffi::CStr) -> Result<Vec<Vec<u8>>, libc::c_int> {
+        Ok(passthrough::listxattr_names_nofollow(c_path)
+            .map_err(|e| e.raw())?
+            .into_iter()
+            .filter(|name| std::str::from_utf8(name).is_ok() && !name.starts_with(b"com.apple."))
+            .collect())
+    }
+
+    fn is_seed_name(name: &OsStr) -> bool {
+        name.as_bytes() == xattr_name::IV_SEED_NAME.as_bytes()
     }
 }
 
@@ -1352,14 +1378,27 @@ impl PathFilesystem for ReverseFs {
     ) -> Result<(), Errno> {
         self.ensure_writable()?;
         let path = node.path().ok_or(Errno::ENOENT)?;
+        if !self.config.xattrs_available() {
+            return Err(libc::ENOTSUP.into());
+        }
         if Self::is_config_path(path) {
             return Err(Errno::EROFS);
         }
         let (source, path_iv) = self.resolve_source_path(path)?;
-        let plain_name = self.decrypt_xattr_name(name, path_iv)?;
+        let (seed, xattr_iv) = self.xattr_seed_and_iv(path_iv)?;
+        if Self::is_seed_name(name) {
+            // Restoring the seed the view presents is a no-op; any other seed
+            // would key attributes the source can't hold.
+            return if value == seed {
+                Ok(())
+            } else {
+                Err(Errno::EINVAL)
+            };
+        }
+        let plain_name = self.decrypt_xattr_name(name, xattr_iv)?;
         let plain_value = self
             .cipher
-            .decrypt_xattr_value(value, path_iv)
+            .decrypt_xattr_value(value, xattr_iv)
             .map_err(|_| libc::EINVAL)?;
         let c_path = c_path(&source).map_err(|e| e.raw())?;
         let c_name = std::ffi::CString::new(plain_name).map_err(|_| libc::EINVAL)?;
@@ -1375,11 +1414,18 @@ impl PathFilesystem for ReverseFs {
     ) -> Result<(), Errno> {
         self.ensure_writable()?;
         let path = node.path().ok_or(Errno::ENOENT)?;
+        if !self.config.xattrs_available() {
+            return Err(libc::ENOTSUP.into());
+        }
         if Self::is_config_path(path) {
             return Err(Errno::EROFS);
         }
+        if Self::is_seed_name(name) {
+            return Err(Errno::EPERM);
+        }
         let (source, path_iv) = self.resolve_source_path(path)?;
-        let plain_name = self.decrypt_xattr_name(name, path_iv)?;
+        let (_, xattr_iv) = self.xattr_seed_and_iv(path_iv)?;
+        let plain_name = self.decrypt_xattr_name(name, xattr_iv)?;
         let c_path = c_path(&source).map_err(|e| e.raw())?;
         let c_name = std::ffi::CString::new(plain_name).map_err(|_| libc::EINVAL)?;
         passthrough::removexattr_nofollow(&c_path, &c_name).map_err(|e| e.raw())?;
@@ -1393,18 +1439,29 @@ impl PathFilesystem for ReverseFs {
         _caller: &Request,
     ) -> Result<XattrReply, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
+        if !self.config.xattrs_available() {
+            return Err(libc::ENOTSUP.into());
+        }
         if Self::is_config_path(path) {
             return Err(Errno::ENOATTR);
         }
         let (source, path_iv) = self.resolve_source_path(path)?;
-        let plain_name = self.decrypt_xattr_name(name, path_iv)?;
+        let (seed, xattr_iv) = self.xattr_seed_and_iv(path_iv)?;
         let c_path = c_path(&source).map_err(|e| e.raw())?;
+        if Self::is_seed_name(name) {
+            // Present only alongside attributes, as in a forward volume.
+            if self.source_xattr_names(&c_path)?.is_empty() {
+                return Err(Errno::ENOATTR);
+            }
+            return XattrReply::sized(seed.to_vec(), size);
+        }
+        let plain_name = self.decrypt_xattr_name(name, xattr_iv)?;
         let c_name = std::ffi::CString::new(plain_name).map_err(|_| libc::EINVAL)?;
         let plain_value =
             passthrough::getxattr_value_nofollow(&c_path, &c_name).map_err(|e| e.raw())?;
         let encrypted = self
             .cipher
-            .encrypt_xattr_value(&plain_value, path_iv)
+            .encrypt_xattr_value(&plain_value, xattr_iv)
             .map_err(|_| libc::EIO)?;
         XattrReply::sized(encrypted, size)
     }
@@ -1415,17 +1472,25 @@ impl PathFilesystem for ReverseFs {
         _caller: &Request,
     ) -> Result<XattrReply, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
+        if !self.config.xattrs_available() {
+            // As on a filesystem without extended attributes.
+            return XattrReply::sized(Vec::new(), size);
+        }
         if Self::is_config_path(path) {
             return XattrReply::sized(Vec::new(), size);
         }
         let (source, path_iv) = self.resolve_source_path(path)?;
         let c_path = c_path(&source).map_err(|e| e.raw())?;
+        let names = self.source_xattr_names(&c_path)?;
         let mut output = Vec::new();
-        for name in passthrough::listxattr_names_nofollow(&c_path).map_err(|e| e.raw())? {
-            if std::str::from_utf8(&name).is_err() || name.starts_with(b"com.apple.") {
-                continue;
-            }
-            let encrypted = self.encrypted_xattr_name(&name, path_iv)?;
+        if names.is_empty() {
+            return XattrReply::sized(output, size);
+        }
+        let (_, xattr_iv) = self.xattr_seed_and_iv(path_iv)?;
+        output.extend_from_slice(xattr_name::IV_SEED_NAME.as_bytes());
+        output.push(0);
+        for name in names {
+            let encrypted = self.encrypted_xattr_name(&name, xattr_iv)?;
             output.extend_from_slice(encrypted.as_bytes());
             output.push(0);
         }
@@ -1439,10 +1504,16 @@ mod tests {
     use crate::config::EncfsConfig;
 
     fn reverse_fs(root: &Path) -> ReverseFs {
+        reverse_fs_with(root, |_| {})
+    }
+
+    fn reverse_fs_with(root: &Path, adjust: impl FnOnce(&mut EncfsConfig)) -> ReverseFs {
         let config_path = root.join(".encfs7");
         let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
         config.unique_iv = false;
         config.wide_file_iv = false;
+        adjust(&mut config);
         config.minimum_reader_version = config.required_v7_reader_version();
         config.argon2_memory_cost = Some(8);
         config.argon2_time_cost = Some(1);
@@ -1467,6 +1538,223 @@ mod tests {
         fs::write(&candidate, contents).unwrap();
         let file = File::open(candidate).unwrap();
         reverse.materialize_ciphertext(&file, 0).unwrap()
+    }
+
+    fn caller() -> Request {
+        Request {
+            pid: 1,
+            gid: 0,
+            uid: 0,
+            umask: 0,
+        }
+    }
+
+    fn xattr_data(reply: XattrReply) -> Vec<u8> {
+        match reply {
+            XattrReply::Data(data) => data,
+            other => panic!("unexpected reply {other:?}"),
+        }
+    }
+
+    fn names(list: &[u8]) -> Vec<Vec<u8>> {
+        list.split(|&b| b == 0)
+            .filter(|n| !n.is_empty() && !n.starts_with(b"com.apple."))
+            .map(<[u8]>::to_vec)
+            .collect()
+    }
+
+    fn set_source_xattr(path: &Path, name: &str, value: &[u8]) {
+        let c_path = c_path(path).unwrap();
+        let c_name = std::ffi::CString::new(name).unwrap();
+        passthrough::setxattr_nofollow(&c_path, &c_name, value, 0).unwrap();
+    }
+
+    /// The view presents a seed beside encrypted attributes, so copying its
+    /// attributes verbatim onto a forward volume's backing file makes them
+    /// readable there.
+    #[test]
+    fn reverse_xattrs_decrypt_on_a_forward_volume() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let backing = dir.path().join("backing");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&backing).unwrap();
+        fs::write(source.join("doc"), b"x").unwrap();
+        set_source_xattr(&source.join("doc"), "user.color", b"blue");
+        fs::write(source.join("bare"), b"y").unwrap();
+
+        let reverse = reverse_fs(&source);
+        let state = Arc::new(Mutex::new(ReverseFileState::default()));
+        let encrypted = |name: &[u8]| {
+            let (encoded, _) = reverse.cipher.encrypt_filename(name, 0).unwrap();
+            PathBuf::from("/").join(encoded)
+        };
+        let doc = encrypted(b"doc");
+        let doc_node = || PathNodeRef::new(Some(&doc), &state);
+
+        let listed = names(&xattr_data(
+            reverse.listxattr(doc_node(), 65536, &caller()).unwrap(),
+        ));
+        assert_eq!(listed.len(), 2, "the seed and one attribute");
+        assert!(listed.contains(&xattr_name::IV_SEED_NAME.as_bytes().to_vec()));
+
+        // Copy everything the view lists onto a forward volume's file.
+        let backing_file = backing.join(doc.file_name().unwrap());
+        fs::write(&backing_file, b"").unwrap();
+        let c_backing = c_path(&backing_file).unwrap();
+        let mut stored = Vec::new();
+        for name in &listed {
+            let value = xattr_data(
+                reverse
+                    .getxattr(doc_node(), OsStr::from_bytes(name), 65536, &caller())
+                    .unwrap(),
+            );
+            let c_name = std::ffi::CString::new(name.clone()).unwrap();
+            passthrough::setxattr_nofollow(&c_backing, &c_name, &value, 0).unwrap();
+            stored.push((name.clone(), value));
+        }
+
+        let config = reverse.config.clone();
+        let cipher = config.get_cipher("test-password").unwrap();
+        let mut forward = crate::fs::EncFs::new(backing.clone(), cipher, config);
+        let root = forward.root_state();
+        let plain_doc = PathBuf::from("/doc");
+        let entry = forward
+            .lookup(
+                PathNodeRef::new(Some(Path::new("/")), &root),
+                OsStr::new("doc"),
+                &caller(),
+            )
+            .unwrap()
+            .expect("doc exists");
+        let forward_node = || PathNodeRef::new(Some(&plain_doc), &entry.state);
+        assert_eq!(
+            xattr_data(
+                forward
+                    .getxattr(forward_node(), OsStr::new("user.color"), 65536, &caller())
+                    .unwrap()
+            ),
+            b"blue"
+        );
+        assert_eq!(
+            names(&xattr_data(
+                forward.listxattr(forward_node(), 65536, &caller()).unwrap()
+            )),
+            vec![b"user.color".to_vec()]
+        );
+
+        // Writing the attributes back through the view restores the source.
+        let (seed_name, seed) = stored
+            .iter()
+            .find(|(n, _)| n == xattr_name::IV_SEED_NAME.as_bytes())
+            .unwrap();
+        let (attr_name, attr_value) = stored
+            .iter()
+            .find(|(n, _)| n != xattr_name::IV_SEED_NAME.as_bytes())
+            .unwrap();
+        reverse
+            .removexattr(doc_node(), OsStr::from_bytes(attr_name), &caller())
+            .unwrap();
+        assert!(
+            names(&xattr_data(
+                reverse.listxattr(doc_node(), 65536, &caller()).unwrap()
+            ))
+            .is_empty()
+        );
+        reverse
+            .setxattr(doc_node(), OsStr::from_bytes(seed_name), seed, 0, &caller())
+            .unwrap();
+        assert_eq!(
+            reverse.setxattr(
+                doc_node(),
+                OsStr::from_bytes(seed_name),
+                &[0; 16],
+                0,
+                &caller()
+            ),
+            Err(Errno::EINVAL)
+        );
+        assert_eq!(
+            reverse.removexattr(doc_node(), OsStr::from_bytes(seed_name), &caller()),
+            Err(Errno::EPERM)
+        );
+        reverse
+            .setxattr(
+                doc_node(),
+                OsStr::from_bytes(attr_name),
+                attr_value,
+                0,
+                &caller(),
+            )
+            .unwrap();
+        let c_source = c_path(&source.join("doc")).unwrap();
+        let c_color = std::ffi::CString::new("user.color").unwrap();
+        assert_eq!(
+            passthrough::getxattr_value_nofollow(&c_source, &c_color).unwrap(),
+            b"blue"
+        );
+
+        // An entry without attributes shows no seed either.
+        let bare = encrypted(b"bare");
+        let bare_node = || PathNodeRef::new(Some(&bare), &state);
+        assert!(
+            names(&xattr_data(
+                reverse.listxattr(bare_node(), 65536, &caller()).unwrap()
+            ))
+            .is_empty()
+        );
+        assert_eq!(
+            reverse
+                .getxattr(
+                    bare_node(),
+                    OsStr::new(xattr_name::IV_SEED_NAME),
+                    65536,
+                    &caller()
+                )
+                .map(|_| ()),
+            Err(Errno::ENOATTR)
+        );
+    }
+
+    /// With a config naming the path-IV format of earlier versions, the view
+    /// has no extended attributes, as a forward mount of it would.
+    #[test]
+    fn reverse_view_of_a_path_iv_config_has_no_xattrs() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("doc"), b"x").unwrap();
+        set_source_xattr(&dir.path().join("doc"), "user.color", b"blue");
+        let reverse = reverse_fs_with(dir.path(), |config| {
+            config.xattr_format = crate::config::XattrFormat::EncryptedPathIv;
+        });
+        let state = Arc::new(Mutex::new(ReverseFileState::default()));
+        let (encoded, _) = reverse.cipher.encrypt_filename(b"doc", 0).unwrap();
+        let doc = PathBuf::from("/").join(encoded);
+        let node = || PathNodeRef::new(Some(&doc), &state);
+        let enotsup = Errno::from(libc::ENOTSUP);
+
+        assert!(
+            names(&xattr_data(
+                reverse.listxattr(node(), 65536, &caller()).unwrap()
+            ))
+            .is_empty()
+        );
+        let seed = OsStr::new(xattr_name::IV_SEED_NAME);
+        assert_eq!(
+            reverse.getxattr(node(), seed, 65536, &caller()).map(|_| ()),
+            Err(enotsup)
+        );
+        assert_eq!(
+            reverse.setxattr(node(), seed, &[0; 16], 0, &caller()),
+            Err(enotsup)
+        );
+        assert_eq!(reverse.removexattr(node(), seed, &caller()), Err(enotsup));
+        // The source keeps its attribute.
+        let c_source = c_path(&dir.path().join("doc")).unwrap();
+        let c_color = std::ffi::CString::new("user.color").unwrap();
+        assert_eq!(
+            passthrough::getxattr_value_nofollow(&c_source, &c_color).unwrap(),
+            b"blue"
+        );
     }
 
     #[test]

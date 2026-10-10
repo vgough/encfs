@@ -6,7 +6,7 @@
 funded by Igor Sviridov, January–February 2014. Audited **EncFS 1.7.4** (the
 original C++ implementation).
 
-This repository is a from-scratch Rust rewrite (currently v2.0.0-beta.6) that
+This repository is a from-scratch Rust rewrite that
 adds a new V7 on-disk format (AES-GCM-SIV + Argon2id) alongside read/write
 support for the legacy V4-V6 formats the audit covers. Consequently most
 "resolved" rows below mean the issue is *structurally superseded by the V7
