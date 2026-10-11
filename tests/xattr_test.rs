@@ -102,14 +102,14 @@ fn backing_xattr_names(path: &Path) -> Vec<String> {
     if size <= 0 {
         return Vec::new();
     }
-    let mut buf = vec![0 as libc::c_char; size as usize];
-    let ret = unsafe { listxattr_nofollow(c_path.as_ptr(), buf.as_mut_ptr(), size as usize) };
+    let mut buf = vec![0u8; size as usize];
+    let ret =
+        unsafe { listxattr_nofollow(c_path.as_ptr(), buf.as_mut_ptr().cast(), size as usize) };
     if ret <= 0 {
         return Vec::new();
     }
     buf.truncate(ret as usize);
-    let bytes: Vec<u8> = buf.iter().map(|&b| b as u8).collect();
-    String::from_utf8_lossy(&bytes)
+    String::from_utf8_lossy(&buf)
         .split('\0')
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
@@ -301,7 +301,7 @@ fn test_legacy_volume_ignores_encrypted_copies() {
         user_names(list_names(&legacy, &file)),
         vec!["user.foo".to_string()]
     );
-    assert!(backing_xattr_names(&only_backing_file(&tmp)).contains(&"user.foo".to_string()));
+    assert!(backing_xattr_names(&only_backing_file(&tmp)).contains(&PLAIN_ON_DISK.to_string()));
 
     fs::remove_dir_all(&tmp).unwrap();
 }

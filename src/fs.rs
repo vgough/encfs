@@ -3374,6 +3374,8 @@ mod tests {
     type CreateOp = fn(&EncFs) -> Result<(), libc::c_int>;
 
     /// Ways of creating `/dst/new`.
+    // `mode_t` is `u32` on Linux but `u16` on macOS.
+    #[allow(clippy::useless_conversion)]
     const CREATE_OPS: &[(&str, CreateOp)] = &[
         ("create", |fs| {
             fs.create_impl(caller(), Path::new("/dst"), OsStr::new("new"), 0o644, 0)
@@ -3384,7 +3386,7 @@ mod tests {
                 caller(),
                 Path::new("/dst"),
                 OsStr::new("new"),
-                libc::S_IFREG as u32 | 0o644,
+                u32::from(libc::S_IFREG) | 0o644,
                 0,
             )
             .map(drop)
@@ -3394,7 +3396,7 @@ mod tests {
                 caller(),
                 Path::new("/dst"),
                 OsStr::new("new"),
-                libc::S_IFIFO as u32 | 0o644,
+                u32::from(libc::S_IFIFO) | 0o644,
                 0,
             )
             .map(drop)
