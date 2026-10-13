@@ -20,14 +20,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use std::time::SystemTime;
 use typed_fuse::passthrough::{
-    self, access_check, c_path, file_attr_from_metadata, file_type_from_metadata, is_apple_xattr,
-    set_ownership_fd, set_ownership_path, statfs_path, symlink as passthrough_symlink,
-    utimens_permission_check,
+    self, access_check, c_path, file_attr_from_metadata, is_apple_xattr, set_ownership_fd,
+    set_ownership_path, statfs_path, symlink as passthrough_symlink, utimens_permission_check,
 };
 use typed_fuse::{
-    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathDirSink, PathEntry,
-    PathFilesystem, PathNodeRef, PathPlusDirSink, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
-    XattrReply as ReplyXAttr,
+    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathEntry, PathFilesystem,
+    PathNodeRef, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
 };
 
 /// Errors from internal helpers are raw errno values; trait methods convert
@@ -1951,9 +1949,8 @@ impl EncFs {
                 Ok((decrypted_name, _)) => {
                     let metadata = fs::symlink_metadata(entry.path())
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    result.push(
+                    result.push_plus(
                         OsStr::from_bytes(&decrypted_name),
-                        file_type_from_metadata(&metadata),
                         self.attr_from_metadata(&metadata),
                         self.file_states
                             .get_by_key((metadata.dev(), metadata.ino())),
@@ -1966,6 +1963,15 @@ impl EncFs {
         }
 
         Ok(result)
+    }
+
+    /// Checks that the directory at `path` can be listed, so `opendir` fails
+    /// where reading it would. The listing itself is taken by `list_dir`.
+    fn check_listable(&self, path: &Path) -> Result<(), libc::c_int> {
+        let (real_path, path_iv) = self.encrypt_path(path)?;
+        self.names_iv(&real_path, path_iv)?;
+        fs::read_dir(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        Ok(())
     }
 
     fn open_impl(&self, path: &Path, flags: u32) -> Result<FileHandle, libc::c_int> {
@@ -2701,7 +2707,7 @@ impl EncFs {
 impl PathFilesystem for EncFs {
     type NodeState = FileState;
     type Handle = FileHandle;
-    type DirHandle = DirBuffer<FileState>;
+    type DirHandle = ();
 
     // POSIX record locks are deliberately left to the kernel. Forwarding them
     // would mean taking every client's lock with `fcntl` in this one daemon
@@ -2909,36 +2915,22 @@ impl PathFilesystem for EncFs {
         node: PathNodeRef<'_, FileState>,
         _flags: i32,
         caller: &Request,
-    ) -> Result<Opened<DirBuffer<FileState>>, Errno> {
+    ) -> Result<Opened<()>, Errno> {
         self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
-        Ok(Opened::new(self.directory_snapshot(path)?))
+        self.check_listable(path)?;
+        Ok(Opened::new(()))
     }
 
-    fn readdir(
+    fn list_dir(
         &self,
-        _node: PathNodeRef<'_, FileState>,
-        handle: &DirBuffer<FileState>,
-        offset: u64,
-        sink: &mut dyn PathDirSink<FileState>,
+        node: PathNodeRef<'_, FileState>,
+        _handle: &(),
         caller: &Request,
-    ) -> Result<(), Errno> {
+    ) -> Result<DirBuffer<FileState>, Errno> {
         self.check_idle_lock(Access::Data, caller)?;
-        handle.fill(offset, sink);
-        Ok(())
-    }
-
-    fn readdirplus(
-        &self,
-        _node: PathNodeRef<'_, FileState>,
-        handle: &DirBuffer<FileState>,
-        offset: u64,
-        sink: &mut dyn PathPlusDirSink<FileState>,
-        caller: &Request,
-    ) -> Result<(), Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
-        handle.fill_plus(offset, sink);
-        Ok(())
+        let path = node.path().ok_or(Errno::ENOENT)?;
+        Ok(self.directory_snapshot(path)?)
     }
 
     fn open(

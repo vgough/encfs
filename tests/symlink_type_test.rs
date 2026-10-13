@@ -92,19 +92,12 @@ fn test_symlink_type() {
     );
 
     // Check readdir
-    let handle = fs
-        .opendir(PathNodeRef::new(Some(&parent), &root_state), 0, &req)
-        .expect("opendir failed")
-        .handle;
+    fs.opendir(PathNodeRef::new(Some(&parent), &root_state), 0, &req)
+        .expect("opendir failed");
     let mut entries = Entries(Vec::new());
-    fs.readdir(
-        PathNodeRef::new(Some(&parent), &root_state),
-        &handle,
-        0,
-        &mut entries,
-        &req,
-    )
-    .expect("readdir failed");
+    fs.list_dir(PathNodeRef::new(Some(&parent), &root_state), &(), &req)
+        .expect("list_dir failed")
+        .fill(0, &mut entries);
     let entry = entries
         .0
         .iter()

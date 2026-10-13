@@ -16,13 +16,11 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::SystemTime;
 use typed_fuse::passthrough::{
-    self, c_path, file_attr_from_metadata, file_type_from_metadata, statfs_path,
-    synthetic_file_attr, system_time_from_secs,
+    self, c_path, file_attr_from_metadata, statfs_path, synthetic_file_attr, system_time_from_secs,
 };
 use typed_fuse::{
-    Caller as Request, DirBuffer, Errno, FileKind as FileType, NodeAttr as FileAttr, Opened,
-    PathDirSink, PathEntry, PathFilesystem, PathNodeRef, PathPlusDirSink, SetAttr,
-    StatFs as ReplyStatFs, TimeOrNow, XattrReply,
+    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathEntry, PathFilesystem,
+    PathNodeRef, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply,
 };
 
 const CONFIG_FILE_NAME: &str = ".encfs7";
@@ -688,9 +686,8 @@ impl ReverseFs {
                             .staged_size(&state, entry_iv)
                             .unwrap_or(self.ciphertext_size_for_plaintext(size)?);
                     }
-                    result.push(
+                    result.push_plus(
                         encrypted_name,
-                        file_type_from_metadata(&metadata),
                         file_attr_from_metadata(&metadata, size),
                         state,
                     );
@@ -705,9 +702,8 @@ impl ReverseFs {
         }
 
         if path == Path::new("/") {
-            result.push(
+            result.push_plus(
                 CONFIG_FILE_NAME,
-                FileType::RegularFile,
                 self.config_file_attr(),
                 Arc::clone(&self.config_state),
             );
@@ -765,7 +761,7 @@ impl ReverseFs {
 impl PathFilesystem for ReverseFs {
     type NodeState = Mutex<ReverseFileState>;
     type Handle = ReverseHandle;
-    type DirHandle = DirBuffer<Mutex<ReverseFileState>>;
+    type DirHandle = ();
 
     // Left to the kernel, as in the forward filesystem: a passthrough would
     // apply every client's lock in this one process (where POSIX locks cannot
@@ -844,33 +840,22 @@ impl PathFilesystem for ReverseFs {
         node: PathNodeRef<'_, Mutex<ReverseFileState>>,
         _flags: i32,
         _caller: &Request,
-    ) -> Result<Opened<DirBuffer<Mutex<ReverseFileState>>>, Errno> {
+    ) -> Result<Opened<()>, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
-        Ok(Opened::new(self.build_dir_buffer(path)?))
+        // Fail here where listing would; the listing itself is `list_dir`'s.
+        let (source_dir, _) = self.resolve_source_path(path)?;
+        std::fs::read_dir(&source_dir).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        Ok(Opened::new(()))
     }
 
-    fn readdir(
+    fn list_dir(
         &self,
-        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
-        handle: &DirBuffer<Mutex<ReverseFileState>>,
-        offset: u64,
-        sink: &mut dyn PathDirSink<Mutex<ReverseFileState>>,
+        node: PathNodeRef<'_, Mutex<ReverseFileState>>,
+        _handle: &(),
         _caller: &Request,
-    ) -> Result<(), Errno> {
-        handle.fill(offset, sink);
-        Ok(())
-    }
-
-    fn readdirplus(
-        &self,
-        _node: PathNodeRef<'_, Mutex<ReverseFileState>>,
-        handle: &DirBuffer<Mutex<ReverseFileState>>,
-        offset: u64,
-        sink: &mut dyn PathPlusDirSink<Mutex<ReverseFileState>>,
-        _caller: &Request,
-    ) -> Result<(), Errno> {
-        handle.fill_plus(offset, sink);
-        Ok(())
+    ) -> Result<DirBuffer<Mutex<ReverseFileState>>, Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
+        Ok(self.build_dir_buffer(path)?)
     }
 
     fn open(

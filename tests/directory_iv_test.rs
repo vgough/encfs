@@ -317,8 +317,9 @@ impl Volume {
         let opened = self.fs.opendir(dir.as_node(), 0, &req()).unwrap();
         let mut sink = Names::default();
         self.fs
-            .readdir(dir.as_node(), &opened.handle, 0, &mut sink, &req())
-            .unwrap();
+            .list_dir(dir.as_node(), &opened.handle, &req())
+            .unwrap()
+            .fill(0, &mut sink);
         sink.0
             .into_iter()
             .filter(|n| n != "." && n != "..")

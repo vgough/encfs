@@ -14,7 +14,7 @@ For command reference, testing patterns, and coding conventions, see `AGENTS.md`
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `typed-fuse` | git | Typed libfuse3 bindings and path adapter |
+| `typed-fuse` | 0.7 (git tag) | Typed libfuse3 bindings and path adapter |
 | `clap` | 4.6.1 | CLI argument parsing |
 | `anyhow` | 1.0.102 | Error handling |
 | `serde` | 1.0.228 | Serialization/deserialization |

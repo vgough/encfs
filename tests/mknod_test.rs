@@ -60,12 +60,12 @@ impl PathDirSink<FileState> for EntrySink {
     }
 }
 
-struct PlusSink(Vec<(OsString, NodeAttr)>);
+struct PlusSink(Vec<(OsString, Option<NodeAttr>)>);
 impl PathPlusDirSink<FileState> for PlusSink {
     fn add(
         &mut self,
         name: &OsStr,
-        attr: NodeAttr,
+        attr: Option<NodeAttr>,
         _identity: PathDirIdentity<FileState>,
         _next_offset: u64,
     ) -> bool {
@@ -155,19 +155,12 @@ fn test_mknod_fifo_readdir_reports_named_pipe() {
     .expect("mknod FIFO failed");
 
     let dir_path = PathBuf::from("");
-    let handle = fs
-        .opendir(PathNodeRef::new(Some(&dir_path), &root), 0, &r)
-        .expect("opendir failed")
-        .handle;
+    fs.opendir(PathNodeRef::new(Some(&dir_path), &root), 0, &r)
+        .expect("opendir failed");
     let mut entries = EntrySink(Vec::new());
-    fs.readdir(
-        PathNodeRef::new(Some(&dir_path), &root),
-        &handle,
-        0,
-        &mut entries,
-        &r,
-    )
-    .expect("readdir failed");
+    fs.list_dir(PathNodeRef::new(Some(&dir_path), &root), &(), &r)
+        .expect("list_dir failed")
+        .fill(0, &mut entries);
 
     let pipe_entry = entries
         .0
@@ -207,26 +200,22 @@ fn test_readdirplus_returns_entries_with_attrs() {
     )
     .expect("mknod FIFO failed");
 
-    let handle = fs
-        .opendir(PathNodeRef::new(Some(&parent), &root), 0, &r)
-        .expect("opendir failed")
-        .handle;
+    fs.opendir(PathNodeRef::new(Some(&parent), &root), 0, &r)
+        .expect("opendir failed");
     let mut entries = PlusSink(Vec::new());
-    fs.readdirplus(
-        PathNodeRef::new(Some(&parent), &root),
-        &handle,
-        0,
-        &mut entries,
-        &r,
-    )
-    .expect("readdirplus failed");
+    fs.list_dir(PathNodeRef::new(Some(&parent), &root), &(), &r)
+        .expect("list_dir failed")
+        .fill_plus(0, &mut entries);
 
     let pipe_entry = entries
         .0
         .iter()
         .find(|e| e.0 == OsStr::new("pipe"))
         .expect("readdirplus should list 'pipe'");
-    assert_eq!(pipe_entry.1.kind, FileType::NamedPipe);
+    let pipe_attr = pipe_entry
+        .1
+        .expect("readdirplus should carry 'pipe' attributes");
+    assert_eq!(pipe_attr.kind, FileType::NamedPipe);
     assert!(
         entries.0.iter().any(|e| e.0 == OsStr::new(".")),
         "readdirplus should include '.'"

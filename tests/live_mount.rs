@@ -1109,6 +1109,27 @@ fn live_read_only_mount_is_ero_fs() -> Result<()> {
     Ok(())
 }
 
+/// Each listing of the root shows its current contents. FreeBSD reads every
+/// listing of the root through the handle from its first opendir.
+#[test]
+#[ignore]
+fn live_root_listing_reflects_changes() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let root = &mount.mount_point;
+    fs::write(root.join("first"), b"1")?;
+    assert_eq!(sorted_names(root)?, vec!["first"]);
+    fs::write(root.join("second"), b"2")?;
+    assert_eq!(sorted_names(root)?, vec!["first", "second"]);
+    fs::remove_file(root.join("first"))?;
+    assert_eq!(sorted_names(root)?, vec!["second"]);
+    Ok(())
+}
+
 /// Inode numbers of every ciphertext entry in the backing store. A directory
 /// rename that copied anything would introduce new ones.
 fn backing_inodes(backing_root: &Path) -> Result<std::collections::BTreeSet<u64>> {
@@ -1358,9 +1379,17 @@ fn live_large_directory_snapshot_survives_mutation_standard() -> Result<()> {
         snapshot_set.len(),
         "snapshot enumeration returned a duplicate"
     );
-    assert_eq!(
-        snapshot_set, original,
-        "an open directory handle must retain its pre-mutation snapshot"
+    // A resumed read keeps the snapshot's names, but looks each one up again
+    // after a change through the mount, so it drops the removed name unless
+    // the kernel or libc had already read ahead past it.
+    assert!(
+        snapshot_set.is_subset(&original),
+        "an open directory handle must not report names added after its snapshot"
+    );
+    let missing: BTreeSet<_> = original.difference(&snapshot_set).cloned().collect();
+    assert!(
+        missing.is_empty() || missing == BTreeSet::from([removed_name.clone()]),
+        "an open directory handle lost snapshot names other than the removed one: {missing:?}"
     );
 
     let mut current = original;
