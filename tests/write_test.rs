@@ -62,6 +62,7 @@ fn test_virtual_driver_write() {
         unique_iv: true,
         external_iv_chaining: false,
         chained_name_iv: true,
+        directory_iv: false,
         allow_holes: false,
         wide_file_iv: false,
         xattr_format: Default::default(),

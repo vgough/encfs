@@ -2,8 +2,9 @@
 mod filesystem_support;
 
 use filesystem_support::{
-    BenchmarkResult, HostContext, SCHEMA_VERSION, Workload, calculate_deltas, ensure_compatible,
-    load_result, parse_mdtest_output, save_result_atomic,
+    BASELINE_VARIANT, BenchmarkResult, HostContext, OVERHEAD_VARIANT, SCHEMA_VERSION, VARIANTS,
+    Workload, calculate_deltas, compare_metrics, ensure_compatible, load_result,
+    parse_mdtest_output, save_result_atomic,
 };
 
 const CAPTURED_MDTEST_OUTPUT: &str = include_str!("fixtures/mdtest-summary.txt");
@@ -31,6 +32,7 @@ fn result_with_scale(scale: f64) -> BenchmarkResult {
             cpu: "Example CPU".to_string(),
         },
         workload: workload(),
+        variant: BASELINE_VARIANT.to_string(),
         metrics: metrics
             .into_iter()
             .map(|(name, value)| (name, value * scale))
@@ -101,7 +103,7 @@ fn rejects_incompatible_workloads() {
     let baseline = result_with_scale(1.0);
     let mut incompatible = workload();
     incompatible.items_per_rank = 10;
-    let error = ensure_compatible(&baseline, &incompatible)
+    let error = ensure_compatible(&baseline, BASELINE_VARIANT, &incompatible)
         .unwrap_err()
         .to_string();
     assert!(error.contains("workload does not match"), "{error}");
@@ -164,7 +166,7 @@ fn supports_zero_baseline_delta_without_dividing_by_zero() {
 fn schema_mismatch_is_rejected() {
     let mut baseline = result_with_scale(1.0);
     baseline.schema_version += 1;
-    let error = ensure_compatible(&baseline, &workload())
+    let error = ensure_compatible(&baseline, BASELINE_VARIANT, &workload())
         .unwrap_err()
         .to_string();
     assert!(
@@ -210,4 +212,87 @@ fn serde_rejects_non_numeric_metric_values() {
     let mut value = serde_json::to_value(result_with_scale(1.0)).unwrap();
     value["metrics"] = serde_json::json!({ "Directory creation": "fast" });
     assert!(serde_json::from_value::<BenchmarkResult>(value).is_err());
+}
+
+#[test]
+fn baseline_of_another_variant_is_rejected() {
+    let mut baseline = result_with_scale(1.0);
+    baseline.variant = OVERHEAD_VARIANT.to_string();
+    let error = ensure_compatible(&baseline, BASELINE_VARIANT, &workload())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("measured variant"), "{error}");
+
+    let current = result_with_scale(1.0);
+    let error = calculate_deltas(&baseline, &current)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("measured variant"), "{error}");
+}
+
+#[test]
+fn unlabelled_result_is_rejected() {
+    let mut result = result_with_scale(1.0);
+    result.variant.clear();
+    let directory = tempfile::tempdir().unwrap();
+    let error = save_result_atomic(&directory.path().join("baseline.json"), &result)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("variant"), "{error}");
+}
+
+/// Version 1 baselines measured an unlabelled `encfsctl new` default, which
+/// is not the baseline variant; they must be saved again.
+#[test]
+fn schema_1_baseline_is_rejected() {
+    let mut value = serde_json::to_value(result_with_scale(1.0)).unwrap();
+    let object = value.as_object_mut().unwrap();
+    object.insert("schema_version".to_string(), 1.into());
+    object.remove("variant");
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("baseline.json");
+    std::fs::write(&path, serde_json::to_string(&value).unwrap()).unwrap();
+    assert!(load_result(&path).is_err());
+}
+
+/// The overhead table compares two variants from the same run: the
+/// baseline variant is the reference, so slower operations come out negative.
+#[test]
+fn overhead_is_relative_to_the_baseline_variant() {
+    let reference = result_with_scale(1.0).metrics;
+    let overhead: std::collections::BTreeMap<_, _> = reference
+        .iter()
+        .map(|(name, value)| (name.clone(), value * 0.75))
+        .collect();
+    let deltas = compare_metrics(&reference, &overhead).unwrap();
+    assert_eq!(deltas.len(), reference.len());
+    for delta in deltas {
+        assert_eq!(delta.baseline, reference[&delta.name]);
+        assert!((delta.percent + 25.0).abs() < 1e-9, "{delta:?}");
+    }
+
+    let mut incomplete = overhead.clone();
+    incomplete.remove("File read");
+    assert!(compare_metrics(&reference, &incomplete).is_err());
+}
+
+#[test]
+fn variants_cover_the_baseline_and_overhead_configurations() {
+    let names: std::collections::BTreeSet<_> = VARIANTS.iter().map(|v| v.name).collect();
+    assert_eq!(names.len(), VARIANTS.len());
+
+    let baseline = VARIANTS
+        .iter()
+        .find(|v| v.name == BASELINE_VARIANT)
+        .unwrap();
+    assert_eq!(baseline.new_args, ["--no-unique-iv"]);
+    assert!(!baseline.directory_iv && !baseline.unique_iv);
+
+    let overhead = VARIANTS
+        .iter()
+        .find(|v| v.name == OVERHEAD_VARIANT)
+        .unwrap();
+    assert!(overhead.new_args.is_empty(), "the encfsctl new default");
+    assert!(overhead.directory_iv && overhead.unique_iv);
 }

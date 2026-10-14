@@ -8,7 +8,7 @@ This document provides comprehensive information for AI agents working in the En
 
 - **Language**: Rust (Edition 2024)
 - **Primary Goal**: Read/write compatibility with legacy EncFS filesystems
-- **Status**: Beta (v2.0.0-beta.6) - functional for read/write but still maturing
+- **Status**: Beta (v2.0.0-beta.7) - functional for read/write but still maturing
 
 ### Key Characteristics
 - Encrypts individual files (not block devices)
@@ -200,7 +200,7 @@ fn live_smoke_mount_unmount_standard() -> Result<()> {
 ## Important Gotchas and Non-Obvious Patterns
 
 ### 1. Config Format Compatibility
-- **V7 (Protobuf)**: Current default for new filesystems, `.encfs7` file. Argon2id KDF, AES-256-GCM key wrap, AES-GCM-SIV per-block crypto.
+- **V7 (Protobuf)**: Current default for new filesystems, `.encfs7` file. Argon2id KDF, AES-256-GCM key wrap, AES-GCM-SIV per-block crypto, per-directory name IVs.
 - **V6 (XML)**: `.encfs6.xml` file. Still fully supported (read/write).
 - **V5 (Binary)**: Legacy format, `.encfs5` file - READ ONLY (save not implemented)
 - **V4 (Binary)**: Older format, `.encfs4` file - READ ONLY
@@ -221,6 +221,42 @@ Two types of IV chaining affect how paths are encrypted:
 
 **Critical**: When decrypting files in paranoia mode, you MUST use the path IV from `decrypt_path()`, not 0!
 
+**Directory IV mode** (V7 only, ADR 0002) is the default for new V7
+filesystems (`EncfsConfig::standard_v7()`, `encfsctl new`; opt out with
+`--no-directory-iv` or `use_chained_name_iv()`, which reverse-mode configs
+need). It replaces `chained_name_iv` (the two are mutually exclusive): each ciphertext
+directory holds a `.encfs.diriv` sidecar whose bytes set the IV for the names
+inside it (`src/diriv.rs`). The IV `encrypt_path` returns for a directory is
+then its *entry IV*, not the IV for its children; use `names_iv` /
+`diriv::names_iv` to list or walk a directory. `encfsr` rejects these configs.
+
+**Encrypted xattrs** (V7, ADR 0003) are keyed by a random 16-byte seed stored
+on the same inode as `user.encfs.~iv` (`xattr_name::IV_SEED_NAME`), never by
+a path or entry IV, so a `rename(2)` leaves them valid. Any rename path that
+creates a new inode must carry the raw `user.encfs.*` attributes across with
+`EncFs::copy_encrypted_xattrs` while the destination is still writable.
+The derived IV is cached in the node's `FileState`; code that creates an
+inode must hand back its state through `EncFs::entry_for_new_inode` (or clear
+the cache itself, as `create_impl` does), since an inode number can be reused
+while a deleted inode's state is alive.
+On configs naming the earlier path-IV format (wire 0) extended attributes
+are unavailable (`EncfsConfig::xattrs_available`, warning from
+`legacy_xattr_warning`): never read or write them there, and never rewrite
+the config, so users can go back to an earlier version. After a rename that copies, the
+removed source inodes' states must be detached (`forget_removed_inodes`),
+since backing filesystems reuse inode numbers.
+The IV cache in `EncFs` (`diriv::DirIvCache`) never rereads sidecars, on the
+premise that nothing modifies the backing directory behind a live mount; any
+code path that creates, removes, or moves a directory must update it
+(`insert`, `forget_tree`, `rename_tree`) under the sidecar write lock.
+That keeps entries true of each *path*, but a directory can still be replaced
+at its path mid-operation. Code that writes an IV-dependent name into a
+directory must bind the IV to that directory: resolve it with
+`EncFs::new_entry` and create through the returned `NewEntry` (`*at` calls on
+the pinned parent, `ENOENT` if it was replaced), or encrypt the name under the
+sidecar write lock (`encrypt_name_in`, as mkdir and directory rename do).
+Don't encrypt a name with `encrypt_path` and then create it by path.
+
 ### 3. File Structure
 Encrypted files share the header layout `[Header: 8 bytes if unique_iv] [Block 0] [Block 1] ... [Block N]`,
 but block contents differ by format:
@@ -234,6 +270,11 @@ See `architecture.md`'s Data Model section for full byte-level detail.
 - Uses stream cipher mode
 - IV is derived from HMAC of plaintext name (deterministic)
 - With `chained_name_iv`, also depends on parent directory's IV
+- `encfsctl new --name-encoding auto` (the default) probes the root directory
+  for case sensitivity: `nameio/block32` where case is ignored (e.g. default
+  APFS), `nameio/stream` where it isn't (most Linux filesystems) or with
+  `--legacy-file-iv`/`--no-unique-iv`. `EncfsConfig::standard_v7()` is always
+  block32, so tests that go through `cmd_new` must not hard-code the encoding.
 
 ### 5. Error Handling
 - Use `anyhow::Result` for application code
@@ -276,6 +317,8 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
 - `key_size` must be positive and multiple of 8
 - `block_size` must be positive and larger than the block's crypto overhead
 - `block_mac_bytes` must be 0-8 for legacy formats, or exactly 16 (the AES-GCM-SIV tag) for V7
+- `directory_iv` requires V7, excludes `chained_name_iv`, and needs `minimum_reader_version >= 4`
+- the per-inode xattr format (`XattrFormat::Encrypted`, the default) needs `minimum_reader_version >= 5`
 
 ### 11. Logging
 - Uses `env_logger` crate
@@ -474,6 +517,6 @@ task test-live           # Live mount tests
 
 ---
 
-**Last Updated**: August 4, 2026
-**EncFS Version**: 2.0.0-beta.6
+**Last Updated**: October 7, 2026
+**EncFS Version**: 2.0.0-beta.7
 **Rust Edition**: 2024

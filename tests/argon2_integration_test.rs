@@ -80,6 +80,7 @@ fn test_argon2id_config_creation_and_loading() -> Result<()> {
         unique_iv: true,
         external_iv_chaining: false,
         chained_name_iv: true,
+        directory_iv: false,
         allow_holes: true,
         wide_file_iv: false,
         xattr_format: Default::default(),

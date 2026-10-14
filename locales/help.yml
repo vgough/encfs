@@ -47,6 +47,10 @@ help.encfs.mount_point:
   en: "Mount point"
   fr: "Point de montage"
   de: "Mountpoint"
+help.encfs.no_apple_xattr:
+  en: "macOS: refuse com.apple.* extended attributes (macFUSE noapplexattr), so macOS's provenance and Finder metadata are not stored. Faster file creation and reads, but quarantine flags, Finder tags and similar metadata are lost on this volume"
+  fr: "macOS : refuser les attributs étendus com.apple.* (noapplexattr de macFUSE), afin que les métadonnées de provenance et du Finder de macOS ne soient pas enregistrées. Création et lecture de fichiers plus rapides, mais les indicateurs de quarantaine, les tags du Finder et les métadonnées similaires sont perdus sur ce volume"
+  de: "macOS: com.apple.*-Erweiterte-Attribute ablehnen (macFUSE noapplexattr), damit die Herkunfts- und Finder-Metadaten von macOS nicht gespeichert werden. Schnelleres Anlegen und Lesen von Dateien, aber Quarantäne-Markierungen, Finder-Tags und ähnliche Metadaten gehen auf diesem Volume verloren"
 help.encfs.touchid:
   en: "macOS: require Touch ID after mounting and again after the idle timeout"
   fr: "macOS : exiger Touch ID après le montage et de nouveau après le délai d'inactivité"
@@ -217,17 +221,25 @@ help.encfsctl.new_stdinpass:
   fr: "Lire le mot de passe depuis stdin (création non interactive)"
   de: "Passwort von stdin lesen (nicht-interaktive Erstellung)"
 help.encfsctl.new_no_chained_iv:
-  en: "Disable IV chaining for path components (like legacy EncFS V4)"
-  fr: "Désactiver le chaînage IV pour les composants de chemin (comme EncFS V4 legacy)"
-  de: "IV-Verkettung für Pfadkomponenten deaktivieren (wie Legacy EncFS V4)"
+  en: "Disable external IV chaining, so file contents no longer depend on their path; with --no-directory-iv, also disable IV chaining for path components (like legacy EncFS V4)"
+  fr: "Désactiver le chaînage IV externe, afin que le contenu des fichiers ne dépende plus de leur chemin ; avec --no-directory-iv, désactiver aussi le chaînage IV pour les composants de chemin (comme EncFS V4 legacy)"
+  de: "Externe IV-Verkettung deaktivieren, sodass Dateiinhalte nicht mehr von ihrem Pfad abhängen; mit --no-directory-iv auch die IV-Verkettung für Pfadkomponenten deaktivieren (wie Legacy EncFS V4)"
 help.encfsctl.new_no_unique_iv:
-  en: "Disable per-file IV headers (create configs intended for reverse mode / encfsr); keeps stream filename encoding"
-  fr: "Désactiver les en-têtes IV par fichier (crée des configurations destinées au mode inversé / encfsr) ; conserve l'encodage de noms en flux"
-  de: "Per-Datei-IV-Header deaktivieren (Konfigurationen für den Reverse-Modus / encfsr erstellen); behält die Stream-Dateinamenkodierung bei"
+  en: "Disable per-file IV headers (create configs intended for reverse mode / encfsr); keeps stream filename encoding (unless --name-encoding is given) and path-chained filename IVs"
+  fr: "Désactiver les en-têtes IV par fichier (crée des configurations destinées au mode inversé / encfsr) ; conserve l'encodage de noms en flux (sauf si --name-encoding est indiqué) et les IV de noms chaînés depuis le chemin"
+  de: "Per-Datei-IV-Header deaktivieren (Konfigurationen für den Reverse-Modus / encfsr erstellen); behält die Stream-Dateinamenkodierung (sofern --name-encoding nicht angegeben ist) und vom Pfad verkettete Dateinamen-IVs bei"
 help.encfsctl.new_legacy_file_iv:
-  en: "Use a 64-bit per-file IV and stream filename encoding instead of the 96-bit IV and Base32 block names, for interoperability with older EncFS tooling"
-  fr: "Utiliser un IV par fichier de 64 bits et l'encodage de noms en flux au lieu de l'IV de 96 bits et des noms en blocs Base32, pour l'interopérabilité avec les anciens outils EncFS"
-  de: "64-Bit-IV pro Datei und Stream-Dateinamenkodierung statt 96-Bit-IV und Base32-Blocknamen verwenden, für Interoperabilität mit älteren EncFS-Tools"
+  en: "Use a 64-bit per-file IV, stream filename encoding (unless --name-encoding is given) and path-chained filename IVs instead of the 96-bit IV and per-directory IVs, the file formats of older EncFS tooling (extended attributes still use the current format)"
+  fr: "Utiliser un IV par fichier de 64 bits, l'encodage de noms en flux (sauf si --name-encoding est indiqué) et des IV de noms chaînés depuis le chemin au lieu de l'IV de 96 bits et des IV par répertoire, les formats de fichiers des anciens outils EncFS (les attributs étendus utilisent toujours le format actuel)"
+  de: "64-Bit-IV pro Datei, Stream-Dateinamenkodierung (sofern --name-encoding nicht angegeben ist) und vom Pfad verkettete Dateinamen-IVs statt 96-Bit-IV und IVs pro Verzeichnis verwenden, die Dateiformate älterer EncFS-Tools (erweiterte Attribute verwenden weiterhin das aktuelle Format)"
+help.encfsctl.new_no_directory_iv:
+  en: "Chain filename IVs from the path, as V7 filesystems did before per-directory IVs became the default, instead of keeping a random IV in a .encfs.diriv file in each directory. Renaming a directory then rewrites everything below it, and the filesystem needs no .encfs.diriv files (as reverse mode requires)"
+  fr: "Chaîner les IV des noms de fichiers depuis le chemin, comme les systèmes de fichiers V7 avant que les IV par répertoire ne deviennent la valeur par défaut, au lieu de conserver un IV aléatoire dans un fichier .encfs.diriv de chaque répertoire. Renommer un répertoire réécrit alors tout son contenu, et le système de fichiers n'a besoin d'aucun fichier .encfs.diriv (comme l'exige le mode inversé)"
+  de: "Dateinamen-IVs aus dem Pfad verketten, wie V7-Dateisysteme vor der Einführung von IVs pro Verzeichnis als Standard, statt einen zufälligen IV in einer .encfs.diriv-Datei in jedem Verzeichnis zu speichern. Das Umbenennen eines Verzeichnisses schreibt dann alles darunter neu, und das Dateisystem braucht keine .encfs.diriv-Dateien (wie der Reverse-Modus es verlangt)"
+help.encfsctl.new_name_encoding:
+  en: "Filename encoding: auto (the default) uses Base32 block names when the filesystem holding the encrypted files ignores case, where Base64 stream names could collide, and shorter stream names when it doesn't or with --legacy-file-iv or --no-unique-iv; stream or block32 picks one outright"
+  fr: "Encodage des noms de fichiers : auto (par défaut) utilise des noms en blocs Base32 lorsque le système de fichiers contenant les fichiers chiffrés ignore la casse, où des noms en flux Base64 pourraient entrer en collision, et des noms en flux plus courts sinon ou avec --legacy-file-iv ou --no-unique-iv ; stream ou block32 impose l'un ou l'autre"
+  de: "Dateinamenkodierung: auto (Standard) verwendet Base32-Blocknamen, wenn das Dateisystem mit den verschlüsselten Dateien Groß- und Kleinschreibung nicht unterscheidet, wo Base64-Stream-Namen kollidieren könnten, und sonst oder mit --legacy-file-iv oder --no-unique-iv kürzere Stream-Namen; stream oder block32 legt eine davon fest"
 help.encfsctl.speed:
   en: "Print version info and benchmark supported cipher algorithms"
   fr: "Afficher la version et mesurer les performances des algorithmes de chiffrement pris en charge"

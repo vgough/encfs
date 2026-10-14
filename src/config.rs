@@ -40,11 +40,19 @@ pub struct BoostSerialization {
 /// through unencrypted, like C++ EncFS).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum XattrFormat {
-    /// Names and values encrypted; names stored under `user.encfs.`.
+    /// Names and values encrypted, names stored under `user.encfs.`, under an
+    /// IV derived from a random seed kept on the same inode (see
+    /// [`crate::xattr_name::IV_SEED_NAME`]), so renames leave them untouched.
     #[default]
     Encrypted,
     /// Names and values passed through unchanged.
     Plaintext,
+    /// Encrypted under each entry's path IV, as earlier builds wrote them (the
+    /// wire zero value). Not implemented by this build: extended attributes
+    /// are unavailable on such a volume, and the attributes it holds are
+    /// left untouched for an earlier build to read. See
+    /// [`EncfsConfig::xattrs_available`].
+    EncryptedPathIv,
 }
 
 /// How a V7 volume stores symlink targets (V4-V6 always use the legacy path
@@ -128,6 +136,14 @@ pub struct EncfsConfig {
     // from parent directory IV + name.
     #[serde(rename = "chainedNameIV", default)]
     pub chained_name_iv: bool,
+
+    // Per-directory name IVs (V7 only): the IV for the names inside a
+    // directory comes from a random `.encfs.diriv` sidecar file in that
+    // ciphertext directory instead of from the parent path, so a directory
+    // rename is a single rename(2). Mutually exclusive with `chained_name_iv`;
+    // see `crate::diriv`. The V6 XML format cannot express it.
+    #[serde(skip, default)]
+    pub directory_iv: bool,
 
     // Allow sparse files (holes).
     #[serde(rename = "allowHoles", default)]
@@ -223,9 +239,12 @@ mod kdf_algorithm_serde {
 
 impl EncfsConfig {
     /// Returns a new V7 config with standard settings (AES-256, Base32 block
-    /// naming, Argon2id).
+    /// naming, per-directory name IVs, Argon2id). `encfsctl new` switches
+    /// to stream naming on case-sensitive filesystems.
     /// New V7 configs default to AES-GCM-SIV block mode (16-byte tag per block).
-    /// Caller must set random salt and call set_v7_key before save.
+    /// Caller must set random salt and call set_v7_key before save, and must
+    /// create the volume root's `.encfs.diriv` (see `crate::diriv`), unless
+    /// it switches to chained names with [`EncfsConfig::use_chained_name_iv`].
     pub fn standard_v7() -> Self {
         Self {
             config_type: ConfigType::V7,
@@ -258,14 +277,26 @@ impl EncfsConfig {
             block_mac_rand_bytes: 0,
             unique_iv: true,
             external_iv_chaining: true,
-            chained_name_iv: true,
+            chained_name_iv: false,
+            directory_iv: true,
             allow_holes: true,
             wide_file_iv: true,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
-            minimum_reader_version: crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION,
+            minimum_reader_version: crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION,
             config_hash: None,
         }
+    }
+
+    /// Switches a V7 config from per-directory name IVs (the default for new
+    /// volumes) to names chained from the path, the earlier V7 default.
+    /// Reverse mode needs this, since it has nowhere to keep sidecar files, as
+    /// do volumes that readers predating directory IV mode must open.
+    /// Recomputes `minimum_reader_version` for the remaining features.
+    pub fn use_chained_name_iv(&mut self) {
+        self.directory_iv = false;
+        self.chained_name_iv = true;
+        self.minimum_reader_version = self.required_v7_reader_version();
     }
 
     pub fn load(path: &Path) -> Result<Self> {
@@ -436,6 +467,16 @@ impl EncfsConfig {
                 "xattr and symlink storage formats only apply to V7 configs"
             ));
         }
+        if self.directory_iv && self.config_type != ConfigType::V7 {
+            return Err(anyhow::anyhow!(
+                "directory IV mode only applies to V7 configs"
+            ));
+        }
+        if self.directory_iv && self.chained_name_iv {
+            return Err(anyhow::anyhow!(
+                "directory IV mode and chainedNameIV are mutually exclusive"
+            ));
+        }
         if self.config_type == ConfigType::V7 {
             let max_required = self.required_v7_reader_version();
             if self.minimum_reader_version < max_required {
@@ -555,6 +596,7 @@ impl EncfsConfig {
             unique_iv: false,
             external_iv_chaining: false,
             chained_name_iv: false,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -652,6 +694,7 @@ impl EncfsConfig {
             unique_iv,
             external_iv_chaining,
             chained_name_iv,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -692,15 +735,10 @@ impl EncfsConfig {
         // with a dedicated error instead of being misread or misclassified as
         // corrupted. Wire 0 means the base version, since every V7 config
         // written before this field existed omits it.
-        let effective_min_reader =
-            Self::effective_v7_min_reader_version(proto.minimum_reader_version);
-        if effective_min_reader > crate::constants::V7_CURRENT_CONFIG_VERSION {
-            anyhow::bail!(
-                "V7 config requires reader version {}; this build supports through {}",
-                effective_min_reader,
-                crate::constants::V7_CURRENT_CONFIG_VERSION
-            );
-        }
+        let effective_min_reader = Self::check_v7_reader_version(
+            proto.minimum_reader_version,
+            crate::constants::V7_CURRENT_CONFIG_VERSION,
+        )?;
 
         let argon2 = proto
             .argon2
@@ -825,6 +863,20 @@ impl EncfsConfig {
             other => anyhow::bail!("V7: unsupported name encoding mode {}", other),
         };
 
+        // Unknown values are rejected rather than defaulted, as for the
+        // storage formats below: misreading a newer mode would misread names.
+        let directory_iv = {
+            use crate::config_proto::DirectoryIvMode;
+            match DirectoryIvMode::try_from(name_encoding.directory_iv) {
+                Ok(DirectoryIvMode::None) => false,
+                Ok(DirectoryIvMode::Sidecar) => true,
+                Err(_) => anyhow::bail!(
+                    "V7: unsupported directory IV mode {}",
+                    name_encoding.directory_iv
+                ),
+            }
+        };
+
         let allow_holes = proto
             .feature_flags
             .as_ref()
@@ -832,13 +884,15 @@ impl EncfsConfig {
             .unwrap_or(false);
         // Unknown values are rejected rather than defaulted: a new format
         // must also raise minimum_reader_version, so reaching here with one
-        // means the config is inconsistent.
+        // means the config is inconsistent. A config without feature flags
+        // predates them, so it holds the wire zero values.
         let (xattr_format, symlink_format) = match proto.feature_flags.as_ref() {
-            None => Default::default(),
+            None => (XattrFormat::EncryptedPathIv, SymlinkFormat::EncryptedName),
             Some(f) => {
                 use crate::config_proto::{SymlinkFormat as WireSymlink, XattrFormat as WireXattr};
                 let xattr = match WireXattr::try_from(f.xattr_format) {
-                    Ok(WireXattr::Encrypted) => XattrFormat::Encrypted,
+                    Ok(WireXattr::EncryptedInodeIv) => XattrFormat::Encrypted,
+                    Ok(WireXattr::EncryptedPathIv) => XattrFormat::EncryptedPathIv,
                     Ok(WireXattr::Plaintext) => XattrFormat::Plaintext,
                     Err(_) => anyhow::bail!("V7: unsupported xattr format {}", f.xattr_format),
                 };
@@ -875,6 +929,7 @@ impl EncfsConfig {
             unique_iv,
             external_iv_chaining: name_encoding.external_iv_chaining,
             chained_name_iv: name_encoding.chained_name_iv,
+            directory_iv,
             allow_holes,
             wide_file_iv,
             xattr_format,
@@ -944,14 +999,22 @@ impl EncfsConfig {
     /// data. Returns the decrypted volume-key blob; the caller installs it into
     /// the cipher and zeroizes it.
     fn derive_v7_volume_key(&self, password: &str) -> Result<Vec<u8>> {
-        use crate::crypto::ssl::SslCipher;
         use zeroize::Zeroize;
 
         let aad = self
             .config_hash
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("V7 config missing config_hash"))?;
-        let mut user_key = SslCipher::derive_key_argon2id(
+        let mut user_key = self.v7_user_key(password)?;
+        let volume_key_blob =
+            crate::crypto::aead::decrypt(user_key.as_slice(), aad, &self.key_data);
+        user_key.zeroize();
+        volume_key_blob
+    }
+
+    /// The Argon2id key a V7 config's volume key is wrapped under.
+    fn v7_user_key(&self, password: &str) -> Result<Vec<u8>> {
+        crate::crypto::ssl::SslCipher::derive_key_argon2id(
             password,
             &self.salt,
             self.argon2_memory_cost
@@ -961,11 +1024,7 @@ impl EncfsConfig {
             self.argon2_parallelism
                 .unwrap_or(crate::constants::DEFAULT_ARGON2_PARALLELISM),
             crate::crypto::aead::AEAD_KEY_LEN,
-        )?;
-        let volume_key_blob =
-            crate::crypto::aead::decrypt(user_key.as_slice(), aad, &self.key_data)?;
-        user_key.zeroize();
-        Ok(volume_key_blob)
+        )
     }
 
     /// V4/V5/V6 volume-key recovery: derive the user key with the configured KDF
@@ -1034,9 +1093,14 @@ impl EncfsConfig {
     /// The lowest V7 minimum-reader version that can interpret every feature
     /// this config uses.
     pub fn required_v7_reader_version(&self) -> u32 {
-        let default_formats = self.xattr_format == XattrFormat::default()
+        // The formats every config before the feature flags implied.
+        let default_formats = self.xattr_format == XattrFormat::EncryptedPathIv
             && self.symlink_format == SymlinkFormat::default();
-        if !default_formats || self.name_iface.name == "nameio/block32" {
+        if self.xattr_format == XattrFormat::Encrypted {
+            crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
+        } else if self.directory_iv {
+            crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION
+        } else if !default_formats || self.name_iface.name == "nameio/block32" {
             crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
         } else if self.wide_file_iv {
             crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION
@@ -1048,9 +1112,27 @@ impl EncfsConfig {
     /// Whether extended attributes are stored encrypted. Only V7 does this,
     /// unless its `xattr_format` is `Plaintext`; legacy (V4-V6) volumes pass
     /// attributes through unchanged, as C++ EncFS does, so both
-    /// implementations see the same attributes.
+    /// implementations see the same attributes. True also for the path-IV
+    /// format this build doesn't implement (see
+    /// [`EncfsConfig::xattrs_available`]): its stored attributes are still
+    /// encrypted, and a rename that copies an entry carries them across.
     pub fn encrypts_xattrs(&self) -> bool {
-        self.config_type == ConfigType::V7 && self.xattr_format == XattrFormat::Encrypted
+        self.config_type == ConfigType::V7 && self.xattr_format != XattrFormat::Plaintext
+    }
+
+    /// Whether this build can read and write the volume's extended
+    /// attributes. Not on a V7 volume whose config names the path-IV format
+    /// of earlier builds: its attributes are left as they are, so going back
+    /// to such a build finds them intact, and none are stored in another
+    /// format beside them.
+    pub fn xattrs_available(&self) -> bool {
+        !(self.config_type == ConfigType::V7 && self.xattr_format == XattrFormat::EncryptedPathIv)
+    }
+
+    /// A warning for the user when extended attributes are unavailable on
+    /// this volume (see [`EncfsConfig::xattrs_available`]).
+    pub fn legacy_xattr_warning(&self) -> Option<String> {
+        (!self.xattrs_available()).then(|| t!("lib.legacy_xattr_format").to_string())
     }
 
     /// Whether symlink targets use the C++ EncFS path encoding (see
@@ -1062,7 +1144,7 @@ impl EncfsConfig {
     /// Whether a symlink's stored target depends on the symlink's own path IV,
     /// so moving the link requires re-encrypting the target.
     pub fn symlink_target_depends_on_path(&self) -> bool {
-        !self.uses_legacy_symlink_targets() && self.chained_name_iv
+        !self.uses_legacy_symlink_targets() && (self.chained_name_iv || self.directory_iv)
     }
 
     pub fn header_size(&self) -> u64 {
@@ -1073,6 +1155,22 @@ impl EncfsConfig {
         } else {
             8
         }
+    }
+
+    /// The V7 version gate: maps the raw wire `minimum_reader_version` to its
+    /// effective version and rejects it when it exceeds `supported`, the
+    /// highest version the reader implements (`V7_CURRENT_CONFIG_VERSION` for
+    /// this build; a parameter so tests can stand in for older readers).
+    fn check_v7_reader_version(raw: u32, supported: u32) -> Result<u32> {
+        let effective = Self::effective_v7_min_reader_version(raw);
+        if effective > supported {
+            anyhow::bail!(
+                "V7 config requires reader version {}; this build supports through {}",
+                effective,
+                supported
+            );
+        }
+        Ok(effective)
     }
 
     /// Maps a raw V7 `minimum_reader_version` wire value to its effective
@@ -1140,6 +1238,7 @@ impl EncfsConfig {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -1279,7 +1378,7 @@ impl EncfsConfig {
     fn encfs_config_to_proto_v7(&self) -> crate::config_proto::Config {
         use crate::config_proto::{
             AesGcmSivBlockCipher, Argon2Kdf, BasicBlockCipher, BlockCipherAlgorithm, Config,
-            FeatureFlags, FileIvWidth, NameEncoding, NameEncodingMode,
+            DirectoryIvMode, FeatureFlags, FileIvWidth, NameEncoding, NameEncodingMode,
         };
 
         let algorithm = match self.cipher_iface.name.as_str() {
@@ -1323,6 +1422,11 @@ impl EncfsConfig {
             mode,
             chained_name_iv: self.chained_name_iv,
             external_iv_chaining: self.external_iv_chaining,
+            directory_iv: if self.directory_iv {
+                DirectoryIvMode::Sidecar
+            } else {
+                DirectoryIvMode::None
+            } as i32,
         });
 
         let argon2 = (self.argon2_memory_cost.is_some()
@@ -1338,7 +1442,8 @@ impl EncfsConfig {
         let feature_flags = Some(FeatureFlags {
             allow_holes: self.allow_holes,
             xattr_format: match self.xattr_format {
-                XattrFormat::Encrypted => crate::config_proto::XattrFormat::Encrypted,
+                XattrFormat::Encrypted => crate::config_proto::XattrFormat::EncryptedInodeIv,
+                XattrFormat::EncryptedPathIv => crate::config_proto::XattrFormat::EncryptedPathIv,
                 XattrFormat::Plaintext => crate::config_proto::XattrFormat::Plaintext,
             } as i32,
             symlink_format: match self.symlink_format {
@@ -1658,6 +1763,7 @@ mod tests {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
             xattr_format: Default::default(),
@@ -1880,9 +1986,10 @@ mod tests {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
-            xattr_format: Default::default(),
+            xattr_format: XattrFormat::EncryptedPathIv,
             symlink_format: Default::default(),
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
@@ -1924,9 +2031,14 @@ mod tests {
             "new V7 filesystems default to wide file IVs"
         );
         assert_eq!(cfg.header_size(), 12);
+        assert!(
+            cfg.directory_iv && !cfg.chained_name_iv,
+            "new V7 filesystems default to per-directory name IVs"
+        );
+        assert_eq!(cfg.xattr_format, XattrFormat::Encrypted);
         assert_eq!(
             cfg.minimum_reader_version,
-            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+            crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
         assert_eq!(cfg.name_iface.name, "nameio/block32");
         assert!(cfg.validate().is_ok());
@@ -1951,7 +2063,7 @@ mod tests {
         }
         assert_eq!(
             proto.minimum_reader_version,
-            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+            crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
     }
 
@@ -2005,9 +2117,12 @@ mod tests {
         );
         assert!(loaded.wide_file_iv);
         assert_eq!(loaded.header_size(), 12);
+        assert!(loaded.directory_iv);
+        assert_eq!(loaded.xattr_format, XattrFormat::Encrypted);
+        assert_eq!(loaded.legacy_xattr_warning(), None);
         assert_eq!(
             loaded.minimum_reader_version,
-            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION
+            crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         );
         let _cipher = loaded.get_cipher(password)?;
 
@@ -2027,6 +2142,7 @@ mod tests {
         ));
 
         let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
         // Stream names, as V7 configs written before Base32 names used.
         config.name_iface = Interface {
             name: "nameio/stream".to_string(),
@@ -2034,6 +2150,8 @@ mod tests {
             minor: 0,
             age: 0,
         };
+        // And the xattr format they all named.
+        config.xattr_format = XattrFormat::EncryptedPathIv;
         config.wide_file_iv = false;
         config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
@@ -2083,6 +2201,7 @@ mod tests {
     #[test]
     fn validate_rejects_wide_file_iv_below_required_reader_version() {
         let mut cfg = EncfsConfig::standard_v7();
+        cfg.use_chained_name_iv();
         // Stream names, as V7 configs written before Base32 names used.
         cfg.name_iface = Interface {
             name: "nameio/stream".to_string(),
@@ -2090,6 +2209,7 @@ mod tests {
             minor: 0,
             age: 0,
         };
+        cfg.xattr_format = XattrFormat::EncryptedPathIv;
         cfg.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         assert!(cfg.validate().is_err());
 
@@ -2136,9 +2256,10 @@ mod tests {
     fn validate_gates_storage_formats() {
         for (xattr, symlink) in [
             (XattrFormat::Plaintext, SymlinkFormat::EncryptedName),
-            (XattrFormat::Encrypted, SymlinkFormat::LegacyPath),
+            (XattrFormat::EncryptedPathIv, SymlinkFormat::LegacyPath),
         ] {
             let mut cfg = EncfsConfig::standard_v7();
+            cfg.use_chained_name_iv();
             cfg.xattr_format = xattr;
             cfg.symlink_format = symlink;
             cfg.minimum_reader_version = crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION;
@@ -2148,7 +2269,7 @@ mod tests {
             );
             cfg.minimum_reader_version = crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
             assert!(cfg.validate().is_ok());
-            assert_eq!(cfg.encrypts_xattrs(), xattr == XattrFormat::Encrypted);
+            assert_eq!(cfg.encrypts_xattrs(), xattr != XattrFormat::Plaintext);
             assert_eq!(
                 cfg.uses_legacy_symlink_targets(),
                 symlink == SymlinkFormat::LegacyPath
@@ -2169,6 +2290,7 @@ mod tests {
             std::process::id()
         ));
         let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
         config.argon2_memory_cost = Some(8);
         config.argon2_time_cost = Some(1);
         config.argon2_parallelism = Some(1);
@@ -2195,6 +2317,312 @@ mod tests {
         Ok(())
     }
 
+    fn directory_iv_v7() -> EncfsConfig {
+        let mut config = EncfsConfig::standard_v7();
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        config.chained_name_iv = false;
+        config.directory_iv = true;
+        // Isolates the directory IV gate from the xattr format's.
+        config.xattr_format = XattrFormat::EncryptedPathIv;
+        config.minimum_reader_version = config.required_v7_reader_version();
+        config
+    }
+
+    #[test]
+    fn validate_gates_directory_iv() {
+        let config = directory_iv_v7();
+        assert_eq!(
+            config.minimum_reader_version,
+            crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION
+        );
+        assert!(config.validate().is_ok());
+        assert!(config.symlink_target_depends_on_path());
+
+        let mut stale = config.clone();
+        stale.minimum_reader_version = crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
+        assert!(
+            stale.validate().is_err(),
+            "unaware readers must be locked out"
+        );
+
+        let mut chained = config.clone();
+        chained.chained_name_iv = true;
+        assert!(
+            chained.validate().is_err(),
+            "the two IV sources are exclusive"
+        );
+
+        let mut legacy = create_test_config();
+        legacy.chained_name_iv = false;
+        legacy.directory_iv = true;
+        assert!(legacy.validate().is_err(), "directory IV mode is V7-only");
+
+        // External IV chaining is independent of the name IV source.
+        let mut unchained = config.clone();
+        unchained.external_iv_chaining = false;
+        assert!(unchained.validate().is_ok());
+    }
+
+    #[test]
+    fn directory_iv_round_trips_through_v7() -> Result<()> {
+        let config_path = std::env::temp_dir().join(format!(
+            "encfs_v7_directory_iv_test_{}.encfs7",
+            std::process::id()
+        ));
+        let mut config = directory_iv_v7();
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob)?;
+        config.save(&config_path)?;
+
+        let raw = EncfsConfig::load_v7_proto(&config_path)?;
+        assert_eq!(
+            raw.name_encoding.as_ref().map(|n| n.directory_iv),
+            Some(crate::config_proto::DirectoryIvMode::Sidecar as i32)
+        );
+        assert_eq!(
+            raw.minimum_reader_version,
+            crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION
+        );
+
+        let loaded = EncfsConfig::load(&config_path)?;
+        assert!(loaded.directory_iv);
+        assert!(!loaded.chained_name_iv);
+        assert_eq!(
+            loaded.minimum_reader_version,
+            crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION
+        );
+        loaded.get_cipher("pass")?;
+
+        let _ = std::fs::remove_file(config_path);
+        Ok(())
+    }
+
+    /// A build that implements only through the storage-formats version stops
+    /// at the version gate, before the hash check or the name fields.
+    #[test]
+    fn directory_iv_config_is_rejected_by_older_reader() -> Result<()> {
+        let mut config = directory_iv_v7();
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob)?;
+        let proto = config.encfs_config_to_proto_v7();
+
+        let err = EncfsConfig::check_v7_reader_version(
+            proto.minimum_reader_version,
+            crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION,
+        )
+        .expect_err("an older reader must refuse the config");
+        assert!(err.to_string().contains("reader version"), "{err}");
+        assert_eq!(
+            EncfsConfig::check_v7_reader_version(
+                proto.minimum_reader_version,
+                crate::constants::V7_CURRENT_CONFIG_VERSION
+            )?,
+            crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn unknown_directory_iv_mode_is_rejected() {
+        use prost::Message;
+
+        let mut config = directory_iv_v7();
+        getrandom::fill(&mut config.salt).unwrap();
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob).unwrap();
+        let mut proto = config.encfs_config_to_proto_v7();
+        proto.name_encoding.as_mut().unwrap().directory_iv = 99;
+        proto.config_hash = Vec::new();
+
+        let mut bytes = V7_MAGIC.to_vec();
+        bytes.extend_from_slice(&proto.encode_to_vec());
+        let err = EncfsConfig::load_v7(&bytes).expect_err("unknown mode must be rejected");
+        assert!(err.to_string().contains("directory IV mode"), "{err}");
+    }
+
+    /// A V7 config ready to encode, with fast Argon2 parameters.
+    fn keyed_v7(mut config: EncfsConfig) -> EncfsConfig {
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        getrandom::fill(&mut config.salt).unwrap();
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob).unwrap();
+        config
+    }
+
+    fn v7_bytes(proto: &crate::config_proto::Config) -> Vec<u8> {
+        use prost::Message;
+        let mut bytes = V7_MAGIC.to_vec();
+        bytes.extend_from_slice(&proto.encode_to_vec());
+        bytes
+    }
+
+    /// New volumes store the per-inode format, which readers that predate
+    /// it must refuse rather than read attributes with path IVs.
+    #[test]
+    fn inode_xattr_format_is_gated() -> Result<()> {
+        let config = keyed_v7(EncfsConfig::standard_v7());
+        let proto = config.encfs_config_to_proto_v7();
+        assert_eq!(
+            proto.feature_flags.as_ref().unwrap().xattr_format,
+            crate::config_proto::XattrFormat::EncryptedInodeIv as i32
+        );
+        assert_eq!(
+            proto.minimum_reader_version,
+            crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
+        );
+        assert!(
+            EncfsConfig::check_v7_reader_version(
+                proto.minimum_reader_version,
+                crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION,
+            )
+            .is_err()
+        );
+
+        let loaded = EncfsConfig::load_v7(&v7_bytes(&proto))?;
+        assert_eq!(loaded.xattr_format, XattrFormat::Encrypted);
+        assert!(loaded.encrypts_xattrs());
+        assert_eq!(loaded.legacy_xattr_warning(), None);
+
+        let mut stale = loaded.clone();
+        stale.minimum_reader_version = crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION;
+        assert!(
+            stale.validate().is_err(),
+            "unaware readers must be locked out"
+        );
+
+        // Even with the other new features off.
+        let mut chained = EncfsConfig::standard_v7();
+        chained.use_chained_name_iv();
+        chained.wide_file_iv = false;
+        assert_eq!(
+            chained.minimum_reader_version,
+            crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
+        );
+        Ok(())
+    }
+
+    /// Configs naming the retired path-IV format, at every reader version
+    /// they were written with, still load: with a warning, served with the
+    /// per-inode format, and re-saved unchanged.
+    #[test]
+    fn path_iv_xattr_configs_load_with_a_warning() -> Result<()> {
+        let mut base = EncfsConfig::standard_v7();
+        base.use_chained_name_iv();
+        base.name_iface.name = "nameio/stream".to_string();
+        base.name_iface.major = 2;
+        base.wide_file_iv = false;
+        base.xattr_format = XattrFormat::EncryptedPathIv;
+
+        let mut wide = base.clone();
+        wide.wide_file_iv = true;
+        let mut formats = wide.clone();
+        formats.symlink_format = SymlinkFormat::LegacyPath;
+        let mut directory = directory_iv_v7();
+        directory.xattr_format = XattrFormat::EncryptedPathIv;
+
+        for (mut config, version) in [
+            (base, crate::constants::V7_BASE_CONFIG_VERSION),
+            (wide, crate::constants::V7_WIDE_FILE_IV_CONFIG_VERSION),
+            (formats, crate::constants::V7_STORAGE_FORMATS_CONFIG_VERSION),
+            (directory, crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION),
+        ] {
+            config.minimum_reader_version = config.required_v7_reader_version();
+            assert_eq!(config.minimum_reader_version, version);
+            let proto = keyed_v7(config).encfs_config_to_proto_v7();
+            assert_eq!(
+                proto.feature_flags.as_ref().unwrap().xattr_format,
+                0,
+                "re-saves keep the wire zero value"
+            );
+
+            let loaded = EncfsConfig::load_v7(&v7_bytes(&proto))?;
+            assert_eq!(loaded.xattr_format, XattrFormat::EncryptedPathIv);
+            assert_eq!(loaded.minimum_reader_version, version);
+            assert!(!loaded.xattrs_available());
+            assert!(loaded.legacy_xattr_warning().is_some());
+            assert_eq!(loaded.encfs_config_to_proto_v7(), proto);
+        }
+        Ok(())
+    }
+
+    /// Configs from before the feature flags existed named the path-IV
+    /// format implicitly.
+    #[test]
+    fn config_without_feature_flags_names_path_iv_xattrs() -> Result<()> {
+        let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
+        config.name_iface.name = "nameio/stream".to_string();
+        config.name_iface.major = 2;
+        config.wide_file_iv = false;
+        config.xattr_format = XattrFormat::EncryptedPathIv;
+        config.minimum_reader_version = config.required_v7_reader_version();
+        let mut proto = keyed_v7(config).encfs_config_to_proto_v7();
+        proto.feature_flags = None;
+        proto.config_hash = Vec::new();
+
+        let loaded = EncfsConfig::load_v7(&v7_bytes(&proto))?;
+        assert_eq!(loaded.xattr_format, XattrFormat::EncryptedPathIv);
+        assert!(loaded.legacy_xattr_warning().is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn only_path_iv_xattr_configs_warn() {
+        let mut plaintext = EncfsConfig::standard_v7();
+        plaintext.xattr_format = XattrFormat::Plaintext;
+        assert_eq!(plaintext.legacy_xattr_warning(), None);
+        assert_eq!(EncfsConfig::standard_v7().legacy_xattr_warning(), None);
+        let mut legacy = create_test_config();
+        legacy.xattr_format = XattrFormat::EncryptedPathIv;
+        assert_eq!(legacy.legacy_xattr_warning(), None);
+
+        let mut old = EncfsConfig::standard_v7();
+        old.xattr_format = XattrFormat::EncryptedPathIv;
+        let warning = old.legacy_xattr_warning().unwrap();
+        assert!(warning.contains("xtended attributes"), "{warning}");
+    }
+
+    /// Without directory IV mode the new field stays off the wire, so a
+    /// config written by this build encodes and hashes exactly as before.
+    #[test]
+    fn config_without_directory_iv_re_encodes_identically() -> Result<()> {
+        use prost::Message;
+
+        let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        getrandom::fill(&mut config.salt).map_err(|e| anyhow::anyhow!("rand: {}", e))?;
+        let volume_key_blob = vec![0u8; (config.key_size / 8) as usize + 16];
+        config.set_v7_key("pass", &volume_key_blob)?;
+        let proto = config.encfs_config_to_proto_v7();
+        let bytes = proto.encode_to_vec();
+
+        let name_encoding = proto.name_encoding.as_ref().unwrap();
+        assert_eq!(name_encoding.directory_iv, 0);
+        // Field 4 of NameEncoding would be tag byte 0x20.
+        assert!(!name_encoding.encode_to_vec().contains(&0x20));
+
+        let mut file = V7_MAGIC.to_vec();
+        file.extend_from_slice(&bytes);
+        let loaded = EncfsConfig::load_v7(&file)?;
+        assert!(!loaded.directory_iv);
+        let reencoded = loaded.encfs_config_to_proto_v7();
+        assert_eq!(reencoded.encode_to_vec(), bytes);
+        assert_eq!(
+            EncfsConfig::v7_config_hash_from_proto(&reencoded),
+            config.config_hash.clone().unwrap()
+        );
+        Ok(())
+    }
+
     #[test]
     fn validate_rejects_minimum_reader_version_above_current() {
         let mut cfg = EncfsConfig::standard_v7();
@@ -2211,6 +2639,7 @@ mod tests {
         ));
 
         let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
         // Stream names, as V7 configs written before Base32 names used.
         config.name_iface = Interface {
             name: "nameio/stream".to_string(),
@@ -2218,6 +2647,8 @@ mod tests {
             minor: 0,
             age: 0,
         };
+        // And the xattr format they all named.
+        config.xattr_format = XattrFormat::EncryptedPathIv;
         config.wide_file_iv = false;
         config.minimum_reader_version = crate::constants::V7_BASE_CONFIG_VERSION;
         config.block_mac_bytes = 8; // legacy block mode, matching most pre-ADR V7 configs
@@ -2472,9 +2903,10 @@ mod tests {
             unique_iv: true,
             external_iv_chaining: false,
             chained_name_iv: true,
+            directory_iv: false,
             allow_holes: false,
             wide_file_iv: false,
-            xattr_format: Default::default(),
+            xattr_format: XattrFormat::EncryptedPathIv,
             symlink_format: Default::default(),
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,

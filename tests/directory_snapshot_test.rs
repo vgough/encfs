@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use typed_fuse::{
-    Caller, DirBuffer, FileKind, NodeAttr, PathDirIdentity, PathDirSink, PathFilesystem,
+    Caller, DirBuffer, Errno, FileKind, NodeAttr, PathDirIdentity, PathDirSink, PathFilesystem,
     PathNodeRef, PathPlusDirSink,
 };
 
@@ -59,287 +59,130 @@ fn create_file(encfs: &EncFs, root: &Arc<FileState>, name: &str) {
         .unwrap_or_else(|e| panic!("create {name}: {e}"));
 }
 
-#[derive(Clone)]
-struct Entry {
-    name: OsString,
-    offset: u64,
-}
+#[derive(Default)]
+struct Entries(Vec<(OsString, FileKind)>);
 
-struct Entries {
-    values: Vec<Entry>,
-    limit: usize,
-}
 impl PathDirSink<FileState> for Entries {
     fn add(
         &mut self,
         name: &OsStr,
-        _kind: FileKind,
+        kind: FileKind,
         _identity: PathDirIdentity<FileState>,
-        next_offset: u64,
+        _next_offset: u64,
     ) -> bool {
-        if self.values.len() >= self.limit {
-            return false;
-        }
-        self.values.push(Entry {
-            name: name.to_os_string(),
-            offset: next_offset,
-        });
-        self.values.len() < self.limit
+        self.0.push((name.to_os_string(), kind));
+        true
     }
 }
 
-#[derive(Clone)]
-struct PlusEntry {
-    name: OsString,
-    attr: NodeAttr,
-    offset: u64,
-}
+#[derive(Default)]
+struct PlusEntries(Vec<(OsString, Option<NodeAttr>)>);
 
-struct PlusEntries {
-    values: Vec<PlusEntry>,
-    limit: usize,
-}
 impl PathPlusDirSink<FileState> for PlusEntries {
     fn add(
         &mut self,
         name: &OsStr,
-        attr: NodeAttr,
+        attr: Option<NodeAttr>,
         _identity: PathDirIdentity<FileState>,
-        next_offset: u64,
+        _next_offset: u64,
     ) -> bool {
-        if self.values.len() >= self.limit {
-            return false;
-        }
-        self.values.push(PlusEntry {
-            name: name.to_os_string(),
-            attr,
-            offset: next_offset,
-        });
-        self.values.len() < self.limit
+        self.0.push((name.to_os_string(), attr));
+        true
     }
 }
 
-fn read_entries(
-    encfs: &EncFs,
-    root: &Arc<FileState>,
-    handle: &DirBuffer<FileState>,
-    offset: u64,
-) -> Vec<Entry> {
-    let mut sink = Entries {
-        values: Vec::new(),
-        limit: usize::MAX,
-    };
-    encfs
-        .readdir(
-            PathNodeRef::new(Some(Path::new("")), root),
-            handle,
-            offset,
-            &mut sink,
-            &req(),
-        )
-        .expect("readdir");
-    sink.values
+fn list(encfs: &EncFs, root: &Arc<FileState>) -> DirBuffer<FileState> {
+    let node = || PathNodeRef::new(Some(Path::new("")), root);
+    encfs.opendir(node(), 0, &req()).expect("opendir");
+    let listing = encfs.list_dir(node(), &(), &req()).expect("list_dir");
+    encfs.releasedir(node(), (), &req()).expect("releasedir");
+    listing
 }
 
-fn read_prefix(
-    encfs: &EncFs,
-    root: &Arc<FileState>,
-    handle: &DirBuffer<FileState>,
-    count: usize,
-) -> Vec<Entry> {
-    let mut sink = Entries {
-        values: Vec::new(),
-        limit: count,
-    };
-    encfs
-        .readdir(
-            PathNodeRef::new(Some(Path::new("")), root),
-            handle,
-            0,
-            &mut sink,
-            &req(),
-        )
-        .expect("readdir prefix");
-    sink.values
-}
-
-fn read_entries_plus(
-    encfs: &EncFs,
-    root: &Arc<FileState>,
-    handle: &DirBuffer<FileState>,
-    offset: u64,
-) -> Vec<PlusEntry> {
-    let mut sink = PlusEntries {
-        values: Vec::new(),
-        limit: usize::MAX,
-    };
-    encfs
-        .readdirplus(
-            PathNodeRef::new(Some(Path::new("")), root),
-            handle,
-            offset,
-            &mut sink,
-            &req(),
-        )
-        .expect("readdirplus");
-    sink.values
-}
-
-fn read_prefix_plus(
-    encfs: &EncFs,
-    root: &Arc<FileState>,
-    handle: &DirBuffer<FileState>,
-    count: usize,
-) -> Vec<PlusEntry> {
-    let mut sink = PlusEntries {
-        values: Vec::new(),
-        limit: count,
-    };
-    encfs
-        .readdirplus(
-            PathNodeRef::new(Some(Path::new("")), root),
-            handle,
-            0,
-            &mut sink,
-            &req(),
-        )
-        .expect("readdirplus prefix");
-    sink.values
-}
-
-fn names<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> BTreeSet<String> {
-    entries
-        .into_iter()
+fn names(listing: &DirBuffer<FileState>) -> BTreeSet<String> {
+    listing
+        .iter()
         .map(|entry| entry.name.to_string_lossy().into_owned())
         .collect()
 }
 
-fn plus_names<'a>(entries: impl IntoIterator<Item = &'a PlusEntry>) -> BTreeSet<String> {
-    entries
-        .into_iter()
-        .map(|entry| entry.name.to_string_lossy().into_owned())
+fn expected(list: &[&str]) -> BTreeSet<String> {
+    [".", ".."]
+        .iter()
+        .chain(list)
+        .map(|name| name.to_string())
         .collect()
 }
 
+/// `list_dir` reads the backing directory each time, so a listing (which
+/// the adapter takes on the first read and on every read from offset 0)
+/// shows its current contents.
 #[test]
-fn readdir_resumes_from_an_opendir_snapshot() {
-    let (dir, mut encfs) = setup_fs("readdir_snapshot");
+fn list_dir_reflects_current_contents() {
+    let (dir, mut encfs) = setup_fs("list_dir_current");
     let root = encfs.root_state();
-    for name in ["old-a", "old-b", "old-c"] {
-        create_file(&encfs, &root, name);
-    }
-    let handle = encfs
-        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
-        .expect("opendir")
-        .handle;
-    let prefix = read_prefix(&encfs, &root, &handle, 3);
-    let resume_offset = prefix.last().expect("snapshot prefix").offset;
+    create_file(&encfs, &root, "first");
+    assert_eq!(names(&list(&encfs, &root)), expected(&["first"]));
+    create_file(&encfs, &root, "second");
+    assert_eq!(names(&list(&encfs, &root)), expected(&["first", "second"]));
     encfs
         .unlink(
             PathNodeRef::new(Some(Path::new("")), &root),
-            OsStr::new("old-b"),
+            OsStr::new("first"),
             &req(),
         )
-        .expect("remove old-b");
-    create_file(&encfs, &root, "new-entry");
-    let resumed = read_entries(&encfs, &root, &handle, resume_offset);
-    let combined: Vec<_> = prefix.iter().chain(&resumed).cloned().collect();
-    let expected_before = BTreeSet::from([
-        ".".to_string(),
-        "..".to_string(),
-        "old-a".to_string(),
-        "old-b".to_string(),
-        "old-c".to_string(),
-    ]);
-    assert_eq!(names(&combined), expected_before);
-    assert_eq!(combined.len(), expected_before.len(), "duplicate entries");
-    let new_handle = encfs
-        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
-        .expect("new opendir")
-        .handle;
-    let expected_after = BTreeSet::from([
-        ".".to_string(),
-        "..".to_string(),
-        "old-a".to_string(),
-        "old-c".to_string(),
-        "new-entry".to_string(),
-    ]);
-    assert_eq!(
-        names(&read_entries(&encfs, &root, &new_handle, 0)),
-        expected_after
-    );
-    encfs
-        .releasedir(PathNodeRef::new(Some(Path::new("")), &root), handle, &req())
-        .expect("release old snapshot");
-    encfs
-        .releasedir(
-            PathNodeRef::new(Some(Path::new("")), &root),
-            new_handle,
-            &req(),
-        )
-        .expect("release new snapshot");
+        .expect("remove first");
+    assert_eq!(names(&list(&encfs, &root)), expected(&["second"]));
     fs::remove_dir_all(dir).expect("cleanup");
 }
 
+/// Every entry carries its attributes, so `readdirplus` needs no lookups.
 #[test]
-fn readdirplus_retains_snapshot_attributes_after_deletion() {
-    let (dir, mut encfs) = setup_fs("readdirplus_snapshot");
+fn list_dir_entries_carry_attributes() {
+    let (dir, mut encfs) = setup_fs("list_dir_attrs");
     let root = encfs.root_state();
-    create_file(&encfs, &root, "kept");
-    create_file(&encfs, &root, "deleted");
-    let handle = encfs
-        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
-        .expect("opendir")
-        .handle;
-    let prefix = read_prefix_plus(&encfs, &root, &handle, 2);
-    let resume_offset = prefix.last().expect("snapshot prefix").offset;
+    create_file(&encfs, &root, "file");
     encfs
-        .unlink(
+        .mkdir(
             PathNodeRef::new(Some(Path::new("")), &root),
-            OsStr::new("deleted"),
+            OsStr::new("subdir"),
+            0o700,
+            0,
             &req(),
         )
-        .expect("remove deleted entry");
-    create_file(&encfs, &root, "added");
-    let resumed = read_entries_plus(&encfs, &root, &handle, resume_offset);
-    let combined: Vec<_> = prefix.iter().chain(&resumed).cloned().collect();
-    let expected_before = BTreeSet::from([
-        ".".to_string(),
-        "..".to_string(),
-        "kept".to_string(),
-        "deleted".to_string(),
-    ]);
-    assert_eq!(plus_names(&combined), expected_before);
-    assert_eq!(combined.len(), expected_before.len(), "duplicate entries");
-    let deleted = combined
+        .expect("mkdir");
+    let listing = list(&encfs, &root);
+
+    let mut plus = PlusEntries::default();
+    listing.fill_plus(0, &mut plus);
+    let kinds: Vec<_> = plus
+        .0
         .iter()
-        .find(|entry| entry.name == OsStr::new("deleted"))
-        .expect("deleted entry retained in snapshot");
-    assert_eq!(deleted.attr.kind, FileKind::RegularFile);
-    let new_handle = encfs
-        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
-        .expect("new opendir")
-        .handle;
-    let expected_after = BTreeSet::from([
-        ".".to_string(),
-        "..".to_string(),
-        "kept".to_string(),
-        "added".to_string(),
-    ]);
+        .map(|(name, attr)| {
+            let attr = attr.unwrap_or_else(|| panic!("{name:?} has no attributes"));
+            (name.to_string_lossy().into_owned(), attr.kind)
+        })
+        .collect();
+    let mut sorted = kinds.clone();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(
-        plus_names(&read_entries_plus(&encfs, &root, &new_handle, 0)),
-        expected_after
+        sorted,
+        vec![
+            (".".to_string(), FileKind::Directory),
+            ("..".to_string(), FileKind::Directory),
+            ("file".to_string(), FileKind::RegularFile),
+            ("subdir".to_string(), FileKind::Directory),
+        ]
     );
-    encfs
-        .releasedir(PathNodeRef::new(Some(Path::new("")), &root), handle, &req())
-        .expect("release old snapshot");
-    encfs
-        .releasedir(
-            PathNodeRef::new(Some(Path::new("")), &root),
-            new_handle,
-            &req(),
-        )
-        .expect("release new snapshot");
+
+    let mut basic = Entries::default();
+    listing.fill(0, &mut basic);
+    let basic: Vec<_> = basic
+        .0
+        .into_iter()
+        .map(|(name, kind)| (name.to_string_lossy().into_owned(), kind))
+        .collect();
+    assert_eq!(basic, kinds, "readdir and readdirplus kinds differ");
     fs::remove_dir_all(dir).expect("cleanup");
 }
 
@@ -348,16 +191,32 @@ fn directory_terminal_offsets_are_empty() {
     let (dir, mut encfs) = setup_fs("directory_terminal_offsets");
     let root = encfs.root_state();
     create_file(&encfs, &root, "entry");
-    let handle = encfs
-        .opendir(PathNodeRef::new(Some(Path::new("")), &root), 0, &req())
-        .expect("opendir")
-        .handle;
-    assert!(read_entries(&encfs, &root, &handle, 3).is_empty());
-    assert!(read_entries(&encfs, &root, &handle, u64::MAX).is_empty());
-    assert!(read_entries_plus(&encfs, &root, &handle, 3).is_empty());
-    assert!(read_entries_plus(&encfs, &root, &handle, u64::MAX).is_empty());
-    encfs
-        .releasedir(PathNodeRef::new(Some(Path::new("")), &root), handle, &req())
-        .expect("releasedir");
+    let listing = list(&encfs, &root);
+    assert_eq!(listing.len(), 3);
+    for offset in [3, u64::MAX] {
+        let mut basic = Entries::default();
+        listing.fill(offset, &mut basic);
+        assert!(basic.0.is_empty());
+        let mut plus = PlusEntries::default();
+        listing.fill_plus(offset, &mut plus);
+        assert!(plus.0.is_empty());
+    }
+    fs::remove_dir_all(dir).expect("cleanup");
+}
+
+/// The listing is taken lazily, but `opendir` still fails where listing
+/// would rather than succeeding and failing on the first read.
+#[test]
+fn opendir_fails_for_a_missing_directory() {
+    let (dir, mut encfs) = setup_fs("opendir_missing");
+    let root = encfs.root_state();
+    let err = encfs
+        .opendir(
+            PathNodeRef::new(Some(Path::new("missing")), &root),
+            0,
+            &req(),
+        )
+        .expect_err("opendir of a missing directory succeeded");
+    assert_eq!(err, Errno::ENOENT);
     fs::remove_dir_all(dir).expect("cleanup");
 }

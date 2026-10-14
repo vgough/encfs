@@ -68,6 +68,9 @@ reference workload that fails.
   names or be copied mid-write (compounding item 1). Fix: exclude data-path ops
   from a directory subtree while it is being renamed (per-directory lock or
   rename-generation counter).
+  V7 volumes created with directory IV mode (ADR 0002, the `encfsctl new`
+  default) avoid this entirely: a directory rename there is a single
+  rename(2). Chained volumes still take the copy path.
 
 - [x] **5. `do_truncate` without a handle opens a second fd** and truncates
   through it while another handle may be mid-write; both length reads are

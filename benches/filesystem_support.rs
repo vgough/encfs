@@ -5,7 +5,47 @@ use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 
-pub const SCHEMA_VERSION: u32 = 1;
+/// Version 2 records which variant (see [`VARIANTS`]) the metrics measure;
+/// version 1 measured the `encfsctl new` default of its day, unlabelled.
+pub const SCHEMA_VERSION: u32 = 2;
+
+/// The variant baselines record, tracking performance across revisions.
+pub const BASELINE_VARIANT: &str = "no-unique-iv";
+
+/// The variant compared against [`BASELINE_VARIANT`] within each run, to
+/// show the overhead of per-directory name IVs.
+pub const OVERHEAD_VARIANT: &str = "directory-iv";
+
+/// A filesystem configuration the benchmark runs mdtest against.
+pub struct Variant {
+    /// Key in [`BenchmarkResult::variants`].
+    pub name: &'static str,
+    /// Extra `encfsctl new` arguments that create it.
+    pub new_args: &'static [&'static str],
+    /// Expected `directory_iv` and `unique_iv` of the created config, checked
+    /// so a change of `encfsctl new` defaults can't silently swap what is
+    /// being measured.
+    pub directory_iv: bool,
+    pub unique_iv: bool,
+}
+
+/// Every variant a comparison run measures.
+pub const VARIANTS: [Variant; 2] = [
+    // The `encfsctl new` default: per-directory name IVs, per-file IV headers.
+    Variant {
+        name: "directory-iv",
+        new_args: &[],
+        directory_iv: true,
+        unique_iv: true,
+    },
+    // Headerless, path-chained names: the reverse-mode (encfsr) layout.
+    Variant {
+        name: "no-unique-iv",
+        new_args: &["--no-unique-iv"],
+        directory_iv: false,
+        unique_iv: false,
+    },
+];
 
 const REQUIRED_METRICS: [&str; 10] = [
     "Directory creation",
@@ -44,6 +84,9 @@ pub struct BenchmarkResult {
     pub mdtest_version: String,
     pub host: HostContext,
     pub workload: Workload,
+    /// Name of the [`Variant`] measured.
+    pub variant: String,
+    /// Mean ops/sec per mdtest operation.
     pub metrics: BTreeMap<String, f64>,
 }
 
@@ -142,12 +185,19 @@ pub fn validate_result(result: &BenchmarkResult) -> Result<()> {
             SCHEMA_VERSION
         );
     }
-    if result.metrics.is_empty() {
+    if result.variant.is_empty() {
+        bail!("filesystem benchmark result does not name its variant");
+    }
+    validate_metrics(&result.metrics)
+}
+
+pub fn validate_metrics(metrics: &BTreeMap<String, f64>) -> Result<()> {
+    if metrics.is_empty() {
         bail!("filesystem benchmark result contains no metrics");
     }
     let missing: Vec<_> = REQUIRED_METRICS
         .iter()
-        .filter(|name| !result.metrics.contains_key(**name))
+        .filter(|name| !metrics.contains_key(**name))
         .copied()
         .collect();
     if !missing.is_empty() {
@@ -156,8 +206,7 @@ pub fn validate_result(result: &BenchmarkResult) -> Result<()> {
             missing.join(", ")
         );
     }
-    if result
-        .metrics
+    if metrics
         .values()
         .any(|value| !value.is_finite() || *value < 0.0)
     {
@@ -207,8 +256,20 @@ pub fn save_result_atomic(path: &Path, result: &BenchmarkResult) -> Result<()> {
     Ok(())
 }
 
-pub fn ensure_compatible(baseline: &BenchmarkResult, workload: &Workload) -> Result<()> {
+/// Checks that `baseline` measured `variant` under `workload`.
+pub fn ensure_compatible(
+    baseline: &BenchmarkResult,
+    variant: &str,
+    workload: &Workload,
+) -> Result<()> {
     validate_result(baseline)?;
+    if baseline.variant != variant {
+        bail!(
+            "benchmark baseline measured variant {:?}, expected {:?}",
+            baseline.variant,
+            variant
+        );
+    }
     if baseline.workload != *workload {
         bail!(
             "benchmark workload does not match the baseline\n  baseline: {}\n  current:  {}",
@@ -219,15 +280,24 @@ pub fn ensure_compatible(baseline: &BenchmarkResult, workload: &Workload) -> Res
     Ok(())
 }
 
+/// Deltas of `current` against a baseline of the same variant and workload.
 pub fn calculate_deltas(
     baseline: &BenchmarkResult,
     current: &BenchmarkResult,
 ) -> Result<Vec<MetricDelta>> {
-    ensure_compatible(baseline, &current.workload)?;
+    ensure_compatible(baseline, &current.variant, &current.workload)?;
     validate_result(current)?;
+    compare_metrics(&baseline.metrics, &current.metrics)
+}
 
-    let baseline_names: BTreeSet<_> = baseline.metrics.keys().collect();
-    let current_names: BTreeSet<_> = current.metrics.keys().collect();
+/// Per-operation deltas of `current` relative to `baseline`; also used to
+/// compare two variants measured in the same run.
+pub fn compare_metrics(
+    baseline: &BTreeMap<String, f64>,
+    current: &BTreeMap<String, f64>,
+) -> Result<Vec<MetricDelta>> {
+    let baseline_names: BTreeSet<_> = baseline.keys().collect();
+    let current_names: BTreeSet<_> = current.keys().collect();
     if baseline_names != current_names {
         let missing: Vec<_> = baseline_names.difference(&current_names).copied().collect();
         let added: Vec<_> = current_names.difference(&baseline_names).copied().collect();
@@ -239,10 +309,9 @@ pub fn calculate_deltas(
     }
 
     Ok(baseline
-        .metrics
         .iter()
         .map(|(name, baseline_value)| {
-            let current_value = current.metrics[name];
+            let current_value = current[name];
             let percent = if *baseline_value == 0.0 {
                 if current_value == 0.0 {
                     0.0

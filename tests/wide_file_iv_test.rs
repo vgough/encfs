@@ -44,11 +44,17 @@ fn make_fs(root: &std::path::Path, wide: bool) -> (EncFs, u64) {
     let mut config = EncfsConfig::standard_v7();
     config.wide_file_iv = wide;
     if !wide {
+        // `--legacy-file-iv` also falls back to path-chained names.
+        config.use_chained_name_iv();
         config.minimum_reader_version = encfs::constants::V7_BASE_CONFIG_VERSION;
     }
     config.block_size = 64;
     let header_size = config.header_size();
     assert_eq!(header_size, if wide { 12 } else { 8 });
+    if config.directory_iv {
+        // As `encfsctl new` does for the default per-directory name IVs.
+        encfs::diriv::ensure_root(root, true).unwrap();
+    }
 
     (
         EncFs::new(root.to_path_buf(), Box::new(cipher), config),
@@ -222,6 +228,7 @@ fn get_cipher_wires_wide_file_iv_end_to_end() {
 
     let mount_dir = tmp.join("data");
     fs::create_dir(&mount_dir).unwrap();
+    encfs::diriv::ensure_root(&mount_dir, true).unwrap();
     let mut fs = EncFs::new(mount_dir, cipher, loaded);
     let root_state = fs.root_state();
     let req = caller();
