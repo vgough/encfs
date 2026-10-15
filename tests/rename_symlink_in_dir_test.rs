@@ -16,7 +16,18 @@ use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
 mod common;
 use common::{Node, node};
 
-fn setup_fs(root: &Path) -> EncFs {
+/// Which volume format a test runs against.
+#[derive(Clone, Copy)]
+enum Volume {
+    /// V6 with chained names: targets in the C++ path form.
+    LegacyChained,
+    /// V7 with chained names and external IV chaining (the `standard_v7`
+    /// defaults): targets encrypted under the link's path IV, rewritten on
+    /// rename.
+    V7Paranoia,
+}
+
+fn setup_fs_for(root: &Path, volume: Volume) -> EncFs {
     let iface = Interface {
         name: "ssl/aes".to_string(),
         major: 3,
@@ -30,7 +41,11 @@ fn setup_fs(root: &Path) -> EncFs {
     cipher.set_key(&user_key, &user_iv);
 
     // chained_name_iv=true triggers the bug
-    let config = encfs::config::EncfsConfig::test_default();
+    let mut config = encfs::config::EncfsConfig::test_default();
+    if let Volume::V7Paranoia = volume {
+        config.config_type = encfs::config::ConfigType::V7;
+        config.external_iv_chaining = true;
+    }
     EncFs::new(root.to_path_buf(), Box::new(cipher), config)
 }
 
@@ -45,14 +60,24 @@ fn req() -> Caller {
 
 #[test]
 fn test_rename_directory_containing_symlink_with_chained_name_iv() {
+    rename_directory_containing_symlink(Volume::LegacyChained, "encfs_rename_symlink_dir_test");
+}
+
+/// V7 with external IV chaining used to refuse this with ENOSYS.
+#[test]
+fn test_rename_directory_containing_symlink_v7_paranoia() {
+    rename_directory_containing_symlink(Volume::V7Paranoia, "encfs_rename_symlink_dir_v7_test");
+}
+
+fn rename_directory_containing_symlink(volume: Volume, dir: &str) {
     let _ = env_logger::builder().is_test(true).try_init();
-    let tmp = std::env::temp_dir().join("encfs_rename_symlink_dir_test");
+    let tmp = std::env::temp_dir().join(dir);
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
     }
     fs::create_dir(&tmp).unwrap();
 
-    let mut fs = setup_fs(&tmp);
+    let mut fs = setup_fs_for(&tmp, volume);
     let root = fs.root_state();
     let r = req();
 
@@ -157,14 +182,29 @@ fn test_rename_directory_containing_symlink_with_chained_name_iv() {
 
 #[test]
 fn test_rename_nested_directory_with_symlinks_chained_name_iv() {
+    rename_nested_directory_with_symlinks(
+        Volume::LegacyChained,
+        "encfs_rename_nested_symlink_test",
+    );
+}
+
+#[test]
+fn test_rename_nested_directory_with_symlinks_v7_paranoia() {
+    rename_nested_directory_with_symlinks(
+        Volume::V7Paranoia,
+        "encfs_rename_nested_symlink_v7_test",
+    );
+}
+
+fn rename_nested_directory_with_symlinks(volume: Volume, dir: &str) {
     let _ = env_logger::builder().is_test(true).try_init();
-    let tmp = std::env::temp_dir().join("encfs_rename_nested_symlink_test");
+    let tmp = std::env::temp_dir().join(dir);
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
     }
     fs::create_dir(&tmp).unwrap();
 
-    let mut fs = setup_fs(&tmp);
+    let mut fs = setup_fs_for(&tmp, volume);
     let root = fs.root_state();
     let r = req();
 

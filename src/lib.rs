@@ -3,10 +3,12 @@ pub mod config_binary;
 pub mod config_proto;
 pub mod constants;
 pub mod crypto;
+pub mod diriv;
 pub mod fs;
 pub mod idle_lock;
 pub mod reverse_fs;
 pub mod security;
+pub mod symlink_target;
 #[cfg(target_os = "macos")]
 pub mod touchid;
 pub mod xattr_name;

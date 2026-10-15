@@ -76,6 +76,10 @@ encfsr.unique_iv_rejected:
   en: "error: unique_iv = true is not supported; set unique_iv = false to use encfsr"
   fr: "erreur : unique_iv = true n'est pas pris en charge ; définissez unique_iv = false pour utiliser encfsr"
   de: "Fehler: unique_iv = true wird nicht unterstützt; setzen Sie unique_iv = false, um encfsr zu verwenden"
+encfsr.directory_iv_rejected:
+  en: "error: directory IV mode is not supported in reverse mode; create the config with encfsctl new --no-unique-iv to use encfsr"
+  fr: "erreur : le mode IV par répertoire n'est pas pris en charge en mode inversé ; créez la configuration avec encfsctl new --no-unique-iv pour utiliser encfsr"
+  de: "Fehler: Der Verzeichnis-IV-Modus wird im Reverse-Modus nicht unterstützt; erstellen Sie die Konfiguration mit encfsctl new --no-unique-iv, um encfsr zu verwenden"
 encfsr.unique_iv_warning:
   en: "warning: unique_iv = true will make the reverse filesystem output non-deterministic; encrypted filenames may change between runs"
   fr: "avertissement : unique_iv = true rendra la sortie du système de fichiers inversé non déterministe ; les noms de fichiers chiffrés peuvent changer entre les exécutions"

@@ -74,6 +74,12 @@ Technology
    cases with an initialization vector based on the HMAC checksum of the
    filename.
  
+   Legacy volumes chain the IV from the parent path, so a name depends on
+   every directory above it. New V7 volumes instead keep 16 random bytes in a
+   `.encfs.diriv` file in each encrypted directory and derive the IV for the
+   names inside it from them, so names depend only on their directory and a
+   directory rename is a single rename (see docs/adr/0002).
+
    Using a deterministic initial vector allows fast directory lookups, as no
    salt value needs to be looked up when converting from plaintext name to
    encrypted name.  It also means very similar filenames (such as "foo1" and
@@ -147,8 +153,14 @@ Backward Compatibility
    the config (cipher params, KDF params, feature flags, etc.) invalidates the
    AAD, causing decryption to fail. The config hash is also stored and checked
    on load; a hash mismatch indicates tampering or corruption. New V7 filesystems
-   default to Argon2id KDF, AES-GCM-SIV block mode, AES-256, and a 96-bit
-   per-file IV (`wide_file_iv`).
+   default to Argon2id KDF, AES-GCM-SIV block mode, AES-256, a 96-bit
+   per-file IV (`wide_file_iv`), and a filename encoding chosen for the
+   filesystem holding the encrypted files: `encfsctl new` creates a file
+   there and looks it up under another case. Where case is ignored it uses
+   `nameio/block32` (block encoding written in case-insensitive Base32, so
+   names survive case folding; requires reader version 3), and elsewhere the
+   shorter `nameio/stream` names. `--name-encoding stream|block32` overrides
+   the choice.
 
    V7 also carries an authenticated `minimum_reader_version`. A build only
    opens a config whose minimum reader version it supports; a config
@@ -156,9 +168,23 @@ Backward Compatibility
    misread. New 96-bit-file-IV volumes are intentionally **not** readable by
    tooling built before this feature: an old build cannot know the new
    protobuf fields, so it recomputes a different config hash and fails
-   closed (reported as "config hash mismatch"). Use
-   `encfsctl new --legacy-file-iv` (or `--no-unique-iv`, which is always
-   64-bit) to create a filesystem that old tooling can still read.
+   closed (reported as "config hash mismatch"). `encfsctl new
+   --legacy-file-iv` (or `--no-unique-iv`, which is always 64-bit) keeps the
+   64-bit file IV and stream filename encoding, but every new filesystem
+   stores extended attributes in the per-inode format (reader version 5), so
+   only readers that implement it can open one.
+
+   V7 encrypts extended attribute names and values under an IV derived from
+   a random seed stored on the same inode (`user.encfs.~iv`, see ADR 0003),
+   so renames and hard links don't affect them, and stores each symlink
+   target as one encrypted name under the link's path IV. Configs from
+   before the seed format still load, but extended attributes are
+   unavailable on them: they are neither read nor changed, and the config is
+   left alone, so an earlier version can still use them. V4-V6 volumes store
+   attributes unencrypted and symlink targets in the C++ EncFS path form.
+   `encfsctl passwd --upgrade` only rewrites the config, so it sets the
+   `xattr_format` and `symlink_format` feature flags (enums, reader version 3)
+   to the legacy forms, keeping an upgraded volume's existing data readable.
 
 Utility
 -------

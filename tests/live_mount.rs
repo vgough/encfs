@@ -684,9 +684,12 @@ fn live_symlink_standard() -> Result<()> {
     run_symlink_tests_standard()
 }
 
+/// Legacy (V6) paranoia volumes store symlink targets in the C++ EncFS path
+/// form, which doesn't depend on the link's location, so a rename just moves
+/// the link (as C++ does) and the target still reads back.
 #[test]
 #[ignore]
-fn live_symlink_rename_paranoia_is_enosys() -> Result<()> {
+fn live_symlink_rename_paranoia_legacy_keeps_target() -> Result<()> {
     require_live();
     if !live_enabled() {
         return Ok(());
@@ -697,8 +700,39 @@ fn live_symlink_rename_paranoia_is_enosys() -> Result<()> {
 
     fs::write(root.join("target.txt"), b"t")?;
     std::os::unix::fs::symlink("target.txt", root.join("lnk"))?;
-    let err = fs::rename(root.join("lnk"), root.join("lnk2")).unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::ENOSYS));
+    fs::rename(root.join("lnk"), root.join("lnk2"))?;
+    assert_eq!(fs::read_link(root.join("lnk2"))?, Path::new("target.txt"));
+    assert_eq!(fs::read(root.join("lnk2"))?, b"t");
+    Ok(())
+}
+
+/// V7 targets are encrypted under the link's path IV, so moving a link (or a
+/// directory holding one) re-encrypts the target. This used to be refused
+/// with ENOSYS when external IV chaining was on, as it is by default.
+#[test]
+#[ignore]
+fn live_symlink_rename_v7_paranoia_rewrites_target() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    // standard_v7() enables external IV chaining.
+    let (backing_root, cfg) = live::init_wide_v7_backing_root()?;
+    let mount = MountGuard::mount_existing_backing_root(cfg, false, backing_root)?;
+    let root = &mount.mount_point;
+
+    fs::write(root.join("target.txt"), b"t")?;
+    std::os::unix::fs::symlink("target.txt", root.join("lnk"))?;
+    fs::rename(root.join("lnk"), root.join("lnk2"))?;
+    assert_eq!(fs::read_link(root.join("lnk2"))?, Path::new("target.txt"));
+    assert_eq!(fs::read(root.join("lnk2"))?, b"t");
+
+    fs::create_dir(root.join("d"))?;
+    std::os::unix::fs::symlink("../target.txt", root.join("d").join("inner"))?;
+    fs::rename(root.join("d"), root.join("d2"))?;
+    let inner = root.join("d2").join("inner");
+    assert_eq!(fs::read_link(&inner)?, Path::new("../target.txt"));
+    assert_eq!(fs::read(&inner)?, b"t");
     Ok(())
 }
 
@@ -1075,6 +1109,121 @@ fn live_read_only_mount_is_ero_fs() -> Result<()> {
     Ok(())
 }
 
+/// Each listing of the root shows its current contents. FreeBSD reads every
+/// listing of the root through the handle from its first opendir.
+#[test]
+#[ignore]
+fn live_root_listing_reflects_changes() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let root = &mount.mount_point;
+    fs::write(root.join("first"), b"1")?;
+    assert_eq!(sorted_names(root)?, vec!["first"]);
+    fs::write(root.join("second"), b"2")?;
+    assert_eq!(sorted_names(root)?, vec!["first", "second"]);
+    fs::remove_file(root.join("first"))?;
+    assert_eq!(sorted_names(root)?, vec!["second"]);
+    Ok(())
+}
+
+/// Inode numbers of every ciphertext entry in the backing store. A directory
+/// rename that copied anything would introduce new ones.
+fn backing_inodes(backing_root: &Path) -> Result<std::collections::BTreeSet<u64>> {
+    use std::os::unix::fs::MetadataExt;
+    live::list_non_dot_entries_recursive(backing_root)?
+        .into_iter()
+        .map(|p| Ok(fs::symlink_metadata(&p)?.ino()))
+        .collect()
+}
+
+fn sorted_names(path: &Path) -> Result<Vec<String>> {
+    let mut names = read_directory_names(path)?;
+    names.sort();
+    Ok(names)
+}
+
+fn run_directory_iv_rename(external_iv_chaining: bool) -> Result<()> {
+    let (backing, cfg) = live::init_directory_iv_v7_backing_root(external_iv_chaining)?;
+    {
+        let mount = MountGuard::mount_existing_backing_root(cfg.clone(), false, backing.clone())
+            .context("mount (phase1) failed")?;
+        assert!(
+            backing.join(encfs::diriv::SIDECAR_NAME).is_file(),
+            "mounting an empty volume must create the root sidecar"
+        );
+        let root = &mount.mount_point;
+
+        fs::create_dir_all(root.join("a/b/c"))?;
+        fs::create_dir(root.join("z"))?;
+        fs::write(root.join("a/b/c/file.txt"), b"deep payload")?;
+        std::os::unix::fs::symlink("c/file.txt", root.join("a/b/link"))?;
+        assert_eq!(sorted_names(root)?, vec!["a", "z"]);
+
+        let before = backing_inodes(&backing)?;
+        fs::rename(root.join("a"), root.join("z/moved"))?;
+        assert_eq!(
+            backing_inodes(&backing)?,
+            before,
+            "a directory rename must move entries, not copy them"
+        );
+        assert_eq!(
+            fs::read(root.join("z/moved/b/c/file.txt"))?,
+            b"deep payload"
+        );
+        assert_eq!(
+            fs::read_link(root.join("z/moved/b/link"))?,
+            PathBuf::from("c/file.txt")
+        );
+
+        let err = fs::remove_dir(root.join("z/moved/b")).unwrap_err();
+        assert_eq!(err.raw_os_error(), Some(libc::ENOTEMPTY));
+        fs::create_dir(root.join("empty"))?;
+        assert!(sorted_names(&root.join("empty"))?.is_empty());
+        fs::remove_dir(root.join("empty"))?;
+
+        // Onto an existing empty directory.
+        fs::create_dir(root.join("target"))?;
+        fs::rename(root.join("z/moved"), root.join("target"))?;
+        assert_eq!(sorted_names(root)?, vec!["target", "z"]);
+    }
+    {
+        let mount = MountGuard::mount_existing_backing_root(cfg, false, backing.clone())
+            .context("mount (phase2) failed")?;
+        let root = &mount.mount_point;
+        assert_eq!(fs::read(root.join("target/b/c/file.txt"))?, b"deep payload");
+        assert_eq!(
+            fs::read_link(root.join("target/b/link"))?,
+            PathBuf::from("c/file.txt")
+        );
+    }
+    let _ = fs::remove_dir_all(&backing);
+    Ok(())
+}
+
+#[test]
+#[ignore]
+fn live_directory_iv_rename() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    run_directory_iv_rename(false)
+}
+
+#[test]
+#[ignore]
+fn live_directory_iv_rename_external_iv() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    run_directory_iv_rename(true)
+}
+
 #[test]
 #[ignore]
 fn live_wrong_password_fails_to_mount() -> Result<()> {
@@ -1230,9 +1379,17 @@ fn live_large_directory_snapshot_survives_mutation_standard() -> Result<()> {
         snapshot_set.len(),
         "snapshot enumeration returned a duplicate"
     );
-    assert_eq!(
-        snapshot_set, original,
-        "an open directory handle must retain its pre-mutation snapshot"
+    // A resumed read keeps the snapshot's names, but looks each one up again
+    // after a change through the mount, so it drops the removed name unless
+    // the kernel or libc had already read ahead past it.
+    assert!(
+        snapshot_set.is_subset(&original),
+        "an open directory handle must not report names added after its snapshot"
+    );
+    let missing: BTreeSet<_> = original.difference(&snapshot_set).cloned().collect();
+    assert!(
+        missing.is_empty() || missing == BTreeSet::from([removed_name.clone()]),
+        "an open directory handle lost snapshot names other than the removed one: {missing:?}"
     );
 
     let mut current = original;

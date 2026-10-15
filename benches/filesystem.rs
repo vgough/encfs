@@ -2,9 +2,11 @@ mod filesystem_support;
 
 use anyhow::{Context, Result, anyhow, bail};
 use filesystem_support::{
-    BenchmarkResult, HostContext, SCHEMA_VERSION, Workload, calculate_deltas, ensure_compatible,
-    load_result, parse_mdtest_output, save_result_atomic, workload_description,
+    BASELINE_VARIANT, BenchmarkResult, HostContext, MetricDelta, OVERHEAD_VARIANT, SCHEMA_VERSION,
+    VARIANTS, Variant, Workload, calculate_deltas, compare_metrics, ensure_compatible, load_result,
+    parse_mdtest_output, save_result_atomic, workload_description,
 };
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
@@ -46,7 +48,7 @@ fn run() -> Result<()> {
                 baseline_path.display()
             )
         })?;
-        ensure_compatible(&result, &workload)?;
+        ensure_compatible(&result, BASELINE_VARIANT, &workload)?;
         Some(result)
     };
 
@@ -58,23 +60,40 @@ fn run() -> Result<()> {
     }
 
     println!("Filesystem benchmark: {}", workload_description(&workload));
-    let benchmark = run_filesystem_benchmark(&workload, &mdtest_bin, &mpirun_bin)?;
-    let combined_output = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&benchmark.output.stdout),
-        String::from_utf8_lossy(&benchmark.output.stderr)
-    );
-    let (mdtest_version, metrics) = parse_mdtest_output(&combined_output).with_context(|| {
-        format!(
-            "failed to parse mdtest output{}",
-            benchmark.encfs_diagnostics
-        )
-    })?;
+    // A baseline only needs the baseline variant; a comparison also measures
+    // the overhead variant in the same run.
+    let mut mdtest_version = None;
+    let mut variants = BTreeMap::new();
+    for variant in VARIANTS
+        .iter()
+        .filter(|variant| !save_baseline || variant.name == BASELINE_VARIANT)
+    {
+        let command: Vec<_> = ["encfsctl", "new"]
+            .into_iter()
+            .chain(variant.new_args.iter().copied())
+            .collect();
+        println!("Running variant {} ({})", variant.name, command.join(" "));
+        let benchmark = run_filesystem_benchmark(&workload, &mdtest_bin, &mpirun_bin, variant)
+            .with_context(|| format!("variant {}", variant.name))?;
+        let combined_output = format!(
+            "{}\n{}",
+            String::from_utf8_lossy(&benchmark.output.stdout),
+            String::from_utf8_lossy(&benchmark.output.stderr)
+        );
+        let (version, metrics) = parse_mdtest_output(&combined_output).with_context(|| {
+            format!(
+                "failed to parse mdtest output for variant {}{}",
+                variant.name, benchmark.encfs_diagnostics
+            )
+        })?;
+        mdtest_version.get_or_insert(version);
+        variants.insert(variant.name, metrics);
+    }
     let result = BenchmarkResult {
         schema_version: SCHEMA_VERSION,
         timestamp: chrono::Utc::now().to_rfc3339(),
         git_revision: git_revision(),
-        mdtest_version,
+        mdtest_version: mdtest_version.expect("VARIANTS is not empty"),
         host: HostContext {
             os: sysinfo::System::name().unwrap_or_else(|| env::consts::OS.to_string()),
             os_version: sysinfo::System::os_version().unwrap_or_else(|| "unknown".to_string()),
@@ -82,17 +101,27 @@ fn run() -> Result<()> {
             cpu: cpu_brand(),
         },
         workload,
-        metrics,
+        variant: BASELINE_VARIANT.to_string(),
+        metrics: variants
+            .remove(BASELINE_VARIANT)
+            .expect("the baseline variant always runs"),
     };
 
     if save_baseline {
         save_result_atomic(&baseline_path, &result)?;
         println!(
-            "Saved filesystem benchmark baseline to {}",
+            "Saved filesystem benchmark baseline ({BASELINE_VARIANT}) to {}",
             baseline_path.display()
         );
     } else {
-        print_comparison(baseline.as_ref().expect("baseline was loaded"), &result)?;
+        let overhead = variants
+            .remove(OVERHEAD_VARIANT)
+            .expect("comparison runs measure every variant");
+        print_comparison(
+            baseline.as_ref().expect("baseline was loaded"),
+            &result,
+            &overhead,
+        )?;
     }
     Ok(())
 }
@@ -101,6 +130,7 @@ fn run_filesystem_benchmark(
     workload: &Workload,
     mdtest_bin: &str,
     mpirun_bin: &str,
+    variant: &Variant,
 ) -> Result<CompletedBenchmark> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let release_dir = target_dir(&manifest_dir).join("release");
@@ -128,6 +158,7 @@ fn run_filesystem_benchmark(
         Command::new(&encfsctl)
             .arg("new")
             .arg("--stdinpass")
+            .args(variant.new_args)
             .arg(&encrypted),
         format!("{PASSWORD}\n").as_bytes(),
     )
@@ -138,6 +169,7 @@ fn run_filesystem_benchmark(
         )
     })?;
     ensure_success("encfsctl new", &create_output)?;
+    ensure_variant_config(&encrypted, variant)?;
 
     let timeout = Duration::from_secs(env_value("BENCH_MOUNT_TIMEOUT_SECS", 30)?);
     let mut mounted = MountedEncfs::start(&encfs, &encrypted, &mount_point, timeout)?;
@@ -160,6 +192,24 @@ fn run_filesystem_benchmark(
             "{error:#}; cleanup also failed: {cleanup_error:#}{encfs_diagnostics}"
         )),
     }
+}
+
+/// Checks the created config is the one the variant is meant to measure.
+fn ensure_variant_config(encrypted: &Path, variant: &Variant) -> Result<()> {
+    let config = encfs::config::EncfsConfig::load(&encrypted.join(".encfs7"))
+        .context("failed to load the created V7 config")?;
+    if config.directory_iv != variant.directory_iv || config.unique_iv != variant.unique_iv {
+        bail!(
+            "encfsctl new {} created directory_iv={} unique_iv={}, but variant {} expects directory_iv={} unique_iv={}",
+            variant.new_args.join(" "),
+            config.directory_iv,
+            config.unique_iv,
+            variant.name,
+            variant.directory_iv,
+            variant.unique_iv
+        );
+    }
+    Ok(())
 }
 
 struct CompletedBenchmark {
@@ -443,7 +493,13 @@ fn ensure_success(name: &str, output: &Output) -> Result<()> {
     )
 }
 
-fn print_comparison(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Result<()> {
+/// Prints the baseline comparison of [`BASELINE_VARIANT`], then the
+/// [`OVERHEAD_VARIANT`] from this run relative to it.
+fn print_comparison(
+    baseline: &BenchmarkResult,
+    current: &BenchmarkResult,
+    overhead: &BTreeMap<String, f64>,
+) -> Result<()> {
     if baseline.host != current.host {
         eprintln!(
             "warning: baseline host {} {} / {} / {} differs from current host {} {} / {} / {}",
@@ -467,9 +523,28 @@ fn print_comparison(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Re
     println!(
         "\nValues are operations per second (ops/sec); higher is better, so a positive delta is an improvement."
     );
-    println!("Operation                         Baseline      Current        Delta");
+    print_table(
+        &format!("Performance: {BASELINE_VARIANT}, baseline vs. this run"),
+        ("Baseline", "Current"),
+        &calculate_deltas(baseline, current)?,
+    );
+    print_table(
+        &format!("Overhead: {OVERHEAD_VARIANT} relative to {BASELINE_VARIANT}, both from this run"),
+        (BASELINE_VARIANT, OVERHEAD_VARIANT),
+        &compare_metrics(&current.metrics, overhead)?,
+    );
+    println!("\nDeltas are informational and do not affect the command exit status.");
+    Ok(())
+}
+
+fn print_table(title: &str, (reference, measured): (&str, &str), deltas: &[MetricDelta]) {
+    println!("\n{title}");
+    println!(
+        "{:<32} {:>12} {:>12} {:>10}",
+        "Operation", reference, measured, "Delta"
+    );
     println!("-------------------------------- ------------ ------------ ----------");
-    for delta in calculate_deltas(baseline, current)? {
+    for delta in deltas {
         let percent = if delta.percent.is_infinite() {
             "+inf%".to_string()
         } else {
@@ -480,8 +555,6 @@ fn print_comparison(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Re
             delta.name, delta.baseline, delta.current, percent
         );
     }
-    println!("\nDeltas are informational and do not affect the command exit status.");
-    Ok(())
 }
 
 fn validate_workload(workload: &Workload) -> Result<()> {

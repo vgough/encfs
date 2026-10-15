@@ -74,8 +74,11 @@ fn test_upgrade_pbkdf2_to_argon2() -> Result<()> {
         unique_iv: true,
         external_iv_chaining: false,
         chained_name_iv: true,
+        directory_iv: false,
         allow_holes: true,
         wide_file_iv: false,
+        xattr_format: Default::default(),
+        symlink_format: Default::default(),
         minimum_reader_version: 0,
         config_hash: None,
     };
