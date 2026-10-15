@@ -327,7 +327,7 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
 - `-d` flag sets debug + foreground mode
 
 ### 12. Daemonization
-- Uses `daemonize` crate
+- Uses `daemonix` crate
 - Automatic unless `-f` (foreground) or `-d` (debug) flag
 - Happens after password validation, before FUSE mount
 
@@ -379,7 +379,7 @@ Status: `allow_failures: true`
 
 ### Updating Dependencies
 1. Edit `Cargo.toml`
-2. Run `cargo update`
+2. Run `cargo update` (or `task update`)
 3. Run full test suite
 4. Check for deprecation warnings with clippy
 

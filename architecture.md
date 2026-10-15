@@ -24,7 +24,7 @@ For command reference, testing patterns, and coding conventions, see `AGENTS.md`
 | `rust-i18n` | 4 | Internationalization |
 | `log` & `env_logger` | 0.4.32 / 0.11.10 | Logging |
 | `rpassword` | 7.5.4 | Password prompts |
-| `daemonize` | 0.5 | Background daemon support |
+| `daemonix` | 0.1 | Background daemon support |
 | `objc2-local-authentication` + `objc2`/`objc2-foundation`/`block2` | 0.3 / 0.6 | macOS only: Touch ID prompts for on-demand mounts (`touchid.rs`) |
 | `libc` | 0.2.186 | POSIX syscalls; also backs `security.rs` process hardening |
 | `chrono` | 0.4 | Date/time handling |

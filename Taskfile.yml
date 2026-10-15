@@ -20,6 +20,13 @@ tasks:
     cmds:
       - "{{.CARGO}} install --locked cargo-nextest"
 
+  update:
+    desc: Update dependencies to latest compatible versions in Cargo.lock and fuzz/Cargo.lock
+    aliases: [update-deps]
+    cmds:
+      - "{{.CARGO}} update"
+      - "{{.CARGO}} update --manifest-path fuzz/Cargo.toml"
+
   build:
     desc: Build debug binaries
     cmds:
