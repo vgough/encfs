@@ -15,6 +15,11 @@ v2.0.0 / 2026-10-04
 	* Add support and CI testing for FreeBSD
 	* Add Touch ID on-demand mode for macOS (`encfs --touchid`) with idle timeout
 	  locking and background process filtering
+	* The mount table now shows `encfs@<root directory>` as the mount source
+	  instead of `encfs`, and Linux reports the type as `fuse.encfs` again
+	  (`encfsr@<source>` and `fuse.encfsr` for reverse mounts). Use `encfs --fsname NAME`
+	  or `encfsr ... -o fsname=NAME` to choose another source name. On
+	  FreeBSD, commas in the name are shown as `_` (#712)
 
 v2.0.0-beta.6 / 2026-08-01
 ==================

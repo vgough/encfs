@@ -39,6 +39,10 @@ help.encfs.no_default_permissions:
   en: "Disable kernel permission checks (do not use default_permissions)"
   fr: "Désactiver les vérifications de permissions du noyau (ne pas utiliser default_permissions)"
   de: "Kernel-Berechtigungsprüfungen deaktivieren (default_permissions nicht verwenden)"
+help.encfs.fsname:
+  en: "Name shown as the mount source in the mount table (default: encfs@ followed by the encrypted root directory)"
+  fr: "Nom affiché comme source du montage dans la table des montages (par défaut : encfs@ suivi du répertoire racine chiffré)"
+  de: "Name, der in der Mount-Tabelle als Quelle des Mounts angezeigt wird (Standard: encfs@ gefolgt vom verschlüsselten Stammverzeichnis)"
 help.encfs.root:
   en: "Root directory of encrypted volume"
   fr: "Répertoire racine du volume chiffré"

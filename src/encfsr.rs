@@ -238,6 +238,11 @@ fn main() -> Result<()> {
     });
     #[cfg(target_os = "macos")]
     let xattrs_available = config.xattrs_available();
+    let source = args
+        .source
+        .canonicalize()
+        .with_context(|| format!("invalid source directory {}", args.source.display()))?;
+    let source_name = encfs::mount_source_name(&format!("encfsr@{}", source.to_string_lossy()));
     let fs = encfs::reverse_fs::ReverseFs::new(
         args.source,
         cipher,
@@ -251,10 +256,13 @@ fn main() -> Result<()> {
 
     // The encrypted view is read-only unless the user explicitly opted into
     // reverse writes.  A supplied `-o ro` may still tighten a writable mount.
+    // The mount table lists `encfsr@<source>` as the mount source (type
+    // `fuse.encfsr`); `-o fsname=` replaces it.
     let mut mount_config = typed_fuse::mount::MountConfig {
+        subtype: Some("encfsr".to_string()),
         read_only: !args.write,
         default_permissions: true,
-        ..typed_fuse::mount::MountConfig::new("encfsr")
+        ..typed_fuse::mount::MountConfig::new(source_name)
     };
     // Where extended attributes are unavailable, macFUSE would store them in
     // AppleDouble `._` files instead; refuse those (see `encfs`).

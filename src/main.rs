@@ -51,6 +51,10 @@ fn help_main_no_default_permissions() -> String {
     t!("help.encfs.no_default_permissions").to_string()
 }
 
+fn help_main_fsname() -> String {
+    t!("help.encfs.fsname").to_string()
+}
+
 fn help_main_root() -> String {
     t!("help.encfs.root").to_string()
 }
@@ -108,6 +112,9 @@ struct Args {
 
     #[arg(long, help = help_main_no_default_permissions())]
     no_default_permissions: bool,
+
+    #[arg(long, value_name = "NAME", help = help_main_fsname())]
+    fsname: Option<String>,
 
     #[cfg(target_os = "macos")]
     #[arg(long, help = help_main_no_apple_xattr())]
@@ -277,6 +284,16 @@ fn main() -> Result<()> {
                 )?;
             }
 
+            // The mount table lists `encfs@<root>` as the mount source (type
+            // `fuse.encfs`), so tools can find the directory behind a mount,
+            // as cryfs allows with `cryfs@<dir>`.
+            let fs_name = encfs::mount_source_name(
+                &args
+                    .fsname
+                    .clone()
+                    .unwrap_or_else(|| format!("encfs@{}", root.to_string_lossy())),
+            );
+
             let fs = EncFs::new(root, cipher, config).with_read_only(args.read_only);
             #[cfg(target_os = "macos")]
             let fs = match touchid {
@@ -301,10 +318,11 @@ fn main() -> Result<()> {
 
             #[allow(unused_mut)] // only macOS adds options here
             let mut mount_config = mount::MountConfig {
+                subtype: Some("encfs".to_string()),
                 allow_other: args.public,
                 default_permissions: !args.no_default_permissions,
                 read_only: args.read_only,
-                ..mount::MountConfig::new("encfs")
+                ..mount::MountConfig::new(fs_name)
             };
             // macFUSE then refuses `com.apple.*` attributes itself, so the
             // per-file provenance and Finder metadata macOS manages never

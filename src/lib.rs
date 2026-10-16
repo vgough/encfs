@@ -35,12 +35,34 @@ pub fn init_locale() {
     }
 }
 
+/// The mount source to report for `name` (normally the root directory), as
+/// the mount table will show it. typed-fuse escapes commas for libfuse, but
+/// FreeBSD's `mount_fusefs` splits its options on commas again without
+/// honoring escapes, so there they become `_`, as gocryptfs does.
+pub fn mount_source_name(name: &str) -> String {
+    if cfg!(target_os = "freebsd") {
+        name.replace(',', "_")
+    } else {
+        name.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use sha1::{Digest, Sha1};
     use std::fs::File;
     use std::os::unix::fs::FileExt;
     use std::path::PathBuf;
+
+    #[test]
+    fn mount_source_name_keeps_commas_except_on_freebsd() {
+        let expected = if cfg!(target_os = "freebsd") {
+            "/data/a_b c"
+        } else {
+            "/data/a,b c"
+        };
+        assert_eq!(crate::mount_source_name("/data/a,b c"), expected);
+    }
 
     #[test]
     fn test_decrypt_filenames() -> anyhow::Result<()> {
