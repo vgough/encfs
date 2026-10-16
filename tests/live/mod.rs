@@ -257,6 +257,70 @@ pub fn mountinfo_has_mount(mount_point: &Path) -> io::Result<bool> {
         .any(|line| line.contains("fuse") && (line.contains(&raw) || line.contains(&canonical))))
 }
 
+/// The mount source and filesystem type the mount table reports for
+/// `mount_point`, or `None` if it isn't mounted.
+#[cfg(target_os = "linux")]
+pub fn mount_source_and_type(mount_point: &Path) -> io::Result<Option<(String, String)>> {
+    let canonical = fs::canonicalize(mount_point)?;
+    let data = fs::read_to_string("/proc/self/mountinfo")?;
+    for line in data.lines() {
+        // Field 5 is the mount point; after " - " come the type and source.
+        let Some((pre, post)) = line.split_once(" - ") else {
+            continue;
+        };
+        let Some(mp_field) = pre.split_whitespace().nth(4) else {
+            continue;
+        };
+        if Path::new(&unescape_mountinfo(mp_field)) != canonical {
+            continue;
+        }
+        let mut fields = post.split_whitespace();
+        let fstype = fields.next().unwrap_or("").to_string();
+        let source = unescape_mountinfo(fields.next().unwrap_or(""));
+        return Ok(Some((source, fstype)));
+    }
+    Ok(None)
+}
+
+/// Undoes the kernel's `\ooo` octal escapes in a mountinfo field.
+#[cfg(target_os = "linux")]
+fn unescape_mountinfo(field: &str) -> String {
+    let bytes = field.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let octal = bytes
+            .get(i + 1..i + 4)
+            .filter(|digits| bytes[i] == b'\\' && digits.iter().all(|d| (b'0'..=b'7').contains(d)));
+        match octal {
+            Some(digits) => {
+                out.push(digits.iter().fold(0u8, |n, d| n * 8 + (d - b'0')));
+                i += 4;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[cfg(any(target_os = "macos", target_os = "freebsd"))]
+pub fn mount_source_and_type(mount_point: &Path) -> io::Result<Option<(String, String)>> {
+    // `mount` prints "<source> on <mountpoint> (<fstype>, ...)".
+    let output = Command::new("/sbin/mount").stdin(Stdio::null()).output()?;
+    let data = String::from_utf8_lossy(&output.stdout);
+    let marker = format!(" on {} (", fs::canonicalize(mount_point)?.display());
+    for line in data.lines() {
+        if let Some((source, rest)) = line.split_once(&marker) {
+            let fstype = rest.split([',', ')']).next().unwrap_or("").to_string();
+            return Ok(Some((source.to_string(), fstype)));
+        }
+    }
+    Ok(None)
+}
+
 #[allow(dead_code)]
 pub struct MountGuard {
     _lock: MutexGuard<'static, ()>,

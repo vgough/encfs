@@ -1109,6 +1109,44 @@ fn live_read_only_mount_is_ero_fs() -> Result<()> {
     Ok(())
 }
 
+/// The mount table names the encrypted root as the mount source, as
+/// `encfs@<root>`, even with a comma in its path (which libfuse would otherwise split the mount options
+/// on; FreeBSD shows it as `_`), and on Linux reports the type as
+/// `fuse.encfs` (issue #712).
+#[test]
+#[ignore]
+fn live_mount_source_is_encrypted_root() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let parent = unique_temp_dir("encfs_live_source")?;
+    let backing_root = parent.join("cipher,dir");
+    fs::create_dir(&backing_root)?;
+    fs::copy(
+        live::fixtures_dir().join(cfg.kind.fixture_filename()),
+        backing_root.join(".encfs6.xml"),
+    )?;
+
+    let mount = MountGuard::mount_existing_backing_root(cfg, false, backing_root.clone())?;
+    let (source, fstype) = live::mount_source_and_type(&mount.mount_point)?
+        .context("mount missing from the mount table")?;
+    let expected = encfs::mount_source_name(&format!(
+        "encfs@{}",
+        backing_root.canonicalize()?.to_string_lossy()
+    ));
+    assert_eq!(source, expected);
+    #[cfg(target_os = "linux")]
+    assert_eq!(fstype, "fuse.encfs");
+    #[cfg(not(target_os = "linux"))]
+    let _ = fstype;
+
+    drop(mount);
+    fs::remove_dir_all(&parent)?;
+    Ok(())
+}
+
 /// Each listing of the root shows its current contents. FreeBSD reads every
 /// listing of the root through the handle from its first opendir.
 #[test]
