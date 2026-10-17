@@ -48,8 +48,13 @@ pub const V7_DIRECTORY_IV_CONFIG_VERSION: u32 = 4;
 /// interpretable.
 pub const V7_INODE_XATTR_IV_CONFIG_VERSION: u32 = 5;
 
+/// V7 minimum-reader version at which the configurable property list (so far
+/// only plaintext xattr prefixes) becomes interpretable. Only configs that set
+/// a property need it.
+pub const V7_CONFIG_PROPERTIES_CONFIG_VERSION: u32 = 6;
+
 /// Highest V7 minimum-reader version this build understands.
-pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_INODE_XATTR_IV_CONFIG_VERSION;
+pub const V7_CURRENT_CONFIG_VERSION: u32 = V7_CONFIG_PROPERTIES_CONFIG_VERSION;
 
 /// Line length for Base64 encoded data in XML config
 pub const XML_BASE64_LINE_LEN: usize = 76;

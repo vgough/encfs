@@ -855,6 +855,96 @@ fn the_xattr_seed_is_hidden() {
     );
 }
 
+/// Attributes under a configured plaintext prefix are stored under their own
+/// names, unencrypted, beside encrypted ones, and carried by every kind of
+/// rename like them. Setting only plaintext ones stores no seed.
+#[test]
+fn plaintext_prefixed_xattrs_pass_through() {
+    let raw_value = |path: &Path, name: &str| {
+        let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        let c_name = std::ffi::CString::new(name).unwrap();
+        typed_fuse::passthrough::getxattr_value_nofollow(&c_path, &c_name)
+    };
+    for (label, mut config) in xattr_configs() {
+        config.add_plaintext_xattr_prefix("user.plain.").unwrap();
+        let vol = Volume::new(&format!("plain_prefix_{label}"), config);
+        vol.mkdir("/d");
+        vol.write_file("/d/file", b"x");
+
+        vol.setxattr("/d/file", "user.plain.tag", b"visible");
+        let backing = vol.backing("/d/file");
+        assert_eq!(
+            raw_value(&backing, "user.plain.tag").unwrap(),
+            b"visible",
+            "{label}: stored as given"
+        );
+        assert!(
+            !backing_xattr_names(&backing)
+                .iter()
+                .any(|n| n.starts_with(encfs::xattr_name::PREFIX.as_bytes())),
+            "{label}: no seed for plaintext attributes alone"
+        );
+
+        vol.setxattr("/d/file", "user.secret", b"hidden");
+        let stored = backing_xattr_names(&backing);
+        assert!(
+            !stored.contains(&b"user.secret".to_vec()),
+            "{label}: others stay encrypted"
+        );
+        assert_eq!(
+            stored
+                .iter()
+                .filter(|n| encfs::xattr_name::is_encrypted_name(n))
+                .count(),
+            1,
+            "{label}"
+        );
+        assert_eq!(
+            vol.listxattr("/d/file"),
+            names_set(&["user.plain.tag", "user.secret"]),
+            "{label}"
+        );
+
+        vol.rename("/d/file", "/moved")
+            .unwrap_or_else(|e| panic!("{label}: rename: {e}"));
+        vol.mkdir("/d/sub");
+        vol.write_file("/d/sub/file", b"y");
+        vol.setxattr("/d/sub/file", "user.plain.tag", b"deep");
+        vol.rename("/d", "/d2")
+            .unwrap_or_else(|e| panic!("{label}: rename: {e}"));
+
+        let vol = vol.remount();
+        assert_eq!(
+            vol.getxattr("/moved", "user.plain.tag"),
+            b"visible",
+            "{label}"
+        );
+        assert_eq!(vol.getxattr("/moved", "user.secret"), b"hidden", "{label}");
+        assert_eq!(
+            vol.getxattr("/d2/sub/file", "user.plain.tag"),
+            b"deep",
+            "{label}"
+        );
+        assert_eq!(
+            raw_value(&vol.backing("/moved"), "user.plain.tag").unwrap(),
+            b"visible",
+            "{label}"
+        );
+
+        let target = node(&vol.fs, &vol.root_state, "/moved", &req());
+        vol.fs
+            .removexattr(target.as_node(), OsStr::new("user.plain.tag"), &req())
+            .unwrap_or_else(|e| panic!("{label}: removexattr: {e}"));
+        drop(target);
+        assert!(raw_value(&vol.backing("/moved"), "user.plain.tag").is_err());
+        assert_eq!(
+            vol.listxattr("/moved"),
+            names_set(&["user.secret"]),
+            "{label}"
+        );
+    }
+}
+
 /// On a volume whose config names the path-IV format of earlier versions,
 /// extended attributes are unavailable: nothing is read, written or removed,
 /// so going back to such a version finds its attributes as it left them,

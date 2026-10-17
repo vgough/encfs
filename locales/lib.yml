@@ -28,3 +28,19 @@ lib.legacy_xattr_format:
   en: "warning: extended attributes are unavailable on this filesystem. Its config uses the extended attribute format of EncFS versions before 2.0.0-beta.7, which this version does not support. Existing attributes are left untouched, so an earlier version can still read them."
   fr: "avertissement : les attributs étendus ne sont pas disponibles sur ce système de fichiers. Sa configuration utilise le format d'attributs étendus des versions d'EncFS antérieures à 2.0.0-beta.7, que cette version ne prend pas en charge. Les attributs existants sont laissés intacts, afin qu'une version antérieure puisse toujours les lire."
   de: "Warnung: Erweiterte Attribute sind auf diesem Dateisystem nicht verfügbar. Seine Konfiguration verwendet das Format für erweiterte Attribute von EncFS-Versionen vor 2.0.0-beta.7, das diese Version nicht unterstützt. Vorhandene Attribute bleiben unverändert, sodass eine frühere Version sie weiterhin lesen kann."
+lib.xattr_prefix_empty:
+  en: "a plaintext extended attribute prefix cannot be empty"
+  fr: "un préfixe d'attribut étendu en clair ne peut pas être vide"
+  de: "ein Präfix für unverschlüsselte erweiterte Attribute darf nicht leer sein"
+lib.xattr_prefix_nul:
+  en: "plaintext extended attribute prefix \"%{prefix}\" contains a NUL byte"
+  fr: "le préfixe d'attribut étendu en clair « %{prefix} » contient un octet NUL"
+  de: "das Präfix für unverschlüsselte erweiterte Attribute „%{prefix}“ enthält ein NUL-Byte"
+lib.xattr_prefix_reserved:
+  en: "plaintext extended attribute prefix \"%{prefix}\" is inside \"%{reserved}\", where EncFS stores encrypted attributes"
+  fr: "le préfixe d'attribut étendu en clair « %{prefix} » se trouve sous « %{reserved} », où EncFS stocke les attributs chiffrés"
+  de: "das Präfix für unverschlüsselte erweiterte Attribute „%{prefix}“ liegt unter „%{reserved}“, wo EncFS verschlüsselte Attribute speichert"
+lib.xattr_prefix_needs_encrypted_xattrs:
+  en: "plaintext extended attribute prefixes only apply to Version 7 filesystems that encrypt extended attributes"
+  fr: "les préfixes d'attributs étendus en clair ne s'appliquent qu'aux systèmes de fichiers version 7 qui chiffrent les attributs étendus"
+  de: "Präfixe für unverschlüsselte erweiterte Attribute gelten nur für Dateisysteme der Version 7, die erweiterte Attribute verschlüsseln"

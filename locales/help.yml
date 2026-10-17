@@ -269,3 +269,35 @@ help.encfsr.fuse_opts:
   en: "FUSE options (e.g. -o allow_other)"
   fr: "Options FUSE (ex : -o allow_other)"
   de: "FUSE-Optionen (z.B. -o allow_other)"
+help.encfsctl.new_plaintext_xattr_prefix:
+  en: "Store extended attributes whose names start with PREFIX unencrypted, under their own names (repeatable). Names under user.encfs. are always encrypted. Needs a reader that supports configurable properties"
+  fr: "Stocker en clair, sous leur propre nom, les attributs étendus dont le nom commence par PREFIX (répétable). Les noms sous user.encfs. sont toujours chiffrés. Nécessite un lecteur prenant en charge les propriétés configurables"
+  de: "Erweiterte Attribute, deren Name mit PREFIX beginnt, unverschlüsselt unter ihrem eigenen Namen speichern (wiederholbar). Namen unter user.encfs. werden immer verschlüsselt. Erfordert einen Leser, der konfigurierbare Eigenschaften unterstützt"
+help.encfsctl.xattr_prefix:
+  en: "Manage the extended attribute name prefixes stored unencrypted (Version 7 only)"
+  fr: "Gérer les préfixes de noms d'attributs étendus stockés en clair (version 7 uniquement)"
+  de: "Die unverschlüsselt gespeicherten Präfixe erweiterter Attributnamen verwalten (nur Version 7)"
+help.encfsctl.xattr_prefix_list:
+  en: "List the unencrypted extended attribute prefixes"
+  fr: "Lister les préfixes d'attributs étendus non chiffrés"
+  de: "Die Präfixe unverschlüsselter erweiterter Attribute auflisten"
+help.encfsctl.xattr_prefix_add:
+  en: "Add unencrypted extended attribute prefixes"
+  fr: "Ajouter des préfixes d'attributs étendus non chiffrés"
+  de: "Präfixe für unverschlüsselte erweiterte Attribute hinzufügen"
+help.encfsctl.xattr_prefix_remove:
+  en: "Remove unencrypted extended attribute prefixes"
+  fr: "Supprimer des préfixes d'attributs étendus non chiffrés"
+  de: "Präfixe für unverschlüsselte erweiterte Attribute entfernen"
+help.encfsctl.xattr_prefix_rootdir:
+  en: "Root directory of the encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Wurzelverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.xattr_prefix_prefixes:
+  en: "Extended attribute name prefixes, such as user.xdg."
+  fr: "Préfixes de noms d'attributs étendus, par exemple user.xdg."
+  de: "Präfixe erweiterter Attributnamen, etwa user.xdg."
+help.encfsctl.xattr_prefix_extpass:
+  en: "External program to get the password from"
+  fr: "Programme externe fournissant le mot de passe"
+  de: "Externes Programm, das das Passwort liefert"

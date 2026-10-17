@@ -175,6 +175,24 @@ they reach encfs: file creation and reads get noticeably faster, but
 quarantine flags, Finder tags and similar metadata are not kept on the volume.
 Other extended attributes are unaffected.
 
+### Leaving some extended attributes unencrypted (Version 7)
+
+```bash
+encfsctl new --plaintext-xattr-prefix user.xdg. ~/encrypted
+encfsctl xattr-prefix add ~/encrypted security. trusted.
+encfsctl xattr-prefix remove ~/encrypted trusted.
+encfsctl xattr-prefix list ~/encrypted
+```
+
+Version 7 filesystems encrypt extended attribute names and values. Attributes
+whose names start with a configured prefix are instead stored as they are,
+under their own names, so tools reading the encrypted directory (backup
+software, SELinux, and the like) can see them. Names under `user.encfs.` are
+always encrypted. Adding or removing a prefix asks for the password, since the
+volume key is bound to the config, and takes effect at the next mount.
+Attributes already stored are not converted. A config with prefixes needs a
+reader that supports configurable properties (minimum reader version 6).
+
 
 ## Reverse encryption mode (encfsr)
 

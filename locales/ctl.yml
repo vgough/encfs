@@ -487,3 +487,39 @@ ctl.warning_skipping_directory:
   en: "Warning: Skipping directory: %{error}"
   fr: "Avertissement : répertoire ignoré : %{error}"
   de: "Warnung: Verzeichnis wird übersprungen: %{error}"
+ctl.plaintext_xattr_prefixes:
+  en: "Unencrypted extended attribute prefixes: "
+  fr: "Préfixes d'attributs étendus non chiffrés : "
+  de: "Präfixe unverschlüsselter erweiterter Attribute: "
+ctl.xattr_prefix_none:
+  en: "No unencrypted extended attribute prefixes are set."
+  fr: "Aucun préfixe d'attribut étendu non chiffré n'est défini."
+  de: "Es sind keine Präfixe für unverschlüsselte erweiterte Attribute festgelegt."
+ctl.xattr_prefix_added:
+  en: "Added unencrypted extended attribute prefix \"%{prefix}\""
+  fr: "Préfixe d'attribut étendu non chiffré « %{prefix} » ajouté"
+  de: "Präfix für unverschlüsselte erweiterte Attribute „%{prefix}“ hinzugefügt"
+ctl.xattr_prefix_already_set:
+  en: "Unencrypted extended attribute prefix \"%{prefix}\" is already set"
+  fr: "Le préfixe d'attribut étendu non chiffré « %{prefix} » est déjà défini"
+  de: "Das Präfix für unverschlüsselte erweiterte Attribute „%{prefix}“ ist bereits festgelegt"
+ctl.xattr_prefix_removed:
+  en: "Removed unencrypted extended attribute prefix \"%{prefix}\""
+  fr: "Préfixe d'attribut étendu non chiffré « %{prefix} » supprimé"
+  de: "Präfix für unverschlüsselte erweiterte Attribute „%{prefix}“ entfernt"
+ctl.xattr_prefix_not_set:
+  en: "Unencrypted extended attribute prefix \"%{prefix}\" was not set"
+  fr: "Le préfixe d'attribut étendu non chiffré « %{prefix} » n'était pas défini"
+  de: "Das Präfix für unverschlüsselte erweiterte Attribute „%{prefix}“ war nicht festgelegt"
+ctl.xattr_prefix_added_warning:
+  en: "Note: attributes already stored encrypted under a name with an added prefix are not converted, and can't be read until the prefix is removed again."
+  fr: "Remarque : les attributs déjà stockés chiffrés sous un nom portant un préfixe ajouté ne sont pas convertis et ne peuvent pas être lus tant que le préfixe n'est pas de nouveau supprimé."
+  de: "Hinweis: Bereits verschlüsselt gespeicherte Attribute, deren Name ein hinzugefügtes Präfix trägt, werden nicht umgewandelt und sind erst wieder lesbar, wenn das Präfix entfernt wird."
+ctl.xattr_prefix_removed_warning:
+  en: "Note: attributes already stored unencrypted under a removed prefix are not encrypted, and are hidden until the prefix is added again."
+  fr: "Remarque : les attributs déjà stockés en clair sous un préfixe supprimé ne sont pas chiffrés et restent masqués tant que le préfixe n'est pas de nouveau ajouté."
+  de: "Hinweis: Bereits unverschlüsselt gespeicherte Attribute unter einem entfernten Präfix werden nicht verschlüsselt und bleiben verborgen, bis das Präfix wieder hinzugefügt wird."
+ctl.xattr_prefix_saved:
+  en: "Config saved (minimum reader version %{version}). Mounted filesystems pick up the change when next mounted."
+  fr: "Configuration enregistrée (version minimale du lecteur %{version}). Les systèmes de fichiers montés prendront en compte la modification au prochain montage."
+  de: "Konfiguration gespeichert (Mindestversion des Lesers %{version}). Eingehängte Dateisysteme übernehmen die Änderung beim nächsten Einhängen."
