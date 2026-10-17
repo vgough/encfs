@@ -218,7 +218,7 @@ ctl.upgrading_to_argon2:
 ctl.v7_config_backup:
   en: "Previous config backed up to %{path}; you may remove it when no longer needed."
   fr: "Ancienne configuration sauvegardée dans %{path} ; vous pouvez la supprimer si elle n'est plus nécessaire."
-  de: "Vorherige Konfiguration gesichert unter %{path}; Sie können sie bei Bedarf entfernen."
+  de: "Vorherige Konfiguration gesichert unter %{path}; Sie können sie entfernen, wenn sie nicht mehr benötigt wird."
 ctl.upgrade_available:
   en: "An automatic upgrade to the current format (Version 7, Argon2id) is available. Run: encfsctl passwd --upgrade %{rootdir}"
   fr: "Une mise à niveau automatique vers le format actuel (Version 7, Argon2id) est disponible. Exécutez : encfsctl passwd --upgrade %{rootdir}"

@@ -157,9 +157,9 @@ help.encfsctl.encode_extpass:
   fr: "Programme de mot de passe externe"
   de: "Externes Passwortprogramm"
 help.encfsctl.cat_args:
-  en: "With one argument: path to encrypted file (config found in parent dirs). With two arguments: rootdir and relative file path"
-  fr: "Avec un argument : chemin du fichier chiffré (config trouvée dans les répertoires parents). Avec deux arguments : rootdir et chemin du fichier"
-  de: "Mit einem Argument: Pfad zur verschlüsselten Datei (Konfiguration in übergeordneten Verzeichnissen gesucht). Mit zwei Argumenten: Stammverzeichnis und Dateipfad"
+  en: "With one argument: path to encrypted file (config found in parent dirs). With two arguments: rootdir and a file path relative to it, or an absolute path to the encrypted file"
+  fr: "Avec un argument : chemin du fichier chiffré (configuration recherchée dans les répertoires parents). Avec deux arguments : répertoire racine et chemin du fichier relatif à celui-ci, ou chemin absolu du fichier chiffré"
+  de: "Mit einem Argument: Pfad zur verschlüsselten Datei (Konfiguration in übergeordneten Verzeichnissen gesucht). Mit zwei Argumenten: Stammverzeichnis und ein dazu relativer Dateipfad oder ein absoluter Pfad zur verschlüsselten Datei"
 help.encfsctl.cat_extpass:
   en: "External password program"
   fr: "Programme de mot de passe externe"
