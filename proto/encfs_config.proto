@@ -34,6 +34,29 @@ message Config {
   // Gates the whole config, not just the block cipher, so it lives here
   // rather than inside AesGcmSivBlockCipher.
   uint32 minimum_reader_version = 8;
+
+  // Configurable properties, in a canonical order (by kind, then value).
+  // Empty in every config written before this field, and omitted on the
+  // wire when empty, so those configs keep their encoding and hash. A
+  // non-empty list requires minimum_reader_version >= 6; readers reject
+  // kinds they don't know.
+  repeated ConfigProperty properties = 9;
+}
+
+// What a ConfigProperty sets. Any new kind must come with a further
+// minimum_reader_version bump, so unaware readers fail closed.
+enum PropertyKind {
+  PROPERTY_KIND_UNSPECIFIED = 0;
+  // An extended attribute name prefix (the value) whose attributes are
+  // stored unencrypted, under their own names, instead of under
+  // "user.encfs.". Names under "user.encfs." are always encrypted. Only
+  // meaningful with XATTR_FORMAT_ENCRYPTED_INODE_IV.
+  PROPERTY_KIND_PLAINTEXT_XATTR_PREFIX = 1;
+}
+
+message ConfigProperty {
+  PropertyKind kind = 1;
+  string value = 2;
 }
 
 message Argon2Kdf {

@@ -28,6 +28,10 @@ pub enum KdfAlgorithm {
     Argon2id, // Argon2id (recommended for new configs)
 }
 
+/// Name of the config property holding plaintext xattr prefixes, as shown to
+/// users (see [`EncfsConfig::is_plaintext_xattr`]).
+pub const PLAINTEXT_XATTR_PREFIX_PROPERTY: &str = "plaintext-xattr-prefix";
+
 /// V7 protobuf file magic header ("ENCFS7\\0").
 const V7_MAGIC: &[u8; 7] = b"ENCFS7\0";
 
@@ -166,6 +170,13 @@ pub struct EncfsConfig {
     #[serde(skip, default)]
     pub symlink_format: SymlinkFormat,
 
+    // Extended attribute name prefixes whose attributes a V7 volume with
+    // encrypted xattrs stores unencrypted, under their own names (see
+    // `is_plaintext_xattr()`). Kept sorted and free of duplicates. Stored as
+    // configurable properties in the V7 config; V4-V6 can't express them.
+    #[serde(skip, default)]
+    pub plaintext_xattr_prefixes: Vec<String>,
+
     /// Effective V7 minimum-reader version (never the raw wire value, which
     /// may be 0 meaning `V7_BASE_CONFIG_VERSION`). Zero/unused for non-V7
     /// configs. Not serialized: V7 configs are built directly rather than via
@@ -283,6 +294,7 @@ impl EncfsConfig {
             wide_file_iv: true,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION,
             config_hash: None,
         }
@@ -467,6 +479,16 @@ impl EncfsConfig {
                 "xattr and symlink storage formats only apply to V7 configs"
             ));
         }
+        if !self.plaintext_xattr_prefixes.is_empty() {
+            if self.config_type != ConfigType::V7 || self.xattr_format != XattrFormat::Encrypted {
+                return Err(anyhow::anyhow!(
+                    "plaintext xattr prefixes only apply to V7 configs with encrypted xattrs"
+                ));
+            }
+            for prefix in &self.plaintext_xattr_prefixes {
+                Self::check_plaintext_xattr_prefix(prefix)?;
+            }
+        }
         if self.directory_iv && self.config_type != ConfigType::V7 {
             return Err(anyhow::anyhow!(
                 "directory IV mode only applies to V7 configs"
@@ -601,6 +623,7 @@ impl EncfsConfig {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -699,6 +722,7 @@ impl EncfsConfig {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -907,6 +931,23 @@ impl EncfsConfig {
             }
         };
 
+        // As for the formats above, a kind this build doesn't know is refused:
+        // ignoring it could store attributes in a form the config forbids.
+        let mut plaintext_xattr_prefixes = Vec::new();
+        for property in &proto.properties {
+            use crate::config_proto::PropertyKind;
+            match PropertyKind::try_from(property.kind) {
+                Ok(PropertyKind::PlaintextXattrPrefix) => {
+                    plaintext_xattr_prefixes.push(property.value.clone())
+                }
+                Ok(PropertyKind::Unspecified) | Err(_) => {
+                    anyhow::bail!("V7: unsupported config property kind {}", property.kind)
+                }
+            }
+        }
+        plaintext_xattr_prefixes.sort();
+        plaintext_xattr_prefixes.dedup();
+
         let cfg = EncfsConfig {
             config_type: ConfigType::V7,
             creator: "encfs-rust".to_string(),
@@ -934,6 +975,7 @@ impl EncfsConfig {
             wide_file_iv,
             xattr_format,
             symlink_format,
+            plaintext_xattr_prefixes,
             minimum_reader_version: effective_min_reader,
             config_hash: Some(config_hash),
         };
@@ -1096,7 +1138,9 @@ impl EncfsConfig {
         // The formats every config before the feature flags implied.
         let default_formats = self.xattr_format == XattrFormat::EncryptedPathIv
             && self.symlink_format == SymlinkFormat::default();
-        if self.xattr_format == XattrFormat::Encrypted {
+        if !self.plaintext_xattr_prefixes.is_empty() {
+            crate::constants::V7_CONFIG_PROPERTIES_CONFIG_VERSION
+        } else if self.xattr_format == XattrFormat::Encrypted {
             crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
         } else if self.directory_iv {
             crate::constants::V7_DIRECTORY_IV_CONFIG_VERSION
@@ -1118,6 +1162,118 @@ impl EncfsConfig {
     /// encrypted, and a rename that copies an entry carries them across.
     pub fn encrypts_xattrs(&self) -> bool {
         self.config_type == ConfigType::V7 && self.xattr_format != XattrFormat::Plaintext
+    }
+
+    /// Whether the extended attribute `name`, as seen through the mount, is
+    /// stored unencrypted under its own name because it starts with one of
+    /// the volume's plaintext prefixes. Names under
+    /// [`crate::xattr_name::PREFIX`] never are, so they can't collide with
+    /// the stored form of an encrypted attribute or with its IV seed. Only
+    /// meaningful when [`EncfsConfig::encrypts_xattrs`] holds.
+    pub fn is_plaintext_xattr(&self, name: &[u8]) -> bool {
+        !name.starts_with(crate::xattr_name::PREFIX.as_bytes())
+            && self
+                .plaintext_xattr_prefixes
+                .iter()
+                .any(|prefix| name.starts_with(prefix.as_bytes()))
+    }
+
+    /// Checks that `prefix` can be a plaintext xattr prefix: not empty, no
+    /// NUL, and not inside encfs's own [`crate::xattr_name::PREFIX`]
+    /// namespace, where it could never match.
+    pub fn check_plaintext_xattr_prefix(prefix: &str) -> Result<()> {
+        if prefix.is_empty() {
+            anyhow::bail!(
+                "{}",
+                t!(
+                    "lib.property_value_empty",
+                    property = PLAINTEXT_XATTR_PREFIX_PROPERTY
+                )
+            );
+        }
+        if prefix.contains('\0') {
+            anyhow::bail!(
+                "{}",
+                t!(
+                    "lib.property_value_nul",
+                    property = PLAINTEXT_XATTR_PREFIX_PROPERTY,
+                    value = prefix.escape_debug()
+                )
+            );
+        }
+        if prefix.starts_with(crate::xattr_name::PREFIX) {
+            anyhow::bail!(
+                "{}",
+                t!(
+                    "lib.property_value_reserved",
+                    property = PLAINTEXT_XATTR_PREFIX_PROPERTY,
+                    value = prefix,
+                    reserved = crate::xattr_name::PREFIX
+                )
+            );
+        }
+        Ok(())
+    }
+
+    /// Adds a plaintext xattr prefix (see [`EncfsConfig::is_plaintext_xattr`])
+    /// and raises `minimum_reader_version` as needed. Returns false if the
+    /// prefix was already set. The caller must re-wrap the volume key
+    /// ([`EncfsConfig::set_v7_key`]) before saving, since the key is bound to
+    /// the config's contents.
+    pub fn add_plaintext_xattr_prefix(&mut self, prefix: &str) -> Result<bool> {
+        Self::check_plaintext_xattr_prefix(prefix)?;
+        if self.config_type != ConfigType::V7 || self.xattr_format != XattrFormat::Encrypted {
+            anyhow::bail!(
+                "{}",
+                t!(
+                    "lib.property_unsupported",
+                    property = PLAINTEXT_XATTR_PREFIX_PROPERTY
+                )
+            );
+        }
+        match self
+            .plaintext_xattr_prefixes
+            .binary_search_by(|p| p.as_str().cmp(prefix))
+        {
+            Ok(_) => Ok(false),
+            Err(at) => {
+                self.plaintext_xattr_prefixes.insert(at, prefix.to_string());
+                self.minimum_reader_version = self
+                    .minimum_reader_version
+                    .max(self.required_v7_reader_version());
+                Ok(true)
+            }
+        }
+    }
+
+    /// Removes a plaintext xattr prefix, lowering `minimum_reader_version`
+    /// when no property needs it any more. Returns false if the prefix wasn't
+    /// set. As for [`EncfsConfig::add_plaintext_xattr_prefix`], the volume key
+    /// must be re-wrapped before saving.
+    pub fn remove_plaintext_xattr_prefix(&mut self, prefix: &str) -> bool {
+        let before = self.plaintext_xattr_prefixes.len();
+        self.plaintext_xattr_prefixes.retain(|p| p != prefix);
+        if self.plaintext_xattr_prefixes.len() == before {
+            return false;
+        }
+        if self.plaintext_xattr_prefixes.is_empty()
+            && self.minimum_reader_version == crate::constants::V7_CONFIG_PROPERTIES_CONFIG_VERSION
+        {
+            self.minimum_reader_version = self.required_v7_reader_version();
+        }
+        true
+    }
+
+    /// Recovers a V7 volume key with `password`, for re-wrapping it after a
+    /// config change ([`EncfsConfig::set_v7_key`]). Call before changing the
+    /// config: the key is bound to the config hash it was wrapped under.
+    pub fn v7_volume_key(&self, password: &str) -> Result<zeroize::Zeroizing<Vec<u8>>> {
+        if self.config_type != ConfigType::V7 {
+            anyhow::bail!("v7_volume_key only applies to V7 config");
+        }
+        Ok(zeroize::Zeroizing::new(
+            self.derive_v7_volume_key(password)?,
+        ))
     }
 
     /// Whether this build can read and write the volume's extended
@@ -1243,6 +1399,7 @@ impl EncfsConfig {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         }
@@ -1378,7 +1535,8 @@ impl EncfsConfig {
     fn encfs_config_to_proto_v7(&self) -> crate::config_proto::Config {
         use crate::config_proto::{
             AesGcmSivBlockCipher, Argon2Kdf, BasicBlockCipher, BlockCipherAlgorithm, Config,
-            DirectoryIvMode, FeatureFlags, FileIvWidth, NameEncoding, NameEncodingMode,
+            ConfigProperty, DirectoryIvMode, FeatureFlags, FileIvWidth, NameEncoding,
+            NameEncodingMode, PropertyKind,
         };
 
         let algorithm = match self.cipher_iface.name.as_str() {
@@ -1470,6 +1628,14 @@ impl EncfsConfig {
             feature_flags,
             config_hash: self.config_hash.clone().unwrap_or_default(),
             minimum_reader_version,
+            properties: self
+                .plaintext_xattr_prefixes
+                .iter()
+                .map(|prefix| ConfigProperty {
+                    kind: PropertyKind::PlaintextXattrPrefix as i32,
+                    value: prefix.clone(),
+                })
+                .collect(),
         }
     }
 
@@ -1768,6 +1934,7 @@ mod tests {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         }
@@ -1991,6 +2158,7 @@ mod tests {
             wide_file_iv: false,
             xattr_format: XattrFormat::EncryptedPathIv,
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };
@@ -2462,6 +2630,154 @@ mod tests {
         bytes
     }
 
+    /// Plaintext xattr prefixes round-trip as configurable properties, in
+    /// canonical order, and need reader version 6.
+    #[test]
+    fn plaintext_xattr_prefixes_round_trip() -> Result<()> {
+        let mut config = EncfsConfig::standard_v7();
+        assert!(config.add_plaintext_xattr_prefix("user.xdg.")?);
+        assert!(config.add_plaintext_xattr_prefix("security.")?);
+        assert!(!config.add_plaintext_xattr_prefix("user.xdg.")?);
+        assert_eq!(config.plaintext_xattr_prefixes, ["security.", "user.xdg."]);
+        assert_eq!(
+            config.minimum_reader_version,
+            crate::constants::V7_CONFIG_PROPERTIES_CONFIG_VERSION
+        );
+        let config = keyed_v7(config);
+        let proto = config.encfs_config_to_proto_v7();
+        let kind = crate::config_proto::PropertyKind::PlaintextXattrPrefix as i32;
+        assert_eq!(
+            proto
+                .properties
+                .iter()
+                .map(|p| (p.kind, p.value.as_str()))
+                .collect::<Vec<_>>(),
+            [(kind, "security."), (kind, "user.xdg.")]
+        );
+
+        let loaded = EncfsConfig::load_v7(&v7_bytes(&proto))?;
+        assert_eq!(
+            loaded.plaintext_xattr_prefixes,
+            config.plaintext_xattr_prefixes
+        );
+        assert_eq!(
+            loaded.minimum_reader_version,
+            crate::constants::V7_CONFIG_PROPERTIES_CONFIG_VERSION
+        );
+        assert_eq!(loaded.encfs_config_to_proto_v7(), proto);
+        loaded.get_cipher("pass")?;
+
+        // Readers from before the property list must refuse the config
+        // rather than encrypt what it says to leave alone.
+        assert!(
+            EncfsConfig::check_v7_reader_version(
+                proto.minimum_reader_version,
+                crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION,
+            )
+            .is_err()
+        );
+        let mut stale = loaded.clone();
+        stale.minimum_reader_version = crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION;
+        assert!(stale.validate().is_err());
+        Ok(())
+    }
+
+    /// Configs without properties keep the reader version they had before
+    /// the property list existed.
+    #[test]
+    fn configs_without_properties_are_unchanged() {
+        let config = keyed_v7(EncfsConfig::standard_v7());
+        let proto = config.encfs_config_to_proto_v7();
+        assert!(proto.properties.is_empty());
+        assert_eq!(
+            proto.minimum_reader_version,
+            crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
+        );
+        // proto3 omits an empty repeated field, so nothing is added to the
+        // encoding or the hash: field 9's tag never appears.
+        use prost::Message;
+        let decoded =
+            crate::config_proto::Config::decode(proto.encode_to_vec().as_slice()).expect("decodes");
+        assert!(decoded.properties.is_empty());
+        assert_eq!(decoded, proto);
+    }
+
+    /// Unknown property kinds are refused, as unknown formats are.
+    #[test]
+    fn unknown_config_property_kinds_are_rejected() {
+        for kind in [0, 99] {
+            let mut proto = keyed_v7(EncfsConfig::standard_v7()).encfs_config_to_proto_v7();
+            proto.properties.push(crate::config_proto::ConfigProperty {
+                kind,
+                value: "user.x.".to_string(),
+            });
+            proto.minimum_reader_version = crate::constants::V7_CONFIG_PROPERTIES_CONFIG_VERSION;
+            proto.config_hash.clear();
+            let err = EncfsConfig::load_v7(&v7_bytes(&proto)).expect_err("must be rejected");
+            assert!(err.to_string().contains("property kind"), "{err}");
+        }
+    }
+
+    #[test]
+    fn plaintext_xattr_prefixes_are_validated() {
+        let mut config = EncfsConfig::standard_v7();
+        for bad in ["", "user.encfs.", "user.encfs.x", "user.\0"] {
+            assert!(config.add_plaintext_xattr_prefix(bad).is_err(), "{bad:?}");
+        }
+        assert!(config.plaintext_xattr_prefixes.is_empty());
+
+        // Prefixes that cover encfs's own namespace are allowed, but never
+        // match the names stored there.
+        config.add_plaintext_xattr_prefix("user.").unwrap();
+        assert!(config.is_plaintext_xattr(b"user.xdg.origin.url"));
+        assert!(!config.is_plaintext_xattr(b"user.encfs.foo"));
+        assert!(!config.is_plaintext_xattr(crate::xattr_name::IV_SEED_NAME.as_bytes()));
+        assert!(!config.is_plaintext_xattr(b"security.selinux"));
+        assert!(config.validate().is_ok());
+
+        // Only V7 volumes that encrypt attributes can have them.
+        for format in [XattrFormat::Plaintext, XattrFormat::EncryptedPathIv] {
+            let mut other = config.clone();
+            other.xattr_format = format;
+            assert!(other.validate().is_err(), "{format:?}");
+            other.plaintext_xattr_prefixes.clear();
+            assert!(other.add_plaintext_xattr_prefix("user.").is_err());
+        }
+        let mut legacy = config.clone();
+        legacy.config_type = ConfigType::V6;
+        assert!(legacy.validate().is_err());
+    }
+
+    /// Removing the last prefix drops the reader version back, and changing
+    /// the list re-wraps the volume key under the new config hash.
+    #[test]
+    fn changing_prefixes_rewraps_the_key() -> Result<()> {
+        let mut config = keyed_v7(EncfsConfig::standard_v7());
+        let volume_key = config.v7_volume_key("pass")?;
+        config.add_plaintext_xattr_prefix("user.xdg.")?;
+        assert!(
+            EncfsConfig::load_v7(&v7_bytes(&config.encfs_config_to_proto_v7())).is_err(),
+            "the stored hash no longer matches until the key is re-wrapped"
+        );
+        config.set_v7_key("pass", &volume_key)?;
+        let loaded = EncfsConfig::load_v7(&v7_bytes(&config.encfs_config_to_proto_v7()))?;
+        loaded.get_cipher("pass")?;
+
+        let mut config = loaded;
+        let volume_key = config.v7_volume_key("pass")?;
+        assert!(!config.remove_plaintext_xattr_prefix("user.other."));
+        assert!(config.remove_plaintext_xattr_prefix("user.xdg."));
+        assert_eq!(
+            config.minimum_reader_version,
+            crate::constants::V7_INODE_XATTR_IV_CONFIG_VERSION
+        );
+        config.set_v7_key("pass", &volume_key)?;
+        let loaded = EncfsConfig::load_v7(&v7_bytes(&config.encfs_config_to_proto_v7()))?;
+        assert!(loaded.plaintext_xattr_prefixes.is_empty());
+        loaded.get_cipher("pass")?;
+        Ok(())
+    }
+
     /// New volumes store the per-inode format, which readers that predate
     /// it must refuse rather than read attributes with path IVs.
     #[test]
@@ -2908,6 +3224,7 @@ mod tests {
             wide_file_iv: false,
             xattr_format: XattrFormat::EncryptedPathIv,
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: crate::constants::V7_BASE_CONFIG_VERSION,
             config_hash: None,
         };

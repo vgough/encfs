@@ -261,3 +261,39 @@ help.encfsr.fuse_opts:
   en: "FUSE options (e.g. -o allow_other)"
   fr: "Options FUSE (ex : -o allow_other)"
   de: "FUSE-Optionen (z.B. -o allow_other)"
+help.encfsctl.new_plaintext_xattr_prefix:
+  en: "Store extended attributes whose names start with PREFIX unencrypted, under their own names (repeatable). Names under user.encfs. are always encrypted. Needs a reader that supports configurable properties"
+  fr: "Stocker en clair, sous leur propre nom, les attributs étendus dont le nom commence par PREFIX (répétable). Les noms sous user.encfs. sont toujours chiffrés. Nécessite un lecteur prenant en charge les propriétés configurables"
+  de: "Erweiterte Attribute, deren Name mit PREFIX beginnt, unverschlüsselt unter ihrem eigenen Namen speichern (wiederholbar). Namen unter user.encfs. werden immer verschlüsselt. Erfordert einen Leser, der konfigurierbare Eigenschaften unterstützt"
+help.encfsctl.property:
+  en: "Manage the values of config property %{property} (Version 7 only)"
+  fr: "Gérer les valeurs de la propriété de configuration %{property} (version 7 uniquement)"
+  de: "Die Werte der Konfigurationseigenschaft %{property} verwalten (nur Version 7)"
+help.encfsctl.property_list:
+  en: "List the values of config property %{property}"
+  fr: "Lister les valeurs de la propriété de configuration %{property}"
+  de: "Die Werte der Konfigurationseigenschaft %{property} auflisten"
+help.encfsctl.property_add:
+  en: "Add values to config property %{property}"
+  fr: "Ajouter des valeurs à la propriété de configuration %{property}"
+  de: "Werte zur Konfigurationseigenschaft %{property} hinzufügen"
+help.encfsctl.property_remove:
+  en: "Remove values from config property %{property}"
+  fr: "Supprimer des valeurs de la propriété de configuration %{property}"
+  de: "Werte aus der Konfigurationseigenschaft %{property} entfernen"
+help.encfsctl.property_rootdir:
+  en: "Root directory of the encrypted filesystem"
+  fr: "Répertoire racine du système de fichiers chiffré"
+  de: "Wurzelverzeichnis des verschlüsselten Dateisystems"
+help.encfsctl.property_values:
+  en: "Values of config property %{property}"
+  fr: "Valeurs de la propriété de configuration %{property}"
+  de: "Werte der Konfigurationseigenschaft %{property}"
+help.encfsctl.property_extpass:
+  en: "External program to get the password from"
+  fr: "Programme externe fournissant le mot de passe"
+  de: "Externes Programm, das das Passwort liefert"
+help.encfsctl.new_template:
+  en: "Copy every setting of an existing Version 7 filesystem, given as its encrypted directory or its config file. Other flags apply on top of the template"
+  fr: "Copier tous les réglages d'un système de fichiers version 7 existant, indiqué par son répertoire chiffré ou son fichier de configuration. Les autres options s'appliquent par-dessus le modèle"
+  de: "Alle Einstellungen eines vorhandenen Dateisystems der Version 7 übernehmen, angegeben als sein verschlüsseltes Verzeichnis oder seine Konfigurationsdatei. Andere Optionen gelten zusätzlich zur Vorlage"

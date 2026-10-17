@@ -186,6 +186,70 @@ fn help_new_name_encoding() -> String {
     t!("help.encfsctl.new_name_encoding").to_string()
 }
 
+fn help_new_template() -> String {
+    t!("help.encfsctl.new_template").to_string()
+}
+
+fn help_new_plaintext_xattr_prefix() -> String {
+    t!("help.encfsctl.new_plaintext_xattr_prefix").to_string()
+}
+
+fn help_property() -> String {
+    t!(
+        "help.encfsctl.property",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
+}
+
+fn help_property_list() -> String {
+    t!(
+        "help.encfsctl.property_list",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
+}
+
+fn help_property_add() -> String {
+    t!(
+        "help.encfsctl.property_add",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
+}
+
+fn help_property_remove() -> String {
+    t!(
+        "help.encfsctl.property_remove",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
+}
+
+fn help_property_rootdir() -> String {
+    t!(
+        "help.encfsctl.property_rootdir",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
+}
+
+fn help_property_values() -> String {
+    t!(
+        "help.encfsctl.property_values",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
+}
+
+fn help_property_extpass() -> String {
+    t!(
+        "help.encfsctl.property_extpass",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
+}
+
 fn help_speed() -> String {
     t!("help.encfsctl.speed").to_string()
 }
@@ -291,9 +355,44 @@ enum Command {
         no_directory_iv: bool,
         #[arg(long, value_enum, default_value_t = NameEncodingChoice::Auto, help = help_new_name_encoding())]
         name_encoding: NameEncodingChoice,
+        #[arg(long = "plaintext-xattr-prefix", value_name = "PREFIX", help = help_new_plaintext_xattr_prefix())]
+        plaintext_xattr_prefixes: Vec<String>,
+        #[arg(long, value_name = "PATH", help = help_new_template())]
+        template: Option<PathBuf>,
     },
+    #[command(about = help_property(), subcommand)]
+    XattrPrefix(XattrPrefixCommand),
     #[command(about = help_speed())]
     Speed,
+}
+
+/// `encfsctl xattr-prefix`: the extended attribute name prefixes a V7 volume
+/// stores unencrypted.
+#[derive(Subcommand)]
+enum XattrPrefixCommand {
+    #[command(about = help_property_list())]
+    List {
+        #[arg(help = help_property_rootdir())]
+        rootdir: PathBuf,
+    },
+    #[command(about = help_property_add())]
+    Add {
+        #[arg(help = help_property_rootdir())]
+        rootdir: PathBuf,
+        #[arg(required = true, help = help_property_values())]
+        prefixes: Vec<String>,
+        #[arg(long, help = help_property_extpass())]
+        extpass: Option<String>,
+    },
+    #[command(about = help_property_remove())]
+    Remove {
+        #[arg(help = help_property_rootdir())]
+        rootdir: PathBuf,
+        #[arg(required = true, help = help_property_values())]
+        prefixes: Vec<String>,
+        #[arg(long, help = help_property_extpass())]
+        extpass: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -341,6 +440,8 @@ fn main() -> Result<()> {
             legacy_file_iv,
             no_directory_iv,
             name_encoding,
+            plaintext_xattr_prefixes,
+            template,
         }) => cmd_new(
             &rootdir,
             extpass,
@@ -350,7 +451,22 @@ fn main() -> Result<()> {
             legacy_file_iv,
             no_directory_iv,
             name_encoding,
+            &plaintext_xattr_prefixes,
+            template.as_deref(),
         ),
+        Some(Command::XattrPrefix(XattrPrefixCommand::List { rootdir })) => {
+            cmd_xattr_prefix_list(&rootdir)
+        }
+        Some(Command::XattrPrefix(XattrPrefixCommand::Add {
+            rootdir,
+            prefixes,
+            extpass,
+        })) => cmd_xattr_prefix_change(&rootdir, &prefixes, extpass, PrefixChange::Add),
+        Some(Command::XattrPrefix(XattrPrefixCommand::Remove {
+            rootdir,
+            prefixes,
+            extpass,
+        })) => cmd_xattr_prefix_change(&rootdir, &prefixes, extpass, PrefixChange::Remove),
         Some(Command::Speed) => cmd_speed(),
         None => {
             // Default to info command if rootdir is provided
@@ -685,6 +801,17 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
         t!("ctl.xattr_format"),
         paint(&xattr_label, xattr_hl, color)
     );
+
+    if !config.plaintext_xattr_prefixes.is_empty() {
+        println!(
+            "{}",
+            t!(
+                "ctl.property_values",
+                property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY,
+                values = config.plaintext_xattr_prefixes.join(", ")
+            )
+        );
+    }
 
     let legacy_links = config.uses_legacy_symlink_targets();
     println!(
@@ -1636,7 +1763,17 @@ fn cmd_new(
     legacy_file_iv: bool,
     no_directory_iv: bool,
     name_encoding: NameEncodingChoice,
+    plaintext_xattr_prefixes: &[String],
+    template: Option<&Path>,
 ) -> Result<()> {
+    // Read the template before creating anything.
+    let template = template
+        .map(|path| -> Result<_> {
+            let (path, template) = load_template(path)?;
+            Ok((path, config_from_template(&template)?))
+        })
+        .transpose()?;
+
     // Create directory if it doesn't exist
     if !rootdir.exists() {
         std::fs::create_dir_all(rootdir).context(t!(
@@ -1666,7 +1803,14 @@ fn cmd_new(
         ));
     }
 
-    let mut config = config::EncfsConfig::standard_v7();
+    let mut config = match &template {
+        Some((path, template)) => {
+            println!("{}", t!("ctl.template_used", path = path.display()));
+            template.clone()
+        }
+        None => config::EncfsConfig::standard_v7(),
+    };
+    // Flags given alongside a template apply on top of it.
     if no_directory_iv || no_unique_iv || legacy_file_iv {
         // Reverse mode (encfsr) has nowhere to keep per-directory IV files,
         // and older readers can't interpret them, so the compatibility flags
@@ -1692,16 +1836,22 @@ fn cmd_new(
     // older builds, unless a name encoding is asked for. The per-inode xattr
     // format still applies, so opening the volume takes a reader that
     // implements it.
-    config.name_iface = new_name_iface(name_encoding, legacy_file_iv || no_unique_iv, || {
-        let sensitive = dir_is_case_sensitive(rootdir);
-        let path = rootdir.display();
-        match sensitive {
-            Some(true) => println!("{}", t!("ctl.new_case_sensitive", path = path)),
-            Some(false) => println!("{}", t!("ctl.new_case_insensitive", path = path)),
-            None => eprintln!("{}", t!("ctl.new_case_unknown", path = path)),
-        }
-        sensitive
-    });
+    // A template keeps its own name encoding unless one is asked for.
+    if template.is_none() || name_encoding != NameEncodingChoice::Auto {
+        config.name_iface = new_name_iface(name_encoding, legacy_file_iv || no_unique_iv, || {
+            let sensitive = dir_is_case_sensitive(rootdir);
+            let path = rootdir.display();
+            match sensitive {
+                Some(true) => println!("{}", t!("ctl.new_case_sensitive", path = path)),
+                Some(false) => println!("{}", t!("ctl.new_case_insensitive", path = path)),
+                None => eprintln!("{}", t!("ctl.new_case_unknown", path = path)),
+            }
+            sensitive
+        });
+    }
+    for prefix in plaintext_xattr_prefixes {
+        config.add_plaintext_xattr_prefix(prefix)?;
+    }
     // Recomputed for the features the flags left on.
     config.minimum_reader_version = config.required_v7_reader_version();
     fill_random(&mut config.salt)
@@ -1753,6 +1903,172 @@ fn cmd_new(
     println!("{}", t!("ctl.new_config_created", path = v7_path.display()));
 
     Ok(())
+}
+
+/// Loads the config `encfsctl new --template` copies from: the config file at
+/// `path`, or the one in the encrypted directory at `path`. Returns the
+/// config file's path with it.
+fn load_template(path: &Path) -> Result<(PathBuf, config::EncfsConfig)> {
+    let config_path = if path.is_dir() {
+        find_config_file(path)?
+    } else {
+        path.to_path_buf()
+    };
+    let config = config::EncfsConfig::load(&config_path).context(t!(
+        "ctl.error_failed_to_load_template",
+        path = config_path.display()
+    ))?;
+    Ok((config_path, config))
+}
+
+/// A new config with every setting of `template`, which must be a V7
+/// config, ready for a fresh salt and key as from
+/// [`config::EncfsConfig::standard_v7`]. Settings are copied as they are,
+/// except that a template naming the retired path-IV xattr format is refused,
+/// since a new filesystem with it could store no extended attributes.
+fn config_from_template(template: &config::EncfsConfig) -> Result<config::EncfsConfig> {
+    if template.config_type != config::ConfigType::V7 {
+        anyhow::bail!("{}", t!("ctl.error_template_not_v7"));
+    }
+    if !template.xattrs_available() {
+        anyhow::bail!("{}", t!("ctl.error_template_path_iv_xattrs"));
+    }
+    let mut config = template.clone();
+    config.key_data.clear();
+    config.config_hash = None;
+    if config.salt.is_empty() {
+        config.salt = vec![0u8; constants::DEFAULT_SALT_SIZE];
+    }
+    config.minimum_reader_version = config.required_v7_reader_version();
+    Ok(config)
+}
+
+/// Which way `encfsctl xattr-prefix` changes the prefix list.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PrefixChange {
+    Add,
+    Remove,
+}
+
+/// `encfsctl xattr-prefix list`: prints the volume's plaintext xattr
+/// prefixes, one per line. Needs no password.
+fn cmd_xattr_prefix_list(rootdir: &Path) -> Result<()> {
+    let config_path = find_config_file(rootdir)?;
+    let config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
+    if config.plaintext_xattr_prefixes.is_empty() {
+        eprintln!(
+            "{}",
+            t!(
+                "ctl.property_none",
+                property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+            )
+        );
+    }
+    for prefix in &config.plaintext_xattr_prefixes {
+        println!("{}", prefix);
+    }
+    Ok(())
+}
+
+/// `encfsctl xattr-prefix add|remove`: changes the volume's plaintext xattr
+/// prefixes. The volume key is bound to the config's contents, so this asks
+/// for the password and re-wraps the key under it.
+fn cmd_xattr_prefix_change(
+    rootdir: &Path,
+    prefixes: &[String],
+    extpass: Option<String>,
+    change: PrefixChange,
+) -> Result<()> {
+    let config_path = find_config_file(rootdir)?;
+    let mut config =
+        config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
+    if config.config_type != config::ConfigType::V7
+        || config.xattr_format != config::XattrFormat::Encrypted
+    {
+        anyhow::bail!(
+            "{}",
+            t!(
+                "lib.property_unsupported",
+                property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+            )
+        );
+    }
+    // Refuse bad input before asking for the password.
+    if change == PrefixChange::Add {
+        for prefix in prefixes {
+            config::EncfsConfig::check_plaintext_xattr_prefix(prefix)?;
+        }
+    }
+
+    let password = zeroize::Zeroizing::new(get_password(&config_path, extpass)?);
+    let volume_key = config
+        .v7_volume_key(&password)
+        .context(t!("ctl.error_invalid_password"))?;
+
+    let mut changed = false;
+    for prefix in prefixes {
+        let done = match change {
+            PrefixChange::Add => config.add_plaintext_xattr_prefix(prefix)?,
+            PrefixChange::Remove => config.remove_plaintext_xattr_prefix(prefix),
+        };
+        let key = match (change, done) {
+            (PrefixChange::Add, true) => "ctl.property_added",
+            (PrefixChange::Add, false) => "ctl.property_already_set",
+            (PrefixChange::Remove, true) => "ctl.property_removed",
+            (PrefixChange::Remove, false) => "ctl.property_not_set",
+        };
+        println!(
+            "{}",
+            t!(
+                key,
+                property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY,
+                value = prefix
+            )
+        );
+        changed |= done;
+    }
+    if !changed {
+        return Ok(());
+    }
+
+    config
+        .set_v7_key(&password, &volume_key)
+        .context(t!("ctl.error_failed_to_save_config"))?;
+    save_config_replacing(&config, &config_path)?;
+    // Attributes already stored are left as they are, so those whose names
+    // just changed sides can't be read until the change is undone.
+    eprintln!(
+        "{}",
+        t!(
+            "ctl.property_changed_warning",
+            property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+        )
+    );
+    println!(
+        "{}",
+        t!(
+            "ctl.property_saved",
+            version = config.minimum_reader_version
+        )
+    );
+    Ok(())
+}
+
+/// Saves `config` over the existing config file at `path` through a
+/// temporary file and a rename, so a failure part way leaves the old config
+/// (and the only copy of the wrapped volume key) intact.
+fn save_config_replacing(config: &config::EncfsConfig, path: &Path) -> Result<()> {
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(".tmp");
+    let tmp = path.with_file_name(tmp_name);
+    let result = config
+        .save(&tmp)
+        .and_then(|()| std::fs::rename(&tmp, path).map_err(Into::into));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.context(t!("ctl.error_failed_to_save_config"))
 }
 
 /// Writes the volume root's directory IV sidecar for a new volume, keeping an
@@ -2592,6 +2908,17 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
         out.push_str("}\n");
     }
 
+    for property in &proto.properties {
+        let kind = match encfs::config_proto::PropertyKind::try_from(property.kind) {
+            Ok(kind) => kind.as_str_name().to_string(),
+            Err(_) => format!("UNKNOWN({})", property.kind),
+        };
+        out.push_str("properties {\n");
+        out.push_str(&format!("  kind: {}\n", kind));
+        out.push_str(&format!("  value: {:?}\n", property.value));
+        out.push_str("}\n");
+    }
+
     out.push_str("config_hash: ");
     out.push_str(&bytes_hex(&proto.config_hash, 64));
     out.push('\n');
@@ -2959,6 +3286,7 @@ mod tests {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3067,6 +3395,7 @@ mod tests {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3152,6 +3481,7 @@ mod tests {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3358,6 +3688,7 @@ mod tests {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3438,6 +3769,7 @@ mod tests {
             wide_file_iv: false,
             xattr_format: Default::default(),
             symlink_format: Default::default(),
+            plaintext_xattr_prefixes: Vec::new(),
             minimum_reader_version: 0,
             config_hash: None,
         };
@@ -3469,6 +3801,195 @@ mod tests {
 
     fn new_config_dir(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("encfsctl_new_{}_{}", name, std::process::id()))
+    }
+
+    /// Plaintext xattr prefixes can be set by `new` and changed afterwards
+    /// with the password; the volume stays openable throughout.
+    #[test]
+    fn xattr_prefixes_set_at_creation_and_changed_later() -> Result<()> {
+        let dir = new_config_dir("xattr_prefix");
+        let _ = fs::remove_dir_all(&dir);
+        let pass = || Some("echo test_password".to_string());
+        cmd_new(
+            &dir,
+            pass(),
+            false,
+            false,
+            false,
+            false,
+            false,
+            NameEncodingChoice::Auto,
+            &["user.xdg.".to_string()],
+            None,
+        )?;
+        let config_path = dir.join(".encfs7");
+        let load = || encfs::config::EncfsConfig::load(&config_path);
+        let config = load()?;
+        assert_eq!(config.plaintext_xattr_prefixes, ["user.xdg."]);
+        assert_eq!(
+            config.minimum_reader_version,
+            constants::V7_CONFIG_PROPERTIES_CONFIG_VERSION
+        );
+        config.get_cipher("test_password")?;
+
+        let prefixes = ["security.".to_string(), "user.xdg.".to_string()];
+        cmd_xattr_prefix_change(&dir, &prefixes, pass(), PrefixChange::Add)?;
+        let config = load()?;
+        assert_eq!(config.plaintext_xattr_prefixes, prefixes);
+        config.get_cipher("test_password")?;
+
+        // A wrong password changes nothing.
+        let wrong = Some("echo wrong".to_string());
+        assert!(cmd_xattr_prefix_change(&dir, &prefixes, wrong, PrefixChange::Remove).is_err());
+        assert_eq!(load()?.plaintext_xattr_prefixes, prefixes);
+        // Nor does a prefix encfs can't honor.
+        let reserved = ["user.encfs.x".to_string()];
+        assert!(cmd_xattr_prefix_change(&dir, &reserved, pass(), PrefixChange::Add).is_err());
+
+        cmd_xattr_prefix_change(&dir, &prefixes, pass(), PrefixChange::Remove)?;
+        let config = load()?;
+        assert!(config.plaintext_xattr_prefixes.is_empty());
+        assert_eq!(
+            config.minimum_reader_version,
+            constants::V7_INODE_XATTR_IV_CONFIG_VERSION
+        );
+        config.get_cipher("test_password")?;
+        assert!(!dir.join(".encfs7.tmp").exists());
+        let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    /// Only V7 filesystems can be templates.
+    #[test]
+    fn template_must_be_v7() -> Result<()> {
+        let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let (path, template) = load_template(&fixtures.join("encfs6-paranoia.xml"))?;
+        assert!(path.ends_with("encfs6-paranoia.xml"));
+        assert!(config_from_template(&template).is_err());
+        // Refused before anything is created.
+        let dir = new_config_dir("template_v6");
+        let _ = fs::remove_dir_all(&dir);
+        let template = Some(path.as_path());
+        let pass = Some("echo test_password".to_string());
+        let result = cmd_new(
+            &dir,
+            pass,
+            false,
+            false,
+            false,
+            false,
+            false,
+            NameEncodingChoice::Auto,
+            &[],
+            template,
+        );
+        assert!(result.is_err());
+        assert!(!dir.exists());
+
+        let mut path_iv = EncfsConfig::standard_v7();
+        path_iv.xattr_format = encfs::config::XattrFormat::EncryptedPathIv;
+        assert!(config_from_template(&path_iv).is_err());
+        Ok(())
+    }
+
+    /// A V7 template is copied whole, and `new` builds the same filesystem
+    /// from its directory or its config file, with flags applied on top.
+    #[test]
+    fn new_from_a_template() -> Result<()> {
+        let source = new_config_dir("template_source");
+        let _ = fs::remove_dir_all(&source);
+        let pass = || Some("echo test_password".to_string());
+        cmd_new(
+            &source,
+            pass(),
+            false,
+            false,
+            false,
+            true,
+            true,
+            NameEncodingChoice::Stream,
+            &["user.xdg.".to_string()],
+            None,
+        )?;
+        let template = encfs::config::EncfsConfig::load(&source.join(".encfs7"))?;
+        let copied = config_from_template(&template)?;
+
+        let settings = |c: &EncfsConfig| {
+            (
+                (c.key_size, c.block_size, c.unique_iv, c.wide_file_iv),
+                (c.chained_name_iv, c.directory_iv, c.external_iv_chaining),
+                (c.allow_holes, c.name_iface.name.clone()),
+                (c.xattr_format, c.symlink_format),
+                c.plaintext_xattr_prefixes.clone(),
+                (c.argon2_memory_cost, c.argon2_parallelism),
+                c.minimum_reader_version,
+            )
+        };
+        assert_eq!(settings(&copied), settings(&template));
+
+        let from_dir = new_config_dir("template_from_dir");
+        let _ = fs::remove_dir_all(&from_dir);
+        cmd_new(
+            &from_dir,
+            pass(),
+            false,
+            false,
+            false,
+            false,
+            false,
+            NameEncodingChoice::Auto,
+            &[],
+            Some(&source),
+        )?;
+        let created = encfs::config::EncfsConfig::load(&from_dir.join(".encfs7"))?;
+        assert_eq!(settings(&created), settings(&template));
+        assert_ne!(created.salt, template.salt);
+        created.get_cipher("test_password")?;
+
+        // From the config file, with an explicit encoding and another prefix.
+        let from_file = new_config_dir("template_from_file");
+        let _ = fs::remove_dir_all(&from_file);
+        cmd_new(
+            &from_file,
+            pass(),
+            false,
+            false,
+            false,
+            false,
+            false,
+            NameEncodingChoice::Block32,
+            &["security.".to_string()],
+            Some(&source.join(".encfs7")),
+        )?;
+        let created = encfs::config::EncfsConfig::load(&from_file.join(".encfs7"))?;
+        assert_eq!(created.name_iface.name, "nameio/block32");
+        assert_eq!(created.plaintext_xattr_prefixes, ["security.", "user.xdg."]);
+        assert!(!created.wide_file_iv && !created.directory_iv);
+
+        // A missing template creates nothing.
+        let missing = new_config_dir("template_missing");
+        let _ = fs::remove_dir_all(&missing);
+        assert!(
+            cmd_new(
+                &missing,
+                pass(),
+                false,
+                false,
+                false,
+                false,
+                false,
+                NameEncodingChoice::Auto,
+                &[],
+                Some(&source.join("nope")),
+            )
+            .is_err()
+        );
+        assert!(!missing.exists());
+
+        for dir in [source, from_dir, from_file] {
+            let _ = fs::remove_dir_all(dir);
+        }
+        Ok(())
     }
 
     #[test]
@@ -3529,6 +4050,8 @@ mod tests {
                 false,
                 false,
                 choice,
+                &[],
+                None,
             )?;
             let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
             assert_eq!(config.name_iface.name, expected);
@@ -3554,6 +4077,8 @@ mod tests {
             false,
             false,
             NameEncodingChoice::Auto,
+            &[],
+            None,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3598,6 +4123,8 @@ mod tests {
             true, // legacy_file_iv
             false,
             NameEncodingChoice::Auto,
+            &[],
+            None,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3634,6 +4161,8 @@ mod tests {
             false,
             false,
             NameEncodingChoice::Auto,
+            &[],
+            None,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3662,6 +4191,8 @@ mod tests {
             true, // legacy_file_iv
             false,
             NameEncodingChoice::Auto,
+            &[],
+            None,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3879,6 +4410,8 @@ mod tests {
             false,
             // Fixed, since `Auto` depends on the temp directory's filesystem.
             NameEncodingChoice::Block32,
+            &[],
+            None,
         )?;
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
@@ -3922,6 +4455,8 @@ mod tests {
             false,
             no_directory_iv,
             NameEncodingChoice::Auto,
+            &[],
+            None,
         )?;
         let config = EncfsConfig::load(&dir.join(".encfs7"))?;
         assert_eq!(
@@ -3975,6 +4510,8 @@ mod tests {
             false,
             false,
             NameEncodingChoice::Auto,
+            &[],
+            None,
         )?;
 
         let config = EncfsConfig::load(&dir.join(".encfs7"))?;

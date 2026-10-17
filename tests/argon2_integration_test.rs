@@ -85,6 +85,7 @@ fn test_argon2id_config_creation_and_loading() -> Result<()> {
         wide_file_iv: false,
         xattr_format: Default::default(),
         symlink_format: Default::default(),
+        plaintext_xattr_prefixes: Vec::new(),
         minimum_reader_version: 0,
         config_hash: None,
     };

@@ -495,3 +495,51 @@ ctl.warning_skipping_directory:
   en: "Warning: Skipping directory: %{error}"
   fr: "Avertissement : répertoire ignoré : %{error}"
   de: "Warnung: Verzeichnis wird übersprungen: %{error}"
+ctl.property_values:
+  en: "%{property}: %{values}"
+  fr: "%{property} : %{values}"
+  de: "%{property}: %{values}"
+ctl.property_none:
+  en: "Config property %{property} has no values."
+  fr: "La propriété de configuration %{property} n'a aucune valeur."
+  de: "Die Konfigurationseigenschaft %{property} hat keine Werte."
+ctl.property_added:
+  en: "Added \"%{value}\" to config property %{property}"
+  fr: "« %{value} » ajouté à la propriété de configuration %{property}"
+  de: "„%{value}“ zur Konfigurationseigenschaft %{property} hinzugefügt"
+ctl.property_already_set:
+  en: "Config property %{property} already has \"%{value}\""
+  fr: "La propriété de configuration %{property} contient déjà « %{value} »"
+  de: "Die Konfigurationseigenschaft %{property} enthält bereits „%{value}“"
+ctl.property_removed:
+  en: "Removed \"%{value}\" from config property %{property}"
+  fr: "« %{value} » supprimé de la propriété de configuration %{property}"
+  de: "„%{value}“ aus der Konfigurationseigenschaft %{property} entfernt"
+ctl.property_not_set:
+  en: "Config property %{property} does not have \"%{value}\""
+  fr: "La propriété de configuration %{property} ne contient pas « %{value} »"
+  de: "Die Konfigurationseigenschaft %{property} enthält „%{value}“ nicht"
+ctl.property_changed_warning:
+  en: "Note: data already stored is not converted for the change to %{property}, so anything it affects can't be read until the change is undone."
+  fr: "Remarque : les données déjà stockées ne sont pas converties pour la modification de %{property}, donc celles qu'elle concerne ne peuvent pas être lues tant que la modification n'est pas annulée."
+  de: "Hinweis: Bereits gespeicherte Daten werden für die Änderung an %{property} nicht umgewandelt; betroffene Daten sind erst wieder lesbar, wenn die Änderung rückgängig gemacht wird."
+ctl.property_saved:
+  en: "Config saved (minimum reader version %{version}). Mounted filesystems pick up the change when next mounted."
+  fr: "Configuration enregistrée (version minimale du lecteur %{version}). Les systèmes de fichiers montés prendront en compte la modification au prochain montage."
+  de: "Konfiguration gespeichert (Mindestversion des Lesers %{version}). Eingehängte Dateisysteme übernehmen die Änderung beim nächsten Einhängen."
+ctl.template_used:
+  en: "Using settings from template %{path}"
+  fr: "Utilisation des réglages du modèle %{path}"
+  de: "Einstellungen aus der Vorlage %{path} werden verwendet"
+ctl.error_failed_to_load_template:
+  en: "Failed to load template config %{path}"
+  fr: "Impossible de charger la configuration modèle %{path}"
+  de: "Vorlagenkonfiguration %{path} konnte nicht geladen werden"
+ctl.error_template_not_v7:
+  en: "Only Version 7 filesystems can be used as templates"
+  fr: "Seuls les systèmes de fichiers version 7 peuvent servir de modèles"
+  de: "Nur Dateisysteme der Version 7 können als Vorlage dienen"
+ctl.error_template_path_iv_xattrs:
+  en: "The template uses the extended attribute format of EncFS versions before 2.0.0-beta.7, which new filesystems can't use"
+  fr: "Le modèle utilise le format d'attributs étendus des versions d'EncFS antérieures à 2.0.0-beta.7, que les nouveaux systèmes de fichiers ne peuvent pas utiliser"
+  de: "Die Vorlage verwendet das Format für erweiterte Attribute von EncFS-Versionen vor 2.0.0-beta.7, das neue Dateisysteme nicht verwenden können"
