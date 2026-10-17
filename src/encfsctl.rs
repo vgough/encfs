@@ -1722,7 +1722,12 @@ fn cmd_new(
     template: Option<&Path>,
 ) -> Result<()> {
     // Read the template before creating anything.
-    let template = template.map(load_template).transpose()?;
+    let template = template
+        .map(|path| -> Result<_> {
+            let (path, template) = load_template(path)?;
+            Ok((path, config_from_template(&template)?))
+        })
+        .transpose()?;
 
     // Create directory if it doesn't exist
     if !rootdir.exists() {
@@ -1756,19 +1761,7 @@ fn cmd_new(
     let mut config = match &template {
         Some((path, template)) => {
             println!("{}", t!("ctl.template_used", path = path.display()));
-            let (config, skipped) = config_from_template(template);
-            for s in skipped {
-                eprintln!(
-                    "{}",
-                    t!(
-                        "ctl.template_setting_unsupported",
-                        setting = s.setting,
-                        value = s.value,
-                        used = s.used
-                    )
-                );
-            }
-            config
+            template.clone()
         }
         None => config::EncfsConfig::standard_v7(),
     };
@@ -1883,142 +1876,26 @@ fn load_template(path: &Path) -> Result<(PathBuf, config::EncfsConfig)> {
     Ok((config_path, config))
 }
 
-/// A template setting `encfsctl new` can't give a new filesystem, with the
-/// value used instead. The names and values are technical identifiers shown
-/// as they are.
-#[derive(Debug, PartialEq)]
-struct SkippedSetting {
-    setting: &'static str,
-    value: String,
-    used: String,
-}
-
-/// A new V7 config with the settings of `template`, an existing config of any
-/// supported version, where new filesystems support them. Block encryption is
-/// always AES-GCM-SIV, and extended attributes and symlink targets always use
-/// the encrypted forms new filesystems use: the legacy forms only exist so
-/// upgraded volumes keep their data. Settings that can't carry over are
-/// returned with the value used in their place. The caller still has to set
-/// a salt and key, as for [`config::EncfsConfig::standard_v7`].
-fn config_from_template(
-    template: &config::EncfsConfig,
-) -> (config::EncfsConfig, Vec<SkippedSetting>) {
-    use config::{ConfigType, KdfAlgorithm, XattrFormat};
-    use encfs::crypto::block::{AES_GCM_SIV_BLOCK_TAG_BYTES, BlockMode};
-
-    let mut config = config::EncfsConfig::standard_v7();
-    let mut skipped = Vec::new();
-    let mut skip = |setting: &'static str, value: String, used: String| {
-        skipped.push(SkippedSetting {
-            setting,
-            value,
-            used,
-        })
-    };
-
-    if template.cipher_iface.name != config.cipher_iface.name {
-        skip(
-            "cipher",
-            template.cipher_iface.name.clone(),
-            config.cipher_iface.name.clone(),
-        );
-    } else if matches!(template.key_size, 128 | 256) {
-        config.key_size = template.key_size;
-    } else {
-        skip(
-            "key-size",
-            template.key_size.to_string(),
-            config.key_size.to_string(),
-        );
+/// A new config with every setting of `template`, which must be a V7
+/// config, ready for a fresh salt and key as from
+/// [`config::EncfsConfig::standard_v7`]. Settings are copied as they are,
+/// except that a template naming the retired path-IV xattr format is refused,
+/// since a new filesystem with it could store no extended attributes.
+fn config_from_template(template: &config::EncfsConfig) -> Result<config::EncfsConfig> {
+    if template.config_type != config::ConfigType::V7 {
+        anyhow::bail!("{}", t!("ctl.error_template_not_v7"));
     }
-    if template.block_mode() != BlockMode::AesGcmSiv {
-        skip(
-            "block-mode",
-            format!(
-                "{:?} (MAC bytes {})",
-                template.block_mode(),
-                template.block_mac_bytes
-            ),
-            format!("{:?}", BlockMode::AesGcmSiv),
-        );
+    if !template.xattrs_available() {
+        anyhow::bail!("{}", t!("ctl.error_template_path_iv_xattrs"));
     }
-    if template.block_size > AES_GCM_SIV_BLOCK_TAG_BYTES as i32 {
-        config.block_size = template.block_size;
-    } else {
-        skip(
-            "block-size",
-            template.block_size.to_string(),
-            config.block_size.to_string(),
-        );
+    let mut config = template.clone();
+    config.key_data.clear();
+    config.config_hash = None;
+    if config.salt.is_empty() {
+        config.salt = vec![0u8; constants::DEFAULT_SALT_SIZE];
     }
-
-    config.unique_iv = template.unique_iv;
-    config.wide_file_iv = template.unique_iv && template.wide_file_iv;
-    config.external_iv_chaining = template.external_iv_chaining;
-    config.chained_name_iv = template.chained_name_iv;
-    config.directory_iv = template.directory_iv;
-    config.allow_holes = template.allow_holes;
-
-    match template.name_iface.name.as_str() {
-        "nameio/stream" => config.name_iface = stream_name_iface(),
-        "nameio/block32" => config.name_iface = block32_name_iface(),
-        "nameio/block" => {
-            config.name_iface = config::Interface {
-                name: "nameio/block".to_string(),
-                major: 4,
-                minor: 0,
-                age: 0,
-            }
-        }
-        other => skip(
-            "name-encoding",
-            other.to_string(),
-            config.name_iface.name.clone(),
-        ),
-    }
-
-    // V4-V6 store attributes unencrypted.
-    let xattr_format = if template.config_type == ConfigType::V7 {
-        template.xattr_format
-    } else {
-        XattrFormat::Plaintext
-    };
-    if xattr_format != config.xattr_format {
-        skip(
-            "xattr-format",
-            format!("{:?}", xattr_format),
-            format!("{:?}", config.xattr_format),
-        );
-    }
-    if template.uses_legacy_symlink_targets() {
-        skip(
-            "symlink-format",
-            format!("{:?}", config::SymlinkFormat::LegacyPath),
-            format!("{:?}", config.symlink_format),
-        );
-    }
-    config.plaintext_xattr_prefixes = template.plaintext_xattr_prefixes.clone();
-
-    match (
-        template.kdf_algorithm,
-        template.argon2_memory_cost,
-        template.argon2_time_cost,
-        template.argon2_parallelism,
-    ) {
-        (KdfAlgorithm::Argon2id, Some(memory), Some(time), Some(parallelism)) => {
-            config.argon2_memory_cost = Some(memory);
-            config.argon2_time_cost = Some(time);
-            config.argon2_parallelism = Some(parallelism);
-        }
-        (algorithm, ..) => skip(
-            "kdf",
-            format!("{:?}", algorithm),
-            format!("{:?}", config.kdf_algorithm),
-        ),
-    }
-
     config.minimum_reader_version = config.required_v7_reader_version();
-    (config, skipped)
+    Ok(config)
 }
 
 /// Which way `encfsctl xattr-prefix` changes the prefix list.
@@ -3829,47 +3706,36 @@ mod tests {
         Ok(())
     }
 
-    fn skipped_names(skipped: &[SkippedSetting]) -> Vec<&'static str> {
-        skipped.iter().map(|s| s.setting).collect()
-    }
-
-    /// A C++ EncFS paranoia config carries over its IV and naming choices,
-    /// and is reported for what new filesystems can't use.
+    /// Only V7 filesystems can be templates.
     #[test]
-    fn template_from_a_legacy_config() -> Result<()> {
+    fn template_must_be_v7() -> Result<()> {
         let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         let (path, template) = load_template(&fixtures.join("encfs6-paranoia.xml"))?;
         assert!(path.ends_with("encfs6-paranoia.xml"));
-        let (config, skipped) = config_from_template(&template);
-        assert_eq!(config.config_type, ConfigType::V7);
-        assert_eq!(config.key_size, 256);
-        assert_eq!(config.block_size, 1024);
-        assert!(config.unique_iv && !config.wide_file_iv);
-        assert!(config.chained_name_iv && !config.directory_iv);
-        assert!(config.external_iv_chaining);
-        assert_eq!(config.name_iface.name, "nameio/block");
-        assert_eq!(
-            config.block_mode(),
-            encfs::crypto::block::BlockMode::AesGcmSiv
+        assert!(config_from_template(&template).is_err());
+        // Refused before anything is created.
+        let dir = new_config_dir("template_v6");
+        let _ = fs::remove_dir_all(&dir);
+        let template = Some(path.as_path());
+        let pass = Some("echo test_password".to_string());
+        let result = cmd_new(
+            &dir,
+            pass,
+            false,
+            false,
+            false,
+            false,
+            false,
+            NameEncodingChoice::Auto,
+            &[],
+            template,
         );
-        assert_eq!(config.xattr_format, encfs::config::XattrFormat::Encrypted);
-        assert!(!config.uses_legacy_symlink_targets());
-        assert_eq!(
-            skipped_names(&skipped),
-            ["block-mode", "xattr-format", "symlink-format", "kdf"]
-        );
-        assert_eq!(
-            config.minimum_reader_version,
-            config.required_v7_reader_version()
-        );
+        assert!(result.is_err());
+        assert!(!dir.exists());
 
-        // AES-192 isn't offered for new filesystems.
-        let (_, std_template) = load_template(&fixtures.join("encfs6-std.xml"))?;
-        let (config, skipped) = config_from_template(&std_template);
-        assert_eq!(config.key_size, 256);
-        assert_eq!(skipped[0].setting, "key-size");
-        assert_eq!(skipped[0].value, "192");
-        assert_eq!(skipped[0].used, "256");
+        let mut path_iv = EncfsConfig::standard_v7();
+        path_iv.xattr_format = encfs::config::XattrFormat::EncryptedPathIv;
+        assert!(config_from_template(&path_iv).is_err());
         Ok(())
     }
 
@@ -3893,8 +3759,7 @@ mod tests {
             None,
         )?;
         let template = encfs::config::EncfsConfig::load(&source.join(".encfs7"))?;
-        let (copied, skipped) = config_from_template(&template);
-        assert!(skipped.is_empty(), "{skipped:?}");
+        let copied = config_from_template(&template)?;
 
         let settings = |c: &EncfsConfig| {
             (
