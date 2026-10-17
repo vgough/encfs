@@ -1465,8 +1465,10 @@ impl EncFs {
         }
     }
 
-    /// Logs a failure to read or write the contents of `file`, as named by
-    /// `log_name`.
+    /// Logs a failure to read or write the contents of `file`. Corrupted data
+    /// names the file as `log_name` does; resolving its current path costs a
+    /// path encryption and two stats, so ordinary failures, such as ENOSPC,
+    /// name it by the path it was opened at.
     fn log_file_data_error(
         &self,
         op: &str,
@@ -1475,11 +1477,11 @@ impl EncFs {
         opened_at: &Path,
         err: &io::Error,
     ) {
-        let backing = self.log_name(path, file, opened_at);
         if is_corrupted_data(err) {
+            let backing = self.log_name(path, file, opened_at);
             error!("{} failed: corrupted data in {}: {}", op, backing, err);
         } else {
-            error!("{} failed for {}: {}", op, backing, err);
+            error!("{} failed for {:?}: {}", op, opened_at, err);
         }
     }
 

@@ -113,8 +113,10 @@ fn corrupted_volume(root: &Path) -> PathBuf {
     backing
 }
 
+/// Errors name backing files under the canonical root, however it was given.
 fn assert_names_backing_file(stderr: &[u8], backing: &Path) {
     let stderr = String::from_utf8_lossy(stderr);
+    let backing = backing.canonicalize().unwrap();
     assert!(
         stderr.contains(&backing.display().to_string()),
         "error does not name {}: {stderr}",
@@ -181,10 +183,12 @@ fn cat_names_the_corrupted_file() {
 fn export_names_the_corrupted_file() {
     let root = temp_dir("export");
     let backing = corrupted_volume(&root);
-    // Given relative to the working directory, the root is still printed as
-    // an absolute path.
+    // Given relative to the working directory, and through `..`, the root is
+    // still printed as the canonical path, which `decode` accepts with the
+    // root given any other way.
     let parent = root.parent().unwrap();
-    let relative_root = Path::new(root.file_name().unwrap());
+    let name = root.file_name().unwrap();
+    let relative_root = Path::new(name).join("..").join(name);
 
     for fail_on_error in [false, true] {
         let dest = temp_dir(&format!("export_dest_{fail_on_error}"));
@@ -204,6 +208,7 @@ fn export_names_the_corrupted_file() {
         // Reported as corruption, naming the file once.
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(stderr.contains("Undecryptable file contents"), "{stderr}");
+        assert!(!stderr.contains("/../"), "{stderr}");
         let name = backing.file_name().unwrap().to_string_lossy();
         assert_eq!(stderr.matches(&*name).count(), 1, "{stderr}");
         // No partial copy is left behind.
@@ -264,7 +269,8 @@ fn export_fail_on_error_names_an_unreadable_file() {
     assert_names_backing_file(&out.stderr, &backing);
     // Named once, not again for each directory the error passes through.
     let stderr = String::from_utf8_lossy(&out.stderr);
-    let dir = backing.parent().unwrap().display().to_string();
+    let dir = backing.parent().unwrap().canonicalize().unwrap();
+    let dir = dir.display().to_string();
     assert_eq!(stderr.matches(&dir).count(), 1, "{stderr}");
 
     let _ = fs::remove_dir_all(&dest);
@@ -296,7 +302,37 @@ fn export_fail_on_error_names_an_undecryptable_entry_once() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     let name = bad.file_name().unwrap().to_string_lossy();
     assert_eq!(stderr.matches(&*name).count(), 1, "{stderr}");
+    let bad = bad.canonicalize().unwrap();
     assert!(stderr.contains(&bad.display().to_string()), "{stderr}");
+
+    let _ = fs::remove_dir_all(&dest);
+    fs::remove_dir_all(&root).unwrap();
+}
+
+/// Without `--fail-on-error`, export warns about an undecryptable entry by
+/// its full backing path, so it can be found in a subdirectory, and goes on.
+#[test]
+fn export_warning_names_a_nested_undecryptable_entry() {
+    let root = temp_dir("export_nested_bad_name");
+    let backing = corrupted_volume(&root);
+    let dir = backing.parent().unwrap().to_path_buf();
+    fs::remove_file(backing).unwrap();
+    let bad = dir.join("AAAAAAAAAAAAAAAAAAAAAAAA");
+    fs::write(&bad, b"").unwrap();
+
+    let dest = temp_dir("export_nested_bad_name_dest");
+    let out = encfsctl(&[
+        "export".as_ref(),
+        "--extpass".as_ref(),
+        PASSWORD_CMD.as_ref(),
+        root.as_os_str(),
+        dest.as_os_str(),
+    ]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let bad = bad.canonicalize().unwrap();
+    assert!(stderr.contains(&bad.display().to_string()), "{stderr}");
+    assert!(dest.join(PLAINTEXT_DIR).is_dir());
 
     let _ = fs::remove_dir_all(&dest);
     fs::remove_dir_all(&root).unwrap();

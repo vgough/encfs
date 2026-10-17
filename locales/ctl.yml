@@ -271,10 +271,6 @@ ctl.warning_error_processing:
   en: "Warning: Error processing %{name}: %{error}"
   fr: "Avertissement : Erreur lors du traitement de %{name} : %{error}"
   de: "Warnung: Fehler beim Verarbeiten von %{name}: %{error}"
-ctl.warning_could_not_decrypt:
-  en: "Warning: Could not decrypt %{name}: %{error}"
-  fr: "Avertissement : Impossible de déchiffrer %{name} : %{error}"
-  de: "Warnung: %{name} konnte nicht entschlüsselt werden: %{error}"
 ctl.warning_incomplete_header:
   en: "Warning: File %{name} has incomplete header"
   fr: "Avertissement : Le fichier %{name} a un en-tête incomplet"
@@ -283,10 +279,6 @@ ctl.warning_message:
   en: "Warning: %{message}"
   fr: "Avertissement : %{message}"
   de: "Warnung: %{message}"
-ctl.warning_export_failed:
-  en: "Warning: Failed to export %{path}: %{error}"
-  fr: "Avertissement : Échec de l'exportation de %{path} : %{error}"
-  de: "Warnung: Export von %{path} fehlgeschlagen: %{error}"
 ctl.warning_file_type:
   en: "Warning: Failed to get file type for %{path}"
   fr: "Avertissement : Échec de l'obtention du type de fichier pour %{path}"
@@ -368,9 +360,9 @@ ctl.error_raw_only_v7:
   fr: "--raw n'est pris en charge que pour la config V7 (EncFS7)"
   de: "--raw wird nur für die V7- (EncFS7-) Konfiguration unterstützt"
 ctl.error_incomplete_header:
-  en: "Encrypted file %{path} has incomplete header"
-  fr: "Le fichier chiffré %{path} a un en-tête incomplet"
-  de: "Verschlüsselte Datei %{path} hat unvollständigen Header"
+  en: "Incomplete file header"
+  fr: "En-tête de fichier incomplet"
+  de: "Unvollständiger Dateiheader"
 ctl.error_no_current_password:
   en: "No current password provided"
   fr: "Aucun mot de passe actuel fourni"
@@ -384,33 +376,33 @@ ctl.error_failed_to_read_dir_entry:
   fr: "Échec de la lecture de l'entrée du répertoire : %{error}"
   de: "Fehler beim Lesen des Verzeichniseintrags: %{error}"
 ctl.error_non_utf8_filename:
-  en: "Non-UTF-8 filename: %{filename}"
-  fr: "Nom de fichier non UTF-8 : %{filename}"
-  de: "Nicht-UTF-8-Dateiname: %{filename}"
+  en: "Non-UTF-8 filename"
+  fr: "Nom de fichier non UTF-8"
+  de: "Nicht-UTF-8-Dateiname"
 ctl.error_could_not_decrypt:
-  en: "Could not decrypt %{name}: %{error}"
-  fr: "Impossible de déchiffrer %{name} : %{error}"
-  de: "%{name} konnte nicht entschlüsselt werden: %{error}"
+  en: "Could not decrypt the filename"
+  fr: "Impossible de déchiffrer le nom de fichier"
+  de: "Dateiname konnte nicht entschlüsselt werden"
 ctl.error_undecryptable_symlink_target:
-  en: "Undecryptable symlink target %{path}: %{error}"
-  fr: "Cible de lien symbolique indéchiffrable %{path} : %{error}"
-  de: "Nicht entschlüsselbares Symlink-Ziel %{path}: %{error}"
+  en: "Undecryptable symlink target"
+  fr: "Cible de lien symbolique indéchiffrable"
+  de: "Nicht entschlüsselbares Symlink-Ziel"
 ctl.error_failed_to_read_file:
-  en: "Failed to read %{path}: %{error}"
-  fr: "Échec de la lecture de %{path} : %{error}"
-  de: "Fehler beim Lesen von %{path}: %{error}"
+  en: "Failed to read %{path}"
+  fr: "Échec de la lecture de %{path}"
+  de: "Fehler beim Lesen von %{path}"
 ctl.error_undecryptable_file_header:
-  en: "Undecryptable file header in %{path}: %{error}"
-  fr: "En-tête de fichier indéchiffrable dans %{path} : %{error}"
-  de: "Nicht entschlüsselbarer Dateiheader in %{path}: %{error}"
+  en: "Undecryptable file header"
+  fr: "En-tête de fichier indéchiffrable"
+  de: "Nicht entschlüsselbarer Dateiheader"
 ctl.error_export_failed:
-  en: "Failed to export %{path}: %{error}"
-  fr: "Échec de l'exportation de %{path} : %{error}"
-  de: "Export von %{path} fehlgeschlagen: %{error}"
+  en: "Failed to export %{path}"
+  fr: "Échec de l'exportation de %{path}"
+  de: "Export von %{path} fehlgeschlagen"
 ctl.error_undecryptable_file_contents:
-  en: "Undecryptable file contents in %{path}: %{error}"
-  fr: "Contenu de fichier indéchiffrable dans %{path} : %{error}"
-  de: "Nicht entschlüsselbarer Dateiinhalt in %{path}: %{error}"
+  en: "Undecryptable file contents"
+  fr: "Contenu de fichier indéchiffrable"
+  de: "Nicht entschlüsselbarer Dateiinhalt"
 ctl.error_invalid_utf8:
   en: "Invalid UTF-8"
   fr: "UTF-8 invalide"
