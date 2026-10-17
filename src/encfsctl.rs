@@ -186,6 +186,10 @@ fn help_new_name_encoding() -> String {
     t!("help.encfsctl.new_name_encoding").to_string()
 }
 
+fn help_new_template() -> String {
+    t!("help.encfsctl.new_template").to_string()
+}
+
 fn help_new_plaintext_xattr_prefix() -> String {
     t!("help.encfsctl.new_plaintext_xattr_prefix").to_string()
 }
@@ -353,6 +357,8 @@ enum Command {
         name_encoding: NameEncodingChoice,
         #[arg(long = "plaintext-xattr-prefix", value_name = "PREFIX", help = help_new_plaintext_xattr_prefix())]
         plaintext_xattr_prefixes: Vec<String>,
+        #[arg(long, value_name = "PATH", help = help_new_template())]
+        template: Option<PathBuf>,
     },
     #[command(about = help_property(), subcommand)]
     XattrPrefix(XattrPrefixCommand),
@@ -435,6 +441,7 @@ fn main() -> Result<()> {
             no_directory_iv,
             name_encoding,
             plaintext_xattr_prefixes,
+            template,
         }) => cmd_new(
             &rootdir,
             extpass,
@@ -445,6 +452,7 @@ fn main() -> Result<()> {
             no_directory_iv,
             name_encoding,
             &plaintext_xattr_prefixes,
+            template.as_deref(),
         ),
         Some(Command::XattrPrefix(XattrPrefixCommand::List { rootdir })) => {
             cmd_xattr_prefix_list(&rootdir)
@@ -1711,7 +1719,11 @@ fn cmd_new(
     no_directory_iv: bool,
     name_encoding: NameEncodingChoice,
     plaintext_xattr_prefixes: &[String],
+    template: Option<&Path>,
 ) -> Result<()> {
+    // Read the template before creating anything.
+    let template = template.map(load_template).transpose()?;
+
     // Create directory if it doesn't exist
     if !rootdir.exists() {
         std::fs::create_dir_all(rootdir).context(t!(
@@ -1741,7 +1753,26 @@ fn cmd_new(
         ));
     }
 
-    let mut config = config::EncfsConfig::standard_v7();
+    let mut config = match &template {
+        Some((path, template)) => {
+            println!("{}", t!("ctl.template_used", path = path.display()));
+            let (config, skipped) = config_from_template(template);
+            for s in skipped {
+                eprintln!(
+                    "{}",
+                    t!(
+                        "ctl.template_setting_unsupported",
+                        setting = s.setting,
+                        value = s.value,
+                        used = s.used
+                    )
+                );
+            }
+            config
+        }
+        None => config::EncfsConfig::standard_v7(),
+    };
+    // Flags given alongside a template apply on top of it.
     if no_directory_iv || no_unique_iv || legacy_file_iv {
         // Reverse mode (encfsr) has nowhere to keep per-directory IV files,
         // and older readers can't interpret them, so the compatibility flags
@@ -1767,16 +1798,19 @@ fn cmd_new(
     // older builds, unless a name encoding is asked for. The per-inode xattr
     // format still applies, so opening the volume takes a reader that
     // implements it.
-    config.name_iface = new_name_iface(name_encoding, legacy_file_iv || no_unique_iv, || {
-        let sensitive = dir_is_case_sensitive(rootdir);
-        let path = rootdir.display();
-        match sensitive {
-            Some(true) => println!("{}", t!("ctl.new_case_sensitive", path = path)),
-            Some(false) => println!("{}", t!("ctl.new_case_insensitive", path = path)),
-            None => eprintln!("{}", t!("ctl.new_case_unknown", path = path)),
-        }
-        sensitive
-    });
+    // A template keeps its own name encoding unless one is asked for.
+    if template.is_none() || name_encoding != NameEncodingChoice::Auto {
+        config.name_iface = new_name_iface(name_encoding, legacy_file_iv || no_unique_iv, || {
+            let sensitive = dir_is_case_sensitive(rootdir);
+            let path = rootdir.display();
+            match sensitive {
+                Some(true) => println!("{}", t!("ctl.new_case_sensitive", path = path)),
+                Some(false) => println!("{}", t!("ctl.new_case_insensitive", path = path)),
+                None => eprintln!("{}", t!("ctl.new_case_unknown", path = path)),
+            }
+            sensitive
+        });
+    }
     for prefix in plaintext_xattr_prefixes {
         config.add_plaintext_xattr_prefix(prefix)?;
     }
@@ -1831,6 +1865,160 @@ fn cmd_new(
     println!("{}", t!("ctl.new_config_created", path = v7_path.display()));
 
     Ok(())
+}
+
+/// Loads the config `encfsctl new --template` copies from: the config file at
+/// `path`, or the one in the encrypted directory at `path`. Returns the
+/// config file's path with it.
+fn load_template(path: &Path) -> Result<(PathBuf, config::EncfsConfig)> {
+    let config_path = if path.is_dir() {
+        find_config_file(path)?
+    } else {
+        path.to_path_buf()
+    };
+    let config = config::EncfsConfig::load(&config_path).context(t!(
+        "ctl.error_failed_to_load_template",
+        path = config_path.display()
+    ))?;
+    Ok((config_path, config))
+}
+
+/// A template setting `encfsctl new` can't give a new filesystem, with the
+/// value used instead. The names and values are technical identifiers shown
+/// as they are.
+#[derive(Debug, PartialEq)]
+struct SkippedSetting {
+    setting: &'static str,
+    value: String,
+    used: String,
+}
+
+/// A new V7 config with the settings of `template`, an existing config of any
+/// supported version, where new filesystems support them. Block encryption is
+/// always AES-GCM-SIV, and extended attributes and symlink targets always use
+/// the encrypted forms new filesystems use: the legacy forms only exist so
+/// upgraded volumes keep their data. Settings that can't carry over are
+/// returned with the value used in their place. The caller still has to set
+/// a salt and key, as for [`config::EncfsConfig::standard_v7`].
+fn config_from_template(
+    template: &config::EncfsConfig,
+) -> (config::EncfsConfig, Vec<SkippedSetting>) {
+    use config::{ConfigType, KdfAlgorithm, XattrFormat};
+    use encfs::crypto::block::{AES_GCM_SIV_BLOCK_TAG_BYTES, BlockMode};
+
+    let mut config = config::EncfsConfig::standard_v7();
+    let mut skipped = Vec::new();
+    let mut skip = |setting: &'static str, value: String, used: String| {
+        skipped.push(SkippedSetting {
+            setting,
+            value,
+            used,
+        })
+    };
+
+    if template.cipher_iface.name != config.cipher_iface.name {
+        skip(
+            "cipher",
+            template.cipher_iface.name.clone(),
+            config.cipher_iface.name.clone(),
+        );
+    } else if matches!(template.key_size, 128 | 256) {
+        config.key_size = template.key_size;
+    } else {
+        skip(
+            "key-size",
+            template.key_size.to_string(),
+            config.key_size.to_string(),
+        );
+    }
+    if template.block_mode() != BlockMode::AesGcmSiv {
+        skip(
+            "block-mode",
+            format!(
+                "{:?} (MAC bytes {})",
+                template.block_mode(),
+                template.block_mac_bytes
+            ),
+            format!("{:?}", BlockMode::AesGcmSiv),
+        );
+    }
+    if template.block_size > AES_GCM_SIV_BLOCK_TAG_BYTES as i32 {
+        config.block_size = template.block_size;
+    } else {
+        skip(
+            "block-size",
+            template.block_size.to_string(),
+            config.block_size.to_string(),
+        );
+    }
+
+    config.unique_iv = template.unique_iv;
+    config.wide_file_iv = template.unique_iv && template.wide_file_iv;
+    config.external_iv_chaining = template.external_iv_chaining;
+    config.chained_name_iv = template.chained_name_iv;
+    config.directory_iv = template.directory_iv;
+    config.allow_holes = template.allow_holes;
+
+    match template.name_iface.name.as_str() {
+        "nameio/stream" => config.name_iface = stream_name_iface(),
+        "nameio/block32" => config.name_iface = block32_name_iface(),
+        "nameio/block" => {
+            config.name_iface = config::Interface {
+                name: "nameio/block".to_string(),
+                major: 4,
+                minor: 0,
+                age: 0,
+            }
+        }
+        other => skip(
+            "name-encoding",
+            other.to_string(),
+            config.name_iface.name.clone(),
+        ),
+    }
+
+    // V4-V6 store attributes unencrypted.
+    let xattr_format = if template.config_type == ConfigType::V7 {
+        template.xattr_format
+    } else {
+        XattrFormat::Plaintext
+    };
+    if xattr_format != config.xattr_format {
+        skip(
+            "xattr-format",
+            format!("{:?}", xattr_format),
+            format!("{:?}", config.xattr_format),
+        );
+    }
+    if template.uses_legacy_symlink_targets() {
+        skip(
+            "symlink-format",
+            format!("{:?}", config::SymlinkFormat::LegacyPath),
+            format!("{:?}", config.symlink_format),
+        );
+    }
+    config.plaintext_xattr_prefixes = template.plaintext_xattr_prefixes.clone();
+
+    match (
+        template.kdf_algorithm,
+        template.argon2_memory_cost,
+        template.argon2_time_cost,
+        template.argon2_parallelism,
+    ) {
+        (KdfAlgorithm::Argon2id, Some(memory), Some(time), Some(parallelism)) => {
+            config.argon2_memory_cost = Some(memory);
+            config.argon2_time_cost = Some(time);
+            config.argon2_parallelism = Some(parallelism);
+        }
+        (algorithm, ..) => skip(
+            "kdf",
+            format!("{:?}", algorithm),
+            format!("{:?}", config.kdf_algorithm),
+        ),
+    }
+
+    config.minimum_reader_version = config.required_v7_reader_version();
+    (config, skipped)
 }
 
 /// Which way `encfsctl xattr-prefix` changes the prefix list.
@@ -3602,6 +3790,7 @@ mod tests {
             false,
             NameEncodingChoice::Auto,
             &["user.xdg.".to_string()],
+            None,
         )?;
         let config_path = dir.join(".encfs7");
         let load = || encfs::config::EncfsConfig::load(&config_path);
@@ -3637,6 +3826,151 @@ mod tests {
         config.get_cipher("test_password")?;
         assert!(!dir.join(".encfs7.tmp").exists());
         let _ = fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    fn skipped_names(skipped: &[SkippedSetting]) -> Vec<&'static str> {
+        skipped.iter().map(|s| s.setting).collect()
+    }
+
+    /// A C++ EncFS paranoia config carries over its IV and naming choices,
+    /// and is reported for what new filesystems can't use.
+    #[test]
+    fn template_from_a_legacy_config() -> Result<()> {
+        let fixtures = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let (path, template) = load_template(&fixtures.join("encfs6-paranoia.xml"))?;
+        assert!(path.ends_with("encfs6-paranoia.xml"));
+        let (config, skipped) = config_from_template(&template);
+        assert_eq!(config.config_type, ConfigType::V7);
+        assert_eq!(config.key_size, 256);
+        assert_eq!(config.block_size, 1024);
+        assert!(config.unique_iv && !config.wide_file_iv);
+        assert!(config.chained_name_iv && !config.directory_iv);
+        assert!(config.external_iv_chaining);
+        assert_eq!(config.name_iface.name, "nameio/block");
+        assert_eq!(
+            config.block_mode(),
+            encfs::crypto::block::BlockMode::AesGcmSiv
+        );
+        assert_eq!(config.xattr_format, encfs::config::XattrFormat::Encrypted);
+        assert!(!config.uses_legacy_symlink_targets());
+        assert_eq!(
+            skipped_names(&skipped),
+            ["block-mode", "xattr-format", "symlink-format", "kdf"]
+        );
+        assert_eq!(
+            config.minimum_reader_version,
+            config.required_v7_reader_version()
+        );
+
+        // AES-192 isn't offered for new filesystems.
+        let (_, std_template) = load_template(&fixtures.join("encfs6-std.xml"))?;
+        let (config, skipped) = config_from_template(&std_template);
+        assert_eq!(config.key_size, 256);
+        assert_eq!(skipped[0].setting, "key-size");
+        assert_eq!(skipped[0].value, "192");
+        assert_eq!(skipped[0].used, "256");
+        Ok(())
+    }
+
+    /// A V7 template is copied whole, and `new` builds the same filesystem
+    /// from its directory or its config file, with flags applied on top.
+    #[test]
+    fn new_from_a_template() -> Result<()> {
+        let source = new_config_dir("template_source");
+        let _ = fs::remove_dir_all(&source);
+        let pass = || Some("echo test_password".to_string());
+        cmd_new(
+            &source,
+            pass(),
+            false,
+            false,
+            false,
+            true,
+            true,
+            NameEncodingChoice::Stream,
+            &["user.xdg.".to_string()],
+            None,
+        )?;
+        let template = encfs::config::EncfsConfig::load(&source.join(".encfs7"))?;
+        let (copied, skipped) = config_from_template(&template);
+        assert!(skipped.is_empty(), "{skipped:?}");
+
+        let settings = |c: &EncfsConfig| {
+            (
+                (c.key_size, c.block_size, c.unique_iv, c.wide_file_iv),
+                (c.chained_name_iv, c.directory_iv, c.external_iv_chaining),
+                (c.allow_holes, c.name_iface.name.clone()),
+                (c.xattr_format, c.symlink_format),
+                c.plaintext_xattr_prefixes.clone(),
+                (c.argon2_memory_cost, c.argon2_parallelism),
+                c.minimum_reader_version,
+            )
+        };
+        assert_eq!(settings(&copied), settings(&template));
+
+        let from_dir = new_config_dir("template_from_dir");
+        let _ = fs::remove_dir_all(&from_dir);
+        cmd_new(
+            &from_dir,
+            pass(),
+            false,
+            false,
+            false,
+            false,
+            false,
+            NameEncodingChoice::Auto,
+            &[],
+            Some(&source),
+        )?;
+        let created = encfs::config::EncfsConfig::load(&from_dir.join(".encfs7"))?;
+        assert_eq!(settings(&created), settings(&template));
+        assert_ne!(created.salt, template.salt);
+        created.get_cipher("test_password")?;
+
+        // From the config file, with an explicit encoding and another prefix.
+        let from_file = new_config_dir("template_from_file");
+        let _ = fs::remove_dir_all(&from_file);
+        cmd_new(
+            &from_file,
+            pass(),
+            false,
+            false,
+            false,
+            false,
+            false,
+            NameEncodingChoice::Block32,
+            &["security.".to_string()],
+            Some(&source.join(".encfs7")),
+        )?;
+        let created = encfs::config::EncfsConfig::load(&from_file.join(".encfs7"))?;
+        assert_eq!(created.name_iface.name, "nameio/block32");
+        assert_eq!(created.plaintext_xattr_prefixes, ["security.", "user.xdg."]);
+        assert!(!created.wide_file_iv && !created.directory_iv);
+
+        // A missing template creates nothing.
+        let missing = new_config_dir("template_missing");
+        let _ = fs::remove_dir_all(&missing);
+        assert!(
+            cmd_new(
+                &missing,
+                pass(),
+                false,
+                false,
+                false,
+                false,
+                false,
+                NameEncodingChoice::Auto,
+                &[],
+                Some(&source.join("nope")),
+            )
+            .is_err()
+        );
+        assert!(!missing.exists());
+
+        for dir in [source, from_dir, from_file] {
+            let _ = fs::remove_dir_all(dir);
+        }
         Ok(())
     }
 
@@ -3699,6 +4033,7 @@ mod tests {
                 false,
                 choice,
                 &[],
+                None,
             )?;
             let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
             assert_eq!(config.name_iface.name, expected);
@@ -3725,6 +4060,7 @@ mod tests {
             false,
             NameEncodingChoice::Auto,
             &[],
+            None,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3770,6 +4106,7 @@ mod tests {
             false,
             NameEncodingChoice::Auto,
             &[],
+            None,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3807,6 +4144,7 @@ mod tests {
             false,
             NameEncodingChoice::Auto,
             &[],
+            None,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -3836,6 +4174,7 @@ mod tests {
             false,
             NameEncodingChoice::Auto,
             &[],
+            None,
         )?;
 
         let config = encfs::config::EncfsConfig::load(&dir.join(".encfs7"))?;
@@ -4054,6 +4393,7 @@ mod tests {
             // Fixed, since `Auto` depends on the temp directory's filesystem.
             NameEncodingChoice::Block32,
             &[],
+            None,
         )?;
 
         let proto = encfs::config::EncfsConfig::load_v7_proto(&dir.join(".encfs7"))?;
@@ -4098,6 +4438,7 @@ mod tests {
             no_directory_iv,
             NameEncodingChoice::Auto,
             &[],
+            None,
         )?;
         let config = EncfsConfig::load(&dir.join(".encfs7"))?;
         assert_eq!(
@@ -4152,6 +4493,7 @@ mod tests {
             false,
             NameEncodingChoice::Auto,
             &[],
+            None,
         )?;
 
         let config = EncfsConfig::load(&dir.join(".encfs7"))?;

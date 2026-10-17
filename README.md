@@ -117,6 +117,15 @@ mkdir -p ~/encrypted
 encfsctl new ~/encrypted
 ```
 
+To reuse the settings of an existing filesystem, pass its encrypted directory
+or its config file as a template. Settings new filesystems don't support (for
+example a legacy block MAC, PBKDF2, or unencrypted extended attributes) are
+replaced with the current defaults, and each one is reported:
+
+```bash
+encfsctl new --template ~/old-encrypted ~/encrypted
+```
+
 **2. Mount the filesystem** with encfs. The first argument is the encrypted root
 directory (where the config lives), the second is the mount point where you will
 see plaintext:

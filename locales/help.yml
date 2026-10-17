@@ -301,3 +301,7 @@ help.encfsctl.property_extpass:
   en: "External program to get the password from"
   fr: "Programme externe fournissant le mot de passe"
   de: "Externes Programm, das das Passwort liefert"
+help.encfsctl.new_template:
+  en: "Copy the settings of an existing filesystem, given as its encrypted directory or its config file, where new filesystems support them. Other flags apply on top of the template"
+  fr: "Copier les réglages d'un système de fichiers existant, indiqué par son répertoire chiffré ou son fichier de configuration, lorsque les nouveaux systèmes de fichiers les prennent en charge. Les autres options s'appliquent par-dessus le modèle"
+  de: "Die Einstellungen eines vorhandenen Dateisystems übernehmen, angegeben als sein verschlüsseltes Verzeichnis oder seine Konfigurationsdatei, soweit neue Dateisysteme sie unterstützen. Andere Optionen gelten zusätzlich zur Vorlage"

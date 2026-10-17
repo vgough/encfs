@@ -519,3 +519,15 @@ ctl.property_saved:
   en: "Config saved (minimum reader version %{version}). Mounted filesystems pick up the change when next mounted."
   fr: "Configuration enregistrée (version minimale du lecteur %{version}). Les systèmes de fichiers montés prendront en compte la modification au prochain montage."
   de: "Konfiguration gespeichert (Mindestversion des Lesers %{version}). Eingehängte Dateisysteme übernehmen die Änderung beim nächsten Einhängen."
+ctl.template_used:
+  en: "Using settings from template %{path}"
+  fr: "Utilisation des réglages du modèle %{path}"
+  de: "Einstellungen aus der Vorlage %{path} werden verwendet"
+ctl.template_setting_unsupported:
+  en: "Template setting %{setting} = %{value} is not supported for new filesystems; using %{used}"
+  fr: "Le réglage %{setting} = %{value} du modèle n'est pas pris en charge pour les nouveaux systèmes de fichiers ; utilisation de %{used}"
+  de: "Die Vorlageneinstellung %{setting} = %{value} wird für neue Dateisysteme nicht unterstützt; stattdessen wird %{used} verwendet"
+ctl.error_failed_to_load_template:
+  en: "Failed to load template config %{path}"
+  fr: "Impossible de charger la configuration modèle %{path}"
+  de: "Vorlagenkonfiguration %{path} konnte nicht geladen werden"
