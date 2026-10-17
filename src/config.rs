@@ -28,6 +28,10 @@ pub enum KdfAlgorithm {
     Argon2id, // Argon2id (recommended for new configs)
 }
 
+/// Name of the config property holding plaintext xattr prefixes, as shown to
+/// users (see [`EncfsConfig::is_plaintext_xattr`]).
+pub const PLAINTEXT_XATTR_PREFIX_PROPERTY: &str = "plaintext-xattr-prefix";
+
 /// V7 protobuf file magic header ("ENCFS7\\0").
 const V7_MAGIC: &[u8; 7] = b"ENCFS7\0";
 
@@ -1179,20 +1183,31 @@ impl EncfsConfig {
     /// namespace, where it could never match.
     pub fn check_plaintext_xattr_prefix(prefix: &str) -> Result<()> {
         if prefix.is_empty() {
-            anyhow::bail!("{}", t!("lib.xattr_prefix_empty"));
+            anyhow::bail!(
+                "{}",
+                t!(
+                    "lib.property_value_empty",
+                    property = PLAINTEXT_XATTR_PREFIX_PROPERTY
+                )
+            );
         }
         if prefix.contains('\0') {
             anyhow::bail!(
                 "{}",
-                t!("lib.xattr_prefix_nul", prefix = prefix.escape_debug())
+                t!(
+                    "lib.property_value_nul",
+                    property = PLAINTEXT_XATTR_PREFIX_PROPERTY,
+                    value = prefix.escape_debug()
+                )
             );
         }
         if prefix.starts_with(crate::xattr_name::PREFIX) {
             anyhow::bail!(
                 "{}",
                 t!(
-                    "lib.xattr_prefix_reserved",
-                    prefix = prefix,
+                    "lib.property_value_reserved",
+                    property = PLAINTEXT_XATTR_PREFIX_PROPERTY,
+                    value = prefix,
                     reserved = crate::xattr_name::PREFIX
                 )
             );
@@ -1208,7 +1223,13 @@ impl EncfsConfig {
     pub fn add_plaintext_xattr_prefix(&mut self, prefix: &str) -> Result<bool> {
         Self::check_plaintext_xattr_prefix(prefix)?;
         if self.config_type != ConfigType::V7 || self.xattr_format != XattrFormat::Encrypted {
-            anyhow::bail!("{}", t!("lib.xattr_prefix_needs_encrypted_xattrs"));
+            anyhow::bail!(
+                "{}",
+                t!(
+                    "lib.property_unsupported",
+                    property = PLAINTEXT_XATTR_PREFIX_PROPERTY
+                )
+            );
         }
         match self
             .plaintext_xattr_prefixes

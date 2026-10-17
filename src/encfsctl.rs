@@ -190,32 +190,60 @@ fn help_new_plaintext_xattr_prefix() -> String {
     t!("help.encfsctl.new_plaintext_xattr_prefix").to_string()
 }
 
-fn help_xattr_prefix() -> String {
-    t!("help.encfsctl.xattr_prefix").to_string()
+fn help_property() -> String {
+    t!(
+        "help.encfsctl.property",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
 }
 
-fn help_xattr_prefix_list() -> String {
-    t!("help.encfsctl.xattr_prefix_list").to_string()
+fn help_property_list() -> String {
+    t!(
+        "help.encfsctl.property_list",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
 }
 
-fn help_xattr_prefix_add() -> String {
-    t!("help.encfsctl.xattr_prefix_add").to_string()
+fn help_property_add() -> String {
+    t!(
+        "help.encfsctl.property_add",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
 }
 
-fn help_xattr_prefix_remove() -> String {
-    t!("help.encfsctl.xattr_prefix_remove").to_string()
+fn help_property_remove() -> String {
+    t!(
+        "help.encfsctl.property_remove",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
 }
 
-fn help_xattr_prefix_rootdir() -> String {
-    t!("help.encfsctl.xattr_prefix_rootdir").to_string()
+fn help_property_rootdir() -> String {
+    t!(
+        "help.encfsctl.property_rootdir",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
 }
 
-fn help_xattr_prefix_prefixes() -> String {
-    t!("help.encfsctl.xattr_prefix_prefixes").to_string()
+fn help_property_values() -> String {
+    t!(
+        "help.encfsctl.property_values",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
 }
 
-fn help_xattr_prefix_extpass() -> String {
-    t!("help.encfsctl.xattr_prefix_extpass").to_string()
+fn help_property_extpass() -> String {
+    t!(
+        "help.encfsctl.property_extpass",
+        property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+    )
+    .to_string()
 }
 
 fn help_speed() -> String {
@@ -326,7 +354,7 @@ enum Command {
         #[arg(long = "plaintext-xattr-prefix", value_name = "PREFIX", help = help_new_plaintext_xattr_prefix())]
         plaintext_xattr_prefixes: Vec<String>,
     },
-    #[command(about = help_xattr_prefix(), subcommand)]
+    #[command(about = help_property(), subcommand)]
     XattrPrefix(XattrPrefixCommand),
     #[command(about = help_speed())]
     Speed,
@@ -336,27 +364,27 @@ enum Command {
 /// stores unencrypted.
 #[derive(Subcommand)]
 enum XattrPrefixCommand {
-    #[command(about = help_xattr_prefix_list())]
+    #[command(about = help_property_list())]
     List {
-        #[arg(help = help_xattr_prefix_rootdir())]
+        #[arg(help = help_property_rootdir())]
         rootdir: PathBuf,
     },
-    #[command(about = help_xattr_prefix_add())]
+    #[command(about = help_property_add())]
     Add {
-        #[arg(help = help_xattr_prefix_rootdir())]
+        #[arg(help = help_property_rootdir())]
         rootdir: PathBuf,
-        #[arg(required = true, help = help_xattr_prefix_prefixes())]
+        #[arg(required = true, help = help_property_values())]
         prefixes: Vec<String>,
-        #[arg(long, help = help_xattr_prefix_extpass())]
+        #[arg(long, help = help_property_extpass())]
         extpass: Option<String>,
     },
-    #[command(about = help_xattr_prefix_remove())]
+    #[command(about = help_property_remove())]
     Remove {
-        #[arg(help = help_xattr_prefix_rootdir())]
+        #[arg(help = help_property_rootdir())]
         rootdir: PathBuf,
-        #[arg(required = true, help = help_xattr_prefix_prefixes())]
+        #[arg(required = true, help = help_property_values())]
         prefixes: Vec<String>,
-        #[arg(long, help = help_xattr_prefix_extpass())]
+        #[arg(long, help = help_property_extpass())]
         extpass: Option<String>,
     },
 }
@@ -768,9 +796,12 @@ fn cmd_info(rootdir: &Path, raw: bool) -> Result<()> {
 
     if !config.plaintext_xattr_prefixes.is_empty() {
         println!(
-            "{}{}",
-            t!("ctl.plaintext_xattr_prefixes"),
-            config.plaintext_xattr_prefixes.join(", ")
+            "{}",
+            t!(
+                "ctl.property_values",
+                property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY,
+                values = config.plaintext_xattr_prefixes.join(", ")
+            )
         );
     }
 
@@ -1816,7 +1847,13 @@ fn cmd_xattr_prefix_list(rootdir: &Path) -> Result<()> {
     let config =
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
     if config.plaintext_xattr_prefixes.is_empty() {
-        eprintln!("{}", t!("ctl.xattr_prefix_none"));
+        eprintln!(
+            "{}",
+            t!(
+                "ctl.property_none",
+                property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+            )
+        );
     }
     for prefix in &config.plaintext_xattr_prefixes {
         println!("{}", prefix);
@@ -1839,7 +1876,13 @@ fn cmd_xattr_prefix_change(
     if config.config_type != config::ConfigType::V7
         || config.xattr_format != config::XattrFormat::Encrypted
     {
-        anyhow::bail!("{}", t!("lib.xattr_prefix_needs_encrypted_xattrs"));
+        anyhow::bail!(
+            "{}",
+            t!(
+                "lib.property_unsupported",
+                property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+            )
+        );
     }
     // Refuse bad input before asking for the password.
     if change == PrefixChange::Add {
@@ -1859,13 +1902,20 @@ fn cmd_xattr_prefix_change(
             PrefixChange::Add => config.add_plaintext_xattr_prefix(prefix)?,
             PrefixChange::Remove => config.remove_plaintext_xattr_prefix(prefix),
         };
-        let message = match (change, done) {
-            (PrefixChange::Add, true) => t!("ctl.xattr_prefix_added", prefix = prefix),
-            (PrefixChange::Add, false) => t!("ctl.xattr_prefix_already_set", prefix = prefix),
-            (PrefixChange::Remove, true) => t!("ctl.xattr_prefix_removed", prefix = prefix),
-            (PrefixChange::Remove, false) => t!("ctl.xattr_prefix_not_set", prefix = prefix),
+        let key = match (change, done) {
+            (PrefixChange::Add, true) => "ctl.property_added",
+            (PrefixChange::Add, false) => "ctl.property_already_set",
+            (PrefixChange::Remove, true) => "ctl.property_removed",
+            (PrefixChange::Remove, false) => "ctl.property_not_set",
         };
-        println!("{}", message);
+        println!(
+            "{}",
+            t!(
+                key,
+                property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY,
+                value = prefix
+            )
+        );
         changed |= done;
     }
     if !changed {
@@ -1880,15 +1930,15 @@ fn cmd_xattr_prefix_change(
     // just changed sides can't be read until the change is undone.
     eprintln!(
         "{}",
-        match change {
-            PrefixChange::Add => t!("ctl.xattr_prefix_added_warning"),
-            PrefixChange::Remove => t!("ctl.xattr_prefix_removed_warning"),
-        }
+        t!(
+            "ctl.property_changed_warning",
+            property = config::PLAINTEXT_XATTR_PREFIX_PROPERTY
+        )
     );
     println!(
         "{}",
         t!(
-            "ctl.xattr_prefix_saved",
+            "ctl.property_saved",
             version = config.minimum_reader_version
         )
     );
