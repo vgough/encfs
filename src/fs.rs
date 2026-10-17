@@ -2379,8 +2379,9 @@ impl EncFs {
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
-        if !self.config.encrypts_xattrs() {
-            // Legacy volumes store attributes as-is, like C++ EncFS.
+        if !self.config.encrypts_xattrs() || self.config.is_plaintext_xattr(name_bytes) {
+            // Legacy volumes store attributes as-is, like C++ EncFS, as do
+            // V7 volumes for names under a configured plaintext prefix.
             let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
             return passthrough::setxattr_nofollow(&c_path, &c_name, value, flags as i32)
                 .map_err(|e| e.raw());
@@ -2431,8 +2432,9 @@ impl EncFs {
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
-        if !self.config.encrypts_xattrs() {
-            // Legacy volumes store attributes as-is, like C++ EncFS.
+        if !self.config.encrypts_xattrs() || self.config.is_plaintext_xattr(name_bytes) {
+            // Legacy volumes store attributes as-is, like C++ EncFS, as do
+            // V7 volumes for names under a configured plaintext prefix.
             let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
             return passthrough::getxattr_value_nofollow(&c_path, &c_name).map_err(|e| e.raw());
         }
@@ -2512,6 +2514,11 @@ impl EncFs {
             if name_bytes == xattr_name::IV_SEED_NAME.as_bytes() {
                 continue;
             }
+            if self.config.is_plaintext_xattr(&name_bytes) {
+                decrypted_list.extend_from_slice(&name_bytes);
+                decrypted_list.push(0);
+                continue;
+            }
             let Ok(name_str) = std::str::from_utf8(&name_bytes) else {
                 continue;
             };
@@ -2555,8 +2562,9 @@ impl EncFs {
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
-        if !self.config.encrypts_xattrs() {
-            // Legacy volumes store attributes as-is, like C++ EncFS.
+        if !self.config.encrypts_xattrs() || self.config.is_plaintext_xattr(name_bytes) {
+            // Legacy volumes store attributes as-is, like C++ EncFS, as do
+            // V7 volumes for names under a configured plaintext prefix.
             let c_name = std::ffi::CString::new(name_bytes).map_err(|_| libc::EINVAL)?;
             return passthrough::removexattr_nofollow(&c_path, &c_name).map_err(|e| e.raw());
         }
@@ -2638,6 +2646,8 @@ impl EncFs {
     /// copied seed. Names the destination has that the source lacks (keyed by
     /// its old seed) are removed, and values it already holds, as after a
     /// copy that cloned attributes (`fs::copy` on macOS), aren't rewritten.
+    /// Attributes under a configured plaintext prefix are carried the same
+    /// way, since they live beside the encrypted ones on the same volume.
     /// Everything is read from the source before the destination changes.
     /// `real_dst` must be writable by its owner if anything needs writing.
     fn copy_encrypted_xattrs(&self, real_src: &Path, real_dst: &Path) -> OpResult {
@@ -2650,7 +2660,10 @@ impl EncFs {
             match passthrough::listxattr_names_nofollow(path) {
                 Ok(names) => Ok(names
                     .into_iter()
-                    .filter(|n| n.starts_with(xattr_name::PREFIX.as_bytes()))
+                    .filter(|n| {
+                        n.starts_with(xattr_name::PREFIX.as_bytes())
+                            || self.config.is_plaintext_xattr(n)
+                    })
                     .filter_map(|n| CString::new(n).ok())
                     .collect()),
                 // No xattr support on the backing filesystem: nothing to carry.

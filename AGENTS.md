@@ -239,6 +239,11 @@ The derived IV is cached in the node's `FileState`; code that creates an
 inode must hand back its state through `EncFs::entry_for_new_inode` (or clear
 the cache itself, as `create_impl` does), since an inode number can be reused
 while a deleted inode's state is alive.
+Names under a configured plaintext prefix (`plaintext_xattr_prefixes`, stored
+as V7 config properties; `EncfsConfig::is_plaintext_xattr`) bypass all of this
+and are stored as given, in forward and reverse mode; `copy_encrypted_xattrs`
+carries them too. Changing the prefixes changes the config hash, so the volume
+key must be re-wrapped (`v7_volume_key` before the change, `set_v7_key` after).
 On configs naming the earlier path-IV format (wire 0) extended attributes
 are unavailable (`EncfsConfig::xattrs_available`, warning from
 `legacy_xattr_warning`): never read or write them there, and never rewrite
@@ -319,6 +324,7 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
 - `block_mac_bytes` must be 0-8 for legacy formats, or exactly 16 (the AES-GCM-SIV tag) for V7
 - `directory_iv` requires V7, excludes `chained_name_iv`, and needs `minimum_reader_version >= 4`
 - the per-inode xattr format (`XattrFormat::Encrypted`, the default) needs `minimum_reader_version >= 5`
+- configurable properties (plaintext xattr prefixes) need V7, `XattrFormat::Encrypted`, and `minimum_reader_version >= 6`; a prefix can't be empty or inside `user.encfs.`
 
 ### 11. Logging
 - Uses `env_logger` crate

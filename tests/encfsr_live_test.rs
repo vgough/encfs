@@ -97,6 +97,7 @@ fn make_encfsr_config() -> EncfsConfig {
         wide_file_iv: false,
         xattr_format: Default::default(),
         symlink_format: Default::default(),
+        plaintext_xattr_prefixes: Vec::new(),
         minimum_reader_version: 0,
         config_hash: None,
     }

@@ -186,6 +186,18 @@ Backward Compatibility
    `xattr_format` and `symlink_format` feature flags (enums, reader version 3)
    to the legacy forms, keeping an upgraded volume's existing data readable.
 
+   The V7 config also holds a list of configurable properties, each an enum
+   kind with a value, so new settings don't each need a dedicated field. The
+   only kind so far is a plaintext extended attribute prefix: on a volume
+   that encrypts extended attributes, attributes whose names start with one
+   (and are not under `user.encfs.`) are stored unencrypted under their own
+   names. A config with any property needs reader version 6, and readers
+   refuse property kinds they don't know, so an older build never encrypts
+   attributes the config says to leave alone. `encfsctl new
+   --plaintext-xattr-prefix` and `encfsctl xattr-prefix add|remove|list`
+   manage the prefixes; changing them re-wraps the volume key, since the key
+   is bound to the config hash.
+
 Utility
 -------
 

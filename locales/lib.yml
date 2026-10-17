@@ -28,3 +28,19 @@ lib.legacy_xattr_format:
   en: "warning: extended attributes are unavailable on this filesystem. Its config uses the extended attribute format of EncFS versions before 2.0.0-beta.7, which this version does not support. Existing attributes are left untouched, so an earlier version can still read them."
   fr: "avertissement : les attributs étendus ne sont pas disponibles sur ce système de fichiers. Sa configuration utilise le format d'attributs étendus des versions d'EncFS antérieures à 2.0.0-beta.7, que cette version ne prend pas en charge. Les attributs existants sont laissés intacts, afin qu'une version antérieure puisse toujours les lire."
   de: "Warnung: Erweiterte Attribute sind auf diesem Dateisystem nicht verfügbar. Seine Konfiguration verwendet das Format für erweiterte Attribute von EncFS-Versionen vor 2.0.0-beta.7, das diese Version nicht unterstützt. Vorhandene Attribute bleiben unverändert, sodass eine frühere Version sie weiterhin lesen kann."
+lib.property_value_empty:
+  en: "config property %{property} cannot have an empty value"
+  fr: "la propriété de configuration %{property} ne peut pas avoir de valeur vide"
+  de: "die Konfigurationseigenschaft %{property} darf keinen leeren Wert haben"
+lib.property_value_nul:
+  en: "value \"%{value}\" of config property %{property} contains a NUL byte"
+  fr: "la valeur « %{value} » de la propriété de configuration %{property} contient un octet NUL"
+  de: "der Wert „%{value}“ der Konfigurationseigenschaft %{property} enthält ein NUL-Byte"
+lib.property_value_reserved:
+  en: "value \"%{value}\" of config property %{property} is inside the reserved \"%{reserved}\""
+  fr: "la valeur « %{value} » de la propriété de configuration %{property} se trouve sous « %{reserved} », qui est réservé"
+  de: "der Wert „%{value}“ der Konfigurationseigenschaft %{property} liegt unter dem reservierten „%{reserved}“"
+lib.property_unsupported:
+  en: "config property %{property} does not apply to this filesystem"
+  fr: "la propriété de configuration %{property} ne s'applique pas à ce système de fichiers"
+  de: "die Konfigurationseigenschaft %{property} gilt nicht für dieses Dateisystem"
