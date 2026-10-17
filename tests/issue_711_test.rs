@@ -276,7 +276,10 @@ fn export_fail_on_error_names_an_unreadable_file() {
 #[test]
 fn export_fail_on_error_names_an_undecryptable_entry_once() {
     let root = temp_dir("export_bad_name");
-    corrupted_volume(&root);
+    let backing = corrupted_volume(&root);
+    // Keep the invalid name as the only export failure, regardless of
+    // directory iteration order.
+    fs::remove_file(backing).unwrap();
     let bad = root.join("AAAAAAAAAAAAAAAAAAAAAAAA");
     fs::write(&bad, b"").unwrap();
 
