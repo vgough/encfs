@@ -4,8 +4,8 @@ extern crate rust_i18n;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use encfs::{
-    config, constants, crypto::cipher::Cipher, crypto::file_iv::FileIv, crypto::ssl::SslCipher,
-    diriv,
+    config, constants, crypto::cipher::Cipher, crypto::file::is_corrupted_data,
+    crypto::file_iv::FileIv, crypto::ssl::SslCipher, diriv,
 };
 use getrandom::fill as fill_random;
 use rpassword::prompt_password;
@@ -1267,6 +1267,7 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
         config::EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
 
     let cipher = get_cipher_zeroizing(&config, &config_path, extpass)?;
+    let root_prefixes = root_prefixes(rootdir);
 
     if names.is_empty() {
         // Read from stdin
@@ -1277,7 +1278,13 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
             if encoded_path.is_empty() {
                 continue;
             }
-            match decode_path_string(rootdir, cipher.as_ref(), &config, encoded_path) {
+            match decode_path_string(
+                rootdir,
+                &root_prefixes,
+                cipher.as_ref(),
+                &config,
+                encoded_path,
+            ) {
                 Ok(decoded) => println!("{}", decoded),
                 Err(e) => eprintln!(
                     "{}",
@@ -1288,7 +1295,7 @@ fn cmd_decode(rootdir: &Path, names: Vec<String>, extpass: Option<String>) -> Re
     } else {
         // Decode command line arguments
         for name in names {
-            match decode_path_string(rootdir, cipher.as_ref(), &config, &name) {
+            match decode_path_string(rootdir, &root_prefixes, cipher.as_ref(), &config, &name) {
                 Ok(decoded) => println!("{}", decoded),
                 Err(e) => eprintln!("{}", t!("ctl.error_decoding", path = name, error = e)),
             }
@@ -1342,8 +1349,14 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
         let (rootdir, path) = find_rootdir_and_relative_path(&file_path)?;
         (rootdir, path)
     } else {
-        // Two args: rootdir and path (existing behavior)
-        (PathBuf::from(&args[0]), args[1].clone())
+        // Two args: rootdir and a path relative to it, or a full backing path.
+        // Errors name the file under the canonical root, so they can be
+        // passed back here or to `encfsctl decode`.
+        let rootdir = Path::new(&args[0]);
+        let path = strip_rootdir(&root_prefixes(rootdir), Path::new(&args[1]))
+            .to_string_lossy()
+            .into_owned();
+        (canonical_root(rootdir), path)
     };
 
     let config_path = find_config_file(&rootdir)?;
@@ -1353,8 +1366,13 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
     let cipher = get_cipher_zeroizing(&config, &config_path, extpass)?;
 
     let (file_path, path_iv) = resolve_file_path(&rootdir, &path, cipher.as_ref(), &config)?;
-    let file =
-        std::fs::File::open(&file_path).context(t!("ctl.error_failed_to_open_encrypted_file"))?;
+    let named = |e: anyhow::Error| {
+        e.context(t!(
+            "ctl.error_failed_to_read_file",
+            path = file_path.display()
+        ))
+    };
+    let file = std::fs::File::open(&file_path).map_err(|e| named(read_file_error(e)))?;
 
     // Read header to get file IV
     use std::os::unix::fs::FileExt;
@@ -1362,9 +1380,14 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
     let header_size = config.header_size();
     let file_iv = if header_size > 0 {
         let mut header = vec![0u8; header_size as usize];
-        let n = file.read_at(&mut header, 0)?;
+        let n = file
+            .read_at(&mut header, 0)
+            .map_err(|e| named(read_file_error(e)))?;
         if n < header.len() {
-            return Err(anyhow::anyhow!("{}", t!("ctl.error_incomplete_header")));
+            return Err(named(anyhow::anyhow!(
+                "{}",
+                t!("ctl.error_incomplete_header")
+            )));
         }
 
         // Use path IV for external IV chaining (paranoia mode)
@@ -1373,7 +1396,9 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
         } else {
             0
         };
-        cipher.decrypt_header(&mut header, external_iv)?
+        cipher
+            .decrypt_header(&mut header, external_iv)
+            .map_err(|e| named(header_error(e)))?
     } else {
         FileIv::from_u64(0)
     };
@@ -1393,7 +1418,9 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
     let mut offset = 0u64;
     let mut buf = vec![0u8; constants::FILE_BUFFER_SIZE];
     loop {
-        let bytes_read = decoder.read_at(&mut buf, offset)?;
+        let bytes_read = decoder
+            .read_at(&mut buf, offset)
+            .map_err(|e| named(read_file_error(e)))?;
         if bytes_read == 0 {
             break;
         }
@@ -1402,6 +1429,23 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
     }
 
     Ok(())
+}
+
+/// An error reading a backing file, which blames decryption only for
+/// corrupted data. Callers add the file's path.
+fn read_file_error(e: io::Error) -> anyhow::Error {
+    let corrupted = is_corrupted_data(&e);
+    let e = anyhow::Error::new(e);
+    if corrupted {
+        e.context(t!("ctl.error_undecryptable_file_contents"))
+    } else {
+        e
+    }
+}
+
+/// An error decrypting a backing file's header. Callers add the file's path.
+fn header_error(e: anyhow::Error) -> anyhow::Error {
+    e.context(t!("ctl.error_undecryptable_file_header"))
 }
 
 fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
@@ -2240,9 +2284,10 @@ fn cmd_export(
             .context(t!("ctl.error_failed_to_create_destination_directory"))?;
     }
 
-    // Start recursive export from root
+    // Start recursive export from root. Errors name entries under the
+    // canonical root, so `encfsctl decode` and `cat` accept them as printed.
     export_directory(
-        rootdir,
+        &canonical_root(rootdir),
         destdir,
         cipher.as_ref(),
         &config,
@@ -2286,7 +2331,13 @@ fn export_directory(
     };
 
     let entries = std::fs::read_dir(current_encrypted_dir)
-        .context(t!("ctl.error_failed_to_read_directory"))?;
+        .context(t!("ctl.error_failed_to_read_directory"))
+        .with_context(|| {
+            t!(
+                "ctl.error_export_failed",
+                path = current_encrypted_dir.display()
+            )
+        })?;
 
     for entry in entries {
         let entry = match entry {
@@ -2296,7 +2347,11 @@ fn export_directory(
                     return Err(anyhow::anyhow!(
                         "{}",
                         t!("ctl.error_failed_to_read_dir_entry", error = e),
-                    ));
+                    )
+                    .context(t!(
+                        "ctl.error_export_failed",
+                        path = current_encrypted_dir.display()
+                    )));
                 }
                 eprintln!("{}", t!("ctl.warning_read_dir_entry", error = e));
                 continue;
@@ -2305,54 +2360,27 @@ fn export_directory(
 
         let entry_path = entry.path();
 
-        // Use a closure to handle per-file errors without aborting the loop
-        let process_res = (|| -> Result<()> {
+        // Use a closure to handle per-file errors without aborting the loop.
+        // It returns the destination and path IV of a directory to recurse
+        // into; errors from inside it name `entry_path` below, so they don't.
+        let process_res = (|| -> Result<Option<(PathBuf, u64)>> {
             let file_name = entry.file_name();
-            let name_str = match file_name.to_str() {
-                Some(s) => s,
-                None => {
-                    if fail_on_error {
-                        return Err(anyhow::anyhow!(
-                            "{}",
-                            t!(
-                                "ctl.error_non_utf8_filename",
-                                filename = file_name.to_string_lossy()
-                            ),
-                        ));
-                    }
-                    eprintln!(
-                        "Warning: Skipping file with non-UTF-8 filename: {:?}",
-                        file_name
-                    );
-                    return Ok(());
-                }
+            let Some(name_str) = file_name.to_str() else {
+                return Err(anyhow::anyhow!("{}", t!("ctl.error_non_utf8_filename")));
             };
 
             // Skip config files
             if name_str.starts_with(".encfs") {
-                return Ok(());
+                return Ok(None);
             }
 
             // Try to decrypt the filename
-            let (decrypted_name_bytes, new_iv) = match cipher.decrypt_filename(name_str, dir_iv) {
-                Ok(result) => result,
-                Err(e) => {
-                    if fail_on_error {
-                        return Err(anyhow::anyhow!(
-                            "{}",
-                            t!("ctl.error_could_not_decrypt", name = name_str, error = e),
-                        ));
-                    }
-                    eprintln!(
-                        "{}",
-                        t!("ctl.warning_could_not_decrypt", name = name_str, error = e)
-                    );
-                    return Ok(());
-                }
-            };
+            let (decrypted_name_bytes, new_iv) = cipher
+                .decrypt_filename(name_str, dir_iv)
+                .context(t!("ctl.error_could_not_decrypt"))?;
 
             // Use symlink_metadata to avoid following symlinks
-            let metadata = std::fs::symlink_metadata(entry.path())?;
+            let metadata = std::fs::symlink_metadata(&entry_path)?;
             let dest_path =
                 current_dest_dir.join(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
 
@@ -2364,46 +2392,18 @@ fn export_directory(
                     std::fs::Permissions::from_mode(metadata.mode()),
                 )?;
 
-                // Recurse into subdirectory
-                let next_iv = diriv::child_path_iv(config, new_iv);
-                export_directory(
-                    &entry.path(),
-                    &dest_path,
-                    cipher,
-                    config,
-                    next_iv,
-                    fail_on_error,
-                )?;
+                return Ok(Some((dest_path, diriv::child_path_iv(config, new_iv))));
             } else if metadata.is_symlink() {
                 // Handle symlinks - read and decrypt the link target
-                let link_target = std::fs::read_link(entry.path())?;
+                let link_target = std::fs::read_link(&entry_path)?;
                 let link_path_iv = diriv::child_path_iv(config, new_iv);
-                let decrypted_target_bytes = match encfs::symlink_target::decrypt(
+                let decrypted_target_bytes = encfs::symlink_target::decrypt(
                     cipher,
                     config,
                     link_target.as_os_str().as_bytes(),
                     link_path_iv,
-                ) {
-                    Ok(res) => res,
-                    Err(e) => {
-                        if fail_on_error {
-                            return Err(anyhow::anyhow!(
-                                "{}",
-                                t!(
-                                    "ctl.error_undecryptable_symlink_target",
-                                    path = entry.path().display(),
-                                    error = e
-                                )
-                            ));
-                        }
-                        eprintln!(
-                            "Warning: Skipping symlink with undecryptable target {:?}: {}",
-                            entry.path(),
-                            e
-                        );
-                        return Ok(());
-                    }
-                };
+                )
+                .context(t!("ctl.error_undecryptable_symlink_target"))?;
 
                 #[cfg(unix)]
                 std::os::unix::fs::symlink(
@@ -2412,21 +2412,20 @@ fn export_directory(
                 )?;
             } else if metadata.is_file() {
                 // Decrypt and copy file content
-                let src_file = std::fs::File::open(entry.path())?;
+                let src_file = std::fs::File::open(&entry_path).map_err(read_file_error)?;
 
                 let header_size = config.header_size();
                 let file_iv = if header_size > 0 {
                     // Read and decrypt file header
                     let mut header = vec![0u8; header_size as usize];
-                    let bytes_read = src_file.read_at(&mut header, 0)?;
+                    let bytes_read = src_file.read_at(&mut header, 0).map_err(read_file_error)?;
 
                     if bytes_read < header.len() {
-                        let name_display = String::from_utf8_lossy(&decrypted_name_bytes);
                         eprintln!(
                             "{}",
-                            t!("ctl.warning_incomplete_header", name = name_display)
+                            t!("ctl.warning_incomplete_header", name = entry_path.display())
                         );
-                        return Ok(());
+                        return Ok(None);
                     }
 
                     // Calculate path IV for external IV chaining
@@ -2436,7 +2435,9 @@ fn export_directory(
                         0
                     };
 
-                    cipher.decrypt_header(&mut header, path_iv)?
+                    cipher
+                        .decrypt_header(&mut header, path_iv)
+                        .map_err(header_error)?
                 } else {
                     FileIv::from_u64(0)
                 };
@@ -2461,20 +2462,31 @@ fn export_directory(
 
                 let mut dest_file = std::fs::File::create(&dest_path)?;
 
-                let mut buffer = vec![0u8; crate::constants::FILE_BUFFER_SIZE];
-                let mut offset = 0;
-                let mut remaining = logical_size;
+                let copied = (|| -> Result<()> {
+                    let mut buffer = vec![0u8; crate::constants::FILE_BUFFER_SIZE];
+                    let mut offset = 0;
+                    let mut remaining = logical_size;
 
-                while remaining > 0 {
-                    let to_read = std::cmp::min(remaining, buffer.len() as u64) as usize;
-                    let bytes_read = decoder.read_at(&mut buffer[..to_read], offset)?;
-                    if bytes_read == 0 {
-                        break; // EOF
+                    while remaining > 0 {
+                        let to_read = std::cmp::min(remaining, buffer.len() as u64) as usize;
+                        let bytes_read = decoder
+                            .read_at(&mut buffer[..to_read], offset)
+                            .map_err(read_file_error)?;
+                        if bytes_read == 0 {
+                            break; // EOF
+                        }
+
+                        std::io::Write::write_all(&mut dest_file, &buffer[..bytes_read])?;
+                        offset += bytes_read as u64;
+                        remaining -= bytes_read as u64;
                     }
-
-                    std::io::Write::write_all(&mut dest_file, &buffer[..bytes_read])?;
-                    offset += bytes_read as u64;
-                    remaining -= bytes_read as u64;
+                    Ok(())
+                })();
+                if let Err(e) = copied {
+                    // Don't leave a partial copy that looks complete.
+                    drop(dest_file);
+                    let _ = std::fs::remove_file(&dest_path);
+                    return Err(e);
                 }
 
                 // Preserve permissions
@@ -2483,21 +2495,28 @@ fn export_directory(
                     std::fs::Permissions::from_mode(metadata.mode()),
                 )?;
             }
-            Ok(())
+            Ok(None)
         })();
 
-        if let Err(e) = process_res {
+        let result = match process_res {
+            // Errors from a subdirectory already name the entries they are
+            // about.
+            Ok(Some((dest_path, next_iv))) => export_directory(
+                &entry_path,
+                &dest_path,
+                cipher,
+                config,
+                next_iv,
+                fail_on_error,
+            ),
+            Ok(None) => Ok(()),
+            Err(e) => Err(e.context(t!("ctl.error_export_failed", path = entry_path.display()))),
+        };
+        if let Err(e) = result {
             if fail_on_error {
                 return Err(e);
             }
-            eprintln!(
-                "{}",
-                t!(
-                    "ctl.warning_export_failed",
-                    path = entry_path.display(),
-                    error = e
-                )
-            );
+            eprintln!("{}", t!("ctl.warning_message", message = format!("{e:#}")));
         }
     }
     Ok(())
@@ -2558,14 +2577,61 @@ fn walk_path(
     Ok((backing, plaintext, iv))
 }
 
+/// Decodes `encoded_path`, relative to the root or a full backing path (see
+/// `strip_rootdir`, which `root_prefixes` are for).
 fn decode_path_string(
     rootdir: &Path,
+    root_prefixes: &[PathBuf],
     cipher: &dyn Cipher,
     config: &config::EncfsConfig,
     encoded_path: &str,
 ) -> Result<String> {
-    let (_, plaintext, _) = walk_path(rootdir, Path::new(encoded_path), cipher, config, false)?;
+    let encoded_path = strip_rootdir(root_prefixes, Path::new(encoded_path));
+    let (_, plaintext, _) = walk_path(rootdir, encoded_path, cipher, config, false)?;
     Ok(plaintext.to_string_lossy().to_string())
+}
+
+/// `path` made absolute without resolving symlinks, or as it is if the
+/// working directory is unavailable.
+fn absolute_path(path: &Path) -> PathBuf {
+    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// The canonical `rootdir`, under which encfsctl names backing files in
+/// errors, since `root_prefixes` includes it however the root is spelled.
+/// Falls back to the absolute path if the root can't be resolved.
+fn canonical_root(rootdir: &Path) -> PathBuf {
+    rootdir
+        .canonicalize()
+        .unwrap_or_else(|_| absolute_path(rootdir))
+}
+
+/// The prefixes a full backing path in the volume at `rootdir` starts with:
+/// the root as given, made absolute, and the canonical root, as encfsctl
+/// errors and mount logs print it.
+fn root_prefixes(rootdir: &Path) -> Vec<PathBuf> {
+    let mut prefixes = vec![absolute_path(rootdir)];
+    if let Ok(canonical) = rootdir.canonicalize()
+        && canonical != prefixes[0]
+    {
+        prefixes.push(canonical);
+    }
+    prefixes
+}
+
+/// Makes `path` relative to the volume root. Relative paths already are. An
+/// absolute path starting with one of `root_prefixes` (see `root_prefixes`)
+/// is a full backing path, as errors and logs print them, and has the root
+/// stripped; any other absolute path is read relative to the root, as before.
+fn strip_rootdir<'a>(root_prefixes: &[PathBuf], path: &'a Path) -> &'a Path {
+    if path.is_absolute() {
+        for root in root_prefixes {
+            if let Ok(relative) = path.strip_prefix(root) {
+                return relative;
+            }
+        }
+    }
+    path
 }
 
 fn encode_path_string(
@@ -3082,6 +3148,15 @@ mod tests {
     use encfs::crypto::ssl::SslCipher;
     use std::fs;
     use std::os::unix::fs::symlink;
+
+    /// Only corrupted data is blamed on decryption.
+    #[test]
+    fn read_file_error_blames_decryption_only_for_corrupted_data() {
+        let corrupted = read_file_error(io::Error::new(io::ErrorKind::InvalidData, "bad"));
+        let io_error = read_file_error(io::Error::from_raw_os_error(libc::EIO));
+        assert_eq!(format!("{corrupted:#}"), "Undecryptable file contents: bad");
+        assert!(!format!("{io_error:#}").contains("Undecryptable"));
+    }
 
     #[test]
     fn test_export_symlink_repro() -> Result<()> {
@@ -3634,9 +3709,14 @@ mod tests {
             result.is_err(),
             "Export should fail when fail_on_error is true"
         );
-        let err = result.unwrap_err();
+        let err = format!("{:#}", result.unwrap_err());
         assert!(
-            err.to_string().contains("Undecryptable symlink target"),
+            err.contains("Undecryptable symlink target"),
+            "Unexpected error: {}",
+            err
+        );
+        assert!(
+            err.contains(&src_dir.join(&enc_name).display().to_string()),
             "Unexpected error: {}",
             err
         );
@@ -4421,7 +4501,7 @@ mod tests {
         let encoded = encode_path_string(&dir, cipher, &config, "docs/sub/note.txt")?;
         assert_eq!(dir.join(&encoded), backing);
         assert_eq!(
-            decode_path_string(&dir, cipher, &config, &encoded)?,
+            decode_path_string(&dir, &[], cipher, &config, &encoded)?,
             "docs/sub/note.txt"
         );
 

@@ -21,12 +21,12 @@ main.failed_to_read_password:
   de: "Fehler beim Lesen des Passworts"
 main.successfully_decrypted:
   en: "Successfully decrypted volume key!"
-  fr: "Clé de volume déchiffrée avec succès!"
+  fr: "Clé de volume déchiffrée avec succès !"
   de: "Volumen-Schlüssel erfolgreich entschlüsselt!"
 main.daemonized_successfully:
   en: "Daemonized successfully"
   fr: "Démonisation réussie"
-  de: "Erfolgreich als Daemon gestartet."
+  de: "Erfolgreich als Daemon gestartet"
 main.failed_to_daemonize:
   en: "Failed to daemonize: %{error}"
   fr: "Échec de la démonisation : %{error}"
@@ -38,7 +38,7 @@ main.failed_to_decrypt_key:
 main.extpass_program_failed:
   en: "Password program exited with error"
   fr: "Le programme de mot de passe est sorti avec une erreur"
-  de: "Das Passwortprogramm ist mit einem Fehler beendet"
+  de: "Das Passwortprogramm wurde mit einem Fehler beendet"
 main.failed_to_load_config:
   en: "Failed to load config file"
   fr: "Échec du chargement du fichier de configuration"
@@ -48,14 +48,10 @@ main.failed_to_run_extpass:
   fr: "Échec de l'exécution du programme de mot de passe"
   de: "Fehler beim Ausführen des Passwortprogramms"
 main.password_prompt:
-  en: "EncFS Password:"
-  fr: "Mot de passe EncFS:"
-  de: "EncFS-Passwort:"
+  en: "EncFS Password: "
+  fr: "Mot de passe EncFS : "
+  de: "EncFS-Passwort: "
 
-encfsr.no_config_found:
-  en: "error: no encfs config found in %{source}; create one with: encfsctl new %{source}"
-  fr: "erreur : aucune configuration encfs trouvée dans %{source} ; créez-en une avec : encfsctl new %{source}"
-  de: "Fehler: Keine encfs-Konfiguration in %{source} gefunden; erstellen Sie eine mit: encfsctl new %{source}"
 encfsr.source_not_found:
   en: "error: source directory %{source} does not exist or is not accessible"
   fr: "erreur : le répertoire source %{source} n'existe pas ou n'est pas accessible"
@@ -80,22 +76,26 @@ encfsr.directory_iv_rejected:
   en: "error: directory IV mode is not supported in reverse mode; create the config with encfsctl new --no-unique-iv to use encfsr"
   fr: "erreur : le mode IV par répertoire n'est pas pris en charge en mode inversé ; créez la configuration avec encfsctl new --no-unique-iv pour utiliser encfsr"
   de: "Fehler: Der Verzeichnis-IV-Modus wird im Reverse-Modus nicht unterstützt; erstellen Sie die Konfiguration mit encfsctl new --no-unique-iv, um encfsr zu verwenden"
-encfsr.unique_iv_warning:
-  en: "warning: unique_iv = true will make the reverse filesystem output non-deterministic; encrypted filenames may change between runs"
-  fr: "avertissement : unique_iv = true rendra la sortie du système de fichiers inversé non déterministe ; les noms de fichiers chiffrés peuvent changer entre les exécutions"
-  de: "Warnung: unique_iv = true macht die Ausgabe des Reverse-Dateisystems nicht deterministisch; verschlüsselte Dateinamen können sich zwischen Ausführungen ändern"
 encfsr.config_load_failed:
   en: "error: failed to load config from %{path}: %{error}"
   fr: "erreur : échec du chargement de la configuration depuis %{path} : %{error}"
-  de: "Fehler: Konfiguration konnte nicht geladen werden von %{path}: %{error}"
+  de: "Fehler: Konfiguration von %{path} konnte nicht geladen werden: %{error}"
 encfsr.decrypt_failed:
   en: "error: failed to decrypt volume key (wrong password?): %{error}"
   fr: "erreur : échec du déchiffrement de la clé de volume (mauvais mot de passe ?) : %{error}"
-  de: "Fehler: Volume-Schlüssel konnte nicht entschlüsselt werden (falsches Passwort?): %{error}"
+  de: "Fehler: Volumen-Schlüssel konnte nicht entschlüsselt werden (falsches Passwort?): %{error}"
 encfsr.config_not_v7:
   en: "error: encfsr only supports V7 config files (.encfs7); got non-V7 config at %{path}"
   fr: "erreur : encfsr ne prend en charge que les fichiers de configuration V7 (.encfs7) ; configuration non V7 trouvée à %{path}"
   de: "Fehler: encfsr unterstützt nur V7-Konfigurationsdateien (.encfs7); nicht-V7-Konfiguration bei %{path} gefunden"
+encfsr.error_o_requires_arg:
+  en: "error: -o requires an argument"
+  fr: "erreur : -o nécessite un argument"
+  de: "Fehler: -o erfordert ein Argument"
+encfsr.error_unrecognized_fuse_opt:
+  en: "error: unrecognized FUSE option argument: %{token}"
+  fr: "erreur : argument d'option FUSE non reconnu : %{token}"
+  de: "Fehler: Unbekanntes FUSE-Optionsargument: %{token}"
 main.touchid_reason:
   en: "unlock the encrypted filesystem at %{mount_point}"
   fr: "déverrouiller le système de fichiers chiffré monté sur %{mount_point}"

@@ -179,9 +179,9 @@ fn main() -> Result<()> {
             .arg(&prog)
             .env("RootDir", &args.source)
             .output()
-            .context("failed to run extpass program")?;
+            .context(t!("main.failed_to_run_extpass"))?;
         if !output.status.success() {
-            eprintln!("error: extpass program exited with failure");
+            eprintln!("{}", t!("main.extpass_program_failed"));
             std::process::exit(1);
         }
         String::from_utf8(output.stdout)?.trim_end().to_string()
@@ -191,7 +191,8 @@ fn main() -> Result<()> {
         std::io::stdin().read_to_string(&mut pw)?;
         pw.trim_end().to_string()
     } else {
-        rpassword::prompt_password("EncFS Password: ").context("failed to read password")?
+        rpassword::prompt_password(&t!("main.password_prompt"))
+            .context(t!("main.failed_to_read_password"))?
     };
 
     // --- Decrypt config and derive cipher ---
@@ -280,14 +281,17 @@ fn main() -> Result<()> {
             match opts_iter.next() {
                 Some(value) => value.split(',').collect(),
                 None => {
-                    eprintln!("error: -o requires an argument");
+                    eprintln!("{}", t!("encfsr.error_o_requires_arg"));
                     std::process::exit(1);
                 }
             }
         } else if let Some(value) = token.strip_prefix("-o") {
             value.split(',').collect()
         } else {
-            eprintln!("error: unrecognized FUSE option argument: {token}");
+            eprintln!(
+                "{}",
+                t!("encfsr.error_unrecognized_fuse_opt", token = token)
+            );
             std::process::exit(1);
         };
         mount_config.parse_option_words(words);

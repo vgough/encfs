@@ -638,6 +638,7 @@ dependencies = [
  "quick-xml",
  "rpassword",
  "rust-i18n",
+ "rust-i18n-support",
  "serde",
  "serde_json",
  "sha1",
