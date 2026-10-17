@@ -60,6 +60,8 @@ name = "encfsr"
 path = "src/encfsr.rs"
 
 [dev-dependencies]
+# Loads the locales as rust-i18n does, for the translations test.
+rust-i18n-support = { version = "4", features = ["codegen"] }
 serde_json = "1"
 tar = "0.4"
 

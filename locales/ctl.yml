@@ -19,10 +19,6 @@ ctl.v7_format_info:
   en: "(V7 protobuf format, tamper resistant)"
   fr: "(Format protobuf V7, résistant aux altérations)"
   de: "(V7-Protobuf-Format, manipulationssicher)"
-ctl.aes_gcm_siv_mode:
-  en: "AES-GCM-SIV block mode (per-block authenticated encryption)"
-  fr: "Mode de bloc AES-GCM-SIV (chiffrement authentifié par bloc)"
-  de: "AES-GCM-SIV Blockmodus (pro Block authentifizierte Verschlüsselung)"
 ctl.version5_config:
   en: "Version 5 configuration; created by %{creator} (revision %{version})"
   fr: "Configuration version 5 ; créée par %{creator} (révision %{version})"
@@ -40,13 +36,13 @@ ctl.prehistoric_config:
   fr: "Un système de fichiers EncFS très ancien a été trouvé."
   de: "Ein sehr altes EncFS-Dateisystem wurde gefunden."
 ctl.filesystem_cipher:
-  en: "Filesystem cipher: \"%{name}\" , version %{major}:%{minor}:0"
-  fr: "Chiffrement du système de fichiers : \"%{name}\" , version %{major}:%{minor}:0"
-  de: "Dateisystem-Verschlüsselung: \"%{name}\" , Version %{major}:%{minor}:0"
+  en: "Filesystem cipher: \"%{name}\", version %{major}:%{minor}:0"
+  fr: "Chiffrement du système de fichiers : \"%{name}\", version %{major}:%{minor}:0"
+  de: "Dateisystem-Verschlüsselung: \"%{name}\", Version %{major}:%{minor}:0"
 ctl.filename_encoding:
-  en: "Filename encoding: \"%{name}\" , version %{major}:%{minor}:0"
-  fr: "Encodage des noms de fichiers : \"%{name}\" , version %{major}:%{minor}:0"
-  de: "Dateinamen-Kodierung: \"%{name}\" , Version %{major}:%{minor}:0"
+  en: "Filename encoding: \"%{name}\", version %{major}:%{minor}:0"
+  fr: "Encodage des noms de fichiers : \"%{name}\", version %{major}:%{minor}:0"
+  de: "Dateinamen-Kodierung: \"%{name}\", Version %{major}:%{minor}:0"
 ctl.key_size:
   en: "Key Size: %{size} bits"
   fr: "Taille de la clé : %{size} bits"
@@ -221,7 +217,7 @@ ctl.upgrading_to_argon2:
   de: "Aktualisierung der Konfiguration auf Argon2id KDF..."
 ctl.v7_config_backup:
   en: "Previous config backed up to %{path}; you may remove it when no longer needed."
-  fr: "Ancienne configuration sauvegardée dans %{path} ; vous pouvez la supprimer lorsque inutile."
+  fr: "Ancienne configuration sauvegardée dans %{path} ; vous pouvez la supprimer si elle n'est plus nécessaire."
   de: "Vorherige Konfiguration gesichert unter %{path}; Sie können sie bei Bedarf entfernen."
 ctl.upgrade_available:
   en: "An automatic upgrade to the current format (Version 7, Argon2id) is available. Run: encfsctl passwd --upgrade %{rootdir}"
@@ -283,6 +279,10 @@ ctl.warning_incomplete_header:
   en: "Warning: File %{name} has incomplete header"
   fr: "Avertissement : Le fichier %{name} a un en-tête incomplet"
   de: "Warnung: Datei %{name} hat unvollständigen Header"
+ctl.warning_message:
+  en: "Warning: %{message}"
+  fr: "Avertissement : %{message}"
+  de: "Warnung: %{message}"
 ctl.warning_export_failed:
   en: "Warning: Failed to export %{path}: %{error}"
   fr: "Avertissement : Échec de l'exportation de %{path} : %{error}"
@@ -319,14 +319,6 @@ ctl.error_failed_to_save_config:
   en: "Failed to save config file"
   fr: "Échec de l'enregistrement du fichier de configuration"
   de: "Fehler beim Speichern der Konfigurationsdatei"
-ctl.error_failed_to_open_file:
-  en: "Failed to open file"
-  fr: "Échec de l'ouverture du fichier"
-  de: "Fehler beim Öffnen der Datei"
-ctl.error_failed_to_open_encrypted_file:
-  en: "Failed to open encrypted file"
-  fr: "Échec de l'ouverture du fichier chiffré"
-  de: "Fehler beim Öffnen der verschlüsselten Datei"
 ctl.error_failed_to_read_directory:
   en: "Failed to read directory"
   fr: "Échec de la lecture du répertoire"
@@ -345,7 +337,7 @@ ctl.error_failed_to_read_password:
   de: "Fehler beim Lesen des Passworts"
 ctl.password_prompt:
   en: "EncFS Password: "
-  fr: "Mot de passe EncFS: "
+  fr: "Mot de passe EncFS : "
   de: "EncFS-Passwort: "
 ctl.error_failed_to_execute_password_program:
   en: "Failed to execute password program"
@@ -376,9 +368,9 @@ ctl.error_raw_only_v7:
   fr: "--raw n'est pris en charge que pour la config V7 (EncFS7)"
   de: "--raw wird nur für die V7- (EncFS7-) Konfiguration unterstützt"
 ctl.error_incomplete_header:
-  en: "Encrypted file has incomplete header"
-  fr: "Le fichier chiffré a un en-tête incomplet"
-  de: "Verschlüsselte Datei hat unvollständigen Header"
+  en: "Encrypted file %{path} has incomplete header"
+  fr: "Le fichier chiffré %{path} a un en-tête incomplet"
+  de: "Verschlüsselte Datei %{path} hat unvollständigen Header"
 ctl.error_no_current_password:
   en: "No current password provided"
   fr: "Aucun mot de passe actuel fourni"
@@ -403,6 +395,22 @@ ctl.error_undecryptable_symlink_target:
   en: "Undecryptable symlink target %{path}: %{error}"
   fr: "Cible de lien symbolique indéchiffrable %{path} : %{error}"
   de: "Nicht entschlüsselbares Symlink-Ziel %{path}: %{error}"
+ctl.error_failed_to_read_file:
+  en: "Failed to read %{path}: %{error}"
+  fr: "Échec de la lecture de %{path} : %{error}"
+  de: "Fehler beim Lesen von %{path}: %{error}"
+ctl.error_undecryptable_file_header:
+  en: "Undecryptable file header in %{path}: %{error}"
+  fr: "En-tête de fichier indéchiffrable dans %{path} : %{error}"
+  de: "Nicht entschlüsselbarer Dateiheader in %{path}: %{error}"
+ctl.error_export_failed:
+  en: "Failed to export %{path}: %{error}"
+  fr: "Échec de l'exportation de %{path} : %{error}"
+  de: "Export von %{path} fehlgeschlagen: %{error}"
+ctl.error_undecryptable_file_contents:
+  en: "Undecryptable file contents in %{path}: %{error}"
+  fr: "Contenu de fichier indéchiffrable dans %{path} : %{error}"
+  de: "Nicht entschlüsselbarer Dateiinhalt in %{path}: %{error}"
 ctl.error_invalid_utf8:
   en: "Invalid UTF-8"
   fr: "UTF-8 invalide"
@@ -410,7 +418,7 @@ ctl.error_invalid_utf8:
 ctl.error_invalid_path_component:
   en: "Invalid path component"
   fr: "Composant de chemin invalide"
-  de: "Ungültiger Pfadkomponente"
+  de: "Ungültige Pfadkomponente"
 ctl.error_no_config_file_found:
   en: "No config file found. Looked for .encfs7, .encfs6.xml, .encfs5, .encfs4, .encfs3 in %{rootdir}"
   fr: "Aucun fichier de configuration trouvé. Recherché .encfs7, .encfs6.xml, .encfs5, .encfs4, .encfs3 dans %{rootdir}"

@@ -1,6 +1,6 @@
 use crate::crypto::block::BlockLayout;
 use crate::crypto::cipher::Cipher;
-use crate::crypto::file::{FileDecoder, FileEncoder};
+use crate::crypto::file::{FileDecoder, FileEncoder, is_corrupted_data};
 use crate::crypto::file_iv::FileIv;
 use crate::diriv::{self, CachedDir, DirIvCache, DirIvs};
 use crate::idle_lock::{Access, IdleLock};
@@ -12,7 +12,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
@@ -219,6 +219,8 @@ pub struct FileHandle {
     headerless_iv: FileIv,
     /// Shared state for the backing inode; guards every RMW on this file.
     state: Arc<FileState>,
+    /// The backing path the file was opened at, for logs.
+    backing_path: PathBuf,
 }
 
 impl FileHandle {
@@ -1328,6 +1330,14 @@ fn read_iv_seed(c_path: &CStr) -> Result<Option<[u8; xattr_name::IV_SEED_LEN]>, 
     Ok(Some(seed))
 }
 
+/// Whether `path` leads to the inode `file` is open on.
+fn is_same_file(path: &Path, file: &File) -> bool {
+    match (fs::symlink_metadata(path), file.metadata()) {
+        (Ok(at_path), Ok(open)) => at_path.dev() == open.dev() && at_path.ino() == open.ino(),
+        _ => false,
+    }
+}
+
 fn headerless_file_iv(header_size: u64, external_iv: u64) -> FileIv {
     FileIv::from_u64(if header_size == 0 { external_iv } else { 0 })
 }
@@ -1410,10 +1420,11 @@ impl EncFs {
 
     /// Reads and decrypts the per-file header, returning `None` when the file
     /// is too short to hold one (e.g. freshly created via `mknod`).
+    /// `backing_path` names the file in logs.
     fn read_file_header(
         &self,
         file: &File,
-        path: &Path,
+        backing_path: &Path,
         external_iv: u64,
     ) -> Result<Option<FileIv>, libc::c_int> {
         let header_size = self.config.header_size() as usize;
@@ -1426,10 +1437,49 @@ impl EncFs {
         }
         match self.cipher.decrypt_header(&mut header, external_iv) {
             Ok(file_iv) => Ok(Some(file_iv)),
-            Err(_) => {
-                warn!("Failed to decrypt file header for {:?}", path);
+            Err(e) => {
+                error!(
+                    "Decrypting file header failed: corrupted data in {:?}: {}",
+                    backing_path, e
+                );
                 Err(libc::EIO)
             }
+        }
+    }
+
+    /// Names `file`, now at plaintext `path` and opened at `opened_at`, for a
+    /// log message.
+    ///
+    /// Logs use the backing path, never the plaintext one, so they don't
+    /// reveal plaintext names; `encfsctl decode` recovers them. The current
+    /// path is used only while it still leads to `file`; after an unlink, or
+    /// a replaced parent directory, the path the file was opened at is used.
+    fn log_name(&self, path: Option<&Path>, file: &File, opened_at: &Path) -> String {
+        let current = path
+            .and_then(|p| self.encrypt_path(p).ok())
+            .map(|(real_path, _)| real_path)
+            .filter(|real_path| is_same_file(real_path, file));
+        match current {
+            Some(real_path) => format!("{:?}", real_path),
+            None => format!("{:?} (when opened)", opened_at),
+        }
+    }
+
+    /// Logs a failure to read or write the contents of `file`, as named by
+    /// `log_name`.
+    fn log_file_data_error(
+        &self,
+        op: &str,
+        path: Option<&Path>,
+        file: &File,
+        opened_at: &Path,
+        err: &io::Error,
+    ) {
+        let backing = self.log_name(path, file, opened_at);
+        if is_corrupted_data(err) {
+            error!("{} failed: corrupted data in {}: {}", op, backing, err);
+        } else {
+            error!("{} failed for {}: {}", op, backing, err);
         }
     }
 
@@ -1453,7 +1503,7 @@ impl EncFs {
         current_logical_size: u64,
         new_logical_size: u64,
         block_layout: BlockLayout,
-    ) -> OpResult {
+    ) -> io::Result<()> {
         if new_logical_size <= current_logical_size {
             return Ok(());
         }
@@ -1473,9 +1523,7 @@ impl EncFs {
             let top_up = std::cmp::min(to_block_end, new_logical_size - current_logical_size);
             if top_up > 0 {
                 let zeros = vec![0u8; top_up as usize];
-                encoder
-                    .write_at(&zeros, current_logical_size)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+                encoder.write_at(&zeros, current_logical_size)?;
                 filled_until += top_up;
             }
         }
@@ -1486,9 +1534,7 @@ impl EncFs {
 
         if self.config.allow_holes {
             let physical_size = self.physical_size_for_logical(new_logical_size, header_size);
-            file_ref
-                .set_len(physical_size)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            file_ref.set_len(physical_size)?;
             return Ok(());
         }
 
@@ -1500,9 +1546,7 @@ impl EncFs {
 
         while remaining > 0 {
             let write_len = std::cmp::min(remaining, CHUNK_SIZE as u64);
-            encoder
-                .write_at(&zeros[..write_len as usize], offset)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            encoder.write_at(&zeros[..write_len as usize], offset)?;
             remaining -= write_len;
             offset += write_len;
         }
@@ -1518,15 +1562,13 @@ impl EncFs {
         header_size: u64,
         new_logical_size: u64,
         block_layout: BlockLayout,
-    ) -> OpResult {
+    ) -> io::Result<()> {
         let physical_size = self.physical_size_for_logical(new_logical_size, header_size);
         let data_block_size = block_layout.data_size_per_block();
         let offset_in_block = new_logical_size % data_block_size;
 
         if offset_in_block == 0 {
-            file_ref
-                .set_len(physical_size)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            file_ref.set_len(physical_size)?;
             return Ok(());
         }
 
@@ -1540,18 +1582,20 @@ impl EncFs {
         );
 
         let mut buf = vec![0u8; data_block_size as usize];
-        let bytes_read = decoder
-            .read_at(&mut buf, block_start)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let bytes_read = decoder.read_at(&mut buf, block_start)?;
         if (bytes_read as u64) < offset_in_block {
-            return Err(libc::EIO);
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "short read of {} bytes from the block at offset {}",
+                    bytes_read, block_start
+                ),
+            ));
         }
         buf.truncate(offset_in_block as usize);
 
         // Shrink first so re-encryption writes exactly the target last block.
-        file_ref
-            .set_len(physical_size)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        file_ref.set_len(physical_size)?;
 
         let encoder = FileEncoder::new_from_config(
             self.cipher.as_ref(),
@@ -1559,9 +1603,7 @@ impl EncFs {
             file_iv,
             &self.config.file_codec_params(),
         );
-        encoder
-            .write_at(&buf, block_start)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        encoder.write_at(&buf, block_start)?;
 
         Ok(())
     }
@@ -1635,25 +1677,25 @@ impl EncFs {
         debug!("truncate: {:?} size={}", path, size);
         self.ensure_writable()?;
 
-        let owned_file: Option<File> = if handle.is_none() {
+        let owned_file: Option<(File, PathBuf, u64)> = if handle.is_none() {
             let path = path.ok_or(libc::ESTALE)?;
-            let (real_path, _) = self.encrypt_path(path)?;
-            Some(
-                fs::OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .open(real_path)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?,
-            )
+            let (real_path, path_iv) = self.encrypt_path(path)?;
+            let file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&real_path)
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            Some((file, real_path, path_iv))
         } else {
             None
         };
 
-        let file_ref: &File = match (handle, &owned_file) {
-            (Some(h), _) => &h.file,
-            (None, Some(f)) => f,
-            (None, None) => return Err(libc::EIO),
-        };
+        let (file_ref, opened_at, opened_path_iv): (&File, &Path, Option<u64>) =
+            match (handle, &owned_file) {
+                (Some(h), _) => (&h.file, &h.backing_path, None),
+                (None, Some((f, real_path, path_iv))) => (f, real_path, Some(*path_iv)),
+                (None, None) => return Err(libc::EIO),
+            };
 
         // Hold the per-file write lock across the whole read-length / RMW /
         // set_len sequence so a concurrent write can't interleave and lose
@@ -1687,15 +1729,14 @@ impl EncFs {
 
         // Truncation keeps the existing header, so the IV does not change here;
         // it only has to be *known*. With a handle it is already in the shared
-        // state. The remaining branches only run without one, where `path` was
-        // already required to open the file above.
+        // state. The remaining branches only run without one, where the file
+        // was opened by path above.
         let file_iv = if let Some(h) = handle {
             h.file_iv(&guard)
         } else if let Some(file_iv) = guard.header_iv {
             file_iv
         } else if header_size > 0 {
-            let path = path.ok_or(libc::ESTALE)?;
-            let (_, path_iv) = self.encrypt_path(path)?;
+            let path_iv = opened_path_iv.ok_or(libc::ESTALE)?;
             let external_iv = if self.config.external_iv_chaining {
                 path_iv
             } else {
@@ -1703,18 +1744,17 @@ impl EncFs {
             };
             // Cache it for handles opened later, as `open_impl` would have.
             let file_iv = self
-                .read_file_header(file_ref, path, external_iv)?
+                .read_file_header(file_ref, opened_at, external_iv)?
                 .ok_or(libc::EIO)?;
             guard.header_iv = Some(file_iv);
             file_iv
         } else if self.config.external_iv_chaining {
-            let (_, path_iv) = self.encrypt_path(path.ok_or(libc::ESTALE)?)?;
-            FileIv::from_u64(path_iv)
+            FileIv::from_u64(opened_path_iv.ok_or(libc::ESTALE)?)
         } else {
             FileIv::from_u64(0)
         };
 
-        if size > current_logical_size {
+        let result = if size > current_logical_size {
             self.truncate_expand(
                 file_ref,
                 &guard,
@@ -1723,12 +1763,21 @@ impl EncFs {
                 current_logical_size,
                 size,
                 block_layout,
-            )?;
+            )
         } else {
-            self.truncate_shrink(file_ref, &guard, file_iv, header_size, size, block_layout)?;
-        }
-
-        Ok(())
+            self.truncate_shrink(file_ref, &guard, file_iv, header_size, size, block_layout)
+        };
+        result.map_err(|e| {
+            if is_corrupted_data(&e) {
+                // Naming the file resolves its path; don't hold up other handles.
+                drop(guard);
+                self.log_file_data_error("Truncate", path, file_ref, opened_at, &e);
+            } else {
+                // Ordinary failures, such as ENOSPC, are the caller's to report.
+                debug!("Truncate failed for {:?}: {}", opened_at, e);
+            }
+            e.raw_os_error().unwrap_or(libc::EIO)
+        })
     }
 
     fn do_utimens(
@@ -1933,8 +1982,8 @@ impl EncFs {
             let file_name = entry.file_name();
             let Some(name_str) = file_name.to_str() else {
                 warn!(
-                    "Skipping non-UTF-8 backing filename {:?} while opening {:?}",
-                    file_name, path
+                    "Skipping non-UTF-8 backing filename {:?} in {:?}",
+                    file_name, real_path
                 );
                 continue;
             };
@@ -2041,7 +2090,7 @@ impl EncFs {
                 // A short read here leaves the IV at zero, matching the
                 // pre-header-cache behaviour for partially written files.
                 Some(
-                    self.read_file_header(&file, path, external_iv)?
+                    self.read_file_header(&file, &real_path, external_iv)?
                         .unwrap_or(FileIv::from_u64(0)),
                 )
             };
@@ -2054,11 +2103,13 @@ impl EncFs {
             file,
             headerless_iv,
             state,
+            backing_path: real_path,
         })
     }
 
     fn read_impl(
         &self,
+        path: Option<&Path>,
         handle: &FileHandle,
         offset: u64,
         size: u32,
@@ -2086,7 +2137,9 @@ impl EncFs {
                 Ok(result_data)
             }
             Err(e) => {
-                error!("Read failed: {}", e);
+                // Naming the file resolves its path; don't hold up writers.
+                drop(meta);
+                self.log_file_data_error("Read", path, &handle.file, &handle.backing_path, &e);
                 Err(e.raw_os_error().unwrap_or(libc::EIO))
             }
         }
@@ -2094,6 +2147,7 @@ impl EncFs {
 
     fn write_impl(
         &self,
+        path: Option<&Path>,
         handle: &FileHandle,
         offset: u64,
         data: &[u8],
@@ -2113,7 +2167,8 @@ impl EncFs {
         match encoder.write_at(data, offset) {
             Ok(written) => Ok(written as u32),
             Err(e) => {
-                error!("Write failed: {}", e);
+                drop(meta);
+                self.log_file_data_error("Write", path, &handle.file, &handle.backing_path, &e);
                 Err(e.raw_os_error().unwrap_or(libc::EIO))
             }
         }
@@ -2182,6 +2237,7 @@ impl EncFs {
                 file,
                 headerless_iv,
                 state,
+                backing_path: entry.real_path,
             },
         ))
     }
@@ -2946,7 +3002,7 @@ impl PathFilesystem for EncFs {
 
     fn read<'a>(
         &'a self,
-        _node: PathNodeRef<'_, FileState>,
+        node: PathNodeRef<'_, FileState>,
         handle: &'a FileHandle,
         offset: u64,
         size: usize,
@@ -2954,19 +3010,24 @@ impl PathFilesystem for EncFs {
     ) -> Result<Cow<'a, [u8]>, Errno> {
         self.check_idle_lock(Access::Data, caller)?;
         let size = u32::try_from(size).unwrap_or(u32::MAX);
-        Ok(Cow::Owned(self.read_impl(handle, offset, size)?))
+        Ok(Cow::Owned(self.read_impl(
+            node.path(),
+            handle,
+            offset,
+            size,
+        )?))
     }
 
     fn write(
         &self,
-        _node: PathNodeRef<'_, FileState>,
+        node: PathNodeRef<'_, FileState>,
         handle: &FileHandle,
         data: &[u8],
         offset: u64,
         caller: &Request,
     ) -> Result<usize, Errno> {
         self.check_idle_lock(Access::HandleWrite, caller)?;
-        Ok(self.write_impl(handle, offset, data)? as usize)
+        Ok(self.write_impl(node.path(), handle, offset, data)? as usize)
     }
 
     fn fsync(
@@ -3229,6 +3290,7 @@ mod tests {
             file: unsafe { File::from_raw_fd(fds[1]) },
             headerless_iv: FileIv::from_u64(0),
             state: Arc::new(FileState::new((0, 0))),
+            backing_path: PathBuf::new(),
         };
         let fs = test_fs();
         let caller = test_caller();
@@ -3548,6 +3610,65 @@ mod tests {
         let meta = std::fs::symlink_metadata(real).unwrap();
         use std::os::unix::fs::MetadataExt;
         fs.file_states.get_by_key((meta.dev(), meta.ino()))
+    }
+
+    /// A corrupted block fails every operation that has to decrypt it, and
+    /// logs name the file by its backing path rather than its plaintext one.
+    #[test]
+    fn corrupted_block_fails_with_eio() {
+        let vol = DirIvVolume::new("corrupted_block");
+        let fs = &vol.fs;
+        let path = Path::new("/secret-name");
+        let (_, handle) = fs
+            .create_impl(
+                caller(),
+                Path::new("/"),
+                OsStr::new("secret-name"),
+                0o644,
+                0,
+            )
+            .unwrap();
+        fs.write_impl(Some(path), &handle, 0, &[7u8; 100]).unwrap();
+
+        let (real, _) = fs.encrypt_path(path).unwrap();
+        let mut data = std::fs::read(&real).unwrap();
+        data[vol.config.header_size() as usize + 20] ^= 0x01;
+        std::fs::write(&real, data).unwrap();
+
+        assert_eq!(fs.read_impl(Some(path), &handle, 0, 10), Err(libc::EIO));
+        // A partial-block write has to decrypt the block it modifies.
+        assert_eq!(fs.write_impl(Some(path), &handle, 1, b"x"), Err(libc::EIO));
+        // As does a truncate to the middle of a block.
+        assert_eq!(fs.do_truncate(Some(path), None, 10), Err(libc::EIO));
+        // And growing it, which tops up the partial last block.
+        assert_eq!(fs.do_truncate(Some(path), None, 200), Err(libc::EIO));
+
+        let name = fs.log_name(Some(path), &handle.file, &handle.backing_path);
+        assert_eq!(name, format!("{:?}", real));
+        assert!(!name.contains("secret-name"));
+
+        // Once the path leads elsewhere, the path the file was opened at
+        // names it.
+        let root = Path::new("/");
+        fs.rename_internal(root, OsStr::new("secret-name"), root, OsStr::new("moved"))
+            .unwrap();
+        fs.create_impl(
+            caller(),
+            Path::new("/"),
+            OsStr::new("secret-name"),
+            0o644,
+            0,
+        )
+        .unwrap();
+        let opened_at = format!("{:?} (when opened)", real);
+        assert_eq!(
+            fs.log_name(Some(path), &handle.file, &handle.backing_path),
+            opened_at
+        );
+        assert_eq!(
+            fs.log_name(None, &handle.file, &handle.backing_path),
+            opened_at
+        );
     }
 
     /// The node state caches the derived IV, so later operations on the inode

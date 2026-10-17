@@ -15,14 +15,19 @@ pub mod xattr_name;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
-/// Initialize the locale from the LANG environment variable.
+/// Initialize the locale from environment variables according to POSIX precedence.
 ///
-/// Reads the LANG environment variable (e.g., "en_US.UTF-8") and sets the
+/// Inspects `LC_ALL`, then `LC_MESSAGES`, then `LANG` (e.g., "en_US.UTF-8") and sets the
 /// rust-i18n locale accordingly. Strips encoding suffixes and maps POSIX-style
 /// locale names to rust-i18n locale keys.
 pub fn init_locale() {
-    // Read LANG from the environment, e.g. "en_US.UTF-8"
-    if let Ok(lang) = std::env::var("LANG") {
+    let env_locale = std::env::var("LC_ALL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("LC_MESSAGES").ok().filter(|s| !s.is_empty()))
+        .or_else(|| std::env::var("LANG").ok().filter(|s| !s.is_empty()));
+
+    if let Some(lang) = env_locale {
         // Strip encoding suffix like ".UTF-8"
         let normalized = lang.split('.').next().unwrap_or("en_US");
 

@@ -38,6 +38,13 @@ impl FileLen for std::fs::File {
     }
 }
 
+/// Whether an error from `FileDecoder` or `FileEncoder` means the file's data
+/// is corrupted (it failed to decrypt or authenticate), rather than that
+/// reading or writing the backing file failed.
+pub fn is_corrupted_data(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::InvalidData
+}
+
 /// Parameters derived from an `EncfsConfig` that govern file codec behaviour.
 ///
 /// Grouping these avoids passing many individual config fields to `FileDecoder`
@@ -440,7 +447,7 @@ impl<'a, F: ReadAt + WriteAt + FileLen> FileEncoder<'a, F> {
                     plaintext_block = codec
                         .decrypt_block(block_num, self.file_iv, &mut on_disk_block)
                         .map_err(|e| {
-                            io::Error::other(format!("Decrypt failed during RMW: {}", e))
+                            io::Error::new(e.kind(), format!("Decrypt failed during RMW: {}", e))
                         })?;
                 }
             }
@@ -860,6 +867,7 @@ mod tests {
         let mut buf = vec![0u8; data.len()];
         let err = decoder.read_at(&mut buf, 0).expect_err("Should fail MAC");
         assert!(err.to_string().contains("MAC mismatch"));
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]
@@ -966,6 +974,7 @@ mod tests {
             .read_at(&mut buf, 0)
             .expect_err("Should fail AEAD verification");
         assert!(err.to_string().contains("tag verification failed"));
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
     #[test]

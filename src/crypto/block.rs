@@ -191,9 +191,10 @@ impl<'a> BlockCodec<'a> {
         }
 
         if block_data.len() < mac_len {
-            return Err(io::Error::other(format!(
-                "Truncated block {block_num}: missing MAC bytes"
-            )));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Truncated block {block_num}: missing MAC bytes"),
+            ));
         }
 
         let stored_mac = &block_data[..mac_len];
@@ -211,9 +212,10 @@ impl<'a> BlockCodec<'a> {
             tmp >>= 8;
         }
         if fail != 0 && !self.ignore_legacy_mac_mismatch {
-            return Err(io::Error::other(format!(
-                "MAC mismatch in block {block_num}"
-            )));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("MAC mismatch in block {block_num}"),
+            ));
         }
 
         Ok(plaintext.to_vec())
@@ -227,16 +229,18 @@ impl<'a> BlockCodec<'a> {
     ) -> io::Result<Vec<u8>> {
         let tag_len = AES_GCM_SIV_BLOCK_TAG_BYTES as usize;
         if block_data.len() < tag_len {
-            return Err(io::Error::other(format!(
-                "Truncated block {block_num}: missing AEAD tag"
-            )));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Truncated block {block_num}: missing AEAD tag"),
+            ));
         }
 
         let (tag, ciphertext) = block_data.split_at(tag_len);
         let mut plaintext = ciphertext.to_vec();
+        // With a validated config, tag verification is the only way this fails.
         self.cipher
             .decrypt_block_aes_gcm_siv_inplace(&mut plaintext, tag, block_num, file_iv)
-            .map_err(io::Error::other)?;
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         Ok(plaintext)
     }
 
