@@ -378,6 +378,32 @@ fn check(ret: libc::c_int) -> OpResult {
     if ret == 0 { Ok(()) } else { Err(last_errno()) }
 }
 
+/// Sets the mode of `path` itself, never of a symlink's target: an `lchmod`
+/// (bsdtar sends one for every symlink it extracts) must not follow a backing
+/// link, whose target is ciphertext or, in reverse mode, a plaintext file.
+/// Linux can't give a symlink a mode, so it gets `EOPNOTSUPP` there, as
+/// `fchmodat(AT_SYMLINK_NOFOLLOW)` returns.
+pub(crate) fn chmod_nofollow(path: &Path, mode: u32) -> OpResult {
+    let c_path = c_path(path).map_err(|e| e.raw())?;
+    #[cfg(target_os = "linux")]
+    {
+        let meta = fs::symlink_metadata(path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        if meta.file_type().is_symlink() {
+            return Err(libc::EOPNOTSUPP);
+        }
+        check(unsafe { libc::chmod(c_path.as_ptr(), mode as libc::mode_t) })
+    }
+    #[cfg(not(target_os = "linux"))]
+    check(unsafe {
+        libc::fchmodat(
+            libc::AT_FDCWD,
+            c_path.as_ptr(),
+            mode as libc::mode_t,
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    })
+}
+
 /// Opens a backing directory to pin it for `*at` calls. Asks only for search
 /// access where the platform allows, so a directory without read permission
 /// can still be written into.
@@ -1627,7 +1653,7 @@ impl EncFs {
 
         if let Some(path) = path {
             let (real_path, _) = self.encrypt_path(path)?;
-            return passthrough::chmod_path(&real_path, mode).map_err(|e| e.raw());
+            return chmod_nofollow(&real_path, mode);
         }
 
         // Path unknown (possibly deleted): fall back to the open handle.
@@ -3923,6 +3949,60 @@ mod tests {
         let fresh = caller_of(fs, "/f");
         assert_eq!(fs.listxattr_impl(&fresh, Path::new("/f")), Ok(Vec::new()));
         std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    /// chmod on a symlink (bsdtar's `lchmod`) changes the link itself, never
+    /// the backing link's target, and doesn't need that target to exist.
+    #[test]
+    fn chmod_symlink_does_not_follow() {
+        use std::os::unix::fs::PermissionsExt;
+        let vol = DirIvVolume::new("chmod_symlink");
+        let fs = &vol.fs;
+        fs.create_impl(caller(), Path::new("/"), OsStr::new("t"), 0o644, 0)
+            .unwrap();
+        fs.symlink_impl(Path::new("/"), OsStr::new("l"), Path::new("t"))
+            .unwrap();
+        fs.symlink_impl(Path::new("/"), OsStr::new("d"), Path::new("missing"))
+            .unwrap();
+        let (real_target, _) = fs.encrypt_path(Path::new("/t")).unwrap();
+        let mode = |p: &Path| std::fs::symlink_metadata(p).unwrap().permissions().mode() & 0o7777;
+
+        for link in ["/l", "/d"] {
+            let result = fs.do_chmod(Some(Path::new(link)), None, 0o600);
+            if cfg!(target_os = "linux") {
+                assert_eq!(result, Err(libc::EOPNOTSUPP), "{link}");
+            } else {
+                assert_eq!(result, Ok(()), "{link}");
+                let (real_link, _) = fs.encrypt_path(Path::new(link)).unwrap();
+                assert_eq!(mode(&real_link), 0o600, "{link}");
+            }
+        }
+        assert_eq!(mode(&real_target), 0o644);
+    }
+
+    /// A link to an existing file (always the case in reverse mode, where the
+    /// backing links are plaintext) leaves the file's mode alone.
+    #[test]
+    fn chmod_nofollow_leaves_target_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("t");
+        let link = dir.path().join("l");
+        std::fs::write(&target, b"x").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::os::unix::fs::symlink("t", &link).unwrap();
+        let mode = |p: &Path| std::fs::symlink_metadata(p).unwrap().permissions().mode() & 0o7777;
+
+        let result = super::chmod_nofollow(&link, 0o600);
+        if cfg!(target_os = "linux") {
+            assert_eq!(result, Err(libc::EOPNOTSUPP));
+        } else {
+            assert_eq!(result, Ok(()));
+            assert_eq!(mode(&link), 0o600);
+        }
+        assert_eq!(mode(&target), 0o644);
+        assert_eq!(super::chmod_nofollow(&target, 0o640), Ok(()));
+        assert_eq!(mode(&target), 0o640);
     }
 
     fn raw_xattrs(path: &Path) -> Vec<(Vec<u8>, Vec<u8>)> {
