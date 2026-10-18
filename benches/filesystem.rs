@@ -39,6 +39,15 @@ fn run() -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(".benchmarks/filesystem-baseline.json"));
     let save_baseline = env_flag("BENCH_SAVE_BASELINE");
+    let gocryptfs = env_flag("BENCH_GOCRYPTFS");
+    if gocryptfs && save_baseline {
+        bail!("gocryptfs comparisons cannot replace the EncFS baseline");
+    }
+    let measured_variant = if gocryptfs {
+        "gocryptfs"
+    } else {
+        BASELINE_VARIANT
+    };
     let baseline = if save_baseline {
         None
     } else {
@@ -60,21 +69,41 @@ fn run() -> Result<()> {
     }
 
     println!("Filesystem benchmark: {}", workload_description(&workload));
-    // A baseline only needs the baseline variant; a comparison also measures
-    // the overhead variant in the same run.
+    let gocryptfs_bin = env::var("GOCRYPTFS_BIN").unwrap_or_else(|_| "gocryptfs".to_string());
+    if gocryptfs {
+        require_tool(&gocryptfs_bin, "install gocryptfs or set GOCRYPTFS_BIN")?;
+        let version = Command::new(&gocryptfs_bin)
+            .arg("-version")
+            .stdin(Stdio::null())
+            .output()
+            .context("failed to query gocryptfs version")?;
+        ensure_success("gocryptfs -version", &version)?;
+        println!("{}", String::from_utf8_lossy(&version.stdout).trim());
+    }
+    // None selects gocryptfs; EncFS baseline saves only measure no-unique-iv.
+    let selected: Vec<_> = if gocryptfs {
+        vec![("gocryptfs", None)]
+    } else {
+        VARIANTS
+            .iter()
+            .filter(|variant| !save_baseline || variant.name == BASELINE_VARIANT)
+            .map(|variant| (variant.name, Some(variant)))
+            .collect()
+    };
     let mut mdtest_version = None;
     let mut variants = BTreeMap::new();
-    for variant in VARIANTS
-        .iter()
-        .filter(|variant| !save_baseline || variant.name == BASELINE_VARIANT)
-    {
-        let command: Vec<_> = ["encfsctl", "new"]
-            .into_iter()
-            .chain(variant.new_args.iter().copied())
-            .collect();
-        println!("Running variant {} ({})", variant.name, command.join(" "));
-        let benchmark = run_filesystem_benchmark(&workload, &mdtest_bin, &mpirun_bin, variant)
-            .with_context(|| format!("variant {}", variant.name))?;
+    for (name, variant) in selected {
+        if let Some(variant) = variant {
+            println!(
+                "Running variant {name} (encfsctl new {})",
+                variant.new_args.join(" ")
+            );
+        } else {
+            println!("Running variant {name} (gocryptfs -init defaults)");
+        }
+        let benchmark =
+            run_filesystem_benchmark(&workload, &mdtest_bin, &mpirun_bin, variant, &gocryptfs_bin)
+                .with_context(|| format!("variant {name}"))?;
         let combined_output = format!(
             "{}\n{}",
             String::from_utf8_lossy(&benchmark.output.stdout),
@@ -83,11 +112,11 @@ fn run() -> Result<()> {
         let (version, metrics) = parse_mdtest_output(&combined_output).with_context(|| {
             format!(
                 "failed to parse mdtest output for variant {}{}",
-                variant.name, benchmark.encfs_diagnostics
+                name, benchmark.mount_diagnostics
             )
         })?;
         mdtest_version.get_or_insert(version);
-        variants.insert(variant.name, metrics);
+        variants.insert(name, metrics);
     }
     let result = BenchmarkResult {
         schema_version: SCHEMA_VERSION,
@@ -101,10 +130,10 @@ fn run() -> Result<()> {
             cpu: cpu_brand(),
         },
         workload,
-        variant: BASELINE_VARIANT.to_string(),
+        variant: measured_variant.to_string(),
         metrics: variants
-            .remove(BASELINE_VARIANT)
-            .expect("the baseline variant always runs"),
+            .remove(measured_variant)
+            .expect("the measured variant always runs"),
     };
 
     if save_baseline {
@@ -114,13 +143,11 @@ fn run() -> Result<()> {
             baseline_path.display()
         );
     } else {
-        let overhead = variants
-            .remove(OVERHEAD_VARIANT)
-            .expect("comparison runs measure every variant");
+        let overhead = variants.remove(OVERHEAD_VARIANT);
         print_comparison(
             baseline.as_ref().expect("baseline was loaded"),
             &result,
-            &overhead,
+            overhead.as_ref(),
         )?;
     }
     Ok(())
@@ -130,21 +157,13 @@ fn run_filesystem_benchmark(
     workload: &Workload,
     mdtest_bin: &str,
     mpirun_bin: &str,
-    variant: &Variant,
+    variant: Option<&Variant>,
+    gocryptfs_bin: &str,
 ) -> Result<CompletedBenchmark> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let release_dir = target_dir(&manifest_dir).join("release");
     let encfsctl = release_dir.join(executable_name("encfsctl"));
     let encfs = release_dir.join(executable_name("encfs"));
-    for binary in [&encfsctl, &encfs] {
-        if !binary.is_file() {
-            bail!(
-                "release binary {} is missing; run `cargo build --release` first",
-                binary.display()
-            );
-        }
-    }
-
     let temporary = tempfile::Builder::new()
         .prefix("encfs-filesystem-benchmark-")
         .tempdir()
@@ -154,42 +173,72 @@ fn run_filesystem_benchmark(
     fs::create_dir(&encrypted)?;
     fs::create_dir(&mount_point)?;
 
-    let create_output = run_with_input(
-        Command::new(&encfsctl)
-            .arg("new")
-            .arg("--stdinpass")
-            .args(variant.new_args)
-            .arg(&encrypted),
-        format!("{PASSWORD}\n").as_bytes(),
-    )
-    .with_context(|| {
-        format!(
-            "failed to create fresh V7 filesystem in {}",
-            encrypted.display()
+    let mut mount_command;
+    let name;
+    // Keep the password outside both the encrypted directory and the mount.
+    let password_file = temporary.path().join("password");
+    if let Some(variant) = variant {
+        name = "encfs";
+        for binary in [&encfsctl, &encfs] {
+            if !binary.is_file() {
+                bail!(
+                    "release binary {} is missing; run `cargo build --release` first",
+                    binary.display()
+                );
+            }
+        }
+        let create_output = run_with_input(
+            Command::new(&encfsctl)
+                .arg("new")
+                .arg("--stdinpass")
+                .args(variant.new_args)
+                .arg(&encrypted),
+            format!("{PASSWORD}\n").as_bytes(),
         )
-    })?;
-    ensure_success("encfsctl new", &create_output)?;
-    ensure_variant_config(&encrypted, variant)?;
-
+        .context("failed to create fresh V7 filesystem")?;
+        ensure_success("encfsctl new", &create_output)?;
+        ensure_variant_config(&encrypted, variant)?;
+        mount_command = Command::new(&encfs);
+        mount_command.arg("-f").arg("-S").stdin(Stdio::piped());
+    } else {
+        name = "gocryptfs";
+        fs::write(&password_file, format!("{PASSWORD}\n"))?;
+        let create_output = Command::new(gocryptfs_bin)
+            .arg("-init")
+            .arg("-passfile")
+            .arg(&password_file)
+            .arg(&encrypted)
+            .stdin(Stdio::null())
+            .output()
+            .context("failed to initialize gocryptfs filesystem")?;
+        ensure_success("gocryptfs -init", &create_output)?;
+        mount_command = Command::new(gocryptfs_bin);
+        mount_command
+            .arg("-fg")
+            .arg("-passfile")
+            .arg(&password_file)
+            .stdin(Stdio::null());
+    }
+    mount_command.arg(&encrypted).arg(&mount_point);
     let timeout = Duration::from_secs(env_value("BENCH_MOUNT_TIMEOUT_SECS", 30)?);
-    let mut mounted = MountedEncfs::start(&encfs, &encrypted, &mount_point, timeout)?;
+    let mut mounted = MountedFilesystem::start(mount_command, name, &mount_point, timeout)?;
 
     let benchmark = run_mdtest(workload, mdtest_bin, mpirun_bin, &mount_point);
     let cleanup = mounted.cleanup();
-    let encfs_diagnostics = mounted.log_diagnostics();
+    let mount_diagnostics = mounted.log_diagnostics();
     match (benchmark, cleanup) {
         (Ok(output), Ok(())) => {
             ensure_success("mdtest", &output)
-                .map_err(|error| anyhow!("{error:#}{encfs_diagnostics}"))?;
+                .map_err(|error| anyhow!("{error:#}{mount_diagnostics}"))?;
             Ok(CompletedBenchmark {
                 output,
-                encfs_diagnostics,
+                mount_diagnostics,
             })
         }
-        (Err(error), Ok(())) => Err(anyhow!("{error:#}{encfs_diagnostics}")),
-        (Ok(_), Err(cleanup_error)) => Err(anyhow!("{cleanup_error:#}{encfs_diagnostics}")),
+        (Err(error), Ok(())) => Err(anyhow!("{error:#}{mount_diagnostics}")),
+        (Ok(_), Err(cleanup_error)) => Err(anyhow!("{cleanup_error:#}{mount_diagnostics}")),
         (Err(error), Err(cleanup_error)) => Err(anyhow!(
-            "{error:#}; cleanup also failed: {cleanup_error:#}{encfs_diagnostics}"
+            "{error:#}; cleanup also failed: {cleanup_error:#}{mount_diagnostics}"
         )),
     }
 }
@@ -214,7 +263,7 @@ fn ensure_variant_config(encrypted: &Path, variant: &Variant) -> Result<()> {
 
 struct CompletedBenchmark {
     output: Output,
-    encfs_diagnostics: String,
+    mount_diagnostics: String,
 }
 
 fn run_mdtest(
@@ -253,7 +302,8 @@ fn run_mdtest(
     })
 }
 
-struct MountedEncfs {
+struct MountedFilesystem {
+    name: &'static str,
     mount_point: PathBuf,
     child: Child,
     stdout_tail: Arc<Mutex<Vec<u8>>>,
@@ -261,23 +311,18 @@ struct MountedEncfs {
     mounted: bool,
 }
 
-impl MountedEncfs {
+impl MountedFilesystem {
     fn start(
-        encfs: &Path,
-        encrypted: &Path,
+        mut command: Command,
+        name: &'static str,
         mount_point: &Path,
         timeout: Duration,
     ) -> Result<Self> {
-        let mut child = Command::new(encfs)
-            .arg("-f")
-            .arg("-S")
-            .arg(encrypted)
-            .arg(mount_point)
-            .stdin(Stdio::piped())
+        let mut child = command
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .with_context(|| format!("failed to start release encfs binary {}", encfs.display()))?;
+            .with_context(|| format!("failed to start {name}"))?;
 
         let stdout_tail = Arc::new(Mutex::new(Vec::new()));
         let stderr_tail = Arc::new(Mutex::new(Vec::new()));
@@ -292,6 +337,7 @@ impl MountedEncfs {
         }
 
         let mut mounted = Self {
+            name,
             mount_point: mount_point.to_path_buf(),
             child,
             stdout_tail,
@@ -306,7 +352,8 @@ impl MountedEncfs {
             }
             if let Some(status) = mounted.child.try_wait()? {
                 bail!(
-                    "encfs exited before the mount became ready with status {}{}",
+                    "{} exited before the mount became ready with status {}{}",
+                    name,
                     status,
                     mounted.log_diagnostics()
                 );
@@ -359,14 +406,16 @@ impl MountedEncfs {
 
     fn log_diagnostics(&self) -> String {
         format!(
-            "\nencfs stdout tail:\n{}\nencfs stderr tail:\n{}",
+            "\n{} stdout tail:\n{}\n{} stderr tail:\n{}",
+            self.name,
             log_tail(&self.stdout_tail),
+            self.name,
             log_tail(&self.stderr_tail)
         )
     }
 }
 
-impl Drop for MountedEncfs {
+impl Drop for MountedFilesystem {
     fn drop(&mut self) {
         if self.mounted {
             let _ = self.cleanup();
@@ -400,7 +449,7 @@ fn stop_child(child: &mut Child) {
     if matches!(child.try_wait(), Ok(None)) {
         #[cfg(unix)]
         {
-            // Give EncFS's signal handler a chance to unmount before falling back to kill().
+            // Give the filesystem's signal handler a chance to unmount before kill().
             // SAFETY: the child PID came directly from std::process::Child.
             let _ = unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM) };
         }
@@ -493,12 +542,12 @@ fn ensure_success(name: &str, output: &Output) -> Result<()> {
     )
 }
 
-/// Prints the baseline comparison of [`BASELINE_VARIANT`], then the
-/// [`OVERHEAD_VARIANT`] from this run relative to it.
+/// Prints EncFS or gocryptfs against the saved EncFS baseline, followed by
+/// the optional EncFS directory-IV overhead comparison from the same run.
 fn print_comparison(
     baseline: &BenchmarkResult,
     current: &BenchmarkResult,
-    overhead: &BTreeMap<String, f64>,
+    overhead: Option<&BTreeMap<String, f64>>,
 ) -> Result<()> {
     if baseline.host != current.host {
         eprintln!(
@@ -523,16 +572,28 @@ fn print_comparison(
     println!(
         "\nValues are operations per second (ops/sec); higher is better, so a positive delta is an improvement."
     );
-    print_table(
-        &format!("Performance: {BASELINE_VARIANT}, baseline vs. this run"),
-        ("Baseline", "Current"),
-        &calculate_deltas(baseline, current)?,
-    );
-    print_table(
-        &format!("Overhead: {OVERHEAD_VARIANT} relative to {BASELINE_VARIANT}, both from this run"),
-        (BASELINE_VARIANT, OVERHEAD_VARIANT),
-        &compare_metrics(&current.metrics, overhead)?,
-    );
+    if current.variant == "gocryptfs" {
+        print_table(
+            &format!("Performance: gocryptfs vs. saved EncFS {BASELINE_VARIANT} baseline"),
+            ("EncFS", "gocryptfs"),
+            &compare_metrics(&baseline.metrics, &current.metrics)?,
+        );
+    } else {
+        print_table(
+            &format!("Performance: {BASELINE_VARIANT}, baseline vs. this run"),
+            ("Baseline", "Current"),
+            &calculate_deltas(baseline, current)?,
+        );
+    }
+    if let Some(overhead) = overhead {
+        print_table(
+            &format!(
+                "Overhead: {OVERHEAD_VARIANT} relative to {BASELINE_VARIANT}, both from this run"
+            ),
+            (BASELINE_VARIANT, OVERHEAD_VARIANT),
+            &compare_metrics(&current.metrics, overhead)?,
+        );
+    }
     println!("\nDeltas are informational and do not affect the command exit status.");
     Ok(())
 }
