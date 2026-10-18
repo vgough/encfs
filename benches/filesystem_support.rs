@@ -5,20 +5,16 @@ use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 
-/// Version 2 records which variant (see [`VARIANTS`]) the metrics measure;
+/// Version 2 records which variant (see [`BASELINE_CONFIG`]) the metrics measure;
 /// version 1 measured the `encfsctl new` default of its day, unlabelled.
 pub const SCHEMA_VERSION: u32 = 2;
 
 /// The variant baselines record, tracking performance across revisions.
-pub const BASELINE_VARIANT: &str = "no-unique-iv";
-
-/// The variant compared against [`BASELINE_VARIANT`] within each run, to
-/// show the overhead of per-directory name IVs.
-pub const OVERHEAD_VARIANT: &str = "directory-iv";
+pub const BASELINE_VARIANT: &str = "directory-iv";
 
 /// A filesystem configuration the benchmark runs mdtest against.
 pub struct Variant {
-    /// Key in [`BenchmarkResult::variants`].
+    /// Name recorded in [`BenchmarkResult::variant`].
     pub name: &'static str,
     /// Extra `encfsctl new` arguments that create it.
     pub new_args: &'static [&'static str],
@@ -29,23 +25,13 @@ pub struct Variant {
     pub unique_iv: bool,
 }
 
-/// Every variant a comparison run measures.
-pub const VARIANTS: [Variant; 2] = [
-    // The `encfsctl new` default: per-directory name IVs, per-file IV headers.
-    Variant {
-        name: "directory-iv",
-        new_args: &[],
-        directory_iv: true,
-        unique_iv: true,
-    },
-    // Headerless, path-chained names: the reverse-mode (encfsr) layout.
-    Variant {
-        name: "no-unique-iv",
-        new_args: &["--no-unique-iv"],
-        directory_iv: false,
-        unique_iv: false,
-    },
-];
+/// The `encfsctl new` default: per-directory name IVs, per-file IV headers.
+pub const BASELINE_CONFIG: Variant = Variant {
+    name: BASELINE_VARIANT,
+    new_args: &[],
+    directory_iv: true,
+    unique_iv: true,
+};
 
 const REQUIRED_METRICS: [&str; 10] = [
     "Directory creation",
@@ -291,7 +277,7 @@ pub fn calculate_deltas(
 }
 
 /// Per-operation deltas of `current` relative to `baseline`; also used to
-/// compare two variants measured in the same run.
+/// compare gocryptfs against EncFS.
 pub fn compare_metrics(
     baseline: &BTreeMap<String, f64>,
     current: &BTreeMap<String, f64>,

@@ -215,17 +215,29 @@ IV-dependent names or attributes bind the IV to the directory:
 Read-only operations are left alone: a stale IV there only yields a
 transient `ENOENT` or decode error.
 
-- **mkdir**: create the directory with the requested mode exactly as today,
-  create the sidecar, set ownership on both. If the resulting mode denies the
-  daemon write/search access, add owner `rwx` temporarily and restore the
-  original bits afterward. If the sidecar cannot be written, remove the
-  directory and return the error.
-- **rmdir**: a directory is empty when the sidecar is its only entry. Read the
-  16 bytes, unlink the sidecar, `rmdir`. If `rmdir` fails (for example a file
-  was created concurrently), re-create the sidecar with the same bytes so
-  names already in the directory stay valid. A directory with no sidecar and no
-  entries (left by a crash mid-rmdir) is removed directly. A read-only
-  directory gets owner write temporarily, restored if the removal fails.
+- **mkdir**: outside the lock, build the directory under a random staging
+  name (`.encfs.` and 16 hex digits, never a valid encrypted name, so never
+  listed) in the parent, pinned by a descriptor and registered as in progress
+  so rmdir leaves it alone: create it with the requested mode plus owner `rwx`,
+  create the sidecar through an open descriptor on it, set ownership on both,
+  drop the added owner bits with `fchmod` on that descriptor, then sync the
+  sidecar and the directory. Under the write lock, fail with `ENOENT` if the
+  parent path no longer leads to the pinned parent, encrypt the name, fail
+  with `EEXIST` if anything is there (`rename(2)` would replace an empty
+  directory), and rename the staged directory into place. A crash therefore never leaves a
+  directory under its encrypted name without a complete, synced sidecar, or
+  with more access than requested. On any failure the staged directory is
+  removed.
+- **rmdir**: a directory is empty when the sidecar is its only entry, apart
+  from staged directories a crashed mkdir left (staging-named directories not
+  registered as in progress), which are removed with it if
+  they hold nothing but a sidecar (one that holds more makes the directory
+  not empty). Read the 16 bytes, unlink the sidecar, `rmdir`. If `rmdir`
+  fails (for example a file was created concurrently), re-create the sidecar
+  with the same bytes so names already in the directory stay valid. A
+  directory with no sidecar and no entries (left by a crash mid-rmdir) is
+  removed directly. A read-only directory gets owner write temporarily,
+  restored if the removal fails.
 - **readdir**: decrypt entries with `name_iv` of the directory; the sidecar is
   not listed.
 - **Volume root**: `encfsctl new` writes the root sidecar. At

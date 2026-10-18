@@ -302,19 +302,12 @@ Blowfish-CBC (legacy)       180.26 MB/s  (deprecated)
 ### Filesystem benchmark
 
 The repository includes an automated filesystem benchmark based on `mdtest`,
-which is distributed as part of IOR. It measures fresh V7 EncFS filesystems of
-two kinds:
+which is distributed as part of IOR. It measures a fresh V7 EncFS filesystem
+using the `encfsctl new` default: per-directory name IVs and per-file IV headers
+(`directory-iv`). Both baseline saves and comparison runs measure this configuration.
 
-- `no-unique-iv`: `encfsctl new --no-unique-iv` (headerless files and
-  path-chained names, the layout reverse mode uses). This is the variant the
-  baseline records, to track performance across changes.
-- `directory-iv`: the `encfsctl new` default (per-directory name IVs, per-file
-  IV headers). Each comparison run also measures this one and reports it
-  relative to the `no-unique-iv` result from the same run, to show the
-  overhead of the default layout.
-
-For each, it mounts the filesystem with the release binaries, runs all of
-mdtest's standard directory and file phases, unmounts it, and removes its
+It mounts the filesystem with the release binaries, runs all of mdtest's
+standard directory and file phases, unmounts it, and removes its
 temporary files. The benchmark requires:
 
 - a working FUSE installation and permission to mount a FUSE filesystem;
@@ -328,7 +321,7 @@ task benchmark-save-baseline
 task benchmark
 ```
 
-To compare gocryptfs with the saved EncFS `no-unique-iv` baseline:
+To compare gocryptfs with the saved EncFS `directory-iv` baseline:
 
 ```bash
 task benchmark-gocryptfs
@@ -348,9 +341,8 @@ compares their performance with these configurations.
 The default workload uses one rank, 1,000 items per iteration, five iterations,
 and 4,096-byte writes and reads. Results are normalized as mean operations per
 second for every operation in mdtest's `SUMMARY rate` table. Comparisons print
-two tables, the `no-unique-iv` baseline against this run and the `directory-iv`
-overhead against this run's `no-unique-iv` numbers, but changes are
-informational and never fail the command. Command failures, invalid output, mount/unmount failures,
+one table comparing the saved `directory-iv` baseline against this run, but
+changes are informational and never fail the command. Command failures, invalid output, mount/unmount failures,
 and missing or incompatible baselines do fail with a diagnostic.
 
 Task variables can select another baseline or workload. For example:
@@ -368,8 +360,8 @@ and `BENCH_MOUNT_TIMEOUT_SECS`. The default baseline is
 `.benchmarks/filesystem-baseline.json`, which is ignored by Git. Baselines are
 machine-specific: compare results on the same host under similar load. The tool
 warns if the recorded host context or mdtest version differs. Baselines saved
-before they recorded the `no-unique-iv` variant measured a different
-configuration and must be saved again.
+with the former `no-unique-iv` configuration (or without a variant label)
+are incompatible and must be saved again with `task benchmark-save-baseline`.
 
 ### FUSE Support
 
