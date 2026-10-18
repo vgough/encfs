@@ -10,6 +10,7 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 prost-build = "0.14.4"
 protoc-bin-vendored = "3.3"
 

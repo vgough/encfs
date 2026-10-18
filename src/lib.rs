@@ -1,3 +1,4 @@
+pub mod build_info;
 pub mod config;
 pub mod config_binary;
 pub mod config_proto;

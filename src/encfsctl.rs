@@ -255,7 +255,7 @@ fn help_speed() -> String {
 }
 
 #[derive(Parser)]
-#[command(name = "encfsctl")]
+#[command(name = "encfsctl", version = encfs::build_info::VERSION, before_help = encfs::build_info::banner("encfsctl"))]
 #[command(about = help_about(), arg_required_else_help=true)]
 struct Cli {
     #[command(subcommand)]
