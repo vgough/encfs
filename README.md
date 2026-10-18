@@ -51,8 +51,16 @@ Overall status
   - [x] new tamper-safe configuration file (v7 config)
   - [x] support for a new key derivation function (Argon2id)
   - [x] new block encryption mode (aes-gcm-siv)
+  - [x] 96-bit random per-file IVs
+  - [x] per-directory name IVs (`.encfs.diriv`), so directory renames are a single rename
+  - [x] encrypted extended attributes, keyed per inode so they survive renames and hard links
+  - [x] filename encoding chosen automatically for case-insensitive filesystems
 - Extended features
-  - [x] reverse encryption mode
+  - [x] reverse encryption mode, with opt-in writes
+  - [x] configurable unencrypted extended attribute prefixes
+  - [x] on-demand mode with Touch ID and idle locking (macOS)
+- Platforms
+  - [x] Linux, macOS (macFUSE), FreeBSD
 - Multi-language
   - [x] basic multi-language support
   - [ ] translations beyond auto-generated FR and DE strings
@@ -71,23 +79,38 @@ with EncFS 1.9.x, config formats V4/V5/V6) and newly created filesystems
 | Block encryption | AES or Blowfish in CBC mode with an optional per-block MAC of at most 8 bytes (encrypt-then-MAC, 64-bit MACs) | AES-256-GCM-SIV authenticated encryption with a 16-byte tag per block (misuse-resistant AEAD) |
 | Confidentiality + integrity | Separate cipher + weak MAC; integrity optional and truncated | Integrated AEAD; every block is authenticated |
 | Block overhead | Up to 8-byte MAC header per block | 16-byte tag per block (default block size 4080 of 4096 bytes) |
-| Filenames | Stream (CFB, multi-pass) or block mode, IV from HMAC of the name, chained from the parent path | Same stream/block filename modes (Base32 block names by default on case-insensitive filesystems, stream names elsewhere), but the IV for the names in each directory comes from a random per-directory `.encfs.diriv` file, so renaming a directory is a single rename (`encfsctl new --no-directory-iv` keeps path-chained IVs) |
+| Filename encoding | Stream (CFB, multi-pass) or block mode | Same stream/block modes; `encfsctl new` picks Base32 block names on case-insensitive filesystems (so names survive case folding) and stream names elsewhere (`--name-encoding` overrides) |
+| Filename IVs | IV from HMAC of the name, chained from the parent path, so every name depends on all directories above it | IV for the names in each directory comes from a random per-directory `.encfs.diriv` file, so names depend only on their directory (`--no-directory-iv` keeps path-chained IVs; reverse mode requires this) |
+| Directory rename | With chained name IVs, a copy of the whole subtree under new names | A single `rename(2)`. With external IV chaining (on by default) a *file* rename is still a copy, since file headers depend on the path |
+| Extended attributes | Stored unencrypted, as EncFS 1.9.x does | Names and values encrypted under a random per-inode seed (`user.encfs.~iv`), so they survive renames, hard links and truncation; prefixes can be left unencrypted (`--plaintext-xattr-prefix`) |
+| Symlink targets | Path form of EncFS 1.9.x: each component encoded separately, keeping `/`, `.` and `..` | Whole target encrypted as one name under the link's path IV |
 | Volume key wrap | Encrypted with the PBKDF2-derived user key | Wrapped with a 32-byte Argon2id-derived AEAD key |
-| Per-file IV (with `uniqueIV`) | 64-bit, stored in an 8-byte file header | 96-bit by default, stored in a 12-byte file header (`encfsctl new --legacy-file-iv` opts back into the 64-bit/8-byte form for interop with older tooling) |
+| Per-file IV (with `uniqueIV`) | 64-bit, stored in an 8-byte file header | 96-bit by default, stored in a 12-byte file header (`encfsctl new --legacy-file-iv` keeps the 64-bit/8-byte form) |
+| Format evolution | Config version only; EncFS 1.9.x cannot read V7 configs at all | Authenticated `minimum_reader_version`: a build too old for a feature the volume uses refuses it with a clear version error instead of misreading it (betas from before this field fail closed with a config hash mismatch) |
 
 In short: legacy filesystems use PBKDF2-HMAC-SHA1 + CBC with an optional
 64-bit per-block MAC, while new V7 filesystems use Argon2id + AES-GCM-SIV,
 giving memory-hard password hashing, authenticated per-block encryption with
-128-bit tags, and a tamper-evident config file. Some protocol-level
-weaknesses of the legacy EncFS design remain for compatibility, but the V7
-mode addresses the most significant ones (weak MACs, unauthenticated config,
-fast KDF).
+128-bit tags, and a tamper-evident config file. V7 also gives each directory
+its own random name IV, so directory renames no longer copy their contents,
+and encrypts extended attributes, which legacy volumes store in the clear.
+Some protocol-level weaknesses of the legacy EncFS design remain for
+compatibility, but the V7 mode addresses the most significant ones (weak
+MACs, unauthenticated config, fast KDF). The design decisions behind the
+newer features are in [docs/adr](docs/adr).
+
+Every new V7 filesystem, including those made with `--legacy-file-iv`,
+`--no-unique-iv` or `--no-directory-iv`, uses the per-inode extended
+attribute format, so it can only be opened by builds that support that
+format, not by earlier betas or EncFS 1.9.x.
 
 Existing legacy filesystems can be partially upgraded in place with
-`encfsctl passwd --upgrade <rootdir>` (moves to the V7 config and Argon2id);
-the file data encryption mode of an existing filesystem is not changed by
-this. Full migration to AES-GCM-SIV block encryption requires creating a
-new filesystem and copying the data.
+`encfsctl passwd --upgrade <rootdir>` (moves to the V7 config and Argon2id;
+requires `uniqueIV` and chained name IVs). The upgrade only rewrites the
+config: file data encryption, file IVs, filename IVs, symlink targets and
+unencrypted extended attributes all stay in their legacy form. Getting
+AES-GCM-SIV, per-directory name IVs and encrypted extended attributes
+requires creating a new filesystem and copying the data.
 
 ## Getting started
 
@@ -305,6 +328,23 @@ task benchmark-save-baseline
 task benchmark
 ```
 
+To compare gocryptfs with the saved EncFS `no-unique-iv` baseline:
+
+```bash
+task benchmark-gocryptfs
+# Or select a specific installed binary:
+task benchmark-gocryptfs GOCRYPTFS_BIN=/path/to/gocryptfs
+```
+
+This target requires `gocryptfs` on `PATH` (or `GOCRYPTFS_BIN`). It initializes
+and mounts a fresh volume with gocryptfs defaults, runs the same mdtest phases,
+then unmounts and removes the temporary volume. It prints the gocryptfs version
+and per-operation deltas against the saved EncFS baseline; a positive delta
+means gocryptfs achieved more operations per second. The baseline is left
+unchanged. Use the same workload variables as when saving the EncFS baseline.
+The filesystems use their respective encryption formats and settings, so this
+compares their performance with these configurations.
+
 The default workload uses one rank, 1,000 items per iteration, five iterations,
 and 4,096-byte writes and reads. Results are normalized as mean operations per
 second for every operation in mdtest's `SUMMARY rate` table. Comparisons print
@@ -323,7 +363,7 @@ task benchmark BENCH_BASELINE=/path/to/shared-baseline.json MDTEST_BIN=/opt/ior/
 ```
 
 The supported variables are `BENCH_BASELINE`, `BENCH_ITEMS`,
-`BENCH_ITERATIONS`, `BENCH_PROCS`, `BENCH_BYTES`, `MDTEST_BIN`, `MPIRUN_BIN`,
+`BENCH_ITERATIONS`, `BENCH_PROCS`, `BENCH_BYTES`, `MDTEST_BIN`, `MPIRUN_BIN`, `GOCRYPTFS_BIN`,
 and `BENCH_MOUNT_TIMEOUT_SECS`. The default baseline is
 `.benchmarks/filesystem-baseline.json`, which is ignored by Git. Baselines are
 machine-specific: compare results on the same host under similar load. The tool
