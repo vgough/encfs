@@ -11,7 +11,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::SystemTime;
@@ -1041,12 +1041,7 @@ impl PathFilesystem for ReverseFs {
             return Err(Errno::from(libc::ESTALE));
         };
         if let Some(mode) = set.mode {
-            let mut permissions = fs::symlink_metadata(&target)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
-                .permissions();
-            permissions.set_mode(mode);
-            fs::set_permissions(&target, permissions)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            crate::fs::chmod_nofollow(&target, mode)?;
         }
         if set.uid.is_some() || set.gid.is_some() {
             use std::ffi::CString;
