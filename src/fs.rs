@@ -346,18 +346,18 @@ impl NewEntry {
         check(unsafe { libc::unlinkat(self.dirfd(), self.name.as_ptr(), 0) })
     }
 
-    /// As `set_ownership_path`: gives the entry the caller's uid and gid when
-    /// they differ from this process's, ignoring `EPERM`.
+    /// As `set_ownership_path`: gives the entry the owner [`owner_for`]
+    /// says it needs, ignoring `EPERM`.
     fn set_ownership(&self, caller: &Request) -> OpResult {
-        if caller.uid == unsafe { libc::getuid() } && caller.gid == unsafe { libc::getgid() } {
+        let Some((uid, gid)) = owner_for(caller) else {
             return Ok(());
-        }
+        };
         match check(unsafe {
             libc::fchownat(
                 self.dirfd(),
                 self.name.as_ptr(),
-                caller.uid as libc::uid_t,
-                caller.gid as libc::gid_t,
+                uid as libc::uid_t,
+                gid as libc::gid_t,
                 libc::AT_SYMLINK_NOFOLLOW,
             )
         }) {
@@ -365,6 +365,17 @@ impl NewEntry {
             other => other,
         }
     }
+}
+
+/// The owner a new entry made for `caller` must be given, if it isn't this
+/// process's own. In single-user mode the daemon runs as the user who owns
+/// the files, so they need none; serving other users (`--public`) is meant
+/// to run as root, which gives each entry its creator's uid and gid. Only
+/// root ever changes ownership, then: anyone else could at most change the
+/// group, and would only get `EPERM` for the rest.
+fn owner_for(caller: &Request) -> Option<(u32, u32)> {
+    let (uid, gid) = unsafe { (libc::geteuid(), libc::getegid()) };
+    (uid == 0 && (caller.uid, caller.gid) != (uid, gid)).then_some((caller.uid, caller.gid))
 }
 
 /// The errno of an I/O error, or `EIO` when it has none.
@@ -725,10 +736,8 @@ impl EncFs {
 
     /// The backing path of `name` inside the backing directory `real_parent`
     /// (directory IV mode), and the identity of the directory it was
-    /// encrypted for. The caller holds the sidecar lock. Held for write, it
-    /// keeps `real_parent` that directory until released, so the name can be
-    /// created there; held for read, the result is only good for a check
-    /// that is repeated under the write lock, as mkdir's early `EEXIST`.
+    /// encrypted for. The caller holds the sidecar write lock, which keeps
+    /// `real_parent` that directory until the lock is released.
     fn encrypt_name_in(
         &self,
         real_parent: &Path,
@@ -955,7 +964,6 @@ impl EncFs {
         newname: &OsStr,
         source_meta: &fs::Metadata,
     ) -> OpResult {
-        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
         // Held across the rename and the cache update, so a concurrent cache
         // miss can't re-insert the old path in between. The new name is
         // encrypted under it too, so the destination's parent can't be
@@ -964,7 +972,7 @@ impl EncFs {
         let real_dest = &self.encrypt_name_in(real_dest_parent, newname)?.0;
         let removed = match fs::symlink_metadata(real_dest) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(errno(e)),
+            Err(e) => return Err(io_errno(e)),
             Ok(dest_meta) if !dest_meta.is_dir() => return Err(libc::ENOTDIR),
             Ok(dest_meta)
                 if (dest_meta.dev(), dest_meta.ino()) == (source_meta.dev(), source_meta.ino()) =>
@@ -983,7 +991,7 @@ impl EncFs {
                 if let Some(removed) = removed {
                     removed.restore(real_dest);
                 }
-                Err(errno(e))
+                Err(io_errno(e))
             }
         }
     }
@@ -995,15 +1003,14 @@ impl EncFs {
     /// Directories a crashed mkdir left under a staging name (see
     /// [`diriv::staging_name`]) don't count, and are removed with it.
     fn remove_sidecar_of_empty_dir(&self, dir: &Path) -> Result<RemovedSidecar, libc::c_int> {
-        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
         let mut staged = Vec::new();
         {
             let building = self.staging.lock().unwrap_or_else(|p| p.into_inner());
-            for entry in entries_besides_sidecar(dir).map_err(errno)? {
-                let entry = entry.map_err(errno)?;
+            for entry in entries_besides_sidecar(dir).map_err(io_errno)? {
+                let entry = entry.map_err(io_errno)?;
                 let name = entry.file_name();
                 let left_over = diriv::is_staging_name(&name)
-                    && entry.file_type().map_err(errno)?.is_dir()
+                    && entry.file_type().map_err(io_errno)?.is_dir()
                     && !building.contains(&name);
                 if !left_over {
                     return Err(libc::ENOTEMPTY);
@@ -1063,7 +1070,7 @@ impl EncFs {
             && let Err(e) = fs::remove_file(&sidecar)
         {
             restore_dir_mode(dir, original_mode);
-            return Err(errno(e));
+            return Err(io_errno(e));
         }
         Ok(removed)
     }
@@ -1468,12 +1475,21 @@ impl StagedDir<'_> {
         let _ = self.dir.set_permissions(fs::Permissions::from_mode(0o700));
         let sidecar = CString::new(diriv::SIDECAR_NAME).expect("no NUL in sidecar name");
         // SAFETY: both descriptors are open and both names valid C strings.
-        unsafe {
-            libc::unlinkat(self.dir.as_raw_fd(), sidecar.as_ptr(), 0);
-            libc::unlinkat(
-                self.parent.as_raw_fd(),
-                self.name.as_ptr(),
-                libc::AT_REMOVEDIR,
+        let removed = check(unsafe { libc::unlinkat(self.dir.as_raw_fd(), sidecar.as_ptr(), 0) })
+            .or_else(|e| if e == libc::ENOENT { Ok(()) } else { Err(e) })
+            .and_then(|()| {
+                check(unsafe {
+                    libc::unlinkat(
+                        self.parent.as_raw_fd(),
+                        self.name.as_ptr(),
+                        libc::AT_REMOVEDIR,
+                    )
+                })
+            });
+        if let Err(e) = removed {
+            warn!(
+                "Failed to remove {:?}, left by a failed mkdir: errno {}",
+                self.name, e
             );
         }
     }
@@ -1528,27 +1544,18 @@ impl RemovedSidecar {
             None => None,
         };
         if let Some(bytes) = self.bytes {
-            use std::os::unix::fs::OpenOptionsExt;
-            let created = fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_DIRECTORY)
-                .open(dir)
-                .and_then(|d| diriv::create_sidecar_in(&d, &bytes).map(|file| (d, file)));
-            match created {
-                Ok((d, file)) => {
-                    if let Some((uid, gid)) = self.owner {
-                        let _ = std::os::unix::fs::fchown(&file, Some(uid), Some(gid));
-                    }
-                    // The names are readable again either way.
-                    if let Err(e) = diriv::sync_sidecar(&file, &d, self.owner.is_some()) {
-                        warn!(
-                            "Restored {} in {:?} but could not sync it: {}",
-                            diriv::SIDECAR_NAME,
-                            dir,
-                            e
-                        );
-                    }
-                }
+            // Only root changes ownership (see `owner_for`); otherwise the
+            // sidecar was this process's and is again.
+            let owner = self.owner.filter(|_| unsafe { libc::geteuid() } == 0);
+            match diriv::create_sidecar_owned(dir, &bytes, owner) {
+                Ok(Ok(())) => {}
+                // The names are readable again either way.
+                Ok(Err(e)) => warn!(
+                    "Restored {} in {:?} but could not sync it: {}",
+                    diriv::SIDECAR_NAME,
+                    dir,
+                    e
+                ),
                 Err(e) => error!(
                     "Failed to restore {} in {:?}; its names are now unreadable: {}",
                     diriv::SIDECAR_NAME,
@@ -1562,7 +1569,7 @@ impl RemovedSidecar {
 }
 
 /// Fails with `EEXIST` if anything, even a dangling symlink, is at `name`
-/// relative to `dirfd` (or `AT_FDCWD`).
+/// relative to `dirfd`.
 fn check_absent_at(dirfd: RawFd, name: &CStr) -> OpResult {
     match stat_at(dirfd, name) {
         Ok(_) => Err(libc::EEXIST),
@@ -2177,6 +2184,15 @@ impl EncFs {
         Ok(entry)
     }
 
+    /// As [`EncFs::entry_for_new_inode`], from the new inode's metadata.
+    fn entry_for_new_metadata(&self, metadata: &fs::Metadata) -> PathEntry<FileState> {
+        let state = self
+            .file_states
+            .get_by_key((metadata.dev(), metadata.ino()));
+        state.set_cached_xattr_iv(None);
+        PathEntry::new(self.attr_from_metadata(metadata), state)
+    }
+
     fn attr_from_metadata(&self, metadata: &fs::Metadata) -> FileAttr {
         let mut size = metadata.len();
         // Adjust size for header and MAC
@@ -2454,7 +2470,9 @@ impl EncFs {
         };
         drop(meta);
 
-        set_ownership_fd(file.as_raw_fd(), &req).map_err(|e| e.raw())?;
+        if owner_for(&req).is_some() {
+            set_ownership_fd(file.as_raw_fd(), &req).map_err(|e| e.raw())?;
+        }
 
         // Build the reply attributes from the freshly created backing file
         // (ownership was just set above); logical size of a new file is 0.
@@ -2495,18 +2513,17 @@ impl EncFs {
 
         if self.config.directory_iv {
             let (real_parent, _) = self.encrypt_path(parent)?;
-            self.mkdir_with_sidecar(&req, &real_parent, name, mode)?;
-        } else {
-            use std::os::unix::fs::DirBuilderExt;
-            let (real_path, _) = self.encrypt_path(&path)?;
-            std::fs::DirBuilder::new()
-                .mode(mode)
-                .create(&real_path)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            return self.mkdir_with_sidecar(&req, &real_parent, name, mode);
+        }
+        use std::os::unix::fs::DirBuilderExt;
+        let (real_path, _) = self.encrypt_path(&path)?;
+        std::fs::DirBuilder::new()
+            .mode(mode)
+            .create(&real_path)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        if owner_for(&req).is_some() {
             set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
         }
-
-        // Outside the sidecar lock: resolving the path may need to take it.
         self.entry_for_new_inode(&path)
     }
 
@@ -2515,13 +2532,16 @@ impl EncFs {
     /// The directory is built and synced under a staging name first (see
     /// [`EncFs::stage_dir`]), outside the sidecar write lock, and then
     /// renamed into place under the lock (see [`EncFs::place_staged`]).
+    ///
+    /// There is no early check for an existing name: the kernel looks the
+    /// name up before sending mkdir, and answers `EEXIST` itself.
     fn mkdir_with_sidecar(
         &self,
         req: &Request,
         real_parent: &Path,
         name: &OsStr,
         mode: u32,
-    ) -> OpResult {
+    ) -> Result<PathEntry<FileState>, libc::c_int> {
         let bytes = diriv::new_sidecar().map_err(|e| {
             error!("Failed to generate directory IV: {}", e);
             libc::EIO
@@ -2531,20 +2551,15 @@ impl EncFs {
             libc::EIO
         })?;
 
-        // Fail early on an existing name, as mkdir often does, rather than
-        // after building and syncing a directory for nothing.
-        {
-            let _guard = self.sidecar_read_lock();
-            let (real_path, _) = self.encrypt_name_in(real_parent, name)?;
-            check_absent_at(libc::AT_FDCWD, &c_path(&real_path).map_err(|e| e.raw())?)?;
-        }
-
         let staged = self.stage_dir(req, real_parent, mode, &bytes)?;
-        let placed = self.place_staged(&staged, real_parent, name, ivs);
-        if placed.is_err() {
+        if let Err(e) = self.place_staged(&staged, real_parent, name, ivs) {
             staged.discard();
+            return Err(e);
         }
-        placed
+        // The open directory is the inode just placed; no need to find it
+        // again by path.
+        let metadata = staged.dir.metadata().map_err(io_errno)?;
+        Ok(self.entry_for_new_metadata(&metadata))
     }
 
     /// Renames the directory mkdir staged to the encrypted `name` in
@@ -2565,6 +2580,8 @@ impl EncFs {
         let (real_path, parent_id) = self.encrypt_name_in(real_parent, name)?;
         if parent_id != staged.parent_id {
             debug!("Directory {:?} was replaced during mkdir", real_parent);
+            // As `pinned_dir_ivs` does, so a retry reloads it.
+            self.diriv_cache.forget_if(real_parent, parent_id);
             return Err(libc::ENOENT);
         }
         let encrypted_name = real_path.file_name().ok_or(libc::EIO)?;
@@ -2662,12 +2679,15 @@ impl EncFs {
             _registration: registration,
         };
 
+        let owner = owner_for(req);
         let result = (|| {
             let sidecar = diriv::create_sidecar_in(&staged.dir, bytes)?;
-            // Best effort, like the directory's own ownership.
-            let _ = set_ownership_fd(sidecar.as_raw_fd(), req);
-            set_ownership_fd(staged.dir.as_raw_fd(), req)
-                .map_err(|e| std::io::Error::from_raw_os_error(e.raw()))?;
+            if owner.is_some() {
+                // Best effort, like the directory's own ownership.
+                let _ = set_ownership_fd(sidecar.as_raw_fd(), req);
+                set_ownership_fd(staged.dir.as_raw_fd(), req)
+                    .map_err(|e| std::io::Error::from_raw_os_error(e.raw()))?;
+            }
             // Drop only the owner bits added above; the open directory can
             // still be synced without them.
             let wanted = created & !(0o700 & !mode);
@@ -2676,18 +2696,9 @@ impl EncFs {
                     .dir
                     .set_permissions(fs::Permissions::from_mode(wanted))?;
             }
-            // A full sync of the sidecar is needed only if it was chowned:
-            // fdatasync persists its data and size, not a change of owner.
-            // Ask the file rather than the request, since an unprivileged
-            // chown fails and leaves the owner as this process. If the owner
-            // can't be read, sync in full to be safe.
-            let owner_changed = sidecar
-                .metadata()
-                .map(|m| {
-                    m.uid() != unsafe { libc::getuid() } || m.gid() != unsafe { libc::getgid() }
-                })
-                .unwrap_or(true);
-            diriv::sync_sidecar(&sidecar, &staged.dir, owner_changed)
+            // A chowned sidecar needs a full sync: fdatasync persists its
+            // data and size, not a change of owner.
+            diriv::sync_sidecar(&sidecar, &staged.dir, owner.is_some())
         })();
         if let Err(e) = result {
             error!("Failed to build new directory in {:?}: {}", real_parent, e);
@@ -2753,9 +2764,8 @@ impl EncFs {
     /// still fails (say, an entry appeared behind the mount), the sidecar is
     /// put back with the same bytes so existing names stay valid.
     fn rmdir_with_sidecar(&self, real_path: &Path) -> OpResult {
-        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
         let _guard = self.sidecar_write_lock();
-        let meta = fs::symlink_metadata(real_path).map_err(errno)?;
+        let meta = fs::symlink_metadata(real_path).map_err(io_errno)?;
         if !meta.is_dir() {
             return Err(libc::ENOTDIR);
         }
@@ -2767,7 +2777,7 @@ impl EncFs {
             }
             Err(e) => {
                 removed.restore(real_path);
-                Err(errno(e))
+                Err(io_errno(e))
             }
         }
     }
@@ -3722,10 +3732,13 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let (real, _) = vol.fs.encrypt_path(dir).unwrap();
         std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o300)).unwrap();
-        assert_eq!(
-            vol.fs.fsyncdir(node(), &(), false, &caller),
-            Err(Errno::EACCES)
-        );
+        // Root reads it regardless of its mode.
+        if unsafe { libc::geteuid() } != 0 {
+            assert_eq!(
+                vol.fs.fsyncdir(node(), &(), false, &caller),
+                Err(Errno::EACCES)
+            );
+        }
         std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         std::fs::remove_dir_all(&real).unwrap();

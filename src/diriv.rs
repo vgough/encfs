@@ -149,12 +149,27 @@ pub fn read_sidecar(dir: &Path) -> io::Result<Sidecar> {
 /// sync it needs read access to it. A complete sidecar that fails to sync is
 /// kept.
 pub fn create_sidecar(dir: &Path, bytes: &Sidecar) -> io::Result<()> {
+    create_sidecar_owned(dir, bytes, None)?
+}
+
+/// As [`create_sidecar`], giving the sidecar `owner` (uid, gid), as far as
+/// this process may, before the sync. Fails if the sidecar can't be
+/// created; once it exists, returns the sync's result inside, since names
+/// encrypted under it are readable either way.
+pub fn create_sidecar_owned(
+    dir: &Path,
+    bytes: &Sidecar,
+    owner: Option<(u32, u32)>,
+) -> io::Result<io::Result<()>> {
     let dir = fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY)
         .open(dir)?;
     let file = create_sidecar_in(&dir, bytes)?;
-    sync_sidecar(&file, &dir, false)
+    if let Some((uid, gid)) = owner {
+        let _ = std::os::unix::fs::fchown(&file, Some(uid), Some(gid));
+    }
+    Ok(sync_sidecar(&file, &dir, owner.is_some()))
 }
 
 /// Creates the sidecar in the open directory `dir` with the given contents,
@@ -561,15 +576,11 @@ mod tests {
     fn staging_names_are_recognized_exactly() {
         let name = staging_name().unwrap();
         assert!(is_staging_name(&name));
-        let upper = name
-            .to_str()
-            .unwrap()
-            .replace(STAGING_PREFIX, "")
-            .to_uppercase();
         for other in [
             SIDECAR_NAME.to_string(),
             ".encfs.backup".to_string(),
-            format!("{}{}", STAGING_PREFIX, upper),
+            format!("{}EncFS", STAGING_PREFIX),
+            format!("{}{}", STAGING_PREFIX, "0123456789ABCDEF"),
             format!("{}0", name.to_str().unwrap()),
             name.to_str().unwrap()[..name.len() - 1].to_string(),
         ] {
