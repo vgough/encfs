@@ -154,7 +154,7 @@ pub fn create_sidecar(dir: &Path, bytes: &Sidecar) -> io::Result<()> {
         .custom_flags(libc::O_DIRECTORY)
         .open(dir)?;
     let file = create_sidecar_in(&dir, bytes)?;
-    sync_sidecar(&file, &dir)
+    sync_sidecar(&file, &dir, false)
 }
 
 /// Creates the sidecar in the open directory `dir` with the given contents,
@@ -200,9 +200,11 @@ pub const STAGING_PREFIX: &str = ".encfs.";
 pub fn staging_name() -> io::Result<OsString> {
     let mut bytes = [0u8; STAGING_RANDOM_LEN];
     getrandom::fill(&mut bytes).map_err(io::Error::other)?;
-    let mut name = String::from(STAGING_PREFIX);
+    use std::fmt::Write;
+    let mut name = String::with_capacity(STAGING_PREFIX.len() + 2 * STAGING_RANDOM_LEN);
+    name.push_str(STAGING_PREFIX);
     for b in bytes {
-        name.push_str(&format!("{:02x}", b));
+        let _ = write!(name, "{:02x}", b);
     }
     Ok(name.into())
 }
@@ -234,11 +236,16 @@ pub fn is_staging_name(name: &OsStr) -> bool {
 /// If the barrier fails, a full sync of `dir` (`F_FULLFSYNC`) flushes the
 /// drive's cache, taking the file's already `fsync`ed data along; where that
 /// is unsupported too (smbfs directories), each is synced as [`sync_file`]
-/// does. Elsewhere the file's data is synced (`fdatasync`, which covers its
-/// size, all a new file needs) and the directory in full. A user's
+/// does. Elsewhere the directory is synced in full, and the file's data
+/// (`fdatasync`, which covers its size, all a new file needs) unless
+/// `owner_changed` says it was chowned since creation, which only a full
+/// sync persists. A user's
 /// `fsyncdir` still flushes in full, so mkdir followed by `fsyncdir` on the
 /// parent stays durable.
-pub fn sync_sidecar(file: &File, dir: &File) -> io::Result<()> {
+pub fn sync_sidecar(file: &File, dir: &File, owner_changed: bool) -> io::Result<()> {
+    // Apple's plain `fsync` below covers ownership as well.
+    #[cfg(target_vendor = "apple")]
+    let _ = owner_changed;
     #[cfg(target_vendor = "apple")]
     {
         use std::os::unix::io::AsRawFd;
@@ -261,7 +268,7 @@ pub fn sync_sidecar(file: &File, dir: &File) -> io::Result<()> {
     }
     #[cfg(not(target_vendor = "apple"))]
     {
-        sync_file(file, true)?;
+        sync_file(file, !owner_changed)?;
         sync_file(dir, false)
     }
 }
