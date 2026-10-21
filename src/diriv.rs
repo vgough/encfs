@@ -10,13 +10,22 @@
 //! The sidecar name starts with `.`, which neither filename alphabet contains,
 //! so it never collides with an encrypted name, and every tree walker already
 //! skips dot-prefixed entries.
+//!
+//! The sync calls this depends on, which differ between platforms, are in
+//! the `platform` module.
+
+mod platform;
+
+pub use platform::{open_dir_to_sync, sync_file, sync_sidecar};
 
 use crate::config::EncfsConfig;
 use crate::crypto::cipher::Cipher;
 use rust_i18n::t;
 use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -142,24 +151,93 @@ pub fn read_sidecar(dir: &Path) -> io::Result<Sidecar> {
     read_sidecar_with_metadata(dir).map(|(bytes, _)| bytes)
 }
 
-/// Creates the sidecar in `dir` with the given contents, mode 0444.
+/// Creates the sidecar in `dir` with the given contents and syncs it and
+/// `dir` (see [`create_sidecar_in`] and [`sync_sidecar`]). Opening `dir` to
+/// sync it needs read access to it. A complete sidecar that fails to sync is
+/// kept.
+pub fn create_sidecar(dir: &Path, bytes: &Sidecar) -> io::Result<()> {
+    create_sidecar_owned(dir, bytes, None)
+}
+
+/// As [`create_sidecar`], giving the sidecar `owner` (uid, gid), as far as
+/// this process may, before the sync.
+pub fn create_sidecar_owned(
+    dir: &Path,
+    bytes: &Sidecar,
+    owner: Option<(u32, u32)>,
+) -> io::Result<()> {
+    let dir = open_dir_to_sync(dir)?;
+    let file = create_sidecar_in(&dir, bytes)?;
+    if let Some((uid, gid)) = owner {
+        let _ = std::os::unix::fs::fchown(&file, Some(uid), Some(gid));
+    }
+    sync_sidecar(&file, &dir, owner.is_some())
+}
+
+/// Creates the sidecar in the open directory `dir` with the given contents,
+/// mode 0444, without syncing it, and returns it open for writing.
 ///
 /// Never replaces an existing entry (`O_EXCL`, `O_NOFOLLOW`), so it fails with
 /// `AlreadyExists` if one is present. A partially written file is removed.
-pub fn create_sidecar(dir: &Path, bytes: &Sidecar) -> io::Result<()> {
-    let path = sidecar_path(dir);
-    let file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o444)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(&path)?;
+pub fn create_sidecar_in(dir: &File, bytes: &Sidecar) -> io::Result<File> {
+    use std::os::unix::io::{AsRawFd, FromRawFd};
+    let name = std::ffi::CString::new(SIDECAR_NAME).map_err(io::Error::other)?;
+    // SAFETY: `dir` is open and `name` is a valid C string for the call.
+    let fd = unsafe {
+        libc::openat(
+            dir.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            0o444 as libc::c_uint,
+        )
+    };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: `fd` was just opened and nothing else owns it.
+    let file = unsafe { File::from_raw_fd(fd) };
     if let Err(e) = file.write_all_at(bytes, 0) {
         drop(file);
-        let _ = fs::remove_file(&path);
+        // SAFETY: as for the open.
+        unsafe { libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0) };
         return Err(e);
     }
-    Ok(())
+    Ok(file)
+}
+
+/// Prefix of the names mkdir builds a directory under before renaming it
+/// into place (see [`staging_name`]). Like [`SIDECAR_NAME`], which shares
+/// it, it starts with `.` and so never collides with an encrypted name.
+pub const STAGING_PREFIX: &str = ".encfs.";
+
+/// A fresh random name, starting with [`STAGING_PREFIX`], to build a new
+/// directory under. Its sidecar is written and synced there, and only then is
+/// it renamed to its encrypted name, so a crash can't leave a directory under
+/// that name without a complete sidecar.
+pub fn staging_name() -> io::Result<OsString> {
+    let mut bytes = [0u8; STAGING_RANDOM_LEN];
+    getrandom::fill(&mut bytes).map_err(io::Error::other)?;
+    use std::fmt::Write;
+    let mut name = String::with_capacity(STAGING_PREFIX.len() + 2 * STAGING_RANDOM_LEN);
+    name.push_str(STAGING_PREFIX);
+    for b in bytes {
+        let _ = write!(name, "{:02x}", b);
+    }
+    Ok(name.into())
+}
+
+/// Random bytes in a staging name, which holds them as lowercase hex.
+const STAGING_RANDOM_LEN: usize = 8;
+
+/// Whether `name` is one [`staging_name`] could have produced: the prefix
+/// and exactly [`STAGING_RANDOM_LEN`] bytes of lowercase hex.
+pub fn is_staging_name(name: &OsStr) -> bool {
+    name.as_bytes()
+        .strip_prefix(STAGING_PREFIX.as_bytes())
+        .is_some_and(|hex| {
+            hex.len() == 2 * STAGING_RANDOM_LEN
+                && hex.iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        })
 }
 
 /// The IVs a sidecar's contents yield.
@@ -308,10 +386,12 @@ pub struct CachedDir {
 /// while a volume is mounted, every change to its backing directory goes
 /// through the mount: modifying it behind a live mount is unsupported. The
 /// filesystem keeps the cache in step with its own changes instead:
-/// [`DirIvCache::insert`] on mkdir, [`DirIvCache::forget_tree`] on rmdir, and
-/// [`DirIvCache::rename_tree`] when a directory moves. Callers serialize those
-/// against [`DirIvCache::load`] (the sidecar lock in `crate::fs`), so a
-/// concurrent miss cannot re-insert a path that was just moved or removed.
+/// [`DirIvCache::forget_tree`] on rmdir, and [`DirIvCache::rename_tree`] when
+/// a directory moves. Callers serialize those against [`DirIvCache::load`]
+/// (the sidecar lock in `crate::fs`), so a concurrent miss cannot re-insert a
+/// path that was just moved or removed. mkdir adds nothing: nothing is cached
+/// at a free path, and the new directory's sidecar is complete before it has
+/// a name, so the first [`DirIvCache::load`] of it reads it.
 ///
 /// That keeps each entry true of the directory *at its path*, but the
 /// directory at a path can still be replaced between a lookup and the
@@ -340,8 +420,10 @@ impl DirIvCache {
         Ok(entry)
     }
 
-    /// Records the IVs of a directory whose sidecar was just written.
-    pub fn insert(&self, dir: &Path, entry: CachedDir) {
+    /// Records the IVs of a directory whose sidecar was just read. Only
+    /// [`DirIvCache::load`] does, under the caller's sidecar lock: an entry
+    /// added by path otherwise may describe a directory that has moved.
+    fn insert(&self, dir: &Path, entry: CachedDir) {
         let mut entries = self.lock();
         if entries.len() >= CACHE_LIMIT {
             entries.clear();
@@ -399,6 +481,22 @@ mod tests {
         let mut cipher = SslCipher::new(&iface, 256).unwrap();
         cipher.set_key(&[7u8; 32], &[8u8; 16]);
         Box::new(cipher)
+    }
+
+    #[test]
+    fn staging_names_are_recognized_exactly() {
+        let name = staging_name().unwrap();
+        assert!(is_staging_name(&name));
+        for other in [
+            SIDECAR_NAME.to_string(),
+            ".encfs.backup".to_string(),
+            format!("{}EncFS", STAGING_PREFIX),
+            format!("{}{}", STAGING_PREFIX, "0123456789ABCDEF"),
+            format!("{}0", name.to_str().unwrap()),
+            name.to_str().unwrap()[..name.len() - 1].to_string(),
+        ] {
+            assert!(!is_staging_name(OsStr::new(&other)), "{}", other);
+        }
     }
 
     fn temp_dir(name: &str) -> PathBuf {

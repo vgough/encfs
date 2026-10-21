@@ -2,9 +2,9 @@
 mod filesystem_support;
 
 use filesystem_support::{
-    BASELINE_VARIANT, BenchmarkResult, HostContext, OVERHEAD_VARIANT, SCHEMA_VERSION, VARIANTS,
-    Workload, calculate_deltas, compare_metrics, ensure_compatible, load_result,
-    parse_mdtest_output, save_result_atomic,
+    BASELINE_CONFIG, BASELINE_VARIANT, BenchmarkResult, HostContext, SCHEMA_VERSION, Workload,
+    calculate_deltas, compare_metrics, ensure_compatible, load_result, parse_mdtest_output,
+    save_result_atomic,
 };
 
 const CAPTURED_MDTEST_OUTPUT: &str = include_str!("fixtures/mdtest-summary.txt");
@@ -215,9 +215,9 @@ fn serde_rejects_non_numeric_metric_values() {
 }
 
 #[test]
-fn baseline_of_another_variant_is_rejected() {
+fn old_no_unique_iv_baseline_is_rejected() {
     let mut baseline = result_with_scale(1.0);
-    baseline.variant = OVERHEAD_VARIANT.to_string();
+    baseline.variant = "no-unique-iv".to_string();
     let error = ensure_compatible(&baseline, BASELINE_VARIANT, &workload())
         .unwrap_err()
         .to_string();
@@ -256,43 +256,33 @@ fn schema_1_baseline_is_rejected() {
     assert!(load_result(&path).is_err());
 }
 
-/// The overhead table compares two variants from the same run: the
-/// baseline variant is the reference, so slower operations come out negative.
+/// Cross-filesystem comparisons use EncFS as the reference.
 #[test]
-fn overhead_is_relative_to_the_baseline_variant() {
+fn cross_filesystem_comparison_is_relative_to_encfs() {
     let reference = result_with_scale(1.0).metrics;
-    let overhead: std::collections::BTreeMap<_, _> = reference
+    let other: std::collections::BTreeMap<_, _> = reference
         .iter()
         .map(|(name, value)| (name.clone(), value * 0.75))
         .collect();
-    let deltas = compare_metrics(&reference, &overhead).unwrap();
+    let deltas = compare_metrics(&reference, &other).unwrap();
     assert_eq!(deltas.len(), reference.len());
     for delta in deltas {
         assert_eq!(delta.baseline, reference[&delta.name]);
         assert!((delta.percent + 25.0).abs() < 1e-9, "{delta:?}");
     }
 
-    let mut incomplete = overhead.clone();
+    let mut incomplete = other.clone();
     incomplete.remove("File read");
     assert!(compare_metrics(&reference, &incomplete).is_err());
 }
 
 #[test]
-fn variants_cover_the_baseline_and_overhead_configurations() {
-    let names: std::collections::BTreeSet<_> = VARIANTS.iter().map(|v| v.name).collect();
-    assert_eq!(names.len(), VARIANTS.len());
-
-    let baseline = VARIANTS
-        .iter()
-        .find(|v| v.name == BASELINE_VARIANT)
-        .unwrap();
-    assert_eq!(baseline.new_args, ["--no-unique-iv"]);
-    assert!(!baseline.directory_iv && !baseline.unique_iv);
-
-    let overhead = VARIANTS
-        .iter()
-        .find(|v| v.name == OVERHEAD_VARIANT)
-        .unwrap();
-    assert!(overhead.new_args.is_empty(), "the encfsctl new default");
-    assert!(overhead.directory_iv && overhead.unique_iv);
+fn baseline_uses_the_default_directory_iv_configuration() {
+    assert_eq!(BASELINE_CONFIG.name, BASELINE_VARIANT);
+    assert_eq!(BASELINE_VARIANT, "directory-iv");
+    assert!(
+        BASELINE_CONFIG.new_args.is_empty(),
+        "the encfsctl new default"
+    );
+    const { assert!(BASELINE_CONFIG.directory_iv && BASELINE_CONFIG.unique_iv) };
 }

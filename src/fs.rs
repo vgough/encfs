@@ -9,7 +9,7 @@ use crate::xattr_name;
 use libc;
 use log::{debug, error, warn};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use std::time::SystemTime;
 use typed_fuse::passthrough::{
     self, access_check, c_path, file_attr_from_metadata, is_apple_xattr, set_ownership_fd,
-    set_ownership_path, statfs_path, symlink as passthrough_symlink, utimens_permission_check,
+    statfs_path, symlink as passthrough_symlink, utimens_permission_check,
 };
 use typed_fuse::{
     Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathEntry, PathFilesystem,
@@ -346,18 +346,18 @@ impl NewEntry {
         check(unsafe { libc::unlinkat(self.dirfd(), self.name.as_ptr(), 0) })
     }
 
-    /// As `set_ownership_path`: gives the entry the caller's uid and gid when
-    /// they differ from this process's, ignoring `EPERM`.
+    /// Gives the entry the owner [`owner_for`] says it needs, ignoring
+    /// `EPERM`.
     fn set_ownership(&self, caller: &Request) -> OpResult {
-        if caller.uid == unsafe { libc::getuid() } && caller.gid == unsafe { libc::getgid() } {
+        let Some((uid, gid)) = owner_for(caller) else {
             return Ok(());
-        }
+        };
         match check(unsafe {
             libc::fchownat(
                 self.dirfd(),
                 self.name.as_ptr(),
-                caller.uid as libc::uid_t,
-                caller.gid as libc::gid_t,
+                uid as libc::uid_t,
+                gid as libc::gid_t,
                 libc::AT_SYMLINK_NOFOLLOW,
             )
         }) {
@@ -365,6 +365,51 @@ impl NewEntry {
             other => other,
         }
     }
+}
+
+/// The owner a new entry made for `caller` is given, when it differs from
+/// this process's effective uid and gid (those the kernel gives an entry
+/// this process creates), as typed-fuse's `set_ownership_fd` decides too.
+/// The change is best effort: root can set any owner, anyone else at most
+/// a group it belongs to, and `EPERM` is ignored.
+fn owner_for(caller: &Request) -> Option<(u32, u32)> {
+    let own = unsafe { (libc::geteuid(), libc::getegid()) };
+    ((caller.uid, caller.gid) != own).then_some((caller.uid, caller.gid))
+}
+
+/// Whether `owner` differs from this process's effective ids, so a file
+/// this process creates needs a change to get it.
+fn needs_chown(owner: (u32, u32)) -> bool {
+    owner != unsafe { (libc::geteuid(), libc::getegid()) }
+}
+
+/// The errno of an I/O error, or `EIO` when it has none.
+fn io_errno(e: std::io::Error) -> libc::c_int {
+    e.raw_os_error().unwrap_or(libc::EIO)
+}
+
+/// The identity of what `name` relative to `dirfd` is, not following a
+/// symlink, and its permission bits.
+fn stat_at(dirfd: RawFd, name: &CStr) -> Result<(diriv::DirId, u32), libc::c_int> {
+    let mut st = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: `name` is a valid C string and `st` is written before use.
+    check(unsafe {
+        libc::fstatat(
+            dirfd,
+            name.as_ptr(),
+            st.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    })?;
+    let st = unsafe { st.assume_init() };
+    // As `MetadataExt::dev` and `ino` convert them; `st_mode` is a u16 on
+    // macOS and FreeBSD, and `st_dev` an i32 on macOS.
+    #[allow(clippy::useless_conversion, clippy::unnecessary_cast)]
+    let id_and_mode = (
+        (st.st_dev as u64, st.st_ino as u64),
+        u32::from(st.st_mode) & 0o7777,
+    );
+    Ok(id_and_mode)
 }
 
 fn last_errno() -> libc::c_int {
@@ -448,18 +493,20 @@ pub struct EncFs {
     /// through this filesystem, which updates the cache as it makes them.
     diriv_cache: DirIvCache,
     /// Orders directory lifecycle against sidecar reads (directory IV mode).
-    /// Held for write by mkdir, rmdir, and directory rename, which create,
-    /// remove, or move sidecars and update the cache to match, and for read
-    /// while reading a sidecar into the cache on a miss. In-process lookups
-    /// therefore never observe a directory between its creation and its
-    /// sidecar's, and a miss can't cache a path a rename just vacated.
+    /// Held for write by rmdir and directory rename, which remove or move
+    /// sidecars and update the cache to match, and by mkdir only where the
+    /// platform can't rename without replacing (see
+    /// [`EncFs::place_staged_locked`]); and for read while reading a sidecar
+    /// into the cache on a miss, so a miss can't cache a path a rename just
+    /// vacated. A new directory gets its name only once its sidecar is
+    /// complete, so lookups never observe it without one.
     /// Never held while resolving a path: the lock is not reentrant.
     ///
     /// The lock does not keep a directory in place while an operation uses
     /// its IVs. Operations that write IV-dependent names or attributes bind
     /// those IVs to the directory itself instead: entry creation through a
-    /// pinned parent ([`EncFs::new_entry`]); and mkdir and directory rename by
-    /// encrypting the new name under the write lock they already take.
+    /// pinned parent ([`EncFs::new_entry`]), mkdir included; and directory
+    /// rename by encrypting the new name under the write lock it takes.
     sidecar_lock: RwLock<()>,
     /// Serializes creating xattr IV seeds on FreeBSD, which only emulates
     /// `XATTR_CREATE` with a check before the write: two first writers could
@@ -467,6 +514,9 @@ pub struct EncFs {
     /// Elsewhere `XATTR_CREATE` is atomic and creation needs no lock.
     #[cfg(target_os = "freebsd")]
     xattr_seed_lock: Mutex<()>,
+    /// Staging names (see [`diriv::staging_name`]) of the directories mkdir
+    /// is building, which rmdir must not take for a crash's leftovers.
+    staging: Mutex<HashSet<OsString>>,
     /// Runs once at the point where an entry's name has been derived but not
     /// yet created, so tests can replace the parent directory there.
     #[cfg(test)]
@@ -489,6 +539,7 @@ impl EncFs {
             sidecar_lock: RwLock::new(()),
             #[cfg(target_os = "freebsd")]
             xattr_seed_lock: Mutex::new(()),
+            staging: Mutex::new(HashSet::new()),
             #[cfg(test)]
             race_hook: Mutex::new(None),
         }
@@ -692,13 +743,12 @@ impl EncFs {
 
     /// The backing path of `name` inside the backing directory `real_parent`
     /// (directory IV mode). The caller holds the sidecar write lock, which
-    /// keeps `real_parent` the directory the name is encrypted for until the
-    /// lock is released.
+    /// keeps `real_parent` that directory until the lock is released.
     fn encrypt_name_in(&self, real_parent: &Path, name: &OsStr) -> Result<PathBuf, libc::c_int> {
-        let ivs = self.dir_ivs_locked(real_parent)?.ivs;
+        let cached = self.dir_ivs_locked(real_parent)?;
         let (encrypted_name, _) = self
             .cipher
-            .encrypt_filename(name.as_bytes(), ivs.name_iv)
+            .encrypt_filename(name.as_bytes(), cached.ivs.name_iv)
             .map_err(|e| {
                 error!("Encrypt filename failed: {}", e);
                 libc::EIO
@@ -916,7 +966,6 @@ impl EncFs {
         newname: &OsStr,
         source_meta: &fs::Metadata,
     ) -> OpResult {
-        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
         // Held across the rename and the cache update, so a concurrent cache
         // miss can't re-insert the old path in between. The new name is
         // encrypted under it too, so the destination's parent can't be
@@ -925,7 +974,7 @@ impl EncFs {
         let real_dest = &self.encrypt_name_in(real_dest_parent, newname)?;
         let removed = match fs::symlink_metadata(real_dest) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(errno(e)),
+            Err(e) => return Err(io_errno(e)),
             Ok(dest_meta) if !dest_meta.is_dir() => return Err(libc::ENOTDIR),
             Ok(dest_meta)
                 if (dest_meta.dev(), dest_meta.ino()) == (source_meta.dev(), source_meta.ino()) =>
@@ -944,7 +993,7 @@ impl EncFs {
                 if let Some(removed) = removed {
                     removed.restore(real_dest);
                 }
-                Err(errno(e))
+                Err(io_errno(e))
             }
         }
     }
@@ -952,11 +1001,23 @@ impl EncFs {
     /// Removes the sidecar of `dir`, which must hold nothing else, so the
     /// directory can be removed or replaced. Caller holds the sidecar write
     /// lock. Returns what is needed to put it back if that then fails.
+    ///
+    /// Directories a crashed mkdir left under a staging name (see
+    /// [`diriv::staging_name`]) don't count, and are removed with it.
     fn remove_sidecar_of_empty_dir(&self, dir: &Path) -> Result<RemovedSidecar, libc::c_int> {
-        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
-        for entry in fs::read_dir(dir).map_err(errno)? {
-            if entry.map_err(errno)?.file_name() != diriv::SIDECAR_NAME {
-                return Err(libc::ENOTEMPTY);
+        let mut staged = Vec::new();
+        {
+            let building = self.staging.lock().unwrap_or_else(|p| p.into_inner());
+            for entry in entries_besides_sidecar(dir).map_err(io_errno)? {
+                let entry = entry.map_err(io_errno)?;
+                let name = entry.file_name();
+                let left_over = diriv::is_staging_name(&name)
+                    && entry.file_type().map_err(io_errno)?.is_dir()
+                    && !building.contains(&name);
+                if !left_over {
+                    return Err(libc::ENOTEMPTY);
+                }
+                staged.push(entry.path());
             }
         }
 
@@ -984,7 +1045,24 @@ impl EncFs {
 
         // Unlinking needs write and search access to the directory itself,
         // which a read-only directory denies even though removing it doesn't.
-        let original_mode = grant_dir_access(dir)?;
+        let original_mode = grant_dir_access(dir, libc::W_OK | libc::X_OK)?;
+        for path in &staged {
+            match remove_staged(path) {
+                Ok(true) => warn!("Removed {:?}, left by an interrupted mkdir", path),
+                Ok(false) => {
+                    warn!(
+                        "Keeping {:?}: left by an interrupted mkdir, but not empty",
+                        path
+                    );
+                    restore_dir_mode(dir, original_mode);
+                    return Err(libc::ENOTEMPTY);
+                }
+                Err(e) => {
+                    restore_dir_mode(dir, original_mode);
+                    return Err(e);
+                }
+            }
+        }
         let removed = RemovedSidecar {
             bytes,
             owner,
@@ -994,7 +1072,7 @@ impl EncFs {
             && let Err(e) = fs::remove_file(&sidecar)
         {
             restore_dir_mode(dir, original_mode);
-            return Err(errno(e));
+            return Err(io_errno(e));
         }
         Ok(removed)
     }
@@ -1364,8 +1442,92 @@ fn is_same_file(path: &Path, file: &File) -> bool {
     }
 }
 
+/// `entry`, for an inode this operation just created, with nothing cached
+/// for it: its number may be one a deleted inode had, whose state is still
+/// alive.
+fn fresh_entry(entry: PathEntry<FileState>) -> PathEntry<FileState> {
+    entry.state.set_cached_xattr_iv(None);
+    entry
+}
+
 fn headerless_file_iv(header_size: u64, external_iv: u64) -> FileIv {
     FileIv::from_u64(if header_size == 0 { external_iv } else { 0 })
+}
+
+/// A directory mkdir built under a staging name (see [`EncFs::stage_dir`]),
+/// waiting to be renamed into place. Dropping it leaves the directory, as a
+/// crash would; [`StagedDir::discard`] removes it.
+struct StagedDir<'a> {
+    /// The parent the directory's name was encrypted for (see
+    /// [`NewEntry`]), so the directory is placed or removed there even if
+    /// the parent has moved.
+    parent: &'a File,
+    /// The staging name within `parent`.
+    name: CString,
+    /// The directory itself.
+    dir: File,
+    id: diriv::DirId,
+    _registration: StagingRegistration<'a>,
+}
+
+impl StagedDir<'_> {
+    /// Removes the directory, if it is still under its staging name. Nothing
+    /// else knows that name, so it holds at most the sidecar mkdir wrote.
+    ///
+    /// A rename into place that reported failure may still have happened (a
+    /// network filesystem can retry one that succeeded), and then the
+    /// directory, its sidecar and its mode are left alone.
+    fn discard(self) {
+        use std::os::unix::fs::PermissionsExt;
+        if stat_at(self.parent.as_raw_fd(), &self.name).map(|(id, _)| id) != Ok(self.id) {
+            return;
+        }
+        let _ = self.dir.set_permissions(fs::Permissions::from_mode(0o700));
+        let sidecar = CString::new(diriv::SIDECAR_NAME).expect("no NUL in sidecar name");
+        // SAFETY: both descriptors are open and both names valid C strings.
+        let removed = check(unsafe { libc::unlinkat(self.dir.as_raw_fd(), sidecar.as_ptr(), 0) })
+            .or_else(|e| if e == libc::ENOENT { Ok(()) } else { Err(e) })
+            .and_then(|()| {
+                check(unsafe {
+                    libc::unlinkat(
+                        self.parent.as_raw_fd(),
+                        self.name.as_ptr(),
+                        libc::AT_REMOVEDIR,
+                    )
+                })
+            });
+        if let Err(e) = removed {
+            warn!(
+                "Failed to remove {:?}, left by a failed mkdir: errno {}",
+                self.name, e
+            );
+        }
+    }
+}
+
+/// Keeps a staging name in [`EncFs`]'s set of directories being built
+/// while it lives.
+struct StagingRegistration<'a> {
+    set: &'a Mutex<HashSet<OsString>>,
+    name: OsString,
+}
+
+impl<'a> StagingRegistration<'a> {
+    fn new(set: &'a Mutex<HashSet<OsString>>, name: OsString) -> Self {
+        set.lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(name.clone());
+        Self { set, name }
+    }
+}
+
+impl Drop for StagingRegistration<'_> {
+    fn drop(&mut self) {
+        self.set
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&self.name);
+    }
 }
 
 /// A sidecar removed so its directory could be removed or replaced, with what
@@ -1382,43 +1544,99 @@ impl RemovedSidecar {
     /// Re-creates the sidecar with the same bytes, so the names already in
     /// the directory stay valid, and restores the directory's mode.
     fn restore(self, dir: &Path) {
+        // Syncing the sidecar opens the directory, which also needs read
+        // access. Access granted for the removal includes it.
+        let original_mode = match self.original_mode {
+            Some(mode) => Some(mode),
+            None if self.bytes.is_some() => {
+                grant_dir_access(dir, libc::R_OK | libc::W_OK | libc::X_OK).unwrap_or(None)
+            }
+            None => None,
+        };
         if let Some(bytes) = self.bytes {
-            match diriv::create_sidecar(dir, &bytes) {
-                Ok(()) => {
-                    if let Some((uid, gid)) = self.owner {
-                        let _ = std::os::unix::fs::lchown(
-                            diriv::sidecar_path(dir),
-                            Some(uid),
-                            Some(gid),
-                        );
-                    }
-                }
-                Err(e) => error!(
-                    "Failed to restore {} in {:?}; its names are now unreadable: {}",
+            // Best effort, as for a new entry (see `owner_for`).
+            let owner = self.owner.filter(|&owner| needs_chown(owner));
+            if let Err(e) = diriv::create_sidecar_owned(dir, &bytes, owner) {
+                error!(
+                    "Failed to restore {} in {:?}: {}",
                     diriv::SIDECAR_NAME,
                     dir,
                     e
-                ),
+                );
             }
         }
-        restore_dir_mode(dir, self.original_mode);
+        restore_dir_mode(dir, original_mode);
     }
 }
 
-/// Adds owner write and search permission to `dir` when this process lacks
-/// them, returning the original mode to restore afterwards.
-fn grant_dir_access(dir: &Path) -> Result<Option<u32>, libc::c_int> {
+/// The errno for a failed rename of a staged directory into place, where
+/// both names are in the same pinned parent: anything already at the name
+/// means it exists.
+fn placement_errno(e: libc::c_int) -> libc::c_int {
+    match e {
+        libc::ENOTEMPTY | libc::EEXIST | libc::ENOTDIR => libc::EEXIST,
+        e => e,
+    }
+}
+
+/// Fails with `EEXIST` if anything, even a dangling symlink, is at `name`
+/// relative to `dirfd`.
+fn check_absent_at(dirfd: RawFd, name: &CStr) -> OpResult {
+    match stat_at(dirfd, name) {
+        Ok(_) => Err(libc::EEXIST),
+        Err(libc::ENOENT) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// The entries of `dir` other than its sidecar.
+fn entries_besides_sidecar(
+    dir: &Path,
+) -> std::io::Result<impl Iterator<Item = std::io::Result<fs::DirEntry>>> {
+    Ok(fs::read_dir(dir)?
+        .filter(|entry| !matches!(entry, Ok(e) if e.file_name() == diriv::SIDECAR_NAME)))
+}
+
+/// Removes `dir`, a directory a crashed mkdir left under a staging name (see
+/// [`diriv::staging_name`]), if it holds nothing but its sidecar, returning
+/// whether it is gone. One that holds more is a directory whose rename into
+/// place a crash lost after names were created in it, and is kept.
+fn remove_staged(dir: &Path) -> Result<bool, libc::c_int> {
+    if let Err(e) = fs::symlink_metadata(dir) {
+        return match e.kind() {
+            std::io::ErrorKind::NotFound => Ok(true),
+            _ => Err(io_errno(e)),
+        };
+    }
+    // A staged directory may already have given up access for its final mode.
+    let original_mode = grant_dir_access(dir, libc::R_OK | libc::W_OK | libc::X_OK)?;
+    let removed = (|| {
+        if entries_besides_sidecar(dir)?.next().is_some() {
+            return Ok(false);
+        }
+        match fs::remove_file(diriv::sidecar_path(dir)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+            _ => {}
+        }
+        fs::remove_dir(dir).map(|()| true)
+    })();
+    if !matches!(removed, Ok(true)) {
+        restore_dir_mode(dir, original_mode);
+    }
+    removed.map_err(io_errno)
+}
+
+/// Adds owner read, write and search permission to `dir` when this process
+/// lacks any of the `access` (`R_OK`, `W_OK`, `X_OK`) it needs, returning
+/// the original mode to restore afterwards.
+fn grant_dir_access(dir: &Path, access: libc::c_int) -> Result<Option<u32>, libc::c_int> {
     use std::os::unix::fs::PermissionsExt;
     let c_dir = c_path(dir).map_err(|e| e.raw())?;
-    if unsafe { libc::access(c_dir.as_ptr(), libc::W_OK | libc::X_OK) } == 0 {
+    if unsafe { libc::access(c_dir.as_ptr(), access) } == 0 {
         return Ok(None);
     }
-    let mode = fs::symlink_metadata(dir)
-        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
-        .mode()
-        & 0o7777;
-    fs::set_permissions(dir, fs::Permissions::from_mode(mode | 0o700))
-        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+    let mode = fs::symlink_metadata(dir).map_err(io_errno)?.mode() & 0o7777;
+    fs::set_permissions(dir, fs::Permissions::from_mode(mode | 0o700)).map_err(io_errno)?;
     Ok(Some(mode))
 }
 
@@ -1968,9 +2186,15 @@ impl EncFs {
     /// created. Its number may be one a deleted inode had, whose state is
     /// still alive; nothing cached for that one applies.
     fn entry_for_new_inode(&self, path: &Path) -> Result<PathEntry<FileState>, libc::c_int> {
-        let entry = self.entry_for_path(path)?;
-        entry.state.set_cached_xattr_iv(None);
-        Ok(entry)
+        Ok(fresh_entry(self.entry_for_path(path)?))
+    }
+
+    /// As [`EncFs::entry_for_new_inode`], from the new inode's metadata.
+    fn entry_for_new_metadata(&self, metadata: &fs::Metadata) -> PathEntry<FileState> {
+        let state = self
+            .file_states
+            .get_by_key((metadata.dev(), metadata.ino()));
+        fresh_entry(PathEntry::new(self.attr_from_metadata(metadata), state))
     }
 
     fn attr_from_metadata(&self, metadata: &fs::Metadata) -> FileAttr {
@@ -2290,76 +2514,199 @@ impl EncFs {
         self.ensure_writable()?;
 
         if self.config.directory_iv {
-            let (real_parent, _) = self.encrypt_path(parent)?;
-            self.mkdir_with_sidecar(&req, &real_parent, name, mode)?;
-        } else {
-            use std::os::unix::fs::DirBuilderExt;
-            let (real_path, _) = self.encrypt_path(&path)?;
-            std::fs::DirBuilder::new()
-                .mode(mode)
-                .create(&real_path)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            set_ownership_path(&real_path, &req).map_err(|e| e.raw())?;
+            // EEXIST and ENOENT (a parent replaced midway) are expected.
+            return self
+                .mkdir_with_sidecar(&req, &path, mode)
+                .inspect_err(|e| debug!("mkdir {:?} failed: errno {}", path, e));
         }
-
-        // Outside the sidecar lock: resolving the path may need to take it.
+        use std::os::unix::fs::DirBuilderExt;
+        let (real_path, iv) = self.encrypt_path(&path)?;
+        std::fs::DirBuilder::new()
+            .mode(mode)
+            .create(&real_path)
+            .map_err(io_errno)?;
+        NewEntry::from_path(real_path, iv)?.set_ownership(&req)?;
         self.entry_for_new_inode(&path)
     }
 
-    /// Creates directory `name` in `real_parent`, with its sidecar, under the
-    /// sidecar write lock, removing the directory again if the sidecar cannot
-    /// be written. The name is encrypted under the lock as well, so the
-    /// parent can't be replaced by a directory it would be unreadable in.
+    /// Creates directory `path` with its sidecar.
+    ///
+    /// The directory is built and synced under a staging name in the pinned
+    /// parent its name was encrypted for (see [`EncFs::new_entry`] and
+    /// [`EncFs::stage_dir`]), and then renamed to that name (see
+    /// [`EncFs::place_staged`]). So the name never exists without a complete,
+    /// durable sidecar, and ends up in that parent or nowhere.
+    ///
+    /// There is no early check for an existing name: the kernel looks the
+    /// name up before sending mkdir, and answers `EEXIST` itself.
     fn mkdir_with_sidecar(
         &self,
         req: &Request,
-        real_parent: &Path,
-        name: &OsStr,
+        path: &Path,
         mode: u32,
-    ) -> OpResult {
-        use std::os::unix::fs::DirBuilderExt;
-        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
+    ) -> Result<PathEntry<FileState>, libc::c_int> {
         let bytes = diriv::new_sidecar().map_err(|e| {
             error!("Failed to generate directory IV: {}", e);
             libc::EIO
         })?;
-        let ivs = diriv::derive(self.cipher.as_ref(), &bytes).map_err(|e| {
-            error!("Failed to derive directory IVs: {}", e);
-            libc::EIO
-        })?;
-
-        let _guard = self.sidecar_write_lock();
-        let real_path = &self.encrypt_name_in(real_parent, name)?;
-        std::fs::DirBuilder::new()
-            .mode(mode)
-            .create(real_path)
-            .map_err(errno)?;
-
-        let result = grant_dir_access(real_path).and_then(|original_mode| {
-            let created = diriv::create_sidecar(real_path, &bytes).map_err(errno);
-            restore_dir_mode(real_path, original_mode);
-            created
-        });
-        if let Err(e) = result {
-            error!(
-                "Failed to create {} in {:?}: errno {}",
-                diriv::SIDECAR_NAME,
-                real_path,
-                e
-            );
-            let _ = fs::remove_file(diriv::sidecar_path(real_path));
-            let _ = fs::remove_dir(real_path);
+        let entry = self.new_entry(path)?;
+        let staged = self.stage_dir(req, &entry, mode, &bytes)?;
+        if let Err(e) = self.place_staged(&staged, &entry) {
+            staged.discard();
             return Err(e);
         }
-        // Best effort, like the directory's own ownership.
-        let _ = set_ownership_path(&diriv::sidecar_path(real_path), req);
-        // Uncached if this fails; the first use loads it instead.
-        if let Ok(id) = diriv::dir_id(real_path) {
-            self.diriv_cache.insert(real_path, CachedDir { ivs, id });
+        // The open directory is the inode just placed; no need to find it
+        // again by path.
+        let metadata = staged.dir.metadata().map_err(io_errno)?;
+        Ok(self.entry_for_new_metadata(&metadata))
+    }
+
+    /// Renames the directory mkdir staged to `entry`, its encrypted name in
+    /// the same pinned parent. Fails with `EEXIST` if anything is at the
+    /// name, since `rename(2)` would replace an empty directory.
+    ///
+    /// Where the platform can refuse to replace an entry (see
+    /// [`passthrough::rename_noreplace_at`]), the rename alone does it and no lock
+    /// is taken. Elsewhere see [`EncFs::place_staged_locked`].
+    ///
+    /// The directory's IVs aren't cached: its path may be out of date if the
+    /// parent has moved, and caching by path takes the sidecar write lock.
+    /// The first lookup reads the sidecar.
+    fn place_staged(&self, staged: &StagedDir<'_>, entry: &NewEntry) -> OpResult {
+        let parent_fd = staged.parent.as_raw_fd();
+        match passthrough::rename_noreplace_at(parent_fd, &staged.name, parent_fd, &entry.name) {
+            Ok(true) => Ok(()),
+            Ok(false) => self.place_staged_locked(staged, entry),
+            Err(e) => Err(placement_errno(e.raw())),
         }
-        // Still under the lock, so this can't land on a directory that has
-        // replaced the new one.
-        set_ownership_path(real_path, req).map_err(|e| e.raw())
+    }
+
+    /// As [`EncFs::place_staged`], where a rename can't be told not to
+    /// replace: the name is checked and the directory renamed under the
+    /// sidecar write lock, which keeps directory renames and rmdir (which
+    /// empties a directory by removing its sidecar) out until the rename.
+    ///
+    /// A placement without the lock can still land in between, where the
+    /// filesystem refuses the flag only some of the time. It can't be
+    /// replaced: a placed directory always holds its sidecar, so the rename
+    /// fails (`EEXIST`) rather than replace it. Racing operations on one
+    /// name may fail; they can't lose a directory.
+    fn place_staged_locked(&self, staged: &StagedDir<'_>, entry: &NewEntry) -> OpResult {
+        let parent_fd = staged.parent.as_raw_fd();
+        let _guard = self.sidecar_write_lock();
+        check_absent_at(parent_fd, &entry.name)?;
+        // SAFETY: `parent_fd` is open and both names are valid C strings.
+        check(unsafe {
+            libc::renameat(
+                parent_fd,
+                staged.name.as_ptr(),
+                parent_fd,
+                entry.name.as_ptr(),
+            )
+        })
+        .map_err(placement_errno)
+    }
+
+    /// Builds a directory for mkdir under a fresh staging name in the pinned
+    /// parent of `entry`, where it is to be placed: the requested `mode`, the
+    /// caller's ownership, and a sidecar holding `bytes`, all synced.
+    ///
+    /// The directory is created with owner access added to `mode`, so the
+    /// sidecar can be written and the directory opened to sync it, then given
+    /// `mode` through the open directory before the sync. So it is never seen
+    /// under its encrypted name with more access than requested, and needs no
+    /// chmod at all when `mode` already allows the owner in.
+    fn stage_dir<'a>(
+        &'a self,
+        req: &Request,
+        entry: &'a NewEntry,
+        mode: u32,
+        bytes: &diriv::Sidecar,
+    ) -> Result<StagedDir<'a>, libc::c_int> {
+        use std::os::unix::fs::PermissionsExt;
+        let parent = entry.dir.as_ref().ok_or(libc::EIO)?;
+        let os_name = diriv::staging_name().map_err(io_errno)?;
+        let name = c_path(Path::new(&os_name)).map_err(|e| e.raw())?;
+        // Registered before it exists, so rmdir never sees it unregistered.
+        let registration = StagingRegistration::new(&self.staging, os_name);
+        // SAFETY: `parent` is open and `name` a valid C string, here and in
+        // the `*at` calls below.
+        check(unsafe {
+            libc::mkdirat(
+                parent.as_raw_fd(),
+                name.as_ptr(),
+                (mode | 0o700) as libc::mode_t,
+            )
+        })?;
+        let opened = (|| {
+            // The umask applies as it would to `mode`, and could also have
+            // withheld owner access, which the directory needs for now.
+            let (id, created) = stat_at(parent.as_raw_fd(), &name)?;
+            if created & 0o700 != 0o700 {
+                check(unsafe {
+                    libc::fchmodat(
+                        parent.as_raw_fd(),
+                        name.as_ptr(),
+                        (created | 0o700) as libc::mode_t,
+                        0,
+                    )
+                })?;
+            }
+            let fd = unsafe {
+                libc::openat(
+                    parent.as_raw_fd(),
+                    name.as_ptr(),
+                    libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+                )
+            };
+            if fd < 0 {
+                return Err(last_errno());
+            }
+            // SAFETY: `fd` was just opened and nothing else owns it.
+            Ok((id, created, unsafe { File::from_raw_fd(fd) }))
+        })();
+        let (id, created, dir) = match opened {
+            Ok(opened) => opened,
+            Err(e) => {
+                unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) };
+                return Err(e);
+            }
+        };
+        let staged = StagedDir {
+            parent,
+            name,
+            dir,
+            id,
+            _registration: registration,
+        };
+
+        let owner = owner_for(req);
+        let result = (|| {
+            let sidecar = diriv::create_sidecar_in(&staged.dir, bytes)?;
+            if owner.is_some() {
+                // Best effort, like the directory's own ownership.
+                let _ = set_ownership_fd(sidecar.as_raw_fd(), req);
+                set_ownership_fd(staged.dir.as_raw_fd(), req)
+                    .map_err(|e| std::io::Error::from_raw_os_error(e.raw()))?;
+            }
+            // Drop only the owner bits added above; the open directory can
+            // still be synced without them.
+            let wanted = created & !(0o700 & !mode);
+            if wanted != created | 0o700 {
+                staged
+                    .dir
+                    .set_permissions(fs::Permissions::from_mode(wanted))?;
+            }
+            // A chowned sidecar needs a full sync: fdatasync persists its
+            // data and size, not a change of owner.
+            diriv::sync_sidecar(&sidecar, &staged.dir, owner.is_some())
+        })();
+        if let Err(e) = result {
+            error!("Failed to build new directory {:?}: {}", entry.real_path, e);
+            staged.discard();
+            return Err(io_errno(e));
+        }
+        Ok(staged)
     }
 
     fn mknod_impl(
@@ -2418,9 +2765,8 @@ impl EncFs {
     /// still fails (say, an entry appeared behind the mount), the sidecar is
     /// put back with the same bytes so existing names stay valid.
     fn rmdir_with_sidecar(&self, real_path: &Path) -> OpResult {
-        let errno = |e: std::io::Error| e.raw_os_error().unwrap_or(libc::EIO);
         let _guard = self.sidecar_write_lock();
-        let meta = fs::symlink_metadata(real_path).map_err(errno)?;
+        let meta = fs::symlink_metadata(real_path).map_err(io_errno)?;
         if !meta.is_dir() {
             return Err(libc::ENOTDIR);
         }
@@ -2432,7 +2778,7 @@ impl EncFs {
             }
             Err(e) => {
                 removed.restore(real_path);
-                Err(errno(e))
+                Err(io_errno(e))
             }
         }
     }
@@ -3086,6 +3432,27 @@ impl PathFilesystem for EncFs {
         sync_result.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO).into())
     }
 
+    /// Syncs the backing directory, opened here rather than held open by
+    /// every directory handle for the sake of this rare call.
+    fn fsyncdir(
+        &self,
+        node: PathNodeRef<'_, FileState>,
+        _handle: &(),
+        datasync: bool,
+        _caller: &Request,
+    ) -> Result<(), Errno> {
+        let path = node.path().ok_or(Errno::ENOENT)?;
+        let (real_path, _) = self.encrypt_path(path)?;
+        // Without read access the open fails and the caller is told, rather
+        // than led to believe the directory was synced when it wasn't.
+        diriv::open_dir_to_sync(&real_path)
+            .and_then(|dir| diriv::sync_file(&dir, datasync))
+            .map_err(|e| {
+                warn!("fsyncdir {:?} failed: {}", real_path, e);
+                Errno::from(io_errno(e))
+            })
+    }
+
     fn flock(
         &self,
         _node: PathNodeRef<'_, FileState>,
@@ -3317,16 +3684,17 @@ mod tests {
     }
 
     #[test]
-    fn flush_is_a_noop_and_fsync_callbacks_forward_backing_file_errors() {
+    fn flush_is_a_noop_and_fsync_forwards_backing_file_errors() {
         let mut fds = [0; 2];
         assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
         assert_eq!(unsafe { libc::close(fds[0]) }, 0);
 
         // A pipe does not support synchronization. Using it as the backing
-        // file proves these callbacks issue real sync syscalls rather than
-        // inheriting PathFilesystem's successful no-op defaults. The errno
-        // differs across platforms, so the regression condition is simply that
-        // it propagates.
+        // file proves fsync issues real sync syscalls rather than inheriting
+        // PathFilesystem's successful no-op default. The errno differs across
+        // platforms, so the regression condition is simply that it
+        // propagates. (fsyncdir treats an unsupported sync as needing none, so
+        // `diriv::sync_file` is tested on its own.)
         let handle = FileHandle {
             file: unsafe { File::from_raw_fd(fds[1]) },
             headerless_iv: FileIv::from_u64(0),
@@ -3341,6 +3709,41 @@ mod tests {
         assert!(fs.flush(node(), &handle, &caller).is_ok());
         assert!(fs.fsync(node(), &handle, false, &caller).is_err());
         assert!(fs.fsync(node(), &handle, true, &caller).is_err());
+    }
+
+    /// fsyncdir opens the node's backing directory to sync it, so it fails
+    /// once that is gone, unlike PathFilesystem's successful no-op default.
+    #[test]
+    fn fsyncdir_syncs_the_backing_directory() {
+        let vol = DirIvVolume::new("fsyncdir");
+        let dir = Path::new("/dir");
+        vol.fs
+            .mkdir_impl(caller(), Path::new("/"), OsStr::new("dir"), 0o755)
+            .unwrap();
+        let state = Arc::new(FileState::new((0, 0)));
+        let node = || PathNodeRef::new(Some(dir), &state);
+        let caller = test_caller();
+        assert!(vol.fs.fsyncdir(node(), &(), false, &caller).is_ok());
+        assert!(vol.fs.fsyncdir(node(), &(), true, &caller).is_ok());
+
+        // One it can't open for reading is an error, not a silent skip.
+        use std::os::unix::fs::PermissionsExt;
+        let (real, _) = vol.fs.encrypt_path(dir).unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o300)).unwrap();
+        // Root reads it regardless of its mode.
+        if unsafe { libc::geteuid() } != 0 {
+            assert_eq!(
+                vol.fs.fsyncdir(node(), &(), false, &caller),
+                Err(Errno::EACCES)
+            );
+        }
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        std::fs::remove_dir_all(&real).unwrap();
+        assert_eq!(
+            vol.fs.fsyncdir(node(), &(), false, &caller),
+            Err(Errno::ENOENT)
+        );
     }
 
     /// A directory IV volume in a fresh temporary directory.
@@ -3437,6 +3840,81 @@ mod tests {
         }
     }
 
+    #[test]
+    // `mode_t` is `u32` on Linux but `u16` on macOS.
+    #[allow(clippy::useless_conversion)]
+    fn same_user_entries_keep_the_callers_supplementary_group() {
+        use std::os::unix::fs::MetadataExt;
+
+        let uid = unsafe { libc::geteuid() };
+        let gid = unsafe { libc::getegid() };
+        let count = unsafe { libc::getgroups(0, std::ptr::null_mut()) };
+        assert!(count >= 0);
+        let mut groups = vec![0; count as usize];
+        let count = unsafe { libc::getgroups(count, groups.as_mut_ptr()) };
+        assert!(count >= 0);
+        let Some(group) = groups[..count as usize].iter().copied().find(|g| *g != gid) else {
+            eprintln!("no supplementary group distinct from the daemon's effective GID");
+            return;
+        };
+        let req = Caller {
+            uid,
+            gid: group,
+            ..caller()
+        };
+
+        for directory_iv in [false, true] {
+            let mut config = EncfsConfig::standard_v7();
+            if !directory_iv {
+                config.use_chained_name_iv();
+            }
+            let vol = DirIvVolume::with_config(&format!("caller_group_{directory_iv}"), config);
+            let root = Path::new("/");
+            vol.fs
+                .create_impl(req, root, OsStr::new("file"), 0o640, 0)
+                .unwrap();
+            vol.fs
+                .mkdir_impl(req, root, OsStr::new("dir"), 0o750)
+                .unwrap();
+            vol.fs
+                .mknod_impl(
+                    req,
+                    root,
+                    OsStr::new("node"),
+                    u32::from(libc::S_IFREG) | 0o640,
+                    0,
+                )
+                .unwrap();
+            vol.fs
+                .mknod_impl(
+                    req,
+                    root,
+                    OsStr::new("fifo"),
+                    u32::from(libc::S_IFIFO) | 0o640,
+                    0,
+                )
+                .unwrap();
+
+            let assert_owner = |path: &Path| {
+                let meta = std::fs::symlink_metadata(path).unwrap();
+                assert_eq!((meta.uid(), meta.gid()), (uid, group), "{path:?}");
+            };
+            for name in ["file", "dir", "node", "fifo"] {
+                let (real, _) = vol.fs.encrypt_path(&root.join(name)).unwrap();
+                assert_owner(&real);
+            }
+            if directory_iv {
+                let (real, _) = vol.fs.encrypt_path(Path::new("/dir")).unwrap();
+                assert_owner(&crate::diriv::sidecar_path(&real));
+                // Exercise rollback after removing the sidecar, as a failed
+                // rmdir or replacement would do.
+                let removed = vol.fs.remove_sidecar_of_empty_dir(&real).unwrap();
+                removed.restore(&real);
+                assert_owner(&crate::diriv::sidecar_path(&real));
+            }
+        }
+    }
+
     /// Ways of putting a different directory at `/dst`.
     #[derive(Clone, Copy, Debug)]
     enum Replace {
@@ -3511,6 +3989,10 @@ mod tests {
                 Path::new("/dst"),
                 OsStr::new("new"),
             )
+        }),
+        ("mkdir", |fs| {
+            fs.mkdir_impl(caller(), Path::new("/dst"), OsStr::new("new"), 0o755)
+                .map(drop)
         }),
     ];
 
@@ -3883,6 +4365,237 @@ mod tests {
             .unwrap();
         assert_eq!(key_of(fs, "/other"), key);
         assert!(Arc::ptr_eq(&fs.file_states.get_by_key(key), &held));
+    }
+
+    /// The names in a backing directory that mkdir may have staged under.
+    fn staged_names(dir: &Path) -> Vec<OsString> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .filter(|name| crate::diriv::is_staging_name(name))
+            .collect()
+    }
+
+    /// mkdir builds the directory under a staging name and renames it into
+    /// place, leaving nothing staged behind, whether it succeeds or not.
+    #[test]
+    fn mkdir_leaves_no_staged_directory() {
+        let vol = DirIvVolume::new("mkdir_staged");
+        let root = Path::new("/");
+        vol.fs
+            .mkdir_impl(caller(), root, OsStr::new("dir"), 0o755)
+            .unwrap();
+        assert_eq!(
+            vol.fs
+                .mkdir_impl(caller(), root, OsStr::new("dir"), 0o755)
+                .err(),
+            Some(libc::EEXIST)
+        );
+        assert!(staged_names(&vol.root).is_empty());
+        let (real, _) = vol.fs.encrypt_path(Path::new("/dir")).unwrap();
+        crate::diriv::read_sidecar(&real).unwrap();
+        assert_eq!(vol.names_after_remount("/"), vec![OsString::from("dir")]);
+    }
+
+    type Placement = fn(&EncFs, &super::StagedDir<'_>, &super::NewEntry) -> super::OpResult;
+
+    /// Both ways of renaming a staged directory into place: without a lock
+    /// where the platform can refuse to replace, and the locked fallback.
+    const PLACEMENTS: &[(&str, Placement)] = &[
+        ("noreplace", |fs, staged, entry| {
+            fs.place_staged(staged, entry)
+        }),
+        ("locked", |fs, staged, entry| {
+            fs.place_staged_locked(staged, entry)
+        }),
+    ];
+
+    /// rename(2) would replace an empty directory, or a file, but mkdir must
+    /// not.
+    #[test]
+    fn mkdir_does_not_replace_an_existing_entry() {
+        for (how, place) in PLACEMENTS {
+            let vol = DirIvVolume::new(&format!("mkdir_over_existing_{how}"));
+            let entry = vol.fs.new_entry(Path::new("/dir")).unwrap();
+            // As if each appeared after the kernel's lookup.
+            for existing in ["empty dir", "file"] {
+                match existing {
+                    "file" => drop(File::create(&entry.real_path).unwrap()),
+                    _ => std::fs::create_dir(&entry.real_path).unwrap(),
+                }
+                let staged = vol
+                    .fs
+                    .stage_dir(&caller(), &entry, 0o755, &[5u8; 16])
+                    .unwrap();
+                assert_eq!(
+                    place(&vol.fs, &staged, &entry).err(),
+                    Some(libc::EEXIST),
+                    "{how}: {existing}"
+                );
+                staged.discard();
+                assert!(staged_names(&vol.root).is_empty());
+                match existing {
+                    "file" => std::fs::remove_file(&entry.real_path).unwrap(),
+                    _ => std::fs::remove_dir(&entry.real_path).unwrap(),
+                }
+            }
+        }
+    }
+
+    /// Either placement puts the staged directory, sidecar and mode in place
+    /// under its encrypted name.
+    #[test]
+    fn staged_directory_is_placed_under_its_name() {
+        use std::os::unix::fs::PermissionsExt;
+        for (how, place) in PLACEMENTS {
+            let vol = DirIvVolume::new(&format!("mkdir_placed_{how}"));
+            let entry = vol.fs.new_entry(Path::new("/dir")).unwrap();
+            let staged = vol
+                .fs
+                .stage_dir(&caller(), &entry, 0o750, &[5u8; 16])
+                .unwrap();
+            place(&vol.fs, &staged, &entry).unwrap();
+            drop(staged);
+            assert!(staged_names(&vol.root).is_empty(), "{how}");
+            assert_eq!(
+                crate::diriv::read_sidecar(&entry.real_path).unwrap(),
+                [5u8; 16]
+            );
+            assert_eq!(
+                std::fs::metadata(&entry.real_path)
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o750
+            );
+            vol.fs
+                .create_impl(caller(), Path::new("/dir"), OsStr::new("f"), 0o644, 0)
+                .unwrap();
+            assert_eq!(vol.names_after_remount("/dir"), vec![OsString::from("f")]);
+        }
+    }
+
+    /// The backing path of a staged directory.
+    fn staged_path(real_parent: &Path, staged: &super::StagedDir<'_>) -> PathBuf {
+        real_parent.join(OsStr::from_bytes(staged.name.as_bytes()))
+    }
+
+    /// A directory mkdir is still building counts as an entry for rmdir of
+    /// its parent. One a crash left behind holds only its sidecar, and rmdir
+    /// removes it; one that holds more is kept, as is a stray file under a
+    /// staging name.
+    #[test]
+    fn rmdir_removes_directories_left_staged() {
+        use std::os::unix::fs::PermissionsExt;
+        let vol = DirIvVolume::new("rmdir_staged");
+        let root = Path::new("/");
+        let rmdir = || vol.fs.rmdir_impl(root, OsStr::new("dir"));
+        vol.fs
+            .mkdir_impl(caller(), root, OsStr::new("dir"), 0o755)
+            .unwrap();
+        let (real, _) = vol.fs.encrypt_path(Path::new("/dir")).unwrap();
+        let entry = vol.fs.new_entry(Path::new("/dir/x")).unwrap();
+        // One that had already given up owner access for a mode of 0o500.
+        let staged = vol
+            .fs
+            .stage_dir(&caller(), &entry, 0o500, &[5u8; 16])
+            .unwrap();
+        let path = staged_path(&real, &staged);
+        assert_eq!(rmdir().err(), Some(libc::ENOTEMPTY));
+        drop(staged);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o500
+        );
+        rmdir().unwrap();
+        assert!(!real.exists());
+
+        vol.fs
+            .mkdir_impl(caller(), root, OsStr::new("dir"), 0o755)
+            .unwrap();
+        let (real, _) = vol.fs.encrypt_path(Path::new("/dir")).unwrap();
+        let entry = vol.fs.new_entry(Path::new("/dir/x")).unwrap();
+        let staged = vol
+            .fs
+            .stage_dir(&caller(), &entry, 0o755, &[5u8; 16])
+            .unwrap();
+        let path = staged_path(&real, &staged);
+        drop(staged);
+        File::create(path.join("kept")).unwrap();
+        assert_eq!(rmdir().err(), Some(libc::ENOTEMPTY));
+        assert!(path.join("kept").exists());
+        crate::diriv::read_sidecar(&real).unwrap();
+
+        std::fs::remove_dir_all(&path).unwrap();
+        File::create(&path).unwrap();
+        assert_eq!(rmdir().err(), Some(libc::ENOTEMPTY));
+        std::fs::remove_file(&path).unwrap();
+        rmdir().unwrap();
+    }
+
+    /// discard leaves a staged directory that is no longer under its staging
+    /// name, as when a rename into place reported failure but happened.
+    #[test]
+    fn discard_leaves_a_directory_already_placed() {
+        use std::os::unix::fs::PermissionsExt;
+        let vol = DirIvVolume::new("discard_placed");
+        let entry = vol.fs.new_entry(Path::new("/x")).unwrap();
+        let staged = vol
+            .fs
+            .stage_dir(&caller(), &entry, 0o500, &[5u8; 16])
+            .unwrap();
+        let placed = vol.root.join("placed");
+        std::fs::rename(staged_path(&vol.root, &staged), &placed).unwrap();
+        staged.discard();
+        assert_eq!(
+            std::fs::metadata(&placed).unwrap().permissions().mode() & 0o777,
+            0o500
+        );
+        assert_eq!(crate::diriv::read_sidecar(&placed).unwrap(), [5u8; 16]);
+        std::fs::set_permissions(&placed, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+
+    /// If the parent moves once mkdir has encrypted the name for it, the new
+    /// directory goes into the parent at its new place, whose IV the name
+    /// was encrypted under, and not into a new directory at the old path.
+    #[test]
+    fn mkdir_follows_a_parent_moved_midway() {
+        let vol = DirIvVolume::new("mkdir_moved_parent");
+        let fs = &vol.fs;
+        let root = Path::new("/");
+        fs.mkdir_impl(caller(), root, OsStr::new("a"), 0o755)
+            .unwrap();
+        *fs.race_hook.lock().unwrap() = Some(Box::new(|fs: &EncFs| {
+            let root = Path::new("/");
+            fs.rename_internal(root, OsStr::new("a"), root, OsStr::new("b"))
+                .unwrap();
+            fs.mkdir_impl(caller(), root, OsStr::new("a"), 0o755)
+                .unwrap();
+        }));
+        fs.mkdir_impl(caller(), Path::new("/a"), OsStr::new("x"), 0o755)
+            .unwrap();
+        assert!(fs.race_hook.lock().unwrap().is_none());
+        assert_eq!(vol.names_after_remount("/b"), vec![OsString::from("x")]);
+        assert!(vol.names_after_remount("/a").is_empty());
+        let (real_b, _) = fs.encrypt_path(Path::new("/b")).unwrap();
+        assert!(staged_names(&real_b).is_empty());
+    }
+
+    /// mkdir opens the new directory to sync its sidecar, even when the
+    /// requested mode doesn't allow reading it.
+    #[test]
+    fn mkdir_syncs_a_directory_it_cannot_read() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let vol = DirIvVolume::new("mkdir_unreadable");
+        vol.fs
+            .mkdir_impl(caller(), Path::new("/"), OsStr::new("dir"), 0o300)
+            .unwrap();
+        let (real, _) = vol.fs.encrypt_path(Path::new("/dir")).unwrap();
+        let mode = std::fs::metadata(&real).unwrap().mode() & 0o7777;
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(mode, 0o300);
+        crate::diriv::read_sidecar(&real).unwrap();
     }
 
     /// A replace on an inode with no seed fails without creating one.

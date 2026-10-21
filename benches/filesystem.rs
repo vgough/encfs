@@ -2,11 +2,10 @@ mod filesystem_support;
 
 use anyhow::{Context, Result, anyhow, bail};
 use filesystem_support::{
-    BASELINE_VARIANT, BenchmarkResult, HostContext, MetricDelta, OVERHEAD_VARIANT, SCHEMA_VERSION,
-    VARIANTS, Variant, Workload, calculate_deltas, compare_metrics, ensure_compatible, load_result,
+    BASELINE_CONFIG, BASELINE_VARIANT, BenchmarkResult, HostContext, MetricDelta, SCHEMA_VERSION,
+    Variant, Workload, calculate_deltas, compare_metrics, ensure_compatible, load_result,
     parse_mdtest_output, save_result_atomic, workload_description,
 };
-use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
@@ -80,49 +79,40 @@ fn run() -> Result<()> {
         ensure_success("gocryptfs -version", &version)?;
         println!("{}", String::from_utf8_lossy(&version.stdout).trim());
     }
-    // None selects gocryptfs; EncFS baseline saves only measure no-unique-iv.
-    let selected: Vec<_> = if gocryptfs {
-        vec![("gocryptfs", None)]
+    // None selects gocryptfs; EncFS saves and comparisons use the same config.
+    let variant = if gocryptfs {
+        None
     } else {
-        VARIANTS
-            .iter()
-            .filter(|variant| !save_baseline || variant.name == BASELINE_VARIANT)
-            .map(|variant| (variant.name, Some(variant)))
-            .collect()
+        Some(&BASELINE_CONFIG)
     };
-    let mut mdtest_version = None;
-    let mut variants = BTreeMap::new();
-    for (name, variant) in selected {
-        if let Some(variant) = variant {
-            println!(
-                "Running variant {name} (encfsctl new {})",
-                variant.new_args.join(" ")
-            );
-        } else {
-            println!("Running variant {name} (gocryptfs -init defaults)");
-        }
-        let benchmark =
-            run_filesystem_benchmark(&workload, &mdtest_bin, &mpirun_bin, variant, &gocryptfs_bin)
-                .with_context(|| format!("variant {name}"))?;
-        let combined_output = format!(
-            "{}\n{}",
-            String::from_utf8_lossy(&benchmark.output.stdout),
-            String::from_utf8_lossy(&benchmark.output.stderr)
+    if let Some(variant) = variant {
+        println!(
+            "Running variant {} (encfsctl new {})",
+            variant.name,
+            variant.new_args.join(" ")
         );
-        let (version, metrics) = parse_mdtest_output(&combined_output).with_context(|| {
-            format!(
-                "failed to parse mdtest output for variant {}{}",
-                name, benchmark.mount_diagnostics
-            )
-        })?;
-        mdtest_version.get_or_insert(version);
-        variants.insert(name, metrics);
+    } else {
+        println!("Running variant gocryptfs (gocryptfs -init defaults)");
     }
+    let benchmark =
+        run_filesystem_benchmark(&workload, &mdtest_bin, &mpirun_bin, variant, &gocryptfs_bin)
+            .with_context(|| format!("variant {measured_variant}"))?;
+    let combined_output = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&benchmark.output.stdout),
+        String::from_utf8_lossy(&benchmark.output.stderr)
+    );
+    let (mdtest_version, metrics) = parse_mdtest_output(&combined_output).with_context(|| {
+        format!(
+            "failed to parse mdtest output for variant {}{}",
+            measured_variant, benchmark.mount_diagnostics
+        )
+    })?;
     let result = BenchmarkResult {
         schema_version: SCHEMA_VERSION,
         timestamp: chrono::Utc::now().to_rfc3339(),
         git_revision: git_revision(),
-        mdtest_version: mdtest_version.expect("VARIANTS is not empty"),
+        mdtest_version,
         host: HostContext {
             os: sysinfo::System::name().unwrap_or_else(|| env::consts::OS.to_string()),
             os_version: sysinfo::System::os_version().unwrap_or_else(|| "unknown".to_string()),
@@ -131,9 +121,7 @@ fn run() -> Result<()> {
         },
         workload,
         variant: measured_variant.to_string(),
-        metrics: variants
-            .remove(measured_variant)
-            .expect("the measured variant always runs"),
+        metrics,
     };
 
     if save_baseline {
@@ -143,12 +131,7 @@ fn run() -> Result<()> {
             baseline_path.display()
         );
     } else {
-        let overhead = variants.remove(OVERHEAD_VARIANT);
-        print_comparison(
-            baseline.as_ref().expect("baseline was loaded"),
-            &result,
-            overhead.as_ref(),
-        )?;
+        print_comparison(baseline.as_ref().expect("baseline was loaded"), &result)?;
     }
     Ok(())
 }
@@ -542,13 +525,8 @@ fn ensure_success(name: &str, output: &Output) -> Result<()> {
     )
 }
 
-/// Prints EncFS or gocryptfs against the saved EncFS baseline, followed by
-/// the optional EncFS directory-IV overhead comparison from the same run.
-fn print_comparison(
-    baseline: &BenchmarkResult,
-    current: &BenchmarkResult,
-    overhead: Option<&BTreeMap<String, f64>>,
-) -> Result<()> {
+/// Prints EncFS or gocryptfs against the saved EncFS baseline.
+fn print_comparison(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Result<()> {
     if baseline.host != current.host {
         eprintln!(
             "warning: baseline host {} {} / {} / {} differs from current host {} {} / {} / {}",
@@ -583,15 +561,6 @@ fn print_comparison(
             &format!("Performance: {BASELINE_VARIANT}, baseline vs. this run"),
             ("Baseline", "Current"),
             &calculate_deltas(baseline, current)?,
-        );
-    }
-    if let Some(overhead) = overhead {
-        print_table(
-            &format!(
-                "Overhead: {OVERHEAD_VARIANT} relative to {BASELINE_VARIANT}, both from this run"
-            ),
-            (BASELINE_VARIANT, OVERHEAD_VARIANT),
-            &compare_metrics(&current.metrics, overhead)?,
         );
     }
     println!("\nDeltas are informational and do not affect the command exit status.");

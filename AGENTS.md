@@ -252,15 +252,22 @@ removed source inodes' states must be detached (`forget_removed_inodes`),
 since backing filesystems reuse inode numbers.
 The IV cache in `EncFs` (`diriv::DirIvCache`) never rereads sidecars, on the
 premise that nothing modifies the backing directory behind a live mount; any
-code path that creates, removes, or moves a directory must update it
-(`insert`, `forget_tree`, `rename_tree`) under the sidecar write lock.
+code path that removes or moves a directory must update it (`forget_tree`,
+`rename_tree`) under the sidecar write lock. Creating one needs no update:
+nothing is cached at a free path, and the first lookup reads the new sidecar.
 That keeps entries true of each *path*, but a directory can still be replaced
 at its path mid-operation. Code that writes an IV-dependent name into a
 directory must bind the IV to that directory: resolve it with
 `EncFs::new_entry` and create through the returned `NewEntry` (`*at` calls on
 the pinned parent, `ENOENT` if it was replaced), or encrypt the name under the
-sidecar write lock (`encrypt_name_in`, as mkdir and directory rename do).
+sidecar write lock (`encrypt_name_in`, as directory rename does).
 Don't encrypt a name with `encrypt_path` and then create it by path.
+mkdir goes through `new_entry` too: it builds the directory and its synced
+sidecar under a staging name in the pinned parent (`EncFs::stage_dir`), then
+renames it into place without replacing anything (`EncFs::place_staged`:
+`typed_fuse::passthrough::rename_noreplace_at`, or a check and rename under
+the sidecar write lock where the platform can't refuse). Platform-specific
+sync calls belong in `src/diriv/platform.rs`.
 
 ### 3. File Structure
 Encrypted files share the header layout `[Header: 8 bytes if unique_iv] [Block 0] [Block 1] ... [Block N]`,

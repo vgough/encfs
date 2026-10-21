@@ -170,7 +170,8 @@ next mount, so its names would decode wrongly and new files would be
 encrypted under the wrong IV. The filesystem instead keeps the cache in step
 with its own changes:
 
-- mkdir inserts the new directory's IVs (it knows the sidecar bytes);
+- mkdir inserts nothing: the new directory's sidecar is durable before its
+  name exists, and the first lookup reads it;
 - rmdir drops the entries for the directory and anything below it;
 - a directory rename moves the entries for the source subtree to the
   destination, replacing whatever was cached there. Clearing the destination
@@ -185,8 +186,9 @@ directories uncached, to guard against changes the mount does not support.
 
 ### Directory lifecycle
 
-A filesystem-wide `RwLock` (the "sidecar lock") is taken for write by mkdir,
-rmdir, and directory rename, and for read on the slow path that actually
+A filesystem-wide `RwLock` (the "sidecar lock") is taken for write by rmdir,
+directory rename, and mkdir where the platform can't rename without
+replacing (see below), and for read on the slow path that actually
 reads a sidecar into the cache, so in-process lookups never observe a
 directory between its creation and its sidecar's, and a cache miss cannot
 cache a path a rename has just vacated.
@@ -199,15 +201,15 @@ then sit in the new directory under a name encrypted for the old one,
 unreadable for good. Instead of a broader lock, operations that write
 IV-dependent names or attributes bind the IV to the directory:
 
-- create, mknod, symlink, link, and file/symlink rename open the parent
+- create, mknod, mkdir, symlink, link, and file/symlink rename open the parent
   directory (`O_PATH`/`O_SEARCH`), check that the cached IVs were read from
   that inode (each cache entry records the directory's `(st_dev, st_ino)`),
   and create the entry with `*at` calls on the descriptor. A mismatch fails
   the operation with `ENOENT` and drops the entry so a retry reloads it; a
   replacement after the check leaves the descriptor on the unlinked old
   directory, where creation fails with `ENOENT`.
-- mkdir and directory rename encrypt the new name under the write lock they
-  already hold, which keeps the parent in place.
+- directory rename encrypts the new name under the write lock it already
+  holds, which keeps the parent in place.
 - (Superseded by ADR 0003, where attribute IVs come from the inode itself.)
   setxattr and removexattr held the read lock while reading a directory's
   `node_iv` and writing the attribute.
@@ -215,17 +217,37 @@ IV-dependent names or attributes bind the IV to the directory:
 Read-only operations are left alone: a stale IV there only yields a
 transient `ENOENT` or decode error.
 
-- **mkdir**: create the directory with the requested mode exactly as today,
-  create the sidecar, set ownership on both. If the resulting mode denies the
-  daemon write/search access, add owner `rwx` temporarily and restore the
-  original bits afterward. If the sidecar cannot be written, remove the
-  directory and return the error.
-- **rmdir**: a directory is empty when the sidecar is its only entry. Read the
-  16 bytes, unlink the sidecar, `rmdir`. If `rmdir` fails (for example a file
-  was created concurrently), re-create the sidecar with the same bytes so
-  names already in the directory stay valid. A directory with no sidecar and no
-  entries (left by a crash mid-rmdir) is removed directly. A read-only
-  directory gets owner write temporarily, restored if the removal fails.
+- **mkdir**: encrypt the name for the parent pinned by a descriptor, as
+  create does. Build the directory under a random staging name (`.encfs.`
+  and 16 hex digits, never a valid encrypted name, so never listed) in that
+  parent, registered as in progress so rmdir leaves it alone: create it with
+  the requested mode plus owner `rwx`, create the sidecar through an open
+  descriptor on it, set ownership on both, drop the added owner bits with
+  `fchmod` on that descriptor, then sync the sidecar and the directory.
+  Rename the staged directory to the encrypted name in the same parent,
+  failing with `EEXIST` if anything is there (`rename(2)` alone would
+  replace an empty directory): `renameat2(RENAME_NOREPLACE)` on Linux and
+  FreeBSD 15, and `renameatx_np(RENAME_EXCL)` on Apple platforms, refuse
+  atomically and need no lock (typed-fuse's `rename_noreplace_at`). Where
+  none is available (FreeBSD 14, or a backing filesystem that rejects the
+  flag), check that the name is absent and rename under the write lock,
+  which every other in-process placement of a directory (directory rename)
+  and every emptying of one (rmdir) also holds. A
+  crash therefore never leaves a directory under its encrypted name without
+  a complete, synced sidecar, or with more access than requested. On any
+  failure the staged directory is removed. As with create, a placement can
+  land while rmdir of the parent has its sidecar removed; rmdir then fails
+  and restores it, but a crash at that moment leaves the parent damaged.
+- **rmdir**: a directory is empty when the sidecar is its only entry, apart
+  from staged directories a crashed mkdir left (staging-named directories not
+  registered as in progress), which are removed with it if
+  they hold nothing but a sidecar (one that holds more makes the directory
+  not empty). Read the 16 bytes, unlink the sidecar, `rmdir`. If `rmdir`
+  fails (for example a file was created concurrently), re-create the sidecar
+  with the same bytes so names already in the directory stay valid. A
+  directory with no sidecar and no entries (left by a crash mid-rmdir) is
+  removed directly. A read-only directory gets owner write temporarily,
+  restored if the removal fails.
 - **readdir**: decrypt entries with `name_iv` of the directory; the sidecar is
   not listed.
 - **Volume root**: `encfsctl new` writes the root sidecar. At
