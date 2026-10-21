@@ -1044,7 +1044,7 @@ checksum = "ce5d3ddc6d3fa000eb1536d85e147bfe31aacaba692ed6a876f95cb7c855be78"
 [[package]]
 name = "libfuse-sys"
 version = "0.6.0"
-source = "git+https://github.com/vgough/typed-fuse?tag=v0.8.0#5f08955a2e8f16c403b566b5366fd95bc03f6ce8"
+source = "git+https://github.com/vgough/typed-fuse?tag=v0.8.1#889f32860d582928ef8e535fe13ace7d07a80615"
 dependencies = [
  "bindgen",
  "libc",
@@ -1869,8 +1869,8 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse"
-version = "0.8.0"
-source = "git+https://github.com/vgough/typed-fuse?tag=v0.8.0#5f08955a2e8f16c403b566b5366fd95bc03f6ce8"
+version = "0.8.1"
+source = "git+https://github.com/vgough/typed-fuse?tag=v0.8.1#889f32860d582928ef8e535fe13ace7d07a80615"
 dependencies = [
  "libc",
  "libfuse-sys",
@@ -1882,7 +1882,7 @@ dependencies = [
 [[package]]
 name = "typed-fuse-core"
 version = "0.7.0"
-source = "git+https://github.com/vgough/typed-fuse?tag=v0.8.0#5f08955a2e8f16c403b566b5366fd95bc03f6ce8"
+source = "git+https://github.com/vgough/typed-fuse?tag=v0.8.1#889f32860d582928ef8e535fe13ace7d07a80615"
 dependencies = [
  "libc",
 ]

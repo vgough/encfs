@@ -10,6 +10,13 @@
 //! The sidecar name starts with `.`, which neither filename alphabet contains,
 //! so it never collides with an encrypted name, and every tree walker already
 //! skips dot-prefixed entries.
+//!
+//! The sync calls this depends on, which differ between platforms, are in
+//! the `platform` module.
+
+mod platform;
+
+pub use platform::{open_dir_to_sync, sync_file, sync_sidecar};
 
 use crate::config::EncfsConfig;
 use crate::crypto::cipher::Cipher;
@@ -149,27 +156,22 @@ pub fn read_sidecar(dir: &Path) -> io::Result<Sidecar> {
 /// sync it needs read access to it. A complete sidecar that fails to sync is
 /// kept.
 pub fn create_sidecar(dir: &Path, bytes: &Sidecar) -> io::Result<()> {
-    create_sidecar_owned(dir, bytes, None)?
+    create_sidecar_owned(dir, bytes, None)
 }
 
 /// As [`create_sidecar`], giving the sidecar `owner` (uid, gid), as far as
-/// this process may, before the sync. Fails if the sidecar can't be
-/// created; once it exists, returns the sync's result inside, since names
-/// encrypted under it are readable either way.
+/// this process may, before the sync.
 pub fn create_sidecar_owned(
     dir: &Path,
     bytes: &Sidecar,
     owner: Option<(u32, u32)>,
-) -> io::Result<io::Result<()>> {
-    let dir = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_DIRECTORY)
-        .open(dir)?;
+) -> io::Result<()> {
+    let dir = open_dir_to_sync(dir)?;
     let file = create_sidecar_in(&dir, bytes)?;
     if let Some((uid, gid)) = owner {
         let _ = std::os::unix::fs::fchown(&file, Some(uid), Some(gid));
     }
-    Ok(sync_sidecar(&file, &dir, owner.is_some()))
+    sync_sidecar(&file, &dir, owner.is_some())
 }
 
 /// Creates the sidecar in the open directory `dir` with the given contents,
@@ -236,101 +238,6 @@ pub fn is_staging_name(name: &OsStr) -> bool {
             hex.len() == 2 * STAGING_RANDOM_LEN
                 && hex.iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
         })
-}
-
-/// Makes the sidecar `file` and its entry in `dir` reach stable storage
-/// before any later write, so that a crash can't keep names encrypted under
-/// the sidecar while losing the sidecar (or keeping it empty), leaving them
-/// undecryptable.
-///
-/// That is a need for ordering, not durability. On Apple platforms, where
-/// `sync_all` flushes the drive's whole cache (`F_FULLFSYNC`), it is met by
-/// an `fsync` of each followed by one `F_BARRIERFSYNC` write barrier, which
-/// costs a fraction as much and which Apple recommends for write barriers:
-/// <https://developer.apple.com/documentation/xcode/reducing-disk-writes#Minimize-explicit-storage-synchronization>.
-/// If the barrier fails, a full sync of `dir` (`F_FULLFSYNC`) flushes the
-/// drive's cache, taking the file's already `fsync`ed data along; where that
-/// is unsupported too (smbfs directories), each is synced as [`sync_file`]
-/// does. Elsewhere the directory is synced in full, and the file's data
-/// (`fdatasync`, which covers its size, all a new file needs) unless
-/// `owner_changed` says it was chowned since creation, which only a full
-/// sync persists. A user's
-/// `fsyncdir` still flushes in full, so mkdir followed by `fsyncdir` on the
-/// parent stays durable.
-pub fn sync_sidecar(file: &File, dir: &File, owner_changed: bool) -> io::Result<()> {
-    // Apple's plain `fsync` below covers ownership as well.
-    #[cfg(target_vendor = "apple")]
-    let _ = owner_changed;
-    #[cfg(target_vendor = "apple")]
-    {
-        use std::os::unix::io::AsRawFd;
-        match fsync(file) {
-            Err(e) if !sync_unsupported(&e) => return Err(e),
-            _ => {}
-        }
-        // The barrier also fsyncs `dir`, then orders both before later I/O.
-        // SAFETY: `dir` is open for the duration of the call.
-        if unsafe { libc::fcntl(dir.as_raw_fd(), libc::F_BARRIERFSYNC) } == 0 {
-            return Ok(());
-        }
-        match dir.sync_all() {
-            Err(e) if sync_unsupported(&e) => {
-                sync_file(file, false)?;
-                sync_file(dir, false)
-            }
-            other => other,
-        }
-    }
-    #[cfg(not(target_vendor = "apple"))]
-    {
-        sync_file(file, !owner_changed)?;
-        sync_file(dir, false)
-    }
-}
-
-/// Syncs `file`, a regular file or directory, to stable storage: its data
-/// only if `data_only` (`fdatasync`), else in full (`fsync`).
-///
-/// A filesystem that can't sync it (`EINVAL`, `ENOTSUP`) is taken to need no
-/// sync, as databases do. On Apple platforms both are `F_FULLFSYNC`, which
-/// some filesystems don't support (smbfs fails it on directories with
-/// `ENOTSUP`, though `fsync` works), so an unsupported `F_FULLFSYNC` falls
-/// back to a plain `fsync`. Other errors, such as `EIO`, are returned rather
-/// than retried, so a failed flush isn't hidden.
-pub fn sync_file(file: &File, data_only: bool) -> io::Result<()> {
-    let result = if data_only {
-        file.sync_data()
-    } else {
-        file.sync_all()
-    };
-    #[cfg(target_vendor = "apple")]
-    let result = match result {
-        Err(e) if sync_unsupported(&e) => fsync(file),
-        other => other,
-    };
-    match result {
-        Err(e) if sync_unsupported(&e) => Ok(()),
-        other => other,
-    }
-}
-
-/// A plain `fsync(2)`, which on Apple platforms, unlike `sync_all`, doesn't
-/// flush the drive's cache.
-#[cfg(target_vendor = "apple")]
-fn fsync(file: &File) -> io::Result<()> {
-    use std::os::unix::io::AsRawFd;
-    // SAFETY: `file` is open for the duration of the call.
-    if unsafe { libc::fsync(file.as_raw_fd()) } == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
-}
-
-/// Whether a sync failed because the filesystem doesn't support it.
-fn sync_unsupported(err: &io::Error) -> bool {
-    err.raw_os_error()
-        .is_some_and(|n| n == libc::EINVAL || n == libc::ENOTSUP || n == libc::EOPNOTSUPP)
 }
 
 /// The IVs a sidecar's contents yield.
@@ -479,10 +386,12 @@ pub struct CachedDir {
 /// while a volume is mounted, every change to its backing directory goes
 /// through the mount: modifying it behind a live mount is unsupported. The
 /// filesystem keeps the cache in step with its own changes instead:
-/// [`DirIvCache::insert`] on mkdir, [`DirIvCache::forget_tree`] on rmdir, and
-/// [`DirIvCache::rename_tree`] when a directory moves. Callers serialize those
-/// against [`DirIvCache::load`] (the sidecar lock in `crate::fs`), so a
-/// concurrent miss cannot re-insert a path that was just moved or removed.
+/// [`DirIvCache::forget_tree`] on rmdir, and [`DirIvCache::rename_tree`] when
+/// a directory moves. Callers serialize those against [`DirIvCache::load`]
+/// (the sidecar lock in `crate::fs`), so a concurrent miss cannot re-insert a
+/// path that was just moved or removed. mkdir adds nothing: nothing is cached
+/// at a free path, and the new directory's sidecar is complete before it has
+/// a name, so the first [`DirIvCache::load`] of it reads it.
 ///
 /// That keeps each entry true of the directory *at its path*, but the
 /// directory at a path can still be replaced between a lookup and the
@@ -511,8 +420,10 @@ impl DirIvCache {
         Ok(entry)
     }
 
-    /// Records the IVs of a directory whose sidecar was just written.
-    pub fn insert(&self, dir: &Path, entry: CachedDir) {
+    /// Records the IVs of a directory whose sidecar was just read. Only
+    /// [`DirIvCache::load`] does, under the caller's sidecar lock: an entry
+    /// added by path otherwise may describe a directory that has moved.
+    fn insert(&self, dir: &Path, entry: CachedDir) {
         let mut entries = self.lock();
         if entries.len() >= CACHE_LIMIT {
             entries.clear();
@@ -586,30 +497,6 @@ mod tests {
         ] {
             assert!(!is_staging_name(OsStr::new(&other)), "{}", other);
         }
-    }
-
-    #[test]
-    fn sync_file_skips_unsupported_syncs_but_returns_other_errors() {
-        use std::os::unix::io::FromRawFd;
-        let mut fds = [0; 2];
-        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-        let (read, write) = unsafe { (File::from_raw_fd(fds[0]), File::from_raw_fd(fds[1])) };
-        assert!(write.sync_all().is_err());
-        if cfg!(target_vendor = "apple") {
-            // F_FULLFSYNC fails on a pipe with EBADF, not an unsupported
-            // errno, so it must not fall back to fsync (which would fail with
-            // EINVAL and so pass).
-            assert!(sync_file(&write, false).is_err());
-            assert!(sync_file(&read, true).is_err());
-        } else {
-            // fsync fails on a pipe with EINVAL, as directories do on some
-            // filesystems.
-            sync_file(&write, false).unwrap();
-            sync_file(&read, true).unwrap();
-        }
-        let dir = File::open(std::env::temp_dir()).unwrap();
-        sync_file(&dir, false).unwrap();
-        sync_file(&dir, true).unwrap();
     }
 
     fn temp_dir(name: &str) -> PathBuf {
