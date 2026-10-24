@@ -210,6 +210,15 @@ IV-dependent names or attributes bind the IV to the directory:
   directory, where creation fails with `ENOENT`.
 - directory rename encrypts the new name under the write lock it already
   holds, which keeps the parent in place.
+- rename decides between its directory and non-directory paths from an
+  `lstat` of the source taken without the lock. Both paths that end in a
+  bare `rename(2)` (directories, and non-directories that need no
+  re-encryption) take the write lock and check that the source path still
+  names the inode that `lstat` returned, failing with `ENOENT` if not.
+  Without the check, an rmdir and a create at the source path in between
+  could have a file moved by the directory path, its header still encrypted
+  for the old entry IV, or a directory moved by the non-directory path,
+  with its cached IVs left under the old path.
 - (Superseded by ADR 0003, where attribute IVs come from the inode itself.)
   setxattr and removexattr held the read lock while reading a directory's
   `node_iv` and writing the attribute.

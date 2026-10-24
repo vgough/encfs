@@ -521,6 +521,10 @@ pub struct EncFs {
     /// yet created, so tests can replace the parent directory there.
     #[cfg(test)]
     race_hook: Mutex<Option<RaceHook>>,
+    /// Runs once in rename, after the source's type has been read but before
+    /// the rename acts on it, so tests can replace the source there.
+    #[cfg(test)]
+    rename_race_hook: Mutex<Option<RaceHook>>,
 }
 
 #[cfg(test)]
@@ -542,6 +546,8 @@ impl EncFs {
             staging: Mutex::new(HashSet::new()),
             #[cfg(test)]
             race_hook: Mutex::new(None),
+            #[cfg(test)]
+            rename_race_hook: Mutex::new(None),
         }
     }
 
@@ -794,6 +800,19 @@ impl EncFs {
         if self.config.directory_iv {
             let meta = fs::symlink_metadata(&real_source)
                 .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+
+            #[cfg(test)]
+            {
+                let hook = self
+                    .rename_race_hook
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .take();
+                if let Some(hook) = hook {
+                    hook(self);
+                }
+            }
+
             return self.rename_with_directory_ivs(
                 &real_source,
                 source_iv,
@@ -952,6 +971,12 @@ impl EncFs {
             return Ok(());
         }
 
+        // `meta` was read without a lock, and a directory may have taken the
+        // source's place since. Moving one here would leave its IVs cached
+        // under the old path, so the rename happens under the write lock,
+        // and only if the source is still the entry that was checked.
+        let _guard = self.sidecar_write_lock();
+        check_unchanged(real_source, meta)?;
         dest.rename_from(real_source)
     }
 
@@ -971,6 +996,12 @@ impl EncFs {
         // encrypted under it too, so the destination's parent can't be
         // replaced between choosing the name and moving into it.
         let _guard = self.sidecar_write_lock();
+        // The caller chose this path from a type read without the lock, and
+        // the source may have been replaced since (rmdir, then create). A
+        // file or symlink moved by a bare rename(2) would keep a header or
+        // target encrypted for its old entry IV, so only the directory that
+        // was checked is moved.
+        check_unchanged(real_source, source_meta)?;
         let real_dest = &self.encrypt_name_in(real_dest_parent, newname)?;
         let removed = match fs::symlink_metadata(real_dest) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -1577,6 +1608,17 @@ fn placement_errno(e: libc::c_int) -> libc::c_int {
         libc::ENOTEMPTY | libc::EEXIST | libc::ENOTDIR => libc::EEXIST,
         e => e,
     }
+}
+
+/// Fails with `ENOENT` unless `path` still names the inode `expected` was
+/// read from, i.e. nothing has replaced it since.
+fn check_unchanged(path: &Path, expected: &fs::Metadata) -> OpResult {
+    let meta = fs::symlink_metadata(path).map_err(io_errno)?;
+    if (meta.dev(), meta.ino()) != (expected.dev(), expected.ino()) {
+        debug!("{:?} was replaced during rename", path);
+        return Err(libc::ENOENT);
+    }
+    Ok(())
 }
 
 /// Fails with `EEXIST` if anything, even a dangling symlink, is at `name`
@@ -4078,6 +4120,65 @@ mod tests {
         assert_eq!(create(), Err(libc::ENOENT));
         assert_eq!(create(), Ok(()));
         assert_eq!(vol.names_after_remount("/dst"), vec![OsString::from("b")]);
+    }
+
+    /// rename reads the source's type before taking the sidecar lock. A
+    /// file put in place of a directory in between must not be moved as the
+    /// directory was going to be.
+    #[test]
+    fn rename_refuses_a_file_that_replaced_the_directory() {
+        let vol = DirIvVolume::new("rename_dir_replaced");
+        let fs = &vol.fs;
+        let root = Path::new("/");
+        fs.mkdir_impl(caller(), root, OsStr::new("a"), 0o755)
+            .unwrap();
+        fs.mkdir_impl(caller(), root, OsStr::new("b"), 0o755)
+            .unwrap();
+
+        // Held open across the hook, so the replacement can't get the old
+        // inode number back and the check sees a different inode.
+        let (real_a, _) = fs.encrypt_path(Path::new("/a")).unwrap();
+        let old = std::fs::File::open(&real_a).unwrap();
+        *fs.rename_race_hook.lock().unwrap() = Some(Box::new(|fs: &EncFs| {
+            let root = Path::new("/");
+            fs.rmdir_impl(root, OsStr::new("a")).unwrap();
+            fs.create_impl(caller(), root, OsStr::new("a"), 0o644, 0)
+                .unwrap();
+        }));
+        let result = fs.rename_internal(root, OsStr::new("a"), Path::new("/b"), OsStr::new("x"));
+        assert!(fs.rename_race_hook.lock().unwrap().is_none());
+        assert_eq!(result, Err(libc::ENOENT));
+        drop(old);
+
+        assert!(std::fs::symlink_metadata(&real_a).unwrap().is_file());
+        assert!(vol.names_after_remount("/b").is_empty());
+    }
+
+    /// The same for a non-directory moved with rename(2): a directory put in
+    /// its place must not be moved without updating the cached IVs.
+    #[test]
+    fn rename_refuses_a_directory_that_replaced_the_file() {
+        let vol = DirIvVolume::new("rename_file_replaced");
+        let fs = &vol.fs;
+        let root = Path::new("/");
+        fs.create_impl(caller(), root, OsStr::new("f"), 0o644, 0)
+            .unwrap();
+
+        let (real_f, _) = fs.encrypt_path(Path::new("/f")).unwrap();
+        let old = std::fs::File::open(&real_f).unwrap();
+        *fs.rename_race_hook.lock().unwrap() = Some(Box::new(|fs: &EncFs| {
+            let root = Path::new("/");
+            fs.unlink_impl(root, OsStr::new("f")).unwrap();
+            fs.mkdir_impl(caller(), root, OsStr::new("f"), 0o755)
+                .unwrap();
+        }));
+        let result = fs.rename_internal(root, OsStr::new("f"), root, OsStr::new("g"));
+        assert!(fs.rename_race_hook.lock().unwrap().is_none());
+        assert_eq!(result, Err(libc::ENOENT));
+        drop(old);
+
+        assert!(std::fs::symlink_metadata(&real_f).unwrap().is_dir());
+        assert_eq!(vol.names_after_remount("/"), vec![OsString::from("f")]);
     }
 
     fn c_path(path: &Path) -> std::ffi::CString {

@@ -253,7 +253,9 @@ since backing filesystems reuse inode numbers.
 The IV cache in `EncFs` (`diriv::DirIvCache`) never rereads sidecars, on the
 premise that nothing modifies the backing directory behind a live mount; any
 code path that removes or moves a directory must update it (`forget_tree`,
-`rename_tree`) under the sidecar write lock. Creating one needs no update:
+`rename_tree`) under the sidecar write lock. rename re-checks its source
+(`check_unchanged`) under that lock, because it decides between its directory
+and non-directory paths from an `lstat` taken without it. Creating one needs no update:
 nothing is cached at a free path, and the first lookup reads the new sidecar.
 That keeps entries true of each *path*, but a directory can still be replaced
 at its path mid-operation. Code that writes an IV-dependent name into a

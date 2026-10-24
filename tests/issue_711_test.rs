@@ -48,6 +48,9 @@ fn decode(cwd: &Path, root: &Path, encoded: &Path) -> String {
             "decode".as_ref(),
             "--extpass".as_ref(),
             PASSWORD_CMD.as_ref(),
+            // An encrypted name can start with `-`, which would read as an
+            // option.
+            "--".as_ref(),
             root.as_os_str(),
             encoded.as_os_str(),
         ],
