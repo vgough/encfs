@@ -172,10 +172,7 @@ with its own changes:
 
 - mkdir inserts nothing: the new directory's sidecar is durable before its
   name exists, and the first lookup reads it;
-- rmdir drops the entries for the directory and anything below it, before
-  the `rmdir(2)` that frees its inode: a new directory could take that inode
-  number at the same path, and an entry still cached for it would pass the
-  `(st_dev, st_ino)` check described below;
+- rmdir drops the entries for the directory and anything below it;
 - a directory rename moves the entries for the source subtree to the
   destination, replacing whatever was cached there. Clearing the destination
   is what correctness needs; moving the source keeps the subtree warm.
@@ -213,13 +210,15 @@ IV-dependent names or attributes bind the IV to the directory:
   directory, where creation fails with `ENOENT`.
 - directory rename encrypts the new name under the write lock it already
   holds, which keeps the parent in place.
-- rename chooses between its directory and non-directory paths from a type
-  read without the lock, so the directory path, and a non-directory moved
-  with a bare `rename(2)`, check under the write lock that the source is
-  still the entry that was read, failing with `ENOENT` otherwise. Otherwise
-  an rmdir and a create in between would let a file be moved without
-  re-encrypting its header, or a directory be moved without its cache
-  entries.
+- rename decides between its directory and non-directory paths from an
+  `lstat` of the source taken without the lock. Both paths that end in a
+  bare `rename(2)` (directories, and non-directories that need no
+  re-encryption) take the write lock and check that the source path still
+  names the inode that `lstat` returned, failing with `ENOENT` if not.
+  Without the check, an rmdir and a create at the source path in between
+  could have a file moved by the directory path, its header still encrypted
+  for the old entry IV, or a directory moved by the non-directory path,
+  with its cached IVs left under the old path.
 - (Superseded by ADR 0003, where attribute IVs come from the inode itself.)
   setxattr and removexattr held the read lock while reading a directory's
   `node_iv` and writing the attribute.

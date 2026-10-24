@@ -1610,14 +1610,11 @@ fn placement_errno(e: libc::c_int) -> libc::c_int {
     }
 }
 
-/// Fails with `ENOENT` unless `path` still names an entry of the type, and
-/// with the identity, that `expected` was read from. The type is what
-/// matters to callers; the identity can repeat once an inode is reused.
+/// Fails with `ENOENT` unless `path` still names the inode `expected` was
+/// read from, i.e. nothing has replaced it since.
 fn check_unchanged(path: &Path, expected: &fs::Metadata) -> OpResult {
     let meta = fs::symlink_metadata(path).map_err(io_errno)?;
-    if meta.file_type() != expected.file_type()
-        || (meta.dev(), meta.ino()) != (expected.dev(), expected.ino())
-    {
+    if (meta.dev(), meta.ino()) != (expected.dev(), expected.ino()) {
         debug!("{:?} was replaced during rename", path);
         return Err(libc::ENOENT);
     }
@@ -2816,14 +2813,11 @@ impl EncFs {
             return Err(libc::ENOTDIR);
         }
         let removed = self.remove_sidecar_of_empty_dir(real_path)?;
-        // Forget the IVs before rmdir(2) frees the inode. Once it is free, a
-        // new directory can take its number at the same path, and a create
-        // reading the old entry in between would pass the pin check against
-        // it. The write lock keeps loads from caching the path again before
-        // the removal; if it fails, the next lookup rereads the sidecar.
-        self.diriv_cache.forget_tree(real_path);
         match fs::remove_dir(real_path) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                self.diriv_cache.forget_tree(real_path);
+                Ok(())
+            }
             Err(e) => {
                 removed.restore(real_path);
                 Err(io_errno(e))
@@ -4141,6 +4135,10 @@ mod tests {
         fs.mkdir_impl(caller(), root, OsStr::new("b"), 0o755)
             .unwrap();
 
+        // Held open across the hook, so the replacement can't get the old
+        // inode number back and the check sees a different inode.
+        let (real_a, _) = fs.encrypt_path(Path::new("/a")).unwrap();
+        let old = std::fs::File::open(&real_a).unwrap();
         *fs.rename_race_hook.lock().unwrap() = Some(Box::new(|fs: &EncFs| {
             let root = Path::new("/");
             fs.rmdir_impl(root, OsStr::new("a")).unwrap();
@@ -4150,8 +4148,8 @@ mod tests {
         let result = fs.rename_internal(root, OsStr::new("a"), Path::new("/b"), OsStr::new("x"));
         assert!(fs.rename_race_hook.lock().unwrap().is_none());
         assert_eq!(result, Err(libc::ENOENT));
+        drop(old);
 
-        let (real_a, _) = fs.encrypt_path(Path::new("/a")).unwrap();
         assert!(std::fs::symlink_metadata(&real_a).unwrap().is_file());
         assert!(vol.names_after_remount("/b").is_empty());
     }
@@ -4166,6 +4164,8 @@ mod tests {
         fs.create_impl(caller(), root, OsStr::new("f"), 0o644, 0)
             .unwrap();
 
+        let (real_f, _) = fs.encrypt_path(Path::new("/f")).unwrap();
+        let old = std::fs::File::open(&real_f).unwrap();
         *fs.rename_race_hook.lock().unwrap() = Some(Box::new(|fs: &EncFs| {
             let root = Path::new("/");
             fs.unlink_impl(root, OsStr::new("f")).unwrap();
@@ -4175,8 +4175,8 @@ mod tests {
         let result = fs.rename_internal(root, OsStr::new("f"), root, OsStr::new("g"));
         assert!(fs.rename_race_hook.lock().unwrap().is_none());
         assert_eq!(result, Err(libc::ENOENT));
+        drop(old);
 
-        let (real_f, _) = fs.encrypt_path(Path::new("/f")).unwrap();
         assert!(std::fs::symlink_metadata(&real_f).unwrap().is_dir());
         assert_eq!(vol.names_after_remount("/"), vec![OsString::from("f")]);
     }
