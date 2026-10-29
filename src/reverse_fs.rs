@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io;
+use std::os::fd::AsRawFd;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
@@ -112,6 +113,13 @@ pub enum ReverseHandle {
         state: Arc<Mutex<ReverseFileState>>,
         writable: bool,
     },
+}
+
+/// Where `setattr` applies mode, owner and time changes: the source path, or
+/// the open file once it has lost its last name.
+enum AttrTarget<'a> {
+    Path(PathBuf),
+    File(&'a File),
 }
 
 /// A reverse-direction FUSE filesystem.
@@ -588,6 +596,23 @@ impl ReverseFs {
         Ok(self.entry_for_fuse_path(path)?.attr)
     }
 
+    /// Build the FUSE attributes for an open source file, which may no longer
+    /// have a name, reporting the size of any staged ciphertext.
+    fn attr_for_open_file(
+        &self,
+        file: &File,
+        state: &Arc<Mutex<ReverseFileState>>,
+        file_iv: u64,
+    ) -> Result<FileAttr, Errno> {
+        let metadata = file
+            .metadata()
+            .map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))?;
+        let size = self
+            .staged_size(state, file_iv)
+            .unwrap_or(self.ciphertext_size_for_plaintext(metadata.len())?);
+        Ok(file_attr_from_metadata(&metadata, size))
+    }
+
     /// As [`ReverseFs::attr_for_fuse_path`], but also reports the node state
     /// of the backing source inode, which the operations that hand a node back
     /// to the runtime must attach to the entry they return.
@@ -832,15 +857,7 @@ impl PathFilesystem for ReverseFs {
                 file_iv,
                 state,
                 ..
-            } => {
-                let metadata = file
-                    .metadata()
-                    .map_err(|error| error.raw_os_error().unwrap_or(libc::EIO))?;
-                let size = self
-                    .staged_size(state, *file_iv)
-                    .unwrap_or(self.ciphertext_size_for_plaintext(metadata.len())?);
-                Ok(file_attr_from_metadata(&metadata, size))
-            }
+            } => self.attr_for_open_file(file, state, *file_iv),
         }
     }
 
@@ -1019,6 +1036,17 @@ impl PathFilesystem for ReverseFs {
             }
         };
 
+        // Settle where the metadata changes go before changing anything, so a
+        // call that can't apply them fails without having truncated. Once the
+        // file has lost its last name, only its open handle reaches it.
+        let target = if let Some(source) = source_path.as_ref() {
+            AttrTarget::Path(source.clone())
+        } else if let Some(path) = path {
+            AttrTarget::Path(self.resolve_source_path(path)?.0)
+        } else {
+            AttrTarget::File(file.ok_or(libc::ESTALE)?)
+        };
+
         if let Some(size) = set.size {
             if let (Some(file), Some(iv), Some(state)) = (file, file_iv, state) {
                 self.truncate_staged(file, state, iv, size)?;
@@ -1033,26 +1061,21 @@ impl PathFilesystem for ReverseFs {
             }
         }
 
-        let target = if let Some(source) = source_path.as_ref() {
-            source.clone()
-        } else if let Some(path) = path {
-            self.resolve_source_path(path)?.0
-        } else {
-            return Err(Errno::from(libc::ESTALE));
-        };
         if let Some(mode) = set.mode {
-            crate::fs::chmod_nofollow(&target, mode)?;
+            match &target {
+                AttrTarget::Path(target) => crate::fs::chmod_nofollow(target, mode)?,
+                AttrTarget::File(file) => {
+                    passthrough::chmod_fd(file.as_raw_fd(), mode).map_err(|e| e.raw())?
+                }
+            }
         }
         if set.uid.is_some() || set.gid.is_some() {
-            use std::ffi::CString;
-            let path = CString::new(target.as_os_str().as_bytes()).map_err(|_| libc::EINVAL)?;
-            let uid = set.uid.unwrap_or(u32::MAX) as libc::uid_t;
-            let gid = set.gid.unwrap_or(u32::MAX) as libc::gid_t;
-            if unsafe { libc::lchown(path.as_ptr(), uid, gid) } != 0 {
-                return Err(io::Error::last_os_error()
-                    .raw_os_error()
-                    .unwrap_or(libc::EIO)
-                    .into());
+            match &target {
+                AttrTarget::Path(target) => {
+                    passthrough::chown_path(target, set.uid, set.gid).map_err(|e| e.raw())?
+                }
+                AttrTarget::File(file) => passthrough::chown_fd(file.as_raw_fd(), set.uid, set.gid)
+                    .map_err(|e| e.raw())?,
             }
         }
         if set.atime.is_some() || set.mtime.is_some() {
@@ -1062,8 +1085,12 @@ impl PathFilesystem for ReverseFs {
                     TimeOrNow::Now => SystemTime::now(),
                 })
             };
-            passthrough::utimens_path(&target, resolve(set.atime), resolve(set.mtime))
-                .map_err(|e| e.raw())?;
+            let (atime, mtime) = (resolve(set.atime), resolve(set.mtime));
+            match &target {
+                AttrTarget::Path(target) => passthrough::utimens_path(target, atime, mtime),
+                AttrTarget::File(file) => passthrough::utimens_fd(file.as_raw_fd(), atime, mtime),
+            }
+            .map_err(|e| e.raw())?;
         }
         if let (Some(file), Some(iv), Some(state)) = (file, file_iv, state) {
             self.refresh_staged_fingerprint(file, state, iv)?;
@@ -1076,7 +1103,11 @@ impl PathFilesystem for ReverseFs {
             let state = self.file_states.get(&opened)?;
             self.refresh_staged_fingerprint(&opened, &state, file_iv.ok_or(libc::EIO)?)?;
         }
-        self.attr_for_fuse_path(path.ok_or(libc::ESTALE)?)
+        match (path, file, file_iv, state) {
+            (Some(path), ..) => self.attr_for_fuse_path(path),
+            (None, Some(file), Some(iv), Some(state)) => self.attr_for_open_file(file, state, iv),
+            _ => Err(Errno::from(libc::ESTALE)),
+        }
     }
 
     fn write(
@@ -1855,6 +1886,42 @@ mod tests {
             fs::read(&source_path).unwrap(),
             b"new authenticated plaintext"
         );
+    }
+
+    /// Once an open file has lost its last name, the runtime lends one of its
+    /// handles to `setattr` and `getattr`, as `fchmod` and `fstat` send none.
+    #[test]
+    fn unlinked_open_file_takes_attribute_changes_through_its_handle() {
+        use std::time::{Duration, UNIX_EPOCH};
+        use typed_fuse::PathNodeFs;
+        use typed_fuse_core::Runtime;
+
+        let dir = tempfile::tempdir().unwrap();
+        let reverse = reverse_fs(dir.path());
+        let (name, _) = reverse.cipher.encrypt_filename(b"doc", 0).unwrap();
+        let name = OsStr::new(&name);
+        let runtime = Runtime::new(PathNodeFs::new(reverse));
+        let caller = caller();
+
+        let (entry, open) = runtime
+            .create(1, name, 0o600, 0, libc::O_RDWR, &caller)
+            .unwrap();
+        runtime.unlink(1, name, &caller).unwrap();
+        assert!(!dir.path().join("doc").exists());
+
+        let mtime = UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let set = SetAttr {
+            size: Some(0),
+            mode: Some(0o640),
+            mtime: Some(TimeOrNow::SpecificTime(mtime)),
+            ..SetAttr::default()
+        };
+        let attr = runtime.setattr(entry.ino, None, &set, &caller).unwrap();
+        assert_eq!((attr.perm, attr.mtime), (0o640, mtime));
+        let attr = runtime.getattr(entry.ino, None, &caller).unwrap();
+        assert_eq!((attr.perm, attr.mtime), (0o640, mtime));
+
+        runtime.release(entry.ino, open.fh, &caller).unwrap();
     }
 
     #[test]

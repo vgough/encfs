@@ -303,7 +303,7 @@ See `architecture.md`'s Data Model section for full byte-level detail.
 - Help text functions must return `String` (evaluated at runtime after locale init)
 
 ### 7. FUSE Integration
-- Uses the sibling `typed-fuse` crate and its synchronous `PathFilesystem` adapter
+- Uses the `typed-fuse` crate (crates.io) and its synchronous `PathFilesystem` adapter
 - File and directory handles are typed values owned by the FUSE runtime
 - Multi-threaded by default, with a single-threaded mode for debugging
 - Single-threaded mode available via `-s` flag

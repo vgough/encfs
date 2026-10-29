@@ -764,6 +764,38 @@ fn live_unlink_while_open() -> Result<()> {
     Ok(())
 }
 
+/// `fchmod`, `futimens` and most `fstat` calls reach FUSE without a file
+/// handle, so on a file that has lost its last name they work only through
+/// the open handle typed-fuse lends in its place.
+#[test]
+#[ignore]
+fn live_attribute_changes_on_unlinked_open_file() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, false)?;
+    let p = mount.mount_point.join("unlinked-attrs.txt");
+    fs::write(&p, b"unlinked attributes")?;
+
+    let f = fs::OpenOptions::new().read(true).write(true).open(&p)?;
+    fs::remove_file(&p)?;
+
+    // Truncate first: ftruncate also sets mtime to now.
+    f.set_len(8).context("ftruncate unlinked file")?;
+    f.set_permissions(fs::Permissions::from_mode(0o640))
+        .context("fchmod unlinked file")?;
+    let mtime = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    f.set_modified(mtime).context("futimens unlinked file")?;
+
+    let meta = f.metadata().context("fstat unlinked file")?;
+    assert_eq!(meta.permissions().mode() & 0o7777, 0o640);
+    assert_eq!(meta.modified()?, mtime);
+    assert_eq!(meta.len(), 8);
+    Ok(())
+}
+
 #[test]
 #[ignore]
 fn live_non_utf8_names_and_symlink_targets() -> Result<()> {
