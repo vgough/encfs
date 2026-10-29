@@ -1860,9 +1860,9 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e08892702206e1e3eadf4bc223c98c4ca718f88f621b7d3809f42e454f388a89"
+checksum = "5e70bab757ee0a60abcea090c402526d60c12572ab32bfc72495fe2b23282470"
 dependencies = [
  "libc",
  "log",

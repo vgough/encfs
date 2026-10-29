@@ -293,5 +293,19 @@ fn test_statfs_support() {
     // bsize is usually 4096, but depends on FS.
     assert!(stat.bsize > 0);
 
+    #[cfg(target_os = "macos")]
+    {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+
+        // macOS statvfs truncates counts to 32 bits; compare with native statfs.
+        let path = CString::new(tmp.as_os_str().as_bytes()).unwrap();
+        let mut native: libc::statfs = unsafe { std::mem::zeroed() };
+        assert_eq!(unsafe { libc::statfs(path.as_ptr(), &mut native) }, 0);
+        assert_eq!(stat.blocks, native.f_blocks);
+        assert_eq!(stat.bsize, native.f_iosize as u32);
+        assert_eq!(stat.frsize, native.f_bsize);
+    }
+
     fs::remove_dir_all(&tmp).unwrap();
 }
