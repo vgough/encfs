@@ -11,6 +11,7 @@
 use arbitrary::Arbitrary;
 use encfs::config::Interface;
 use encfs::crypto::file::FileDecoder;
+use encfs::crypto::file_iv::FileIv;
 use encfs::crypto::ssl::SslCipher;
 use encfs::fs::EncFs;
 use libfuzzer_sys::fuzz_target;
@@ -149,7 +150,7 @@ fn ref_slice(buf: &[u8], offset: usize, len: usize) -> &[u8] {
 fn read_encfs_full(
     physical_path: &Path,
     verify_cipher: &SslCipher,
-    file_iv: u64,
+    file_iv: FileIv,
     expected_len: usize,
 ) -> Vec<u8> {
     if expected_len == 0 {
@@ -176,7 +177,7 @@ fn read_encfs_full(
 fn verify_full(
     physical_path: &Path,
     verify_cipher: &SslCipher,
-    file_iv: u64,
+    file_iv: FileIv,
     reference: &[u8],
     op_label: &str,
 ) {

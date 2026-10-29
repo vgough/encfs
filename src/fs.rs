@@ -221,6 +221,8 @@ pub struct FileHandle {
     state: Arc<FileState>,
     /// The backing path the file was opened at, for logs.
     backing_path: PathBuf,
+    /// Whether `file` was opened for writing.
+    writable: bool,
 }
 
 impl FileHandle {
@@ -1965,6 +1967,17 @@ impl EncFs {
         debug!("truncate: {:?} size={}", path, size);
         self.ensure_writable()?;
 
+        // A read-only handle can't truncate. One can arrive when the runtime
+        // lends an unlinked file's handle, which may be another opener's; go
+        // by name instead, which an unlinked file no longer has.
+        let handle = match handle {
+            Some(h) if !h.writable => {
+                path.ok_or(libc::ESTALE)?;
+                None
+            }
+            handle => handle,
+        };
+
         let owned_file: Option<(File, PathBuf, u64)> = if handle.is_none() {
             let path = path.ok_or(libc::ESTALE)?;
             let (real_path, path_iv) = self.encrypt_path(path)?;
@@ -2398,6 +2411,7 @@ impl EncFs {
             headerless_iv,
             state,
             backing_path: real_path,
+            writable: want_write,
         })
     }
 
@@ -2532,6 +2546,7 @@ impl EncFs {
                 headerless_iv,
                 state,
                 backing_path: entry.real_path,
+                writable: true,
             },
         ))
     }
@@ -3742,6 +3757,7 @@ mod tests {
             headerless_iv: FileIv::from_u64(0),
             state: Arc::new(FileState::new((0, 0))),
             backing_path: PathBuf::new(),
+            writable: true,
         };
         let fs = test_fs();
         let caller = test_caller();
