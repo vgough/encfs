@@ -14,7 +14,7 @@ For command reference, testing patterns, and coding conventions, see `AGENTS.md`
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `typed-fuse` | 0.8.2 (crates.io) | Typed libfuse3 bindings and path adapter |
+| `typed-fuse` | 0.8.3 (crates.io) | Typed libfuse3 bindings and path adapter |
 | `clap` | 4.6.1 | CLI argument parsing |
 | `anyhow` | 1.0.102 | Error handling |
 | `serde` | 1.0.228 | Serialization/deserialization |
