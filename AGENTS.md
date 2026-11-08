@@ -8,7 +8,7 @@ This document provides comprehensive information for AI agents working in the En
 
 - **Language**: Rust (Edition 2024)
 - **Primary Goal**: Read/write compatibility with legacy EncFS filesystems
-- **Status**: Beta (v2.0.0-beta.8) - functional for read/write but still maturing
+- **Status**: Beta (v2.0.0-beta.9) - functional for read/write but still maturing
 
 ### Key Characteristics
 - Encrypts individual files (not block devices)
@@ -533,5 +533,5 @@ task test-live           # Live mount tests
 ---
 
 **Last Updated**: October 7, 2026
-**EncFS Version**: 2.0.0-beta.8
+**EncFS Version**: 2.0.0-beta.9
 **Rust Edition**: 2024

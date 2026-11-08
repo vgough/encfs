@@ -25,7 +25,7 @@ use typed_fuse::passthrough::{
 };
 use typed_fuse::{
     Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathEntry, PathFilesystem,
-    PathNodeRef, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
+    PathNodeRef, PathOp, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
 };
 
 /// Errors from internal helpers are raw errno values; trait methods convert
@@ -563,13 +563,6 @@ impl EncFs {
     pub fn with_idle_lock(mut self, idle_lock: IdleLock) -> Self {
         self.idle_lock = Some(idle_lock);
         self
-    }
-
-    fn check_idle_lock(&self, access: Access, caller: &Request) -> OpResult {
-        match &self.idle_lock {
-            Some(lock) => lock.check(access, caller.pid),
-            None => Ok(()),
-        }
     }
 
     fn ensure_writable(&self) -> OpResult {
@@ -3230,6 +3223,34 @@ impl PathFilesystem for EncFs {
         self.file_states.get_by_key(key)
     }
 
+    /// Applies the idle lock. This runs before typed-fuse takes its locks:
+    /// namespace changes hold its exclusive one, so a request waiting there
+    /// for Touch ID would stall every other request.
+    fn admit(&self, op: PathOp, caller: &Request) -> Result<(), Errno> {
+        let Some(lock) = &self.idle_lock else {
+            return Ok(());
+        };
+        let access = match op {
+            PathOp::Lookup
+            | PathOp::Getattr
+            | PathOp::Access
+            | PathOp::Statfs
+            | PathOp::Flush
+            | PathOp::Fsync
+            | PathOp::Fsyncdir
+            | PathOp::Fallocate
+            | PathOp::Lseek
+            | PathOp::Getlk
+            | PathOp::Setlk
+            | PathOp::Flock => Access::Probe,
+            PathOp::Getxattr | PathOp::Listxattr => Access::XattrRead,
+            PathOp::Write => Access::HandleWrite,
+            // Everything else, including operations typed-fuse adds later.
+            _ => Access::Data,
+        };
+        Ok(lock.check(access, caller.pid)?)
+    }
+
     fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
         debug!("init");
     }
@@ -3268,7 +3289,6 @@ impl PathFilesystem for EncFs {
         set_attr: &SetAttr,
         caller: &Request,
     ) -> Result<FileAttr, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path();
         if let Some(size) = set_attr.size {
             self.do_truncate(path, handle, size)?;
@@ -3314,9 +3334,8 @@ impl PathFilesystem for EncFs {
     fn readlink(
         &self,
         node: PathNodeRef<'_, FileState>,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<PathBuf, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         use std::os::unix::ffi::OsStringExt;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(PathBuf::from(OsString::from_vec(self.readlink_impl(path)?)))
@@ -3327,9 +3346,8 @@ impl PathFilesystem for EncFs {
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         target: &Path,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<PathEntry<FileState>, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.symlink_impl(parent, name, target)?)
     }
@@ -3339,9 +3357,8 @@ impl PathFilesystem for EncFs {
         node: PathNodeRef<'_, FileState>,
         new_parent: PathNodeRef<'_, FileState>,
         new_name: &OsStr,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<FileAttr, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         let new_parent = new_parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.link_impl(path, new_parent, new_name)?)
@@ -3356,7 +3373,6 @@ impl PathFilesystem for EncFs {
         _umask: u32,
         caller: &Request,
     ) -> Result<PathEntry<FileState>, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.mknod_impl(*caller, parent, name, mode, rdev)?)
     }
@@ -3369,7 +3385,6 @@ impl PathFilesystem for EncFs {
         _umask: u32,
         caller: &Request,
     ) -> Result<PathEntry<FileState>, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.mkdir_impl(*caller, parent, name, mode)?)
     }
@@ -3378,9 +3393,8 @@ impl PathFilesystem for EncFs {
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<(), Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.unlink_impl(parent, name)?)
     }
@@ -3389,9 +3403,8 @@ impl PathFilesystem for EncFs {
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<(), Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.rmdir_impl(parent, name)?)
     }
@@ -3402,9 +3415,8 @@ impl PathFilesystem for EncFs {
         name: &OsStr,
         new_parent: PathNodeRef<'_, FileState>,
         new_name: &OsStr,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<(), Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         let new_parent = new_parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.rename_internal(parent, name, new_parent, new_name)?)
@@ -3414,9 +3426,8 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         _flags: i32,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<Opened<()>, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         self.check_listable(path)?;
         Ok(Opened::new(()))
@@ -3426,9 +3437,8 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         _handle: &(),
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<DirBuffer<FileState>, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.directory_snapshot(path)?)
     }
@@ -3437,9 +3447,8 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         flags: i32,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<Opened<FileHandle>, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(Opened::new(self.open_impl(path, flags as u32)?))
     }
@@ -3450,9 +3459,8 @@ impl PathFilesystem for EncFs {
         handle: &'a FileHandle,
         offset: u64,
         size: usize,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<Cow<'a, [u8]>, Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let size = u32::try_from(size).unwrap_or(u32::MAX);
         Ok(Cow::Owned(self.read_impl(
             node.path(),
@@ -3468,9 +3476,8 @@ impl PathFilesystem for EncFs {
         handle: &FileHandle,
         data: &[u8],
         offset: u64,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<usize, Errno> {
-        self.check_idle_lock(Access::HandleWrite, caller)?;
         Ok(self.write_impl(node.path(), handle, offset, data)? as usize)
     }
 
@@ -3534,7 +3541,6 @@ impl PathFilesystem for EncFs {
         flags: i32,
         caller: &Request,
     ) -> Result<(PathEntry<FileState>, Opened<FileHandle>), Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         let (entry, handle) = self.create_impl(*caller, parent, name, mode, flags as u32)?;
         Ok((entry, Opened::new(handle)))
@@ -3546,9 +3552,8 @@ impl PathFilesystem for EncFs {
         name: &OsStr,
         value: &[u8],
         flags: i32,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<(), Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.setxattr_impl(node.state(), path, name, value, flags as u32, 0)?)
     }
@@ -3558,9 +3563,8 @@ impl PathFilesystem for EncFs {
         node: PathNodeRef<'_, FileState>,
         name: &OsStr,
         size: usize,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
-        self.check_idle_lock(Access::XattrRead, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         ReplyXAttr::sized(self.getxattr_impl(node.state(), path, name)?, size)
     }
@@ -3569,9 +3573,8 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         size: usize,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
-        self.check_idle_lock(Access::XattrRead, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         ReplyXAttr::sized(self.listxattr_impl(node.state(), path)?, size)
     }
@@ -3580,9 +3583,8 @@ impl PathFilesystem for EncFs {
         &self,
         node: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        caller: &Request,
+        _caller: &Request,
     ) -> Result<(), Errno> {
-        self.check_idle_lock(Access::Data, caller)?;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.removexattr_impl(node.state(), path, name)?)
     }
@@ -3738,6 +3740,72 @@ mod tests {
             uid: 0,
             umask: 0,
         }
+    }
+
+    /// While a mkdir waits on the idle lock's prompt, metadata requests are
+    /// still answered: the wait happens in `admit`, outside the adapter's
+    /// exclusive lock that mkdir takes.
+    #[test]
+    fn metadata_is_answered_while_a_namespace_change_waits_to_unlock() {
+        use crate::idle_lock::{Authenticator, IdleLock};
+        use std::sync::{Condvar, Mutex, mpsc};
+        use std::time::Duration;
+        use typed_fuse::PathNodeFs;
+        use typed_fuse_core::Runtime;
+
+        /// Signals when a prompt starts, then fails it once released.
+        struct Blocked {
+            entered: Mutex<mpsc::Sender<()>>,
+            released: Arc<(Mutex<bool>, Condvar)>,
+        }
+
+        impl Authenticator for Blocked {
+            fn authenticate(&self) -> Result<(), String> {
+                self.entered.lock().unwrap().send(()).unwrap();
+                let (released, cvar) = &*self.released;
+                drop(cvar.wait_while(released.lock().unwrap(), |r| !*r).unwrap());
+                Err("cancelled".into())
+            }
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        let mut fs = test_fs();
+        fs.root = root.path().to_path_buf();
+        let (entered, prompted) = mpsc::channel();
+        let released = Arc::new((Mutex::new(false), Condvar::new()));
+        let auth = Blocked {
+            entered: Mutex::new(entered),
+            released: Arc::clone(&released),
+        };
+        // Locked from the start.
+        let fs = fs.with_idle_lock(IdleLock::new(Duration::ZERO, Box::new(auth), Vec::new()));
+        let runtime = Arc::new(Runtime::new(PathNodeFs::new(fs)));
+        let caller = test_caller();
+
+        let request = Arc::clone(&runtime);
+        let creator = std::thread::spawn(move || {
+            request
+                .mkdir(1, OsStr::new("new"), 0o700, 0, &caller)
+                .map(|_| ())
+        });
+        prompted.recv_timeout(Duration::from_secs(5)).unwrap();
+
+        let (done, answered) = mpsc::channel();
+        let request = Arc::clone(&runtime);
+        let metadata = std::thread::spawn(move || {
+            request.getattr(1, None, &caller).unwrap();
+            request.access(1, libc::R_OK, &caller).unwrap();
+            request.statfs(1, &caller).unwrap();
+            done.send(()).unwrap();
+        });
+        let answered = answered.recv_timeout(Duration::from_secs(5));
+        // Release before asserting, so a failure can't leave threads blocked.
+        *released.0.lock().unwrap() = true;
+        released.1.notify_all();
+        answered.expect("metadata waited behind the prompt");
+        metadata.join().unwrap();
+        assert_eq!(creator.join().unwrap(), Err(Errno::EACCES));
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
     }
 
     #[test]
