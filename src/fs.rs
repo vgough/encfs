@@ -4,6 +4,7 @@ use crate::crypto::file::{FileDecoder, FileEncoder, is_corrupted_data};
 use crate::crypto::file_iv::FileIv;
 use crate::diriv::{self, CachedDir, DirIvCache, DirIvs};
 use crate::idle_lock::{Access, IdleLock};
+use crate::rpc;
 use crate::symlink_target;
 use crate::xattr_name;
 use libc;
@@ -24,8 +25,9 @@ use typed_fuse::passthrough::{
     statfs_path, symlink as passthrough_symlink, utimens_permission_check,
 };
 use typed_fuse::{
-    Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathEntry, PathFilesystem,
-    PathNodeRef, PathOp, SetAttr, StatFs as ReplyStatFs, TimeOrNow, XattrReply as ReplyXAttr,
+    Admission, Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathEntry,
+    PathFilesystem, PathNodeRef, SetAttr, StatFs as ReplyStatFs, TimeOrNow,
+    XattrReply as ReplyXAttr,
 };
 
 /// Errors from internal helpers are raw errno values; trait methods convert
@@ -490,6 +492,8 @@ pub struct EncFs {
     file_states: FileStates,
     /// Optional inactivity lock gating data access (on-demand mode).
     idle_lock: Option<IdleLock>,
+    /// Where the filesystem is mounted, when known, for `info` requests.
+    mount_point: Option<PathBuf>,
     /// Derived directory IVs (directory IV mode only). Trusted without
     /// rereading: while mounted, every change to the backing directory comes
     /// through this filesystem, which updates the cache as it makes them.
@@ -541,6 +545,7 @@ impl EncFs {
             read_only: false,
             file_states: FileStates::default(),
             idle_lock: None,
+            mount_point: None,
             diriv_cache: DirIvCache::default(),
             sidecar_lock: RwLock::new(()),
             #[cfg(target_os = "freebsd")]
@@ -562,6 +567,12 @@ impl EncFs {
     /// inactivity. See [`IdleLock`] for which operations it gates.
     pub fn with_idle_lock(mut self, idle_lock: IdleLock) -> Self {
         self.idle_lock = Some(idle_lock);
+        self
+    }
+
+    /// Record where the filesystem is mounted, which `info` requests report.
+    pub fn with_mount_point(mut self, mount_point: PathBuf) -> Self {
+        self.mount_point = Some(mount_point);
         self
     }
 
@@ -3197,6 +3208,24 @@ impl EncFs {
     }
 }
 
+impl rpc::Mount for EncFs {
+    fn info(&self) -> rpc::Info {
+        rpc::Info::new(
+            &self.root,
+            self.mount_point.as_deref(),
+            self.read_only,
+            &self.config,
+            self.idle_lock.as_ref(),
+        )
+    }
+
+    fn lock(&self) -> Option<rpc::IdleLockInfo> {
+        let lock = self.idle_lock.as_ref()?;
+        lock.lock();
+        Some(rpc::IdleLockInfo::from(lock))
+    }
+}
+
 impl PathFilesystem for EncFs {
     type NodeState = FileState;
     type Handle = FileHandle;
@@ -3226,11 +3255,19 @@ impl PathFilesystem for EncFs {
     /// Applies the idle lock. This runs before typed-fuse takes its locks:
     /// namespace changes hold its exclusive one, so a request waiting there
     /// for Touch ID would stall every other request.
-    fn admit(&self, op: PathOp, caller: &Request) -> Result<(), Errno> {
+    ///
+    /// Control requests to the mount ([`rpc::is_request_admission`]) skip the
+    /// lock: getxattr of one is answered while locked, and setxattr or
+    /// removexattr of one fails with `EPERM` either way, so prompting for it
+    /// could only unlock the mount for a call that can't succeed.
+    fn admit(&self, request: &Admission<'_>) -> Result<(), Errno> {
         let Some(lock) = &self.idle_lock else {
             return Ok(());
         };
-        Ok(lock.check(Access::for_op(op), caller.pid)?)
+        if rpc::is_request_admission(request) {
+            return Ok(());
+        }
+        Ok(lock.check(Access::for_op(request.op()), request.caller().pid)?)
     }
 
     fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
@@ -3537,6 +3574,7 @@ impl PathFilesystem for EncFs {
         _caller: &Request,
     ) -> Result<(), Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
+        rpc::refuse_write(path, name)?;
         Ok(self.setxattr_impl(node.state(), path, name, value, flags as u32, 0)?)
     }
 
@@ -3545,9 +3583,13 @@ impl PathFilesystem for EncFs {
         node: PathNodeRef<'_, FileState>,
         name: &OsStr,
         size: usize,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
+        if rpc::is_request(path, name) {
+            debug!("rpc: {:?} from pid {}", name, caller.pid);
+            return ReplyXAttr::sized(rpc::respond(name, caller.uid, self)?, size);
+        }
         ReplyXAttr::sized(self.getxattr_impl(node.state(), path, name)?, size)
     }
 
@@ -3558,7 +3600,8 @@ impl PathFilesystem for EncFs {
         _caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
-        ReplyXAttr::sized(self.listxattr_impl(node.state(), path)?, size)
+        let list = self.listxattr_impl(node.state(), path)?;
+        ReplyXAttr::sized(rpc::without_requests(path, list), size)
     }
 
     fn removexattr(
@@ -3568,6 +3611,7 @@ impl PathFilesystem for EncFs {
         _caller: &Request,
     ) -> Result<(), Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
+        rpc::refuse_write(path, name)?;
         Ok(self.removexattr_impl(node.state(), path, name)?)
     }
 }
@@ -3581,12 +3625,15 @@ mod tests {
     use crate::config::{EncfsConfig, Interface};
     use crate::crypto::file_iv::FileIv;
     use crate::crypto::ssl::SslCipher;
+    use crate::idle_lock::{Authenticator, IdleLock};
     use std::ffi::{OsStr, OsString};
     use std::fs::File;
     use std::os::fd::FromRawFd;
     use std::os::unix::ffi::OsStrExt;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
     use typed_fuse::{Caller, Errno, PathFilesystem, PathNodeRef};
 
     fn table_len(states: &FileStates) -> usize {
@@ -3729,11 +3776,7 @@ mod tests {
     /// exclusive lock that mkdir takes.
     #[test]
     fn metadata_is_answered_while_a_namespace_change_waits_to_unlock() {
-        use crate::idle_lock::{Authenticator, IdleLock};
         use std::sync::{Condvar, Mutex, mpsc};
-        use std::time::Duration;
-        use typed_fuse::PathNodeFs;
-        use typed_fuse_core::Runtime;
 
         /// Signals when a prompt starts, then fails it once released.
         struct Blocked {
@@ -3751,8 +3794,6 @@ mod tests {
         }
 
         let root = tempfile::tempdir().unwrap();
-        let mut fs = test_fs();
-        fs.root = root.path().to_path_buf();
         let (entered, prompted) = mpsc::channel();
         let released = Arc::new((Mutex::new(false), Condvar::new()));
         let auth = Blocked {
@@ -3760,8 +3801,7 @@ mod tests {
             released: Arc::clone(&released),
         };
         // Locked from the start.
-        let fs = fs.with_idle_lock(IdleLock::new(Duration::ZERO, Box::new(auth), Vec::new()));
-        let runtime = Arc::new(Runtime::new(PathNodeFs::new(fs)));
+        let runtime = Arc::new(idle_locked_runtime(root.path(), Duration::ZERO, auth));
         let caller = test_caller();
 
         let request = Arc::clone(&runtime);
@@ -3790,6 +3830,116 @@ mod tests {
         metadata.join().unwrap();
         assert_eq!(creator.join().unwrap(), Err(Errno::EACCES));
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+
+    /// An authenticator that counts its prompts and fails them.
+    struct Counting(Arc<AtomicUsize>);
+
+    impl Authenticator for Counting {
+        fn authenticate(&self) -> Result<(), String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err("cancelled".into())
+        }
+    }
+
+    type TestRuntime = typed_fuse_core::Runtime<typed_fuse::PathNodeFs<EncFs>>;
+
+    /// A runtime (so `admit` runs) over `root` with an idle lock of
+    /// `timeout` that authenticates with `auth`.
+    fn idle_locked_runtime(
+        root: &Path,
+        timeout: Duration,
+        auth: impl Authenticator + 'static,
+    ) -> TestRuntime {
+        let mut fs = test_fs();
+        fs.root = root.to_path_buf();
+        let fs = fs.with_idle_lock(IdleLock::new(timeout, Box::new(auth), Vec::new()));
+        typed_fuse_core::Runtime::new(typed_fuse::PathNodeFs::new(fs))
+    }
+
+    /// The reply to a control request on the root, through the runtime.
+    fn rpc_via(runtime: &TestRuntime, name: &str) -> serde_json::Value {
+        match runtime
+            .getxattr(1, OsStr::new(name), 4096, &test_caller())
+            .unwrap()
+        {
+            typed_fuse::XattrReply::Data(data) => serde_json::from_slice(&data).unwrap(),
+            typed_fuse::XattrReply::Size(_) => panic!("size reply to a sized read"),
+        }
+    }
+
+    /// A locked mount refuses attribute reads but answers control requests,
+    /// without prompting.
+    #[test]
+    fn control_requests_are_answered_while_locked() {
+        let root = tempfile::tempdir().unwrap();
+        // The test config stores attributes as-is, so set one directly.
+        set_raw_xattr(root.path(), c"user.color", b"red");
+        let prompts = Arc::default();
+        // Locked from the start.
+        let runtime =
+            idle_locked_runtime(root.path(), Duration::ZERO, Counting(Arc::clone(&prompts)));
+        let caller = test_caller();
+
+        assert_eq!(
+            runtime
+                .getxattr(1, OsStr::new("user.color"), 4096, &caller)
+                .map(|_| ()),
+            Err(Errno::EACCES)
+        );
+        assert_eq!(
+            runtime.listxattr(1, 4096, &caller).map(|_| ()),
+            Err(Errno::EACCES)
+        );
+        let reply = rpc_via(&runtime, "user.encfs.rpc.info");
+        assert_eq!(reply["ok"], true, "{reply}");
+        assert_eq!(reply["result"]["idle_lock"]["locked"], true);
+        assert_eq!(reply["result"]["idle_lock"]["timeout_secs"], 0);
+        // Writes to request names fail as they do unlocked, without a prompt
+        // that could unlock the mount for a call that can't succeed.
+        let info = OsStr::new("user.encfs.rpc.info");
+        assert_eq!(
+            runtime.setxattr(1, info, b"x", 0, &caller),
+            Err(Errno::EPERM)
+        );
+        assert_eq!(runtime.removexattr(1, info, &caller), Err(Errno::EPERM));
+        assert_eq!(prompts.load(Ordering::SeqCst), 0);
+    }
+
+    /// A `lock` request makes the next data operation prompt, long before the
+    /// idle timeout, and `info` reports the lock.
+    #[test]
+    fn a_lock_request_makes_data_access_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let prompts = Arc::default();
+        let runtime = idle_locked_runtime(
+            root.path(),
+            Duration::from_secs(3600),
+            Counting(Arc::clone(&prompts)),
+        );
+        let caller = test_caller();
+        let prompted = || prompts.load(Ordering::SeqCst);
+
+        runtime
+            .mkdir(1, OsStr::new("before"), 0o700, 0, &caller)
+            .unwrap();
+        let locked = |reply: &serde_json::Value| reply["result"]["idle_lock"]["locked"].clone();
+        assert_eq!(locked(&rpc_via(&runtime, "user.encfs.rpc.info")), false);
+        let reply = rpc_via(&runtime, "user.encfs.rpc.lock");
+        assert_eq!(reply["ok"], true, "{reply}");
+        assert_eq!(reply["result"]["locked"], true);
+        assert_eq!(reply["result"]["timeout_secs"], 3600);
+        assert_eq!(locked(&rpc_via(&runtime, "user.encfs.rpc.info")), true);
+        assert_eq!(prompted(), 0);
+
+        assert_eq!(
+            runtime
+                .mkdir(1, OsStr::new("after"), 0o700, 0, &caller)
+                .map(|_| ()),
+            Err(Errno::EACCES)
+        );
+        assert_eq!(prompted(), 1);
+        assert!(!root.path().join("after").exists());
     }
 
     #[test]

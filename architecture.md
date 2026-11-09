@@ -14,7 +14,7 @@ For command reference, testing patterns, and coding conventions, see `AGENTS.md`
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `typed-fuse` | 0.8.4 (crates.io) | Typed libfuse3 bindings and path adapter |
+| `typed-fuse` | 0.9.0 (crates.io) | Typed libfuse3 bindings and path adapter |
 | `clap` | 4.6.1 | CLI argument parsing |
 | `anyhow` | 1.0.102 | Error handling |
 | `serde` | 1.0.228 | Serialization/deserialization |
@@ -65,6 +65,7 @@ encfs/
 │   ├── diriv/platform.rs     # Platform-specific sidecar sync
 │   ├── symlink_target.rs     # Symlink target encoding (C++-compatible path form for V4-V6, single name for V7)
 │   ├── idle_lock.rs          # Inactivity lock gating data ops in on-demand mode (`encfs --touchid`)
+│   ├── rpc.rs                # Control requests over xattrs on the mount root (`encfsctl rpc`, ADR 0004)
 │   ├── touchid.rs            # macOS only: Touch ID `Authenticator` via LocalAuthentication
 │   ├── reverse_fs.rs         # Reverse-mode FUSE implementation (staged, validated writes)
 │   └── crypto/

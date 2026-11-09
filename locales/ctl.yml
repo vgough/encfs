@@ -535,3 +535,27 @@ ctl.error_template_path_iv_xattrs:
   en: "The template uses the extended attribute format of EncFS versions before 2.0.0-beta.7, which new filesystems can't use"
   fr: "Le modèle utilise le format d'attributs étendus des versions d'EncFS antérieures à 2.0.0-beta.7, que les nouveaux systèmes de fichiers ne peuvent pas utiliser"
   de: "Die Vorlage verwendet das Format für erweiterte Attribute von EncFS-Versionen vor 2.0.0-beta.7, das neue Dateisysteme nicht verwenden können"
+ctl.error_rpc_param:
+  en: "Request parameter %{param} is not of the form key=value"
+  fr: "Le paramètre de requête %{param} n'est pas de la forme clé=valeur"
+  de: "Der Anfrageparameter %{param} hat nicht die Form Schlüssel=Wert"
+ctl.error_rpc_bad_mount_point:
+  en: "Mount point %{path} does not exist or cannot be resolved"
+  fr: "Le point de montage %{path} n'existe pas ou ne peut pas être résolu"
+  de: "Der Einhängepunkt %{path} existiert nicht oder kann nicht aufgelöst werden"
+ctl.error_rpc_failed:
+  en: "Failed to send a request to %{path}"
+  fr: "Impossible d'envoyer une requête à %{path}"
+  de: "Anfrage an %{path} konnte nicht gesendet werden"
+ctl.error_rpc_not_encfs:
+  en: "%{path} is not the root of a mounted EncFS filesystem, or its EncFS version does not answer requests"
+  fr: "%{path} n'est pas la racine d'un système de fichiers EncFS monté, ou sa version d'EncFS ne répond pas aux requêtes"
+  de: "%{path} ist nicht die Wurzel eines eingehängten EncFS-Dateisystems, oder seine EncFS-Version beantwortet keine Anfragen"
+ctl.error_rpc_bad_reply:
+  en: "The filesystem's reply is not valid JSON"
+  fr: "La réponse du système de fichiers n'est pas du JSON valide"
+  de: "Die Antwort des Dateisystems ist kein gültiges JSON"
+ctl.error_rpc_refused:
+  en: "Request failed (%{code}): %{message}"
+  fr: "Échec de la requête (%{code}) : %{message}"
+  de: "Anfrage fehlgeschlagen (%{code}): %{message}"

@@ -240,6 +240,22 @@ help.encfsctl.speed:
   en: "Print version info and benchmark supported cipher algorithms"
   fr: "Afficher la version et mesurer les performances des algorithmes de chiffrement pris en charge"
   de: "Versionsinformationen anzeigen und unterstützte Verschlüsselungsalgorithmen benchmarken"
+help.encfsctl.rpc:
+  en: "Send a request to a mounted filesystem and print its JSON reply"
+  fr: "Envoyer une requête à un système de fichiers monté et afficher sa réponse JSON"
+  de: "Eine Anfrage an ein eingehängtes Dateisystem senden und seine JSON-Antwort ausgeben"
+help.encfsctl.rpc_mountpoint:
+  en: "Mount point of a mounted EncFS filesystem"
+  fr: "Point de montage d'un système de fichiers EncFS monté"
+  de: "Einhängepunkt eines eingehängten EncFS-Dateisystems"
+help.encfsctl.rpc_command:
+  en: "Request to send (e.g. info, lock)"
+  fr: "Requête à envoyer (par ex. info, lock)"
+  de: "Zu sendende Anfrage (z. B. info, lock)"
+help.encfsctl.rpc_params:
+  en: "Request parameters, as key=value"
+  fr: "Paramètres de la requête, sous la forme clé=valeur"
+  de: "Anfrageparameter im Format Schlüssel=Wert"
 
 help.encfsr.about:
   en: "EncFS Reverse - Virtual Encrypted Filesystem"

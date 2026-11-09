@@ -4,7 +4,7 @@ exclude = ["fuzz"]
 
 [package]
 name = "encfs"
-version = "2.0.0-beta.9"
+version = "2.0.0-beta.10"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -28,12 +28,13 @@ daemonix = "0.1"
 chrono = "0.4"
 clap = { version = "4.6.7", features = ["derive"] }
 env_logger = "0.11.11"
-typed-fuse = "0.8.4"
+typed-fuse = "0.9.0"
 libc = "0.2.190"
 log = "0.4.34"
 quick-xml = { version = "0.40.1", features = ["serialize"] }
 rpassword = "7.5.4"
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
 rust-i18n = "4"
 prost = "0.14.4"
 getrandom = "0.4"
@@ -63,10 +64,9 @@ path = "src/encfsr.rs"
 [dev-dependencies]
 # Loads the locales as rust-i18n does, for the translations test.
 rust-i18n-support = { version = "4", features = ["codegen"] }
-serde_json = "1"
 tar = "0.4"
 # The node runtime under typed-fuse's mount loop, to drive whole requests.
-typed-fuse-core = "0.7.1"
+typed-fuse-core = "0.8.0"
 
 [[bench]]
 name = "filesystem"

@@ -1179,6 +1179,62 @@ fn live_mount_source_is_encrypted_root() -> Result<()> {
     Ok(())
 }
 
+/// The mount answers control requests on its root through the kernel: the
+/// request name reaches the filesystem intact (FreeBSD adds the `user.`
+/// namespace itself), and `encfsctl rpc` prints the reply. A read-only mount
+/// answers too.
+#[test]
+#[ignore]
+fn live_rpc_info() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let mount = MountGuard::mount(cfg, true)?;
+    let mount_point = mount.mount_point.canonicalize()?;
+    let rpc = |command, params: &[(&str, &str)]| -> Result<serde_json::Value> {
+        let reply = encfs::rpc::call(&mount_point, command, params.iter().copied())?;
+        Ok(serde_json::from_slice(&reply)?)
+    };
+
+    let reply = rpc("info", &[])?;
+    assert_eq!(reply["ok"], true, "{reply}");
+    let result = &reply["result"];
+    assert_eq!(result["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        result["root"],
+        mount
+            .backing_root
+            .canonicalize()?
+            .to_string_lossy()
+            .as_ref()
+    );
+    assert_eq!(
+        result["mount_point"],
+        mount_point.to_string_lossy().as_ref()
+    );
+    assert_eq!(result["read_only"], true);
+    assert!(
+        result["commands"]
+            .as_array()
+            .is_some_and(|c| c.contains(&"lock".into()))
+    );
+
+    // Mounted without an idle lock, so there is nothing to lock.
+    assert_eq!(rpc("lock", &[])?["error"]["code"], "unavailable");
+    let reply = rpc("nonesuch", &[("path", "/a b")])?;
+    assert_eq!(reply["error"]["code"], "unknown_command");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_encfsctl"))
+        .args(["rpc".as_ref(), mount_point.as_os_str()])
+        .output()?;
+    assert!(output.status.success(), "{output:?}");
+    let printed: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(printed["result"]["read_only"], true);
+    Ok(())
+}
+
 /// Each listing of the root shows its current contents. FreeBSD reads every
 /// listing of the root through the handle from its first opendir.
 #[test]

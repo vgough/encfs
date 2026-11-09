@@ -23,6 +23,9 @@
 //!   and every namespace or attribute change). Counts as activity; while
 //!   locked, blocks on a fresh authentication prompt.
 //!
+//! The filesystem decides which requests reach the lock at all (see
+//! `EncFs::admit`).
+//!
 //! Requests from processes named in the ignore list (Spotlight, Time Machine
 //! and similar background services) never count as activity and never
 //! trigger a prompt: while locked they are simply refused.
@@ -186,7 +189,7 @@ impl IdleLock {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         loop {
             let now = (self.clock)();
-            if state.unlocked && now.saturating_sub(state.last_activity) >= self.timeout {
+            if state.unlocked && self.expired(&state, now) {
                 state.unlocked = false;
                 info!("Locked after {} s without activity", self.timeout.as_secs());
             }
@@ -248,6 +251,32 @@ impl IdleLock {
                 Err(libc::EACCES)
             };
         }
+    }
+
+    fn expired(&self, state: &State, now: Duration) -> bool {
+        now.saturating_sub(state.last_activity) >= self.timeout
+    }
+
+    /// Engage the lock now, as if the timeout had passed: data access prompts
+    /// again from the next request.
+    pub fn lock(&self) {
+        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        if state.unlocked {
+            state.unlocked = false;
+            info!("Locked on request");
+        }
+    }
+
+    /// The inactivity timeout.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    /// Whether the lock is engaged now. Records no activity, so reporting
+    /// the state never keeps the mount unlocked.
+    pub fn is_locked(&self) -> bool {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        !state.unlocked || self.expired(&state, (self.clock)())
     }
 
     fn is_ignored(&self, pid: u32) -> bool {
@@ -447,6 +476,42 @@ mod tests {
         assert_eq!(lock.check(Access::Probe, USER), Ok(()));
         assert_eq!(lock.check(Access::XattrRead, USER), Err(libc::EACCES));
         assert_eq!(fake.prompts(), 0);
+    }
+
+    #[test]
+    fn status_reports_the_lock_without_counting_as_activity() {
+        let fake = Fake::default();
+        let lock = lock(&fake);
+        assert!(!lock.is_locked());
+        fake.advance(TIMEOUT / 2);
+        assert!(!lock.is_locked());
+        fake.advance(TIMEOUT / 2);
+        // Locked by the idle time alone, before any check notices.
+        assert!(lock.is_locked());
+        assert_eq!(lock.check(Access::XattrRead, USER), Err(libc::EACCES));
+        assert!(lock.is_locked());
+        assert_eq!(lock.check(Access::Data, USER), Ok(()));
+        assert!(!lock.is_locked());
+        assert_eq!(fake.prompts(), 1);
+    }
+
+    #[test]
+    fn lock_engages_before_the_timeout() {
+        let fake = Fake::default();
+        let lock = lock(&fake);
+        lock.lock();
+        assert!(lock.is_locked());
+        assert_eq!(lock.check(Access::Probe, USER), Ok(()));
+        assert_eq!(lock.check(Access::XattrRead, USER), Err(libc::EACCES));
+        assert_eq!(fake.prompts(), 0);
+        // Data access prompts, and passing it unlocks again.
+        assert_eq!(lock.check(Access::Data, USER), Ok(()));
+        assert_eq!(fake.prompts(), 1);
+        assert!(!lock.is_locked());
+        // Locking a locked mount changes nothing.
+        lock.lock();
+        lock.lock();
+        assert!(lock.is_locked());
     }
 
     #[test]
