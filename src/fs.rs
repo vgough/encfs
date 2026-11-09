@@ -3230,25 +3230,7 @@ impl PathFilesystem for EncFs {
         let Some(lock) = &self.idle_lock else {
             return Ok(());
         };
-        let access = match op {
-            PathOp::Lookup
-            | PathOp::Getattr
-            | PathOp::Access
-            | PathOp::Statfs
-            | PathOp::Flush
-            | PathOp::Fsync
-            | PathOp::Fsyncdir
-            | PathOp::Fallocate
-            | PathOp::Lseek
-            | PathOp::Getlk
-            | PathOp::Setlk
-            | PathOp::Flock => Access::Probe,
-            PathOp::Getxattr | PathOp::Listxattr => Access::XattrRead,
-            PathOp::Write => Access::HandleWrite,
-            // Everything else, including operations typed-fuse adds later.
-            _ => Access::Data,
-        };
-        Ok(lock.check(access, caller.pid)?)
+        Ok(lock.check(Access::for_op(op), caller.pid)?)
     }
 
     fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
@@ -3793,16 +3775,18 @@ mod tests {
         let (done, answered) = mpsc::channel();
         let request = Arc::clone(&runtime);
         let metadata = std::thread::spawn(move || {
-            request.getattr(1, None, &caller).unwrap();
-            request.access(1, libc::R_OK, &caller).unwrap();
-            request.statfs(1, &caller).unwrap();
-            done.send(()).unwrap();
+            let result = request
+                .getattr(1, None, &caller)
+                .and_then(|_| request.access(1, libc::R_OK, &caller))
+                .and_then(|()| request.statfs(1, &caller));
+            done.send(result.map(|_| ())).unwrap();
         });
         let answered = answered.recv_timeout(Duration::from_secs(5));
         // Release before asserting, so a failure can't leave threads blocked.
         *released.0.lock().unwrap() = true;
         released.1.notify_all();
-        answered.expect("metadata waited behind the prompt");
+        let answered = answered.expect("metadata waited behind the prompt");
+        assert_eq!(answered, Ok(()), "metadata request failed");
         metadata.join().unwrap();
         assert_eq!(creator.join().unwrap(), Err(Errno::EACCES));
         assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
