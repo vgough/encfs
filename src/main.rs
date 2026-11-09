@@ -294,7 +294,9 @@ fn main() -> Result<()> {
                     .unwrap_or_else(|| format!("encfs@{}", root.to_string_lossy())),
             );
 
-            let fs = EncFs::new(root, cipher, config).with_read_only(args.read_only);
+            let fs = EncFs::new(root, cipher, config)
+                .with_read_only(args.read_only)
+                .with_mount_point(mount_point.clone());
             #[cfg(target_os = "macos")]
             let fs = match touchid {
                 Some(touchid) => {

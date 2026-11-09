@@ -608,7 +608,7 @@ checksum = "0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be"
 
 [[package]]
 name = "encfs"
-version = "2.0.0-beta.9"
+version = "2.0.0-beta.10"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1860,9 +1860,9 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse"
-version = "0.8.4"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50ededef7d33b921ac3751e4d865596da865678628974f5a11af1e142125c637"
+checksum = "68493f8cffde060266a0e4e3870ee7977f98128c42c22b2b1cb818c4697e1cde"
 dependencies = [
  "libc",
  "log",
@@ -1873,9 +1873,9 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse-core"
-version = "0.7.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b00ffef6ed132c2a1b94c8152c0cade16ffc14129021626e0b3c2820bd66f7fb"
+checksum = "27a867bb226ccd8eb2b4ec6313b6e5b47ccca5388e30a65b98d0e29907bd569d"
 dependencies = [
  "libc",
 ]

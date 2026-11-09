@@ -8,7 +8,7 @@ This document provides comprehensive information for AI agents working in the En
 
 - **Language**: Rust (Edition 2024)
 - **Primary Goal**: Read/write compatibility with legacy EncFS filesystems
-- **Status**: Beta (v2.0.0-beta.9) - functional for read/write but still maturing
+- **Status**: Beta (v2.0.0-beta.10) - functional for read/write but still maturing
 
 ### Key Characteristics
 - Encrypts individual files (not block devices)
@@ -270,6 +270,22 @@ renames it into place without replacing anything (`EncFs::place_staged`:
 `typed_fuse::passthrough::rename_noreplace_at`, or a check and rename under
 the sidecar write lock where the platform can't refuse). Platform-specific
 sync calls belong in `src/diriv/platform.rs`.
+
+**Control requests** (ADR 0004, `src/rpc.rs`): a getxattr of
+`user.encfs.rpc.<command>[?k=v&...]` on the forward-mode root is answered by
+`rpc::respond` with JSON, before the `xattrs_available()` gate and
+without the idle lock. `rpc::is_request`, `rpc::respond` (which refuses users
+other than the mount's owner), `rpc::refuse_write` (setxattr/removexattr of a
+request name on the root return `EPERM`), `rpc::without_requests` (never
+listed) and `rpc::is_request_admission` (skips the idle lock) hold the policy. Protocol errors go in the reply,
+not in errno. Commands get what they act on through the `rpc::Mount` trait
+(`impl rpc::Mount for EncFs`); `lock` calls `IdleLock::lock` and is the only
+command that changes state, which is acceptable over getxattr only because
+it is idempotent and only removes access. The idle lock is applied only in
+`EncFs::admit` (typed-fuse's admission hook, from the request's `Admission`),
+which lets `rpc::is_request_admission` requests through. Calling
+`PathFilesystem` methods directly, as unit tests do, bypasses the lock; drive
+requests through `typed_fuse_core::Runtime` to test it.
 
 ### 3. File Structure
 Encrypted files share the header layout `[Header: 8 bytes if unique_iv] [Block 0] [Block 1] ... [Block N]`,
@@ -533,5 +549,5 @@ task test-live           # Live mount tests
 ---
 
 **Last Updated**: October 7, 2026
-**EncFS Version**: 2.0.0-beta.9
+**EncFS Version**: 2.0.0-beta.10
 **Rust Edition**: 2024

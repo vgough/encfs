@@ -223,6 +223,22 @@ volume key is bound to the config, and takes effect at the next mount.
 Attributes already stored are not converted. A config with prefixes needs a
 reader that supports configurable properties (minimum reader version 6).
 
+### Asking a mounted filesystem about itself
+
+```bash
+encfsctl rpc ~/mount info
+encfsctl rpc ~/mount lock      # engage the Touch ID idle lock now
+getfattr --only-values -n user.encfs.rpc.info ~/mount   # Linux
+xattr -p user.encfs.rpc.info ~/mount                    # macOS
+```
+
+A mounted filesystem answers requests made by reading a `user.encfs.rpc.*`
+extended attribute on its root, with a JSON reply. `info` reports the EncFS
+version, the encrypted directory, the mount options and the idle-lock state.
+`lock` engages the idle lock of an on-demand (`--touchid`) mount at once, so
+the next access asks for Touch ID; other mounts answer it with an error.
+Only the user who mounted the filesystem (or root) can ask. See
+[ADR 0004](docs/adr/0004-xattr-rpc-channel.md) for the protocol.
 
 ## Reverse encryption mode (encfsr)
 

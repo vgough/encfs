@@ -8,6 +8,7 @@ pub mod diriv;
 pub mod fs;
 pub mod idle_lock;
 pub mod reverse_fs;
+pub mod rpc;
 pub mod security;
 pub mod symlink_target;
 #[cfg(target_os = "macos")]

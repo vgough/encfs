@@ -254,6 +254,22 @@ fn help_speed() -> String {
     t!("help.encfsctl.speed").to_string()
 }
 
+fn help_rpc() -> String {
+    t!("help.encfsctl.rpc").to_string()
+}
+
+fn help_rpc_mountpoint() -> String {
+    t!("help.encfsctl.rpc_mountpoint").to_string()
+}
+
+fn help_rpc_command() -> String {
+    t!("help.encfsctl.rpc_command").to_string()
+}
+
+fn help_rpc_params() -> String {
+    t!("help.encfsctl.rpc_params").to_string()
+}
+
 #[derive(Parser)]
 #[command(name = "encfsctl", version = encfs::build_info::VERSION, before_help = encfs::build_info::banner("encfsctl"))]
 #[command(about = help_about(), arg_required_else_help=true)]
@@ -364,6 +380,15 @@ enum Command {
     XattrPrefix(XattrPrefixCommand),
     #[command(about = help_speed())]
     Speed,
+    #[command(about = help_rpc())]
+    Rpc {
+        #[arg(help = help_rpc_mountpoint())]
+        mountpoint: PathBuf,
+        #[arg(default_value = "info", help = help_rpc_command())]
+        command: String,
+        #[arg(value_name = "KEY=VALUE", help = help_rpc_params())]
+        params: Vec<String>,
+    },
 }
 
 /// `encfsctl xattr-prefix`: the extended attribute name prefixes a V7 volume
@@ -468,6 +493,11 @@ fn main() -> Result<()> {
             extpass,
         })) => cmd_xattr_prefix_change(&rootdir, &prefixes, extpass, PrefixChange::Remove),
         Some(Command::Speed) => cmd_speed(),
+        Some(Command::Rpc {
+            mountpoint,
+            command,
+            params,
+        }) => cmd_rpc(&mountpoint, &command, &params),
         None => {
             // Default to info command if rootdir is provided
             if let Some(rootdir) = cli.rootdir {
@@ -2717,6 +2747,54 @@ fn ensure_v7_compatible(config: &config::EncfsConfig) -> Result<()> {
         anyhow::bail!(
             "V7 upgrade supports only nameio/stream, nameio/block or nameio/block32 (got {})",
             config.name_iface.name
+        );
+    }
+    Ok(())
+}
+
+/// `encfsctl rpc`: send a control request to a mounted filesystem and print
+/// its JSON reply (see `encfs::rpc`).
+fn cmd_rpc(mount_point: &Path, command: &str, params: &[String]) -> Result<()> {
+    let params = params
+        .iter()
+        .map(|param| {
+            param
+                .split_once('=')
+                .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_rpc_param", param = param)))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    // The request is read from the mount root itself, not a symlink to it.
+    let mount_point = mount_point.canonicalize().with_context(|| {
+        t!(
+            "ctl.error_rpc_bad_mount_point",
+            path = mount_point.display()
+        )
+    })?;
+    let not_encfs = [typed_fuse::Errno::ENOATTR.raw(), libc::ENOTSUP];
+    let reply = encfs::rpc::call(&mount_point, command, params).map_err(|e| {
+        if e.raw_os_error()
+            .is_some_and(|code| not_encfs.contains(&code))
+        {
+            anyhow::anyhow!(
+                "{}",
+                t!("ctl.error_rpc_not_encfs", path = mount_point.display())
+            )
+        } else {
+            anyhow::Error::new(e).context(t!("ctl.error_rpc_failed", path = mount_point.display()))
+        }
+    })?;
+    let reply: serde_json::Value =
+        serde_json::from_slice(&reply).context(t!("ctl.error_rpc_bad_reply"))?;
+    println!("{}", serde_json::to_string_pretty(&reply)?);
+    if reply["ok"] != true {
+        let error = &reply["error"];
+        anyhow::bail!(
+            "{}",
+            t!(
+                "ctl.error_rpc_refused",
+                code = error["code"].as_str().unwrap_or("?"),
+                message = error["message"].as_str().unwrap_or("")
+            )
         );
     }
     Ok(())
