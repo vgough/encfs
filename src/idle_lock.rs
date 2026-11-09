@@ -3,9 +3,11 @@
 //! An [`IdleLock`] sits in front of the FUSE operations of a mounted
 //! filesystem. After `timeout` with no user activity it locks, and from then
 //! on operations that would expose file contents or names are refused until
-//! the [`Authenticator`] (Touch ID on macOS) succeeds again.
+//! the [`Authenticator`] (Touch ID on macOS) succeeds again. A request
+//! admitted while unlocked may still finish after the lock engages, such as
+//! one queued behind a long rename.
 //!
-//! Operations are classified with [`Access`]:
+//! Operations are classified with [`Access`] ([`Access::for_op`]):
 //!
 //! - [`Access::Probe`]: metadata the OS polls constantly (statfs, getattr,
 //!   lookup, access, and calls on handles that are already open such as fsync
@@ -28,6 +30,7 @@
 use log::{info, warn};
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
+use typed_fuse::PathOp;
 
 /// How long to refuse locked requests without prompting after a failed or
 /// cancelled authentication, so a retrying application cannot stack prompts.
@@ -72,6 +75,30 @@ pub enum Access {
     XattrRead,
     HandleWrite,
     Data,
+}
+
+impl Access {
+    /// How the lock treats a FUSE operation.
+    pub fn for_op(op: PathOp) -> Self {
+        match op {
+            PathOp::Lookup
+            | PathOp::Getattr
+            | PathOp::Access
+            | PathOp::Statfs
+            | PathOp::Flush
+            | PathOp::Fsync
+            | PathOp::Fsyncdir
+            | PathOp::Fallocate
+            | PathOp::Lseek
+            | PathOp::Getlk
+            | PathOp::Setlk
+            | PathOp::Flock => Access::Probe,
+            PathOp::Getxattr | PathOp::Listxattr => Access::XattrRead,
+            PathOp::Write => Access::HandleWrite,
+            // Everything else, including operations typed-fuse adds later.
+            _ => Access::Data,
+        }
+    }
 }
 
 /// Interactive user authentication used to unlock.
@@ -339,6 +366,48 @@ mod tests {
                 _ => Some("zsh".into()),
             }),
         )
+    }
+
+    /// Pins how every operation is gated, so a change to the table (such as
+    /// moving xattr reads to `Probe`, exposing values while locked) fails here.
+    #[test]
+    fn every_operation_has_its_documented_access() {
+        let expected = [
+            (PathOp::Lookup, Access::Probe),
+            (PathOp::Getattr, Access::Probe),
+            (PathOp::Access, Access::Probe),
+            (PathOp::Statfs, Access::Probe),
+            (PathOp::Flush, Access::Probe),
+            (PathOp::Fsync, Access::Probe),
+            (PathOp::Fsyncdir, Access::Probe),
+            (PathOp::Fallocate, Access::Probe),
+            (PathOp::Lseek, Access::Probe),
+            (PathOp::Getlk, Access::Probe),
+            (PathOp::Setlk, Access::Probe),
+            (PathOp::Flock, Access::Probe),
+            (PathOp::Getxattr, Access::XattrRead),
+            (PathOp::Listxattr, Access::XattrRead),
+            (PathOp::Write, Access::HandleWrite),
+            (PathOp::Setattr, Access::Data),
+            (PathOp::Readlink, Access::Data),
+            (PathOp::Mknod, Access::Data),
+            (PathOp::Mkdir, Access::Data),
+            (PathOp::Symlink, Access::Data),
+            (PathOp::Unlink, Access::Data),
+            (PathOp::Rmdir, Access::Data),
+            (PathOp::Rename, Access::Data),
+            (PathOp::Link, Access::Data),
+            (PathOp::Open, Access::Data),
+            (PathOp::Read, Access::Data),
+            (PathOp::Opendir, Access::Data),
+            (PathOp::Readdir, Access::Data),
+            (PathOp::Create, Access::Data),
+            (PathOp::Setxattr, Access::Data),
+            (PathOp::Removexattr, Access::Data),
+        ];
+        for (op, access) in expected {
+            assert_eq!(Access::for_op(op), access, "{op:?}");
+        }
     }
 
     #[test]
