@@ -1,5 +1,10 @@
 v2.0.0 / 2026-10-04
 ==================
+	* Reverse mode now accepts sync-conflict copies created through the
+	  encrypted view (`<encrypted name> (conflict)`). The copy appears in the
+	  plaintext source as `<name> [encfs-corrupt] (conflict)` instead of
+	  failing with ENOENT, and the marker is stripped before encryption so
+	  readdir keeps presenting the name the sync client wrote.
 	* New V7/AES-GCM-SIV filesystems default to a 96-bit random per-file IV
 	  (12-byte header), up from 64 bits. Existing filesystems, including
 	  existing 64-bit V7/GCM-SIV volumes, are unaffected and keep decrypting

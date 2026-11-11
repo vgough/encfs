@@ -26,7 +26,42 @@ use typed_fuse::{
 
 const CONFIG_FILE_NAME: &str = ".encfs7";
 
+/// Marker inserted into a plaintext source name when the encrypted view
+/// presents a sync-conflict copy.
+///
+/// Cloud sync clients resolve a conflict by copying a file under a new name,
+/// e.g. `<encrypted name> (sync conflict 2023-07-09)`.  That whole name is not
+/// valid ciphertext, so reverse mode used to fail it with `ENOENT` and the
+/// conflict copy never reached the plaintext source tree.  Instead, the part
+/// before the first space is decrypted and the marker plus the sync suffix is
+/// appended: `hello.txt [encfs-corrupt] (sync conflict 2023-07-09)`.
+///
+/// The marker is also the persisted mapping back to ciphertext: [`ReverseFs::encode_component`]
+/// strips it before encrypting, so `readdir` presents the exact name the sync
+/// client wrote rather than a different re-encryption of the conflict name.
+const CONFLICT_MARKER: &str = " [encfs-corrupt]";
+
 type FileKey = (u64, u64);
+
+/// Split `<encrypted name><suffix>` at the first space.
+///
+/// Encrypted names are base64-like and never contain a space, so the first
+/// space starts the sync suffix (which itself begins with that space).
+fn split_conflict_name(name: &str) -> Option<(&str, &str)> {
+    let space = name.find(' ')?;
+    let (base, suffix) = name.split_at(space);
+    (!base.is_empty()).then_some((base, suffix))
+}
+
+/// Position of the conflict marker in a plaintext source name.
+///
+/// A marker only counts when a sync suffix follows it, so a real file that
+/// happens to end in ` [encfs-corrupt]` is not treated as a conflict copy.
+fn conflict_marker_position(name: &[u8]) -> Option<usize> {
+    let marker = CONFLICT_MARKER.as_bytes();
+    name.windows(marker.len() + 1)
+        .position(|window| window.starts_with(marker) && window[marker.len()] == b' ')
+}
 
 /// Policy used when constructing a reverse filesystem.
 #[derive(Debug, Clone, Copy, Default)]
@@ -175,6 +210,50 @@ impl ReverseFs {
         path == Path::new("/").join(CONFIG_FILE_NAME)
     }
 
+    /// Decrypt one path component, accepting a sync-conflict suffix.
+    ///
+    /// A plain encrypted name decrypts normally.  If that fails and the name
+    /// contains a space, the prefix is decrypted as the base name and the
+    /// suffix is carried into the plaintext name behind [`CONFLICT_MARKER`].
+    /// The IV advances on the base name only, so the suffix does not shift
+    /// the chained IV for the rest of the path.
+    fn decode_component(&self, name: &str, iv: u64) -> Result<(Vec<u8>, u64), libc::c_int> {
+        if let Ok(decoded) = self.cipher.decrypt_filename(name, iv) {
+            return Ok(decoded);
+        }
+        let (base, suffix) = split_conflict_name(name).ok_or(libc::ENOENT)?;
+        let (mut plain, next_iv) = self
+            .cipher
+            .decrypt_filename(base, iv)
+            .map_err(|_| libc::ENOENT)?;
+        plain.extend_from_slice(CONFLICT_MARKER.as_bytes());
+        plain.extend_from_slice(suffix.as_bytes());
+        Ok((plain, next_iv))
+    }
+
+    /// Encrypt one plaintext source name, undoing a sync-conflict suffix.
+    ///
+    /// When the source name carries [`CONFLICT_MARKER`], only the part before
+    /// it is encrypted and the suffix is appended verbatim.  This makes the
+    /// round trip `<encrypted name><suffix>` ->
+    /// `<plaintext name> [encfs-corrupt]<suffix>` -> `<encrypted name><suffix>`
+    /// stable across `readdir`.
+    fn encode_component(&self, name: &[u8], iv: u64) -> Result<(String, u64), libc::c_int> {
+        if let Some(position) = conflict_marker_position(name) {
+            let (base, rest) = name.split_at(position);
+            let suffix =
+                std::str::from_utf8(&rest[CONFLICT_MARKER.len()..]).map_err(|_| libc::EILSEQ)?;
+            let (encrypted, next_iv) = self
+                .cipher
+                .encrypt_filename(base, iv)
+                .map_err(|_| libc::EIO)?;
+            return Ok((format!("{encrypted}{suffix}"), next_iv));
+        }
+        self.cipher
+            .encrypt_filename(name, iv)
+            .map_err(|_| libc::EIO)
+    }
+
     /// Decrypt an incoming encrypted FUSE path to the corresponding plaintext source path.
     ///
     /// FUSE requests arrive with encrypted paths (callers see the virtual encrypted FS).
@@ -190,10 +269,7 @@ impl ReverseFs {
                 Component::RootDir | Component::CurDir => {}
                 Component::Normal(name) => {
                     let name_str = name.to_str().ok_or(libc::EILSEQ)?;
-                    let (plain_bytes, new_iv) = self
-                        .cipher
-                        .decrypt_filename(name_str, iv)
-                        .map_err(|_| libc::ENOENT)?;
+                    let (plain_bytes, new_iv) = self.decode_component(name_str, iv)?;
                     source_path.push(OsStr::from_bytes(&plain_bytes));
                     if self.config.chained_name_iv {
                         iv = new_iv;
@@ -690,7 +766,7 @@ impl ReverseFs {
                 continue;
             }
 
-            match self.cipher.encrypt_filename(name_bytes, dir_iv) {
+            match self.encode_component(name_bytes, dir_iv) {
                 Ok((encrypted_name, _)) => {
                     let metadata = entry
                         .metadata()
@@ -1966,5 +2042,165 @@ mod tests {
 
         assert_eq!(reverse.commit_staged(&source, &state, 0), Err(libc::ESTALE));
         assert_eq!(fs::read(&source_path).unwrap(), b"external change");
+    }
+
+    fn conflict_name(reverse: &ReverseFs, plain: &[u8], suffix: &str) -> String {
+        let (encrypted, _) = reverse.cipher.encrypt_filename(plain, 0).unwrap();
+        format!("{encrypted}{suffix}")
+    }
+
+    fn listed_names(buffer: &DirBuffer<Mutex<ReverseFileState>>) -> Vec<String> {
+        buffer
+            .iter()
+            .map(|entry| entry.name.to_string_lossy().into_owned())
+            .filter(|name| name != "." && name != ".." && name != CONFIG_FILE_NAME)
+            .collect()
+    }
+
+    /// `<encrypted name> (sync conflict ...)` maps to a visible plaintext name
+    /// with the marker, and the marker maps back to the exact ciphertext name
+    /// the sync client wrote.  That round trip is what keeps `readdir` stable.
+    #[test]
+    fn sync_conflict_names_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let reverse = reverse_fs(dir.path());
+        let suffix = " (sync conflict 09-07-2023 axet-laptop)";
+        let encrypted = conflict_name(&reverse, b"hello.txt", suffix);
+
+        let (plain, _) = reverse.decode_component(&encrypted, 0).unwrap();
+        assert_eq!(
+            plain,
+            format!("hello.txt{CONFLICT_MARKER}{suffix}").into_bytes()
+        );
+
+        let (back, _) = reverse
+            .encode_component(
+                &format!("hello.txt{CONFLICT_MARKER}{suffix}").into_bytes(),
+                0,
+            )
+            .unwrap();
+        assert_eq!(back, encrypted);
+
+        // Ordinary names, including plaintext names with spaces, are untouched.
+        for name in [b"hello.txt".as_slice(), b"my notes.txt".as_slice()] {
+            let (encoded, _) = reverse.encode_component(name, 0).unwrap();
+            let (decoded, _) = reverse.decode_component(&encoded, 0).unwrap();
+            assert_eq!(decoded, name);
+        }
+
+        // A real file that merely ends in the marker is not a conflict copy.
+        let literal = b"notes [encfs-corrupt]";
+        let (encoded, _) = reverse.encode_component(literal, 0).unwrap();
+        let (decoded, _) = reverse.decode_component(&encoded, 0).unwrap();
+        assert_eq!(decoded, literal);
+    }
+
+    /// A conflict copy created through the encrypted view lands in the source
+    /// tree under a visible, distinct plaintext name; writing to it leaves the
+    /// original alone, and `readdir` presents the name the sync client wrote.
+    #[test]
+    fn sync_conflict_create_writes_back_to_a_distinct_plaintext_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let reverse = reverse_fs(dir.path());
+        let suffix = " (sync conflict 09-07-2023 axet-laptop)";
+        let encrypted = conflict_name(&reverse, b"hello.txt", suffix);
+        let plaintext = format!("hello.txt{CONFLICT_MARKER}{suffix}");
+
+        fs::write(dir.path().join("hello.txt"), b"original").unwrap();
+
+        let root_state = Arc::new(Mutex::new(ReverseFileState::default()));
+        let root = PathNodeRef::new(Some(Path::new("/")), &root_state);
+        let (entry, opened) = reverse
+            .create(
+                root,
+                OsStr::new(&encrypted),
+                0o600,
+                0,
+                libc::O_RDWR,
+                &caller(),
+            )
+            .unwrap();
+
+        let conflict_path = PathBuf::from("/").join(&encrypted);
+        let file_iv = reverse.file_iv_for_path(&conflict_path).unwrap();
+        let candidate = dir.path().join("candidate");
+        fs::write(&candidate, b"conflict contents").unwrap();
+        let candidate = File::open(candidate).unwrap();
+        let replacement = reverse.materialize_ciphertext(&candidate, file_iv).unwrap();
+        let size = replacement.metadata().unwrap().len();
+        let mut ciphertext = vec![0; size as usize];
+        ReverseFs::read_exact_at(&replacement, &mut ciphertext, 0).unwrap();
+        let node = PathNodeRef::new(Some(&conflict_path), &entry.state);
+        reverse
+            .write(node, &opened.handle, &ciphertext, 0, &caller())
+            .unwrap();
+        let node = PathNodeRef::new(Some(&conflict_path), &entry.state);
+        reverse.release(node, opened.handle, &caller()).unwrap();
+
+        assert_eq!(
+            fs::read(dir.path().join(&plaintext)).unwrap(),
+            b"conflict contents"
+        );
+        assert_eq!(fs::read(dir.path().join("hello.txt")).unwrap(), b"original");
+
+        // The sync client's name is still the one the view lists.
+        let buffer = reverse.build_dir_buffer(Path::new("/")).unwrap();
+        let names = listed_names(&buffer);
+        assert!(names.contains(&encrypted), "{names:?}");
+        let original = conflict_name(&reverse, b"hello.txt", "");
+        assert!(names.contains(&original), "{names:?}");
+
+        // Lookup resolves the conflict name to the marked plaintext file.
+        let root = PathNodeRef::new(Some(Path::new("/")), &root_state);
+        let found = reverse
+            .lookup(root, OsStr::new(&encrypted), &caller())
+            .unwrap();
+        assert!(found.is_some());
+    }
+
+    /// The suffix is not encrypted, so it must not advance the chained IV:
+    /// nested conflict names resolve, create, and list under the parent's IV.
+    #[test]
+    fn sync_conflict_names_keep_the_chained_iv_in_subdirectories() {
+        let dir = tempfile::tempdir().unwrap();
+        let reverse = reverse_fs(dir.path());
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("sub/hello.txt"), b"original").unwrap();
+
+        let (encrypted_dir, dir_iv) = reverse.cipher.encrypt_filename(b"sub", 0).unwrap();
+        let (encrypted_file, _) = reverse
+            .cipher
+            .encrypt_filename(b"hello.txt", dir_iv)
+            .unwrap();
+        let encrypted_conflict = format!("{encrypted_file} (1)");
+        let parent = PathBuf::from("/").join(&encrypted_dir);
+        let conflict_path = parent.join(&encrypted_conflict);
+        let plaintext = dir
+            .path()
+            .join("sub")
+            .join(format!("hello.txt{CONFLICT_MARKER} (1)"));
+
+        let (source, _) = reverse.resolve_source_path(&conflict_path).unwrap();
+        assert_eq!(source, plaintext);
+
+        let state = Arc::new(Mutex::new(ReverseFileState::default()));
+        reverse
+            .create(
+                PathNodeRef::new(Some(&parent), &state),
+                OsStr::new(&encrypted_conflict),
+                0o600,
+                0,
+                libc::O_RDWR,
+                &caller(),
+            )
+            .unwrap();
+        assert!(plaintext.exists());
+        assert_eq!(
+            fs::read(dir.path().join("sub/hello.txt")).unwrap(),
+            b"original"
+        );
+
+        let names = listed_names(&reverse.build_dir_buffer(&parent).unwrap());
+        assert!(names.contains(&encrypted_conflict), "{names:?}");
     }
 }
