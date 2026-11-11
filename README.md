@@ -286,6 +286,15 @@ encfsr --write ~/Documents/.encfs7 ~/Documents /mnt/enc
 
 Then copy or sync from `/mnt/enc` to your backup/cloud target; the content and filenames there are encrypted.
 
+Sync clients resolve conflicts by copying a file under a new name, for example
+`<encrypted name> (sync conflict 2023-07-09)`. The suffix is not valid
+ciphertext, so reverse mode recognizes it, decrypts the part before the first
+space, and exposes the copy in the source tree as
+`<plaintext name> [encfs-corrupt] (sync conflict 2023-07-09)` instead of failing
+with `ENOENT`. The marker is stripped again before encryption, so `readdir`
+keeps presenting the exact name the sync client wrote. The original file is
+never aliased or overwritten.
+
 Options (same as encfs where applicable):
 
 - `-f` / `--foreground` — run in foreground (do not daemonize).
