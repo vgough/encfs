@@ -638,7 +638,7 @@ impl EncFs {
                     let names_iv = self.names_iv(&backing_dir, iv)?;
                     let (decrypted_name_bytes, new_iv) = self
                         .cipher
-                        .decrypt_filename(name_str, names_iv)
+                        .decrypt_entry_name(name_str, names_iv)
                         .map_err(|e| {
                             error!("Failed to decrypt filename {}: {}", name_str, e);
                             libc::EIO
@@ -1179,7 +1179,7 @@ impl EncFs {
                 };
 
                 let (plain_name_bytes, _) =
-                    match self.cipher.decrypt_filename(fname_utf8, source.iv) {
+                    match self.cipher.decrypt_entry_name(fname_utf8, source.iv) {
                         Ok(res) => res,
                         Err(e) => {
                             warn!("Skipping undecryptable child {:?}: {}", fname, e);
@@ -2305,7 +2305,7 @@ impl EncFs {
                 continue;
             }
 
-            match self.cipher.decrypt_filename(name_str, dir_iv) {
+            match self.cipher.decrypt_entry_name(name_str, dir_iv) {
                 Ok((decrypted_name, _)) => {
                     let metadata = fs::symlink_metadata(entry.path())
                         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
