@@ -1531,7 +1531,7 @@ fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
         }
 
         // Try to decrypt the filename
-        match cipher.decrypt_filename(name_str, dir_iv) {
+        match cipher.decrypt_entry_name(name_str, dir_iv) {
             Ok((decrypted_name_bytes, _)) => {
                 let process_res = (|| -> Result<()> {
                     let metadata = std::fs::symlink_metadata(entry.path())?;
@@ -2406,7 +2406,7 @@ fn export_directory(
 
             // Try to decrypt the filename
             let (decrypted_name_bytes, new_iv) = cipher
-                .decrypt_filename(name_str, dir_iv)
+                .decrypt_entry_name(name_str, dir_iv)
                 .context(t!("ctl.error_could_not_decrypt"))?;
 
             // Use symlink_metadata to avoid following symlinks
@@ -2588,7 +2588,7 @@ fn walk_path(
                         .to_str()
                         .ok_or_else(|| anyhow::anyhow!("{}", t!("ctl.error_invalid_utf8")))?;
                     let (decrypted_name_bytes, next_iv) =
-                        cipher.decrypt_filename(name_str, names_iv)?;
+                        cipher.decrypt_entry_name(name_str, names_iv)?;
                     backing.push(name);
                     plaintext.push(std::ffi::OsStr::from_bytes(&decrypted_name_bytes));
                     next_iv
@@ -3138,7 +3138,7 @@ fn find_undecodable_files(
         stats.files_checked += 1;
 
         // Try to decrypt filename using the parent directory's IV
-        match cipher.decrypt_filename(name_str, dir_iv) {
+        match cipher.decrypt_entry_name(name_str, dir_iv) {
             Ok((_, new_iv)) => {
                 // Successfully decoded - check if it's a directory
                 if let Ok(file_type) = entry.file_type() {
@@ -4634,6 +4634,45 @@ mod tests {
 
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_dir_all(&export);
+        Ok(())
+    }
+
+    /// An encrypted directory whose entry names decrypt to `..` or an
+    /// absolute path must not make `export` write outside its destination.
+    #[test]
+    fn export_keeps_decrypted_names_inside_the_destination() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let src_dir = temp.path().join("src");
+        let dst_dir = temp.path().join("dst");
+        fs::create_dir_all(&src_dir)?;
+        fs::create_dir_all(&dst_dir)?;
+
+        let mut config = EncfsConfig::standard_v7();
+        config.use_chained_name_iv();
+        config.minimum_reader_version = config.required_v7_reader_version();
+        config.argon2_memory_cost = Some(8);
+        config.argon2_time_cost = Some(1);
+        config.argon2_parallelism = Some(1);
+        config.set_v7_key("test-password", &[0; 48])?;
+        let cipher = config.get_cipher("test-password")?;
+
+        let escaped = temp.path().join("escaped");
+        for plain in [
+            b"../escaped".to_vec(),
+            escaped.as_os_str().as_bytes().to_vec(),
+        ] {
+            let (encrypted, _) = cipher.encrypt_filename(&plain, 0)?;
+            fs::create_dir(src_dir.join(&encrypted))?;
+        }
+        let (kept, _) = cipher.encrypt_filename(b"kept", 0)?;
+        fs::create_dir(src_dir.join(&kept))?;
+
+        export_directory(&src_dir, &dst_dir, cipher.as_ref(), &config, 0, false)?;
+
+        assert!(!escaped.exists());
+        assert!(dst_dir.join("kept").is_dir());
+        assert!(export_directory(&src_dir, &dst_dir, cipher.as_ref(), &config, 0, true).is_err());
+        assert!(!escaped.exists());
         Ok(())
     }
 }

@@ -1,5 +1,12 @@
 v2.0.0 / 2026-10-04
 ==================
+	* Refuse directory entry names that decrypt to more than one path
+	  component (`..`, `.`, or anything containing `/` or NUL). Reverse mode
+	  (`encfsr --write`) joined such a name onto the source path, so a name
+	  written through the encrypted view could create or remove entries
+	  outside the source directory. `encfsctl export` could likewise write
+	  outside its destination. Forward mode now hides such entries from
+	  listings, and `encfsctl ls`/`showcruft` treat them as undecodable.
 	* New V7/AES-GCM-SIV filesystems default to a 96-bit random per-file IV
 	  (12-byte header), up from 64 bits. Existing filesystems, including
 	  existing 64-bit V7/GCM-SIV volumes, are unaffected and keep decrypting

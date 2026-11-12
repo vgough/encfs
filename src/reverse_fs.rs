@@ -192,7 +192,7 @@ impl ReverseFs {
                     let name_str = name.to_str().ok_or(libc::EILSEQ)?;
                     let (plain_bytes, new_iv) = self
                         .cipher
-                        .decrypt_filename(name_str, iv)
+                        .decrypt_entry_name(name_str, iv)
                         .map_err(|_| libc::ENOENT)?;
                     source_path.push(OsStr::from_bytes(&plain_bytes));
                     if self.config.chained_name_iv {
@@ -1966,5 +1966,59 @@ mod tests {
 
         assert_eq!(reverse.commit_staged(&source, &state, 0), Err(libc::ESTALE));
         assert_eq!(fs::read(&source_path).unwrap(), b"external change");
+    }
+
+    /// A view name that decrypts to more than one path component must not
+    /// reach the source directory. Otherwise a name decrypting to
+    /// `../escaped` creates a file beside the source on a `--write` mount.
+    #[test]
+    fn view_names_cannot_leave_the_source_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        fs::create_dir(&source).unwrap();
+        let reverse = reverse_fs(&source);
+
+        for plain in [
+            b"..".as_slice(),
+            b".",
+            b"../escaped",
+            b"/escaped",
+            b"sub/escaped",
+        ] {
+            let (encrypted, _) = reverse.cipher.encrypt_filename(plain, 0).unwrap();
+            let path = Path::new("/").join(&encrypted);
+            assert_eq!(
+                reverse.resolve_source_path(&path),
+                Err(libc::ENOENT),
+                "{plain:?}"
+            );
+            // Below a real directory too, not just at the root.
+            fs::create_dir_all(source.join("sub")).unwrap();
+            let (sub, sub_iv) = reverse.cipher.encrypt_filename(b"sub", 0).unwrap();
+            let (nested, _) = reverse.cipher.encrypt_filename(plain, sub_iv).unwrap();
+            let nested_path = Path::new("/").join(&sub).join(&nested);
+            assert_eq!(
+                reverse.resolve_source_path(&nested_path),
+                Err(libc::ENOENT),
+                "{plain:?}"
+            );
+        }
+
+        let (encrypted, _) = reverse.cipher.encrypt_filename(b"../escaped", 0).unwrap();
+        let root_state = Arc::new(Mutex::new(ReverseFileState::default()));
+        let root = PathNodeRef::new(Some(Path::new("/")), &root_state);
+        let created = reverse.create(
+            root,
+            OsStr::new(&encrypted),
+            0o600,
+            0,
+            libc::O_RDWR,
+            &caller(),
+        );
+        assert!(matches!(created, Err(error) if error == Errno::ENOENT));
+        let root = PathNodeRef::new(Some(Path::new("/")), &root_state);
+        let made = reverse.mkdir(root, OsStr::new(&encrypted), 0o700, 0, &caller());
+        assert!(matches!(made, Err(error) if error == Errno::ENOENT));
+        assert!(!dir.path().join("escaped").exists());
     }
 }

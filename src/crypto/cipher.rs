@@ -12,7 +12,7 @@
 use crate::config::Interface;
 use crate::crypto::file_iv::FileIv;
 use crate::crypto::ssl::SslCipher;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 
 /// Object-safe facade over a volume cipher: file-content block crypto, header
 /// IV handling, filename encoding, xattr crypto, and volume-key wrapping.
@@ -96,7 +96,24 @@ pub trait Cipher: Send + Sync {
     fn encrypt_filename(&self, plaintext_name: &[u8], iv: u64) -> Result<(String, u64)>;
 
     /// Decrypt an encoded filename, returning `(plaintext, next_iv)`.
+    ///
+    /// The plaintext is whatever bytes the name decrypts to. For a directory
+    /// entry use [`Self::decrypt_entry_name`], which also checks that they
+    /// name a single path component; symlink targets use this directly.
     fn decrypt_filename(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)>;
+
+    /// Decrypt one directory entry's encoded name, returning
+    /// `(plaintext, next_iv)`, and refuse plaintext that isn't a single path
+    /// component (see [`check_entry_name`]).
+    ///
+    /// The 16-bit name checksum is the only thing between an encoded name
+    /// and its plaintext, so a name that decrypts to `..` or `/x` costs
+    /// guesses, not the key. Joined onto a path, it would leave the tree.
+    fn decrypt_entry_name(&self, encoded_name: &str, iv: u64) -> Result<(Vec<u8>, u64)> {
+        let decoded = self.decrypt_filename(encoded_name, iv)?;
+        check_entry_name(&decoded.0)?;
+        Ok(decoded)
+    }
 
     /// Encrypt a filename with no IV mixed in at all (C++ `iv == nullptr`).
     fn encrypt_filename_no_iv(&self, plaintext_name: &[u8]) -> Result<String>;
@@ -302,9 +319,66 @@ impl Cipher for SslCipher {
     }
 }
 
+/// Checks that a decrypted name is a single path component: not empty, `.`
+/// or `..`, and without `/` or NUL.
+///
+/// Every EncFS writer encrypts names it got as one component, so a name
+/// failing this was not written by EncFS. `Path::join` would treat `/x` as
+/// absolute and `a/b` as two components.
+pub fn check_entry_name(name: &[u8]) -> Result<()> {
+    if name.is_empty() || name == b"." || name == b".." || name.contains(&b'/') || name.contains(&0)
+    {
+        return Err(anyhow!("decrypted name is not a single path component"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entry_names_must_be_single_components() {
+        for name in [b"a".as_slice(), b"...", b".hidden", b"a b", b"\xff\xfe"] {
+            assert!(check_entry_name(name).is_ok(), "{name:?}");
+        }
+        for name in [
+            b"".as_slice(),
+            b".",
+            b"..",
+            b"/",
+            b"/etc",
+            b"a/b",
+            b"../x",
+            b"a\0b",
+        ] {
+            assert!(check_entry_name(name).is_err(), "{name:?}");
+        }
+    }
+
+    /// A name the cipher decrypts without complaint is still refused as a
+    /// directory entry when it would leave its directory.
+    #[test]
+    fn decrypt_entry_name_refuses_traversal() {
+        let iface = Interface {
+            name: "ssl/aes".to_string(),
+            major: 3,
+            minor: 0,
+            age: 0,
+        };
+        let mut cipher: Box<dyn Cipher> = build(&iface, 256).expect("build cipher");
+        cipher.set_key(&[0x44u8; 32], &[0u8; 16]);
+        for plain in [b"..".as_slice(), b"/abs", b"a/b"] {
+            let (encoded, _) = cipher.encrypt_filename(plain, 7).unwrap();
+            assert_eq!(cipher.decrypt_filename(&encoded, 7).unwrap().0, plain);
+            assert!(cipher.decrypt_entry_name(&encoded, 7).is_err());
+        }
+        let (encoded, next_iv) = cipher.encrypt_filename(b"ok", 7).unwrap();
+        assert_eq!(
+            cipher.decrypt_entry_name(&encoded, 7).unwrap(),
+            (b"ok".to_vec(), next_iv)
+        );
+    }
 
     /// Compile-time + runtime proof that `Cipher` is object-safe and the
     /// factory yields a working `Box<dyn Cipher>`.
