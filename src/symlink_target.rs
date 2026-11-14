@@ -92,23 +92,14 @@ fn recode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ConfigType, Interface, SymlinkFormat};
-    use crate::crypto::ssl::SslCipher;
+    use crate::config::{ConfigType, SymlinkFormat};
 
     fn setup(config_type: ConfigType, chained: bool) -> (Box<dyn Cipher>, EncfsConfig) {
-        let iface = Interface {
-            name: "ssl/aes".to_string(),
-            major: 3,
-            minor: 0,
-            age: 0,
-        };
-        let mut cipher = SslCipher::new(&iface, 192).expect("cipher");
-        cipher.set_key(&[1u8; 24], &[2u8; 16]);
-        cipher.set_name_mac_includes_iv(chained || config_type == ConfigType::V7);
         let mut config = EncfsConfig::test_default();
         config.config_type = config_type;
         config.chained_name_iv = chained;
-        (Box::new(cipher), config)
+        let cipher = config.cipher_with_volume_key(&[1u8; 48]).expect("cipher");
+        (cipher, config)
     }
 
     fn enc(cipher: &dyn Cipher, name: &str, iv: u64) -> (String, u64) {

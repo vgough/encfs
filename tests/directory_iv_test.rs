@@ -1,8 +1,7 @@
 //! Directory IV mode (ADR 0002): per-directory `.encfs.diriv` sidecars make
 //! names depend only on their parent directory, so a directory rename is a
 //! single backing rename(2).
-use encfs::config::{EncfsConfig, Interface};
-use encfs::crypto::ssl::SslCipher;
+use encfs::config::EncfsConfig;
 use encfs::diriv;
 use encfs::fs::{EncFs, FileState};
 use std::collections::BTreeSet;
@@ -107,18 +106,8 @@ impl Volume {
     /// A fresh filesystem instance on the same backing directory, as after a
     /// remount: nothing carries over in memory.
     fn open(root: PathBuf, config: EncfsConfig) -> Self {
-        let iface = Interface {
-            name: "ssl/aes".to_string(),
-            major: 3,
-            minor: 0,
-            age: 0,
-        };
-        let mut cipher = SslCipher::new(&iface, config.key_size).unwrap();
-        cipher.set_key(&[3u8; 32], &[4u8; 16]);
-        cipher.set_name_encoding(&config.name_iface);
-        cipher.set_wide_file_iv(config.wide_file_iv);
-        cipher.set_name_mac_includes_iv(true);
-        let mut fs = EncFs::new(root.clone(), Box::new(cipher), config.clone());
+        let cipher = config.cipher_with_volume_key(&[3u8; 48]).unwrap();
+        let mut fs = EncFs::new(root.clone(), cipher, config.clone());
         let root_state = fs.root_state();
         Self {
             root,

@@ -16,6 +16,9 @@ use std::process::Command as ProcessCommand;
 
 i18n!("locales", fallback = "en");
 
+#[path = "encfsctl/fsck.rs"]
+mod fsck;
+
 // Helper functions that return translated help text
 // These are called at runtime after locale initialization
 fn help_about() -> String {
@@ -301,6 +304,8 @@ enum Command {
         #[arg(help = help_showcruft_rootdir())]
         rootdir: PathBuf,
     },
+    #[command(about = fsck::help_about())]
+    Fsck(fsck::Options),
     #[command(about = help_decode())]
     Decode {
         #[arg(help = help_decode_rootdir())]
@@ -429,6 +434,13 @@ fn main() -> Result<()> {
         Some(Command::Info { rootdir, raw }) => cmd_info(&rootdir, raw),
         Some(Command::Passwd { rootdir, upgrade }) => cmd_passwd(&rootdir, upgrade),
         Some(Command::Showcruft { rootdir }) => cmd_showcruft(&rootdir),
+        Some(Command::Fsck(opts)) => {
+            if fsck::run(opts)? {
+                io::stdout().flush()?;
+                std::process::exit(1);
+            }
+            Ok(())
+        }
         Some(Command::Decode {
             rootdir,
             names,
@@ -1241,9 +1253,9 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
 }
 
 struct ShowcruftStats {
-    files_checked: i32,
-    dirs_checked: i32,
-    issues_found: i32,
+    files_checked: usize,
+    dirs_checked: usize,
+    issues_found: usize,
 }
 
 fn cmd_showcruft(rootdir: &Path) -> Result<()> {
@@ -1253,19 +1265,7 @@ fn cmd_showcruft(rootdir: &Path) -> Result<()> {
 
     let cipher = get_cipher_zeroizing(&config, &config_path, None)?;
 
-    let mut stats = ShowcruftStats {
-        files_checked: 0,
-        dirs_checked: 0,
-        issues_found: 0,
-    };
-    find_undecodable_files(
-        rootdir,
-        rootdir,
-        cipher.as_ref(),
-        &config,
-        0, // Initial path IV for root directory
-        &mut stats,
-    )?;
+    let stats = find_undecodable_files(rootdir, cipher.as_ref(), &config)?;
 
     // Print summary
     println!();
@@ -1421,16 +1421,11 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
         }
 
         // Use path IV for external IV chaining (paranoia mode)
-        let external_iv = if config.external_iv_chaining {
-            path_iv
-        } else {
-            0
-        };
         cipher
-            .decrypt_header(&mut header, external_iv)
+            .decrypt_header(&mut header, config.external_iv(path_iv))
             .map_err(|e| named(header_error(e)))?
     } else {
-        FileIv::from_u64(0)
+        config.headerless_file_iv(path_iv)
     };
 
     // Use FileDecoder to decrypt content
@@ -2459,17 +2454,12 @@ fn export_directory(
                     }
 
                     // Calculate path IV for external IV chaining
-                    let path_iv = if config.external_iv_chaining {
-                        diriv::child_path_iv(config, new_iv)
-                    } else {
-                        0
-                    };
-
+                    let path_iv = diriv::child_path_iv(config, new_iv);
                     cipher
-                        .decrypt_header(&mut header, path_iv)
+                        .decrypt_header(&mut header, config.external_iv(path_iv))
                         .map_err(header_error)?
                 } else {
-                    FileIv::from_u64(0)
+                    config.headerless_file_iv(diriv::child_path_iv(config, new_iv))
                 };
 
                 // Decrypt content using FileDecoder
@@ -2940,16 +2930,14 @@ fn format_v7_config_raw(proto: &encfs::config_proto::Config) -> String {
 }
 
 fn find_config_file(rootdir: &Path) -> Result<PathBuf> {
-    // Try config files in order from newest to oldest format
-    let config_files = [
-        ".encfs7",     // V7 - protobuf with AEAD key wrap
-        ".encfs6.xml", // V6 - current XML format
-        ".encfs5",     // V5 - binary format
-        ".encfs4",     // V4 - older binary format
-        ".encfs3",     // V3 - very old, not supported but detected
-    ];
+    // Newest format first; V3 is not supported but detected, so loading it
+    // explains why.
+    let config_files = encfs::config::CONFIG_FILES
+        .iter()
+        .map(|(name, _)| *name)
+        .chain([".encfs3"]);
 
-    for filename in &config_files {
+    for filename in config_files {
         let path = rootdir.join(filename);
         if path.exists() {
             return Ok(path);
@@ -3063,116 +3051,91 @@ fn get_password_from_program(prog: &str) -> Result<String> {
         .map(|s| s.trim_end().to_string())
 }
 
+/// Lists every name under `rootdir` that doesn't decode, with fsck's
+/// report-only scan. Hidden names (starting with `.`) are passed over, apart
+/// from a directory IV that can't be read, which stands for the whole
+/// directory.
 fn find_undecodable_files(
     rootdir: &Path,
-    current_dir: &Path,
     cipher: &dyn Cipher,
     config: &config::EncfsConfig,
-    path_iv: u64,
-    stats: &mut ShowcruftStats,
-) -> Result<()> {
-    stats.dirs_checked += 1;
-    let mut showed_dir = false;
-
-    // A directory whose IV cannot be read has no decodable names at all, so
-    // report it as one issue and don't descend.
-    let dir_iv = match diriv::names_iv(config, cipher, current_dir, path_iv) {
-        Ok(iv) => iv,
-        Err(e) => {
-            let rel_path = current_dir.strip_prefix(rootdir).unwrap_or(current_dir);
-            println!("{}", t!("ctl.in_directory", path = rel_path.display()));
-            println!(
-                "{}",
-                t!(
-                    "ctl.diriv_unreadable",
-                    path = diriv::sidecar_path(current_dir).display(),
-                    error = e
-                )
-            );
-            stats.issues_found += 1;
-            return Ok(());
-        }
+) -> Result<ShowcruftStats> {
+    let mut handler = ShowcruftHandler {
+        rootdir,
+        shown_dir: None,
+        issues: 0,
     };
+    let mut scan = encfs::fsck::Fsck::new(rootdir, config, cipher);
+    scan.run(&mut handler)?;
+    let stats = scan.stats();
+    if stats.errors > 0 {
+        anyhow::bail!("{}", t!("ctl.error_failed_to_read_directory"));
+    }
+    Ok(ShowcruftStats {
+        files_checked: stats.unhidden,
+        dirs_checked: stats.dirs,
+        issues_found: handler.issues,
+    })
+}
 
-    let entries =
-        std::fs::read_dir(current_dir).context(t!("ctl.error_failed_to_read_directory"))?;
+/// Prints `showcruft`'s findings, each directory's path before its first.
+struct ShowcruftHandler<'a> {
+    rootdir: &'a Path,
+    shown_dir: Option<PathBuf>,
+    issues: usize,
+}
 
-    let mut dirs_to_recurse = Vec::new();
+impl ShowcruftHandler<'_> {
+    fn show_dir(&mut self, dir: &Path) {
+        if self.shown_dir.as_deref() != Some(dir) {
+            let rel_path = dir.strip_prefix(self.rootdir).unwrap_or(dir);
+            println!("{}", t!("ctl.in_directory", path = rel_path.display()));
+            self.shown_dir = Some(dir.to_path_buf());
+        }
+    }
+}
 
-    for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("{}", t!("ctl.warning_read_dir_entry", error = e));
-                continue;
-            }
-        };
-
-        let file_name = entry.file_name();
-        let name_str = match file_name.to_str() {
-            Some(s) => s,
-            None => {
-                // Non-UTF-8 filename is definitely cruft - encrypted EncFS filenames
-                // should be base64-like ASCII. This indicates corruption or manually
-                // created files in the encrypted directory.
-                stats.files_checked += 1;
-                if !showed_dir {
-                    let rel_path = current_dir.strip_prefix(rootdir).unwrap_or(current_dir);
-                    println!("{}", t!("ctl.in_directory", path = rel_path.display()));
-                    showed_dir = true;
-                }
+impl encfs::fsck::Handler for ShowcruftHandler<'_> {
+    fn decide(&mut self, f: &encfs::fsck::Finding) -> Result<encfs::fsck::Action> {
+        let path = f.path();
+        match (&f.class, f.name.to_str()) {
+            (encfs::fsck::Class::UnreadableDirectoryIv { error }, _) => {
+                self.show_dir(&f.dir);
                 println!(
                     "{}",
-                    t!("ctl.non_utf8_filename", path = entry.path().display())
+                    t!("ctl.diriv_unreadable", path = path.display(), error = error)
                 );
-                stats.issues_found += 1;
-                continue;
             }
-        };
-
-        // Skip hidden files (including config files)
-        if name_str.starts_with(".") {
-            continue;
-        }
-
-        stats.files_checked += 1;
-
-        // Try to decrypt filename using the parent directory's IV
-        match cipher.decrypt_entry_name(name_str, dir_iv) {
-            Ok((_, new_iv)) => {
-                // Successfully decoded - check if it's a directory
-                if let Ok(file_type) = entry.file_type() {
-                    if file_type.is_dir() {
-                        // Store both the path and the IV for recursion
-                        let next_iv = diriv::child_path_iv(config, new_iv);
-                        dirs_to_recurse.push((entry.path(), next_iv));
-                    }
-                } else {
-                    eprintln!(
-                        "{}",
-                        t!("ctl.warning_file_type", path = entry.path().display())
-                    );
-                }
+            // Encrypted names are ASCII, so this is corruption or a file
+            // made by hand in the encrypted tree.
+            (_, None) => {
+                self.show_dir(&f.dir);
+                println!("{}", t!("ctl.non_utf8_filename", path = path.display()));
             }
-            Err(_) => {
-                // Failed to decode - this is "cruft"
-                if !showed_dir {
-                    let rel_path = current_dir.strip_prefix(rootdir).unwrap_or(current_dir);
-                    println!("{}", t!("ctl.in_directory", path = rel_path.display()));
-                    showed_dir = true;
-                }
-                println!("{}", entry.path().display());
-                stats.issues_found += 1;
+            (_, Some(name)) if name.starts_with('.') => {
+                return Ok(encfs::fsck::Action::Skip);
+            }
+            (_, Some(_)) => {
+                self.show_dir(&f.dir);
+                println!("{}", path.display());
             }
         }
+        self.issues += 1;
+        Ok(encfs::fsck::Action::Skip)
     }
 
-    // Recurse into successfully decoded directories
-    for (dir_path, next_iv) in dirs_to_recurse {
-        find_undecodable_files(rootdir, &dir_path, cipher, config, next_iv, stats)?;
+    // Report-only: nothing is ever applied.
+    fn outcome(
+        &mut self,
+        _: &encfs::fsck::Finding,
+        _: &encfs::fsck::Action,
+        _: &Result<encfs::fsck::Outcome>,
+    ) {
     }
 
-    Ok(())
+    fn warning(&mut self, path: &Path, error: &anyhow::Error) {
+        fsck::print_warning(path, error);
+    }
 }
 
 fn resolve_file_path(
@@ -3558,16 +3521,9 @@ mod tests {
         fs::create_dir_all(&temp_dir)?;
 
         // Setup Cipher
-        let iface = Interface {
-            name: "ssl/aes".to_string(),
-            major: 3,
-            minor: 0,
-            age: 0,
-        };
-        let mut cipher: Box<dyn Cipher> = Box::new(SslCipher::new(&iface, 192)?);
-        let key = vec![0u8; 24]; // 192 bits
-        let iv = vec![0u8; cipher.iv_len()];
-        cipher.set_key(&key, &iv);
+        let mut config = EncfsConfig::test_default();
+        config.chained_name_iv = false;
+        let cipher = config.cipher_with_volume_key(&[0u8; 48])?;
         let dir_iv = 0;
 
         // 1. Create a broken symlink with encrypted name
@@ -3590,23 +3546,8 @@ mod tests {
         // Point to the relative name of the subdir
         symlink(&enc_subdir_name, &link_path)?;
 
-        let mut stats = ShowcruftStats {
-            files_checked: 0,
-            dirs_checked: 0,
-            issues_found: 0,
-        };
-
         // Run find_undecodable_files
-        let mut config = EncfsConfig::test_default();
-        config.chained_name_iv = false;
-        find_undecodable_files(
-            &temp_dir,
-            &temp_dir,
-            cipher.as_ref(),
-            &config,
-            dir_iv,
-            &mut stats,
-        )?;
+        let stats = find_undecodable_files(&temp_dir, cipher.as_ref(), &config)?;
 
         // Cleanup
         let _ = fs::remove_dir_all(&temp_dir);
@@ -4617,18 +4558,11 @@ mod tests {
 
         // showcruft: clean, then one issue for a directory whose sidecar is
         // gone, without descending into it.
-        let new_stats = || ShowcruftStats {
-            files_checked: 0,
-            dirs_checked: 0,
-            issues_found: 0,
-        };
-        let mut stats = new_stats();
-        find_undecodable_files(&dir, &dir, cipher, &config, 0, &mut stats)?;
+        let stats = find_undecodable_files(&dir, cipher, &config)?;
         assert_eq!((stats.dirs_checked, stats.issues_found), (3, 0));
 
         fs::remove_file(diriv::sidecar_path(backing.parent().unwrap()))?;
-        let mut stats = new_stats();
-        find_undecodable_files(&dir, &dir, cipher, &config, 0, &mut stats)?;
+        let stats = find_undecodable_files(&dir, cipher, &config)?;
         assert_eq!((stats.dirs_checked, stats.issues_found), (3, 1));
         assert!(encode_path_string(&dir, cipher, &config, "docs/sub/note.txt").is_err());
 

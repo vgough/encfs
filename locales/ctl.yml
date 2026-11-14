@@ -279,10 +279,6 @@ ctl.warning_message:
   en: "Warning: %{message}"
   fr: "Avertissement : %{message}"
   de: "Warnung: %{message}"
-ctl.warning_file_type:
-  en: "Warning: Failed to get file type for %{path}"
-  fr: "Avertissement : Échec de l'obtention du type de fichier pour %{path}"
-  de: "Warnung: Dateityp für %{path} konnte nicht ermittelt werden"
 ctl.in_directory:
   en: "In directory %{path}: "
   fr: "Dans le répertoire %{path} : "
@@ -559,3 +555,167 @@ ctl.error_rpc_refused:
   en: "Request failed (%{code}): %{message}"
   fr: "Échec de la requête (%{code}) : %{message}"
   de: "Anfrage fehlgeschlagen (%{code}): %{message}"
+ctl.fsck_report_header:
+  en: "Checking %{root} (report only; run with --fix to repair)"
+  fr: "Vérification de %{root} (rapport seulement ; utilisez --fix pour réparer)"
+  de: "Prüfe %{root} (nur Bericht; mit --fix reparieren)"
+ctl.fsck_fix_header:
+  en: "Repairing %{root}. Stop the sync tool first, and repair only one copy of the folder: the sync tool carries the result to the others."
+  fr: "Réparation de %{root}. Arrêtez d'abord l'outil de synchronisation et ne réparez qu'une seule copie du dossier : l'outil de synchronisation transmet le résultat aux autres."
+  de: "Repariere %{root}. Halten Sie zuerst das Synchronisierungswerkzeug an und reparieren Sie nur eine Kopie des Ordners: Das Synchronisierungswerkzeug überträgt das Ergebnis auf die anderen."
+ctl.fsck_mounted:
+  en: "%{root} is mounted (%{source}). Unmount it before repairing, or pass --force."
+  fr: "%{root} est monté (%{source}). Démontez-le avant de réparer, ou utilisez --force."
+  de: "%{root} ist eingehängt (%{source}). Hängen Sie es vor dem Reparieren aus oder verwenden Sie --force."
+ctl.fsck_mount_check_failed:
+  en: "Warning: couldn't read the mount table to check whether the filesystem is mounted: %{error}"
+  fr: "Avertissement : impossible de lire la table des montages pour vérifier si le système de fichiers est monté : %{error}"
+  de: "Warnung: Die Einhängetabelle konnte nicht gelesen werden, um zu prüfen, ob das Dateisystem eingehängt ist: %{error}"
+ctl.fsck_needs_terminal:
+  en: "--fix asks about each finding and needs a terminal. Add --yes to apply the default actions instead."
+  fr: "--fix pose une question pour chaque élément et nécessite un terminal. Ajoutez --yes pour appliquer plutôt les actions par défaut."
+  de: "--fix fragt bei jedem Fund nach und benötigt ein Terminal. Fügen Sie --yes hinzu, um stattdessen die Standardaktionen auszuführen."
+ctl.fsck_summary:
+  en: "Checked %{dirs} directories and %{entries} entries: %{problems} found, %{fixed} fixed, %{left} left."
+  fr: "%{dirs} répertoires et %{entries} entrées vérifiés : %{problems} trouvés, %{fixed} réparés, %{left} restants."
+  de: "%{dirs} Verzeichnisse und %{entries} Einträge geprüft: %{problems} gefunden, %{fixed} behoben, %{left} verbleibend."
+ctl.fsck_in_dir:
+  en: "in %{path}"
+  fr: "dans %{path}"
+  de: "in %{path}"
+ctl.fsck_sidecar_copy_identical:
+  en: "Copy of this directory's IV file (.encfs.diriv), identical to it"
+  fr: "Copie du fichier d'IV de ce répertoire (.encfs.diriv), identique à celui-ci"
+  de: "Kopie der IV-Datei dieses Verzeichnisses (.encfs.diriv), mit ihr identisch"
+ctl.fsck_sidecar_copy_different:
+  en: "This directory's IV file (.encfs.diriv) from another machine; %{count} entries still depend on it"
+  fr: "Fichier d'IV de ce répertoire (.encfs.diriv) provenant d'une autre machine ; %{count} entrées en dépendent encore"
+  de: "IV-Datei dieses Verzeichnisses (.encfs.diriv) von einem anderen Rechner; %{count} Einträge hängen noch von ihr ab"
+ctl.fsck_config_copy_equivalent:
+  en: "Copy of the volume config, equivalent to it"
+  fr: "Copie de la configuration du volume, équivalente à celle-ci"
+  de: "Kopie der Volume-Konfiguration, mit ihr gleichwertig"
+ctl.fsck_config_copy_different:
+  en: "Copy of the volume config with a different key or settings. Compare both with 'encfsctl info' and keep the one you want"
+  fr: "Copie de la configuration du volume avec une autre clé ou d'autres réglages. Comparez les deux avec « encfsctl info » et gardez celle que vous voulez"
+  de: "Kopie der Volume-Konfiguration mit anderem Schlüssel oder anderen Einstellungen. Vergleichen Sie beide mit „encfsctl info“ und behalten Sie die gewünschte"
+ctl.fsck_config_copy_unreadable:
+  en: "Copy of the volume config that this password doesn't unlock: %{error}"
+  fr: "Copie de la configuration du volume que ce mot de passe ne déverrouille pas : %{error}"
+  de: "Kopie der Volume-Konfiguration, die dieses Passwort nicht entsperrt: %{error}"
+ctl.fsck_config_copy_unchecked:
+  en: "Copy of the volume config (not checked)"
+  fr: "Copie de la configuration du volume (non vérifiée)"
+  de: "Kopie der Volume-Konfiguration (nicht geprüft)"
+ctl.fsck_tool_state:
+  en: "Sync tool state, left alone"
+  fr: "État de l'outil de synchronisation, laissé tel quel"
+  de: "Zustand des Synchronisierungswerkzeugs, bleibt unverändert"
+ctl.fsck_temp_stale:
+  en: "Stale temp file (%{age} old)"
+  fr: "Fichier temporaire périmé (âgé de %{age})"
+  de: "Veraltete temporäre Datei (%{age} alt)"
+ctl.fsck_temp_young:
+  en: "Temp file that may still be in use (%{age} old)"
+  fr: "Fichier temporaire peut-être encore utilisé (âgé de %{age})"
+  de: "Temporäre Datei, die noch verwendet werden könnte (%{age} alt)"
+ctl.fsck_conflict_copy:
+  en: "Conflict copy of:"
+  fr: "Copie de conflit de :"
+  de: "Konfliktkopie von:"
+ctl.fsck_candidate:
+  en: "%{index}. \"%{name}\" (%{confidence}), suffix \"%{suffix}\""
+  fr: "%{index}. « %{name} » (%{confidence}), suffixe « %{suffix} »"
+  de: "%{index}. „%{name}“ (%{confidence}), Suffix „%{suffix}“"
+ctl.fsck_verified:
+  en: "verified"
+  fr: "vérifié"
+  de: "überprüft"
+ctl.fsck_probable:
+  en: "probable"
+  fr: "probable"
+  de: "wahrscheinlich"
+ctl.fsck_no_sibling:
+  en: "no such file here"
+  fr: "aucun fichier de ce nom ici"
+  de: "keine solche Datei hier"
+ctl.fsck_foreign_name:
+  en: "\"%{name}\", named under the IV file copy %{sidecar}"
+  fr: "« %{name} », nommé selon la copie du fichier d'IV %{sidecar}"
+  de: "„%{name}“, benannt nach der Kopie der IV-Datei %{sidecar}"
+ctl.fsck_unknown:
+  en: "Name doesn't decrypt"
+  fr: "Le nom ne se déchiffre pas"
+  de: "Name lässt sich nicht entschlüsseln"
+ctl.fsck_unreadable_diriv:
+  en: "This directory's IV file can't be read, so none of its names can be checked: %{error}"
+  fr: "Le fichier d'IV de ce répertoire est illisible, aucun de ses noms ne peut donc être vérifié : %{error}"
+  de: "Die IV-Datei dieses Verzeichnisses ist nicht lesbar, daher kann keiner seiner Namen geprüft werden: %{error}"
+ctl.fsck_default_recover:
+  en: "-> recover as \"%{name}\""
+  fr: "-> récupérer sous « %{name} »"
+  de: "-> als „%{name}“ wiederherstellen"
+ctl.fsck_default_delete:
+  en: "-> delete"
+  fr: "-> supprimer"
+  de: "-> löschen"
+ctl.fsck_default_none:
+  en: "-> no default action"
+  fr: "-> aucune action par défaut"
+  de: "-> keine Standardaktion"
+ctl.fsck_default_leave:
+  en: "-> left alone"
+  fr: "-> laissé tel quel"
+  de: "-> bleibt unverändert"
+ctl.fsck_option_recover:
+  en: "[r]ecover"
+  fr: "[r]écupérer"
+  de: "[r] wiederherstellen"
+ctl.fsck_option_recover_as:
+  en: "recover [a]s..."
+  fr: "récupérer [a]vec un autre nom..."
+  de: "[a]ls ... wiederherstellen"
+ctl.fsck_option_delete:
+  en: "[d]elete"
+  fr: "[d] supprimer"
+  de: "[d] löschen"
+ctl.fsck_option_skip:
+  en: "[s]kip"
+  fr: "[s] ignorer"
+  de: "[s] überspringen"
+ctl.fsck_option_quit:
+  en: "[q]uit"
+  fr: "[q] quitter"
+  de: "[q] beenden"
+ctl.fsck_default_key:
+  en: "default %{key}"
+  fr: "par défaut %{key}"
+  de: "Standard %{key}"
+ctl.fsck_prompt_name:
+  en: "New name:"
+  fr: "Nouveau nom :"
+  de: "Neuer Name:"
+ctl.fsck_prompt_candidate:
+  en: "Recover which one? [1-%{count}]"
+  fr: "Lequel récupérer ? [1-%{count}]"
+  de: "Welchen wiederherstellen? [1-%{count}]"
+ctl.fsck_invalid_choice:
+  en: "Please answer with one of the choices shown."
+  fr: "Veuillez répondre par l'un des choix proposés."
+  de: "Bitte antworten Sie mit einer der angezeigten Möglichkeiten."
+ctl.fsck_recovered:
+  en: "Recovered as \"%{name}\""
+  fr: "Récupéré sous « %{name} »"
+  de: "Als „%{name}“ wiederhergestellt"
+ctl.fsck_deleted:
+  en: "Deleted"
+  fr: "Supprimé"
+  de: "Gelöscht"
+ctl.fsck_failed:
+  en: "Failed: %{error}"
+  fr: "Échec : %{error}"
+  de: "Fehlgeschlagen: %{error}"
+ctl.fsck_warning:
+  en: "Warning: couldn't check %{path}: %{error}"
+  fr: "Avertissement : impossible de vérifier %{path} : %{error}"
+  de: "Warnung: %{path} konnte nicht geprüft werden: %{error}"

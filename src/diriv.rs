@@ -215,11 +215,17 @@ pub const STAGING_PREFIX: &str = ".encfs.";
 /// it renamed to its encrypted name, so a crash can't leave a directory under
 /// that name without a complete sidecar.
 pub fn staging_name() -> io::Result<OsString> {
+    random_name(STAGING_PREFIX)
+}
+
+/// `prefix` followed by [`STAGING_RANDOM_LEN`] random bytes as lowercase
+/// hex, for a name nothing else in the directory has.
+pub fn random_name(prefix: &str) -> io::Result<OsString> {
     let mut bytes = [0u8; STAGING_RANDOM_LEN];
     getrandom::fill(&mut bytes).map_err(io::Error::other)?;
     use std::fmt::Write;
-    let mut name = String::with_capacity(STAGING_PREFIX.len() + 2 * STAGING_RANDOM_LEN);
-    name.push_str(STAGING_PREFIX);
+    let mut name = String::with_capacity(prefix.len() + 2 * STAGING_RANDOM_LEN);
+    name.push_str(prefix);
     for b in bytes {
         let _ = write!(name, "{:02x}", b);
     }

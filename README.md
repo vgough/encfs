@@ -240,6 +240,33 @@ the next access asks for Touch ID; other mounts answer it with an error.
 Only the user who mounted the filesystem (or root) can ask. See
 [ADR 0004](docs/adr/0004-xattr-rpc-channel.md) for the protocol.
 
+### Recovering sync conflict copies
+
+```bash
+encfsctl fsck ~/Sync/encrypted          # report only
+encfsctl fsck --fix ~/Sync/encrypted    # ask about each finding
+encfsctl fsck --fix --yes ~/Sync/encrypted
+```
+
+When a sync tool such as Syncthing, Nextcloud, Dropbox or rclone bisync
+sees a file change in two places, it keeps both, writing one under the
+original name plus a suffix. In an encrypted directory that name no longer
+decrypts, so the mount hides it. `encfsctl fsck` finds these copies and,
+with `--fix`, gives each one an ordinary name such as
+`report (sync-conflict-20230709-123456-ABCDEFG).docx`, so it shows up in
+the mount. It also finds conflicting copies of `.encfs.diriv` and of the
+config, leftover temp files, and anything else that doesn't decrypt.
+Without `--fix` it only reports, and exits with status 1 if it found
+anything.
+
+Unmount the filesystem and stop the sync tool before repairing, and repair
+only one copy of the folder: the sync tool carries the result to the
+others. Where the config ties file contents to names (external IV
+chaining, the default for new filesystems), fsck checks each copy's
+contents before recovering it. Elsewhere it recovers by default only a copy
+that sits beside the file it was copied from. See
+[ADR 0007](docs/adr/0007-encfsctl-fsck-sync-conflicts.md) for the details.
+
 ## Reverse encryption mode (encfsr)
 
 The **encfsr** binary provides *reverse* encryption: your **plaintext** files
@@ -285,6 +312,22 @@ encfsr --write ~/Documents/.encfs7 ~/Documents /mnt/enc
 ```
 
 Then copy or sync from `/mnt/enc` to your backup/cloud target; the content and filenames there are encrypted.
+
+Every name written through a `--write` view must decrypt, so tools that
+write temporary names first can't restore through it unless told not to.
+With rclone, use `--inplace` (its `.partial` temp names don't decrypt).
+Syncthing and the Nextcloud client also keep temp and state files with
+names of their own, so they can't sync through a reverse view.
+
+Use `encfsr` for one-way backup and restore. For two-way sync, where both
+sides change and the sync tool makes conflict copies, sync a forward-mode
+encrypted directory instead and mount it with `encfs`. `encfsctl fsck` can
+recover conflict copies in either kind of tree (see below), including a
+mirror of a reverse view's remote:
+
+```bash
+encfsctl fsck --config ~/Documents/.encfs7 --fix /mnt/remote-mirror
+```
 
 Options (same as encfs where applicable):
 

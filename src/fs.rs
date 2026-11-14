@@ -4,6 +4,7 @@ use crate::crypto::file::{FileDecoder, FileEncoder, is_corrupted_data};
 use crate::crypto::file_iv::FileIv;
 use crate::diriv::{self, CachedDir, DirIvCache, DirIvs};
 use crate::idle_lock::{Access, IdleLock};
+use crate::recrypt::{self, Recrypt};
 use crate::rpc;
 use crate::symlink_target;
 use crate::xattr_name;
@@ -13,7 +14,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::{self, File};
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt};
 use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
@@ -22,7 +23,7 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use std::time::SystemTime;
 use typed_fuse::passthrough::{
     self, access_check, c_path, file_attr_from_metadata, is_apple_xattr, set_ownership_fd,
-    statfs_path, symlink as passthrough_symlink, utimens_permission_check,
+    statfs_path, utimens_permission_check,
 };
 use typed_fuse::{
     Admission, Caller as Request, DirBuffer, Errno, NodeAttr as FileAttr, Opened, PathEntry,
@@ -232,12 +233,6 @@ impl FileHandle {
     fn file_iv(&self, meta: &FileMeta) -> FileIv {
         meta.header_iv.unwrap_or(self.headerless_iv)
     }
-}
-
-struct PathInfo<'a> {
-    logical: &'a Path,
-    physical: &'a Path,
-    iv: u64,
 }
 
 /// Where an entry is about to be created (or renamed into place): its backing
@@ -833,31 +828,47 @@ impl EncFs {
         let meta = fs::symlink_metadata(&real_source)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        if (meta.is_dir() && (self.config.chained_name_iv || self.config.external_iv_chaining))
-            || (meta.is_file() && self.config.external_iv_chaining)
-        {
-            let mut copied = Vec::new();
-            if let Err(e) = self.copy_recursive(
-                PathInfo {
-                    logical: &source,
-                    physical: &real_source,
-                    iv: source_iv,
-                },
-                PathInfo {
-                    logical: &dest,
-                    physical: &real_dest,
-                    iv: dest_iv,
-                },
+        let recrypt = Recrypt::new(&self.config, self.cipher.as_ref());
+        if (meta.is_dir() || meta.is_file()) && recrypt.depends_on_path(&meta) {
+            if real_source == real_dest {
+                return Ok(());
+            }
+            // What rename(2) would refuse, refused before copying: the
+            // cleanup after a failed copy removes the destination.
+            if let Ok(dest_meta) = fs::symlink_metadata(&real_dest) {
+                match (meta.is_dir(), dest_meta.is_dir()) {
+                    (true, false) => return Err(libc::ENOTDIR),
+                    (false, true) => return Err(libc::EISDIR),
+                    (true, true) => {
+                        let mut entries = fs::read_dir(&real_dest).map_err(io_errno)?;
+                        if entries.next().is_some() {
+                            return Err(libc::ENOTEMPTY);
+                        }
+                    }
+                    (false, false) => {}
+                }
+            }
+            let mut hooks = RenameHooks {
+                fs: self,
+                copied: Vec::new(),
+            };
+            let copied = recrypt.copy_tree(
+                &real_source,
+                source_iv,
+                &real_dest,
+                dest_iv,
                 &meta,
-                &mut copied,
-            ) {
+                &mut hooks,
+            );
+            if let Err(e) = copied {
+                error!("rename: copying {:?} failed: {:#}", real_source, e);
                 // Best-effort cleanup on failure
                 if meta.is_dir() {
-                    let _ = fs::remove_dir_all(real_dest);
+                    let _ = fs::remove_dir_all(&real_dest);
                 } else {
-                    let _ = fs::remove_file(real_dest);
+                    let _ = fs::remove_file(&real_dest);
                 }
-                return Err(e);
+                return Err(recrypt::errno(&e));
             }
 
             let removed = if meta.is_dir() {
@@ -866,7 +877,7 @@ impl EncFs {
                 fs::remove_file(real_source)
             };
             removed.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            self.forget_removed_inodes(&copied);
+            self.forget_removed_inodes(&hooks.copied);
             return Ok(());
         }
 
@@ -903,21 +914,10 @@ impl EncFs {
     ) -> OpResult {
         let target =
             fs::read_link(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let target_str = target.to_str().ok_or(libc::EILSEQ)?;
-
-        let (plain_target, _) = self
-            .cipher
-            .decrypt_filename(target_str, source_iv)
+        let enc_target = Recrypt::new(&self.config, self.cipher.as_ref())
+            .symlink_target(target.as_os_str().as_bytes(), source_iv, dest.iv)
             .map_err(|e| {
-                error!("Failed to decrypt symlink target during rename: {}", e);
-                libc::EIO
-            })?;
-
-        let (enc_target, _) = self
-            .cipher
-            .encrypt_filename(&plain_target, dest.iv)
-            .map_err(|e| {
-                error!("Failed to encrypt symlink target during rename: {}", e);
+                error!("Failed to re-encrypt symlink target during rename: {:#}", e);
                 libc::EIO
             })?;
 
@@ -927,8 +927,8 @@ impl EncFs {
             Err(e) => return Err(e),
         }
 
-        dest.symlink(OsStr::new(&enc_target))?;
-        if let Err(e) = self.copy_encrypted_xattrs(real_source, &dest.real_path) {
+        dest.symlink(OsStr::from_bytes(&enc_target))?;
+        if let Err(e) = self.copy_entry_xattrs(real_source, &dest.real_path) {
             let _ = dest.unlink();
             return Err(e);
         }
@@ -1128,270 +1128,227 @@ impl EncFs {
         }
     }
 
-    /// Copies `source` to `dest`, recursively for a directory, recording in
-    /// `copied` each source inode the caller will remove afterwards (see
-    /// [`EncFs::forget_removed_inodes`]).
-    fn copy_recursive(
-        &self,
-        source: PathInfo,
-        dest: PathInfo,
-        meta: &std::fs::Metadata,
-        copied: &mut Vec<RemovedInode>,
-    ) -> OpResult {
-        copied.push(removed_inode(meta));
-        if meta.is_dir() {
-            // Create dest dir
-            if let Err(e) = fs::create_dir(dest.physical) {
-                if e.kind() == std::io::ErrorKind::AlreadyExists {
-                    // Check empty
-                    let mut iter = fs::read_dir(dest.physical)
-                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    if iter.next().is_some() {
-                        return Err(libc::ENOTEMPTY);
-                    }
-                } else {
-                    return Err(e.raw_os_error().unwrap_or(libc::EIO));
-                }
-            }
-
-            // Iterate children
-            // source_iv is the IV of the directory 'source', used for decrypting children
-            let entries =
-                fs::read_dir(source.physical).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-            for entry in entries {
-                let entry = entry.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                let fname = entry.file_name();
-                let fname_bytes = fname.as_bytes();
-
-                if fname_bytes == b"." || fname_bytes == b".." || fname_bytes.starts_with(b".") {
-                    continue;
-                }
-
-                // fname is the ENCRYPTED filename (string usually, but treating as str for legacy reasons mostly)
-                // Encrypted filenames ARE strings (base64 subset), so to_str() is generally safe for THEM.
-                let fname_utf8 = match fname.to_str() {
-                    Some(s) => s,
-                    None => {
-                        error!("Skipping invalid filename in recursive copy: {:?}", fname);
-                        continue;
-                    }
-                };
-
-                let (plain_name_bytes, _) =
-                    match self.cipher.decrypt_entry_name(fname_utf8, source.iv) {
-                        Ok(res) => res,
-                        Err(e) => {
-                            warn!("Skipping undecryptable child {:?}: {}", fname, e);
-                            continue;
-                        }
-                    };
-
-                let child_name = OsStr::from_bytes(&plain_name_bytes);
-                let child_source = source.logical.join(child_name);
-                let child_dest = dest.logical.join(child_name);
-
-                let (child_real_source, child_source_iv) = self.encrypt_path(&child_source)?;
-                let (child_real_dest, child_dest_iv) = self.encrypt_path(&child_dest)?;
-
-                let child_meta = fs::symlink_metadata(&child_real_source)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-                self.copy_recursive(
-                    PathInfo {
-                        logical: &child_source,
-                        physical: &child_real_source,
-                        iv: child_source_iv,
-                    },
-                    PathInfo {
-                        logical: &child_dest,
-                        physical: &child_real_dest,
-                        iv: child_dest_iv,
-                    },
-                    &child_meta,
-                    copied,
-                )?;
-            }
-            self.copy_encrypted_xattrs(source.physical, dest.physical)?;
-            let _ = fs::set_permissions(dest.physical, meta.permissions());
-            let atime = meta.accessed().ok();
-            let mtime = meta.modified().ok();
-            let _ = passthrough::utimens_path(dest.physical, atime, mtime);
-        } else if self.config.external_iv_chaining && meta.is_file() {
-            let dest_entry = NewEntry::from_path(dest.physical.to_path_buf(), dest.iv)?;
-            self.copy_file_with_header_rewrite(source.physical, &dest_entry, source.iv)?;
-        } else if meta.is_symlink() {
-            // Handle symlinks during recursive directory copies.
-            // On V7 with chained_name_iv, symlink targets are encrypted using
-            // the path IV of the symlink. If the symlink's path changes (due to parent
-            // directory rename), we need to re-encrypt the target with the new IV.
-            if self.config.symlink_target_depends_on_path() {
-                // Re-encrypt symlink target with the new path IV
-                let target = fs::read_link(source.physical)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                let target_str = target.to_str().ok_or(libc::EILSEQ)?;
-
-                let (plain_target, _) = self
-                    .cipher
-                    .decrypt_filename(target_str, source.iv)
-                    .map_err(|e| {
-                        error!(
-                            "Failed to decrypt symlink target during recursive copy: {}",
-                            e
-                        );
-                        libc::EIO
-                    })?;
-
-                let (enc_target, _) = self
-                    .cipher
-                    .encrypt_filename(&plain_target, dest.iv)
-                    .map_err(|e| {
-                        error!(
-                            "Failed to encrypt symlink target during recursive copy: {}",
-                            e
-                        );
-                        libc::EIO
-                    })?;
-
-                // Remove existing destination if present
-                match fs::remove_file(dest.physical) {
-                    Ok(_) => {}
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(e) => return Err(e.raw_os_error().unwrap_or(libc::EIO)),
-                }
-
-                passthrough_symlink(OsStr::new(&enc_target), dest.physical).map_err(|e| e.raw())?;
-            } else {
-                // The target doesn't depend on the link's path - copy it as-is
-                let target = fs::read_link(source.physical)
-                    .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                passthrough_symlink(target.as_os_str(), dest.physical).map_err(|e| e.raw())?;
-            }
-            self.copy_encrypted_xattrs(source.physical, dest.physical)?;
-            let atime = meta.accessed().ok();
-            let mtime = meta.modified().ok();
-            let _ = passthrough::utimens_path(dest.physical, atime, mtime);
-        } else {
-            // Standard copy for regular files without external IV chaining
-            fs::copy(source.physical, dest.physical)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            if self.config.encrypts_xattrs() {
-                // fs::copy gives the copy the source's mode, which may deny
-                // the owner the write access storing an attribute needs.
-                if meta.mode() & 0o200 == 0 {
-                    use std::os::unix::fs::PermissionsExt;
-                    let writable = fs::Permissions::from_mode((meta.mode() & 0o7777) | 0o200);
-                    fs::set_permissions(dest.physical, writable)
-                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                }
-                self.copy_encrypted_xattrs(source.physical, dest.physical)?;
-            }
-            // Best effort metadata copy
-            let _ = fs::set_permissions(dest.physical, meta.permissions());
-            let atime = meta.accessed().ok();
-            let mtime = meta.modified().ok();
-            let _ = passthrough::utimens_path(dest.physical, atime, mtime);
-        }
-        Ok(())
-    }
-
+    /// Copies the file `real_src` (path IV `src_iv`) over `dest`, its
+    /// contents re-encrypted for the destination's path IV (see
+    /// [`Recrypt::copy_file_contents`]) and synced, with its attributes,
+    /// mode and timestamps. The source is left in place.
     fn copy_file_with_header_rewrite(
         &self,
         real_src: &Path,
         dest: &NewEntry,
         src_iv: u64,
     ) -> OpResult {
-        let real_dest = &dest.real_path;
-        let dst_iv = dest.iv;
-        // 1. Open both ends. The destination is opened without O_TRUNC so that,
-        //    as in `open_impl`, it is reset under the lock rather than by
-        //    open(2) — otherwise the reset lands on top of an in-flight
-        //    read-modify-write by whoever already has it open.
-        let mut src_f = File::open(real_src).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let mut dst_f = dest.open(libc::O_RDWR | libc::O_CREAT, 0o666)?;
+        self.copy_file_contents_locked(real_src, dest, src_iv)?;
+        // Carry the attributes while the destination is still writable,
+        // then copy permissions and timestamps.
+        self.copy_entry_xattrs(real_src, &dest.real_path)?;
+        if let Ok(meta) = fs::symlink_metadata(real_src) {
+            let _ = fs::set_permissions(&dest.real_path, meta.permissions());
+            let atime = meta.accessed().ok();
+            let mtime = meta.modified().ok();
+            let _ = passthrough::utimens_path(&dest.real_path, atime, mtime);
+        }
+        Ok(())
+    }
+
+    /// Replaces the contents of `dest` with those of the file `real_src`
+    /// (path IV `src_iv`), re-encrypted for `dest`'s path IV, and syncs
+    /// them, so a failure here leaves the source the only good copy.
+    fn copy_file_contents_locked(&self, real_src: &Path, dest: &NewEntry, src_iv: u64) -> OpResult {
+        // Open both ends. The destination is opened without O_TRUNC so
+        // that, as in `open_impl`, it is reset under the lock rather than by
+        // open(2) — otherwise the reset lands on top of an in-flight
+        // read-modify-write by whoever already has it open.
+        let src_f = File::open(real_src).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        let dst_f = dest.open(libc::O_RDWR | libc::O_CREAT, 0o666)?;
 
         // Serialize against concurrent writes at both ends: a write landing
-        // mid-copy on the source would produce a torn destination block, and a
-        // write to the destination would be silently overwritten by the body
-        // copy.
+        // mid-copy on the source would produce a torn destination block, and
+        // a write to the destination would be silently overwritten by the
+        // body copy.
         let src_state = self.file_states.get(&src_f)?;
         let dst_state = self.file_states.get(&dst_f)?;
         let (_src_guard, mut dst_meta) = lock_source_and_dest(&src_state, &dst_state);
 
-        let metadata = src_f.metadata().ok();
-
-        let header_size = self.config.header_size();
-        let mut header = vec![0u8; header_size as usize];
-        if header_size > 0 {
-            // 2. Read and decrypt the source header. Done before touching the
-            //    destination so a source we can't decrypt leaves it intact.
-            src_f
-                .read_exact(&mut header)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-            let file_iv = self
-                .cipher
-                .decrypt_header(&mut header, src_iv)
-                .map_err(|_| libc::EIO)?;
-
-            // 3. Re-encrypt the header under the destination's path IV. The
-            //    file IV itself carries over, so anyone holding the destination
-            //    open switches to the copied file's IV here.
-            let new_header = self
-                .cipher
-                .encrypt_header_with_iv(file_iv, dst_iv)
-                .map_err(|_| libc::EIO)?;
-
-            // 4. Reset the destination, now that it is locked, and refill it.
-            dst_f
-                .set_len(0)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            dst_meta.header_iv = Some(file_iv);
-
-            dst_f
-                .write_all(&new_header)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-            let mut reader = BufReader::new(src_f);
-            let mut writer = BufWriter::new(dst_f);
-
-            std::io::copy(&mut reader, &mut writer)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-            writer
-                .flush()
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        } else {
-            // No header to rewrite: the IV is path-derived, so handles already
-            // open on the destination keep using their own.
-            dst_f
-                .set_len(0)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-            dst_meta.header_iv = None;
-
-            let mut reader = BufReader::new(src_f);
-            let mut writer = BufWriter::new(dst_f);
-
-            std::io::copy(&mut reader, &mut writer)
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-
-            writer
-                .flush()
-                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        }
-
-        // 8. Carry the encrypted xattrs while the destination is still
-        //    writable, then copy permissions and timestamps.
-        self.copy_encrypted_xattrs(real_src, real_dest)?;
-        if let Some(meta) = metadata {
-            let _ = fs::set_permissions(real_dest, meta.permissions());
-            let atime = meta.accessed().ok();
-            let mtime = meta.modified().ok();
-            let _ = passthrough::utimens_path(real_dest, atime, mtime);
-        }
-
+        // The file IV carries over in a header, so anyone holding the
+        // destination open switches to the copied file's IV. Without one
+        // the IV is the path's, which handles open on the destination
+        // already use.
+        dst_f
+            .set_len(0)
+            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        dst_meta.header_iv = None;
+        let header_iv = Recrypt::new(&self.config, self.cipher.as_ref())
+            .copy_file_contents(&src_f, src_iv, &dst_f, dest.iv)
+            .map_err(|e| {
+                error!("rename: copying {:?} failed: {:#}", real_src, e);
+                recrypt::errno(&e)
+            })?;
+        dst_meta.header_iv = header_iv;
         Ok(())
     }
+}
+
+/// What forward-mode rename adds around a [`Recrypt::copy_tree`]: file
+/// copies under the per-inode locks, the source inodes to forget once
+/// removed, and IVs cached for new inodes dropped.
+struct RenameHooks<'a> {
+    fs: &'a EncFs,
+    copied: Vec<RemovedInode>,
+}
+
+impl recrypt::Hooks for RenameHooks<'_> {
+    fn copy_file(
+        &mut self,
+        _r: &Recrypt<'_>,
+        src: &Path,
+        src_iv: u64,
+        dst: &Path,
+        dst_iv: u64,
+    ) -> anyhow::Result<()> {
+        let errno = |e: libc::c_int| anyhow::Error::from(io::Error::from_raw_os_error(e));
+        let dest = NewEntry::from_path(dst.to_path_buf(), dst_iv).map_err(errno)?;
+        self.fs
+            .copy_file_contents_locked(src, &dest, src_iv)
+            .map_err(errno)
+    }
+
+    fn copied(&mut self, meta: &fs::Metadata) {
+        self.copied.push(removed_inode(meta));
+    }
+
+    fn created(&mut self, dst: &Path) {
+        self.fs.forget_xattr_iv_of(dst);
+    }
+
+    fn warning(&mut self, path: &Path, error: &anyhow::Error) {
+        warn!("rename: {:?}: {:#}", path, error);
+    }
+}
+
+/// Makes the stored `user.encfs.*` attributes of `real_dst`, and those under
+/// the volume's plaintext prefixes, match `real_src`'s, IV seed first. The
+/// bytes carry over unchanged, so they still decrypt under the copied seed.
+/// Names `real_dst` has that the source lacks are removed, and values it
+/// already holds aren't rewritten. Works on backing paths alone, without a
+/// mount (`encfsctl fsck` uses it); a mount must also drop any IV it cached
+/// for `real_dst`'s inode, as `EncFs::copy_entry_xattrs` does. Only
+/// meaningful when
+/// [`crate::config::EncfsConfig::encrypts_xattrs`] holds.
+pub fn copy_stored_xattrs(
+    config: &crate::config::EncfsConfig,
+    real_src: &Path,
+    real_dst: &Path,
+) -> Result<(), libc::c_int> {
+    sync_xattrs(
+        real_src,
+        real_dst,
+        |n| n.starts_with(xattr_name::PREFIX.as_bytes()) || config.is_plaintext_xattr(n),
+        |_| false,
+    )
+}
+
+/// Makes the extended attributes of the backing entry `real_dst` that a
+/// mount shows match `real_src`'s, for a rename that copies: the stored
+/// attributes where the volume encrypts them ([`copy_stored_xattrs`]),
+/// otherwise every attribute, since they pass through as they are. System
+/// names (outside the `user.` namespace where the platform has one,
+/// `com.apple.*` on macOS) are copied when the backing filesystem allows
+/// it and passed over otherwise.
+pub fn copy_backing_xattrs(
+    config: &crate::config::EncfsConfig,
+    real_src: &Path,
+    real_dst: &Path,
+) -> Result<(), libc::c_int> {
+    if config.encrypts_xattrs() {
+        return copy_stored_xattrs(config, real_src, real_dst);
+    }
+    sync_xattrs(
+        real_src,
+        real_dst,
+        |_| true,
+        |n| {
+            if cfg!(target_os = "macos") {
+                n.starts_with(b"com.apple.")
+            } else {
+                !n.starts_with(b"user.")
+            }
+        },
+    )
+}
+
+/// Makes the attributes of `real_dst` named by `keep` match `real_src`'s,
+/// IV seed first. A name `optional` accepts that can't be written or
+/// removed is passed over.
+fn sync_xattrs(
+    real_src: &Path,
+    real_dst: &Path,
+    keep: impl Fn(&[u8]) -> bool,
+    optional: impl Fn(&[u8]) -> bool,
+) -> Result<(), libc::c_int> {
+    let c_src = c_path(real_src).map_err(|e| e.raw())?;
+    let c_dst = c_path(real_dst).map_err(|e| e.raw())?;
+    let kept = |path: &CStr| -> Result<Vec<CString>, libc::c_int> {
+        match passthrough::listxattr_names_nofollow(path) {
+            Ok(names) => Ok(names
+                .into_iter()
+                .filter(|n| keep(n))
+                .filter_map(|n| CString::new(n).ok())
+                .collect()),
+            // No xattr support on the backing filesystem: nothing to carry.
+            Err(e) if e.raw() == libc::ENOTSUP => Ok(Vec::new()),
+            Err(e) => Err(e.raw()),
+        }
+    };
+    let skip = |name: &CStr, e: Errno| -> Result<(), libc::c_int> {
+        if optional(name.to_bytes()) {
+            debug!(
+                "Not carrying xattr {:?} from {:?} to {:?}: {}",
+                name, real_src, real_dst, e
+            );
+            Ok(())
+        } else {
+            warn!(
+                "Failed to carry xattr {:?} from {:?} to {:?}: {}",
+                name, real_src, real_dst, e
+            );
+            Err(e.raw())
+        }
+    };
+
+    let mut source = Vec::new();
+    for name in kept(&c_src)? {
+        match read_stored_xattr(&c_src, &name) {
+            Ok(value) => source.push((name, value)),
+            Err(e) => skip(&name, e)?,
+        }
+    }
+    // The seed first, so the destination's attributes are never left
+    // without the seed that keys them by a failure in between.
+    source.sort_by_key(|(name, _)| name.as_c_str() != xattr_name::IV_SEED_CNAME);
+    let existing = kept(&c_dst)?;
+
+    for (name, value) in &source {
+        if existing.contains(name)
+            && read_stored_xattr(&c_dst, name).is_ok_and(|current| current == *value)
+        {
+            continue;
+        }
+        if let Err(e) = passthrough::setxattr_nofollow(&c_dst, name, value, 0) {
+            skip(name, e)?;
+        }
+    }
+    for name in existing {
+        if source.iter().any(|(kept, _)| *kept == name) {
+            continue;
+        }
+        match passthrough::removexattr_nofollow(&c_dst, &name) {
+            Ok(()) => {}
+            Err(e) if e == Errno::ENOATTR => {}
+            Err(e) => skip(&name, e)?,
+        }
+    }
+    Ok(())
 }
 
 /// An inode a rename copied and then removed, as recorded before removal.
@@ -3131,80 +3088,32 @@ impl EncFs {
         })
     }
 
-    /// Makes the encrypted extended attributes of `real_dst`, a copy of
-    /// `real_src` that a rename just made, match the source's, seed included.
-    /// The stored bytes carry over unchanged and still decrypt under the
-    /// copied seed. Names the destination has that the source lacks (keyed by
-    /// its old seed) are removed, and values it already holds, as after a
-    /// copy that cloned attributes (`fs::copy` on macOS), aren't rewritten.
-    /// Attributes under a configured plaintext prefix are carried the same
-    /// way, since they live beside the encrypted ones on the same volume.
+    /// Makes the extended attributes of `real_dst`, a copy of `real_src`
+    /// that a rename just made, match the source's (see
+    /// [`copy_backing_xattrs`]): the stored encrypted ones, seed included,
+    /// where the volume encrypts them, otherwise all of them. The stored
+    /// bytes carry over unchanged and still decrypt under the copied seed.
+    /// Names the destination has that the source lacks (keyed by its old
+    /// seed) are removed, and values it already holds, as after a copy
+    /// that cloned attributes (`fs::copy` on macOS), aren't rewritten.
     /// Everything is read from the source before the destination changes.
     /// `real_dst` must be writable by its owner if anything needs writing.
-    fn copy_encrypted_xattrs(&self, real_src: &Path, real_dst: &Path) -> OpResult {
-        if !self.config.encrypts_xattrs() {
-            return Ok(());
-        }
-        let c_src = c_path(real_src).map_err(|e| e.raw())?;
-        let c_dst = c_path(real_dst).map_err(|e| e.raw())?;
-        let prefixed = |path: &CStr| -> Result<Vec<CString>, libc::c_int> {
-            match passthrough::listxattr_names_nofollow(path) {
-                Ok(names) => Ok(names
-                    .into_iter()
-                    .filter(|n| {
-                        n.starts_with(xattr_name::PREFIX.as_bytes())
-                            || self.config.is_plaintext_xattr(n)
-                    })
-                    .filter_map(|n| CString::new(n).ok())
-                    .collect()),
-                // No xattr support on the backing filesystem: nothing to carry.
-                Err(e) if e.raw() == libc::ENOTSUP => Ok(Vec::new()),
-                Err(e) => Err(e.raw()),
-            }
-        };
-
-        let mut source = Vec::new();
-        for name in prefixed(&c_src)? {
-            let value = read_stored_xattr(&c_src, &name).map_err(|e| e.raw())?;
-            source.push((name, value));
-        }
-        // The seed first, so the destination's attributes are never left
-        // without the seed that keys them by a failure in between.
-        source.sort_by_key(|(name, _)| name.as_c_str() != xattr_name::IV_SEED_CNAME);
-        let existing = prefixed(&c_dst)?;
-
-        for (name, value) in &source {
-            if existing.contains(name)
-                && read_stored_xattr(&c_dst, name).is_ok_and(|current| current == *value)
-            {
-                continue;
-            }
-            passthrough::setxattr_nofollow(&c_dst, name, value, 0).map_err(|e| {
-                warn!(
-                    "Failed to carry xattr {:?} from {:?} to {:?}: {}",
-                    name, real_src, real_dst, e
-                );
-                e.raw()
-            })?;
-        }
-        for name in existing {
-            if source.iter().any(|(kept, _)| *kept == name) {
-                continue;
-            }
-            match passthrough::removexattr_nofollow(&c_dst, &name) {
-                Ok(()) => {}
-                Err(e) if e == Errno::ENOATTR => {}
-                Err(e) => return Err(e.raw()),
-            }
-        }
-
-        // The destination may be an existing inode whose seed was just
-        // replaced, or a new one under a deleted inode's number: a live state
-        // for it must not keep an IV cached before.
-        let meta =
-            fs::symlink_metadata(real_dst).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        self.file_states.forget_xattr_iv((meta.dev(), meta.ino()));
+    fn copy_entry_xattrs(&self, real_src: &Path, real_dst: &Path) -> OpResult {
+        copy_backing_xattrs(&self.config, real_src, real_dst)?;
+        self.forget_xattr_iv_of(real_dst);
         Ok(())
+    }
+
+    /// Drops the xattr IV cached for the inode at `real_path`. It may be an
+    /// existing inode whose seed was just replaced, or a new one under a
+    /// deleted inode's number: a live state for it must not keep an IV
+    /// cached before.
+    fn forget_xattr_iv_of(&self, real_path: &Path) {
+        if self.config.encrypts_xattrs()
+            && let Ok(meta) = fs::symlink_metadata(real_path)
+        {
+            self.file_states.forget_xattr_iv((meta.dev(), meta.ino()));
+        }
     }
 }
 
@@ -4049,18 +3958,8 @@ mod tests {
         }
 
         fn mount(root: &Path, config: &EncfsConfig) -> EncFs {
-            let interface = Interface {
-                name: "ssl/aes".to_string(),
-                major: 3,
-                minor: 0,
-                age: 0,
-            };
-            let mut cipher = SslCipher::new(&interface, config.key_size).unwrap();
-            cipher.set_key(&[3u8; 32], &[4u8; 16]);
-            cipher.set_name_encoding(&config.name_iface);
-            cipher.set_wide_file_iv(config.wide_file_iv);
-            cipher.set_name_mac_includes_iv(true);
-            EncFs::new(root.to_path_buf(), Box::new(cipher), config.clone())
+            let cipher = config.cipher_with_volume_key(&[3u8; 48]).unwrap();
+            EncFs::new(root.to_path_buf(), cipher, config.clone())
         }
 
         /// Asserts that every entry in plaintext directory `dir` decodes on a
@@ -4637,7 +4536,13 @@ mod tests {
             let copied_file = key_of(fs, "/moved") != file_key;
             let copied_child = key_of(fs, "/dir2/f") != child_key;
             assert_eq!(copied_file, external, "{label}: file copied");
-            assert_eq!(copied_child, !directory_iv, "{label}: subtree copied");
+            // A child whose contents don't depend on its path is linked
+            // into the copied directory, keeping its inode.
+            assert_eq!(
+                copied_child,
+                !directory_iv && external,
+                "{label}: subtree copied"
+            );
             // What a new inode reusing each number would be handed.
             let reused = |key| fs.file_states.get_by_key(key);
             assert_eq!(
@@ -5073,7 +4978,7 @@ mod tests {
         set_raw_xattr(&dst, c"user.encfs.CCCC", b"only on dst");
         set_raw_xattr(&dst, c"user.unrelated", b"left alone");
 
-        vol.fs.copy_encrypted_xattrs(&src, &dst).unwrap();
+        vol.fs.copy_entry_xattrs(&src, &dst).unwrap();
         assert_eq!(raw_xattrs(&dst), raw_xattrs(&src));
         let c_dst = c_path(&dst);
         assert_eq!(
@@ -5084,7 +4989,7 @@ mod tests {
         // Already identical: nothing is written.
         let before = std::fs::metadata(&dst).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(20));
-        vol.fs.copy_encrypted_xattrs(&src, &dst).unwrap();
+        vol.fs.copy_entry_xattrs(&src, &dst).unwrap();
         let after = std::fs::metadata(&dst).unwrap();
         assert_eq!(
             (after.ctime(), after.ctime_nsec()),

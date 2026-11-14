@@ -107,6 +107,31 @@ pub enum NameEncoding {
     Block32,
 }
 
+impl NameEncoding {
+    /// The encoding a name interface selects; anything but block or block32
+    /// is stream.
+    pub fn from_iface(iface: &Interface) -> Self {
+        match iface.name.as_str() {
+            "nameio/block" => Self::Block,
+            "nameio/block32" => Self::Block32,
+            _ => Self::Stream,
+        }
+    }
+
+    /// Whether `b` can appear in a name this encoding writes: the Base64
+    /// alphabet of [`SslCipher::filename_base64_encode`], or the upper-case
+    /// Base32 one of [`SslCipher::filename_base32_encode`]. Base32 decoding
+    /// also takes lower case, but no name the volume writes has it.
+    pub fn is_name_byte(self, b: u8) -> bool {
+        match self {
+            Self::Stream | Self::Block => {
+                matches!(b, b',' | b'-' | b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z')
+            }
+            Self::Block32 => matches!(b, b'A'..=b'Z' | b'2'..=b'7'),
+        }
+    }
+}
+
 /// Main cryptographic wrapper for EncFS.
 /// Handles key derivation, file content encryption (stream/block), and filename encryption.
 pub struct SslCipher {
@@ -174,13 +199,7 @@ impl SslCipher {
     }
 
     pub fn set_name_encoding(&mut self, iface: &Interface) {
-        if iface.name == "nameio/block" {
-            self.name_encoding = NameEncoding::Block;
-        } else if iface.name == "nameio/block32" {
-            self.name_encoding = NameEncoding::Block32;
-        } else {
-            self.name_encoding = NameEncoding::Stream;
-        }
+        self.name_encoding = NameEncoding::from_iface(iface);
     }
 
     pub fn set_wide_file_iv(&mut self, wide: bool) {
@@ -1436,6 +1455,34 @@ mod tests {
         let mut cipher = SslCipher::new(&iface, 256).unwrap();
         cipher.set_key(&[key_byte; 32], &[0x55; 16]);
         cipher
+    }
+
+    /// `is_name_byte` holds for every byte the encoders write and for no
+    /// byte the decoders refuse.
+    #[test]
+    fn name_alphabets_match_the_codecs() {
+        let data: Vec<u8> = (0..=255).collect();
+        let base64 = SslCipher::filename_base64_encode(&data).unwrap();
+        let base32 = SslCipher::filename_base32_encode(&data);
+        assert!(base64.bytes().all(|b| NameEncoding::Stream.is_name_byte(b)));
+        assert!(
+            base32
+                .bytes()
+                .all(|b| NameEncoding::Block32.is_name_byte(b))
+        );
+        for b in 0..=127u8 {
+            let s = (b as char).to_string();
+            assert_eq!(
+                SslCipher::filename_base64_decode(&s).is_ok(),
+                NameEncoding::Block.is_name_byte(b),
+                "base64 {b:#x}"
+            );
+            assert_eq!(
+                SslCipher::filename_base32_decode(&s).is_ok(),
+                NameEncoding::Block32.is_name_byte(b.to_ascii_uppercase()),
+                "base32 {b:#x}"
+            );
+        }
     }
 
     /// Pinned so the on-disk meaning of a sidecar cannot drift. The vector is
