@@ -5,6 +5,11 @@ use encfs::fs::EncFs;
 use std::fs::File;
 use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
+use typed_fuse::PathFilesystem;
+
+mod common;
+use common::node;
+use common::volume::{Volume, req};
 
 #[test]
 fn test_legacy_v5_decode() -> anyhow::Result<()> {
@@ -124,4 +129,47 @@ fn test_legacy_v5_decode() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// C++ EncFS writes a file's header with its first data, so a file made
+/// with `touch` is empty on disk even where every file has a header. It
+/// opens and reads as empty, and a writable open then gives it a header.
+/// A file cut off inside its header is still an error.
+#[test]
+fn empty_files_without_a_header_read_as_empty() {
+    let mut vol = Volume::new(EncfsConfig::test_default());
+    assert!(vol.config.header_size() > 0);
+    vol.write_file("/empty", b"");
+    vol.write_file("/cut", b"");
+    let set_len = |path: &str, len| {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(vol.backing(path))
+            .unwrap()
+            .set_len(len)
+            .unwrap()
+    };
+    set_len("/empty", 0);
+    set_len("/cut", 3);
+    vol.remount();
+
+    assert_eq!(vol.read_file("/empty"), b"");
+    let open = |path: &str, flags| {
+        let file = node(&vol.fs, &vol.root_state, path, &req());
+        vol.fs
+            .open(file.as_node(), flags, &req())
+            .map(|opened| vol.fs.release(file.as_node(), opened.handle, &req()))
+    };
+    assert!(open("/cut", libc::O_RDONLY).is_err());
+
+    let file = node(&vol.fs, &vol.root_state, "/empty", &req());
+    let opened = vol.fs.open(file.as_node(), libc::O_RDWR, &req()).unwrap();
+    vol.fs
+        .write(file.as_node(), &opened.handle, b"now with data", 0, &req())
+        .unwrap();
+    vol.fs
+        .release(file.as_node(), opened.handle, &req())
+        .unwrap();
+    vol.remount();
+    assert_eq!(vol.read_file("/empty"), b"now with data");
 }

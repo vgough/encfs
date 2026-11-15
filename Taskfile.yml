@@ -66,6 +66,11 @@ tasks:
         ENCFS_LIVE_TESTS=1 ENCFS_LIVE_MOUNT_TIMEOUT_SECS='{{.LIVE_TIMEOUT_SECS}}' \
           {{.CARGO}} test --release --test live_mount -- --ignored --test-threads=1
 
+  test-cpp-compat:
+    desc: Check that files written by C++ EncFS read back (Lima VM; see docs/testing/cpp-compatibility.md)
+    cmds:
+      - tests/cpp_compat/run-lima.sh
+
   fmt:
     desc: Format Rust code
     cmds:

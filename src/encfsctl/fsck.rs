@@ -80,7 +80,14 @@ pub fn run(opts: Options) -> Result<bool> {
         Some(path) => path.clone(),
         None => super::find_config_file(&root)?,
     };
-    let config = EncfsConfig::load(&config_path).context(t!("ctl.error_failed_to_load_config"))?;
+    // A config given by name may be a sync tool's copy of one, whose name
+    // still says which format it holds.
+    let hint = config_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(encfs::fsck::config_type_for_name);
+    let config = EncfsConfig::load_with_type(&config_path, hint)
+        .context(t!("ctl.error_failed_to_load_config"))?;
 
     if opts.fix {
         match mount_source_for(&root) {

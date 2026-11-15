@@ -97,6 +97,38 @@ pub enum SymlinkFormat {
     LegacyPath,
 }
 
+/// Why [`EncfsConfig::read_file_iv`] couldn't give a file's IV.
+#[derive(Debug)]
+pub enum FileIvError {
+    /// Reading the header failed.
+    Io(std::io::Error),
+    /// The file ends inside its header.
+    ShortHeader,
+    /// The header doesn't decrypt under the path IV given.
+    Header(anyhow::Error),
+}
+
+impl std::fmt::Display for FileIvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // The cause is the error's `source`, which `{:#}` prints.
+            Self::Io(_) => f.write_str("reading the file header"),
+            Self::ShortHeader => f.write_str("the file is shorter than its header"),
+            Self::Header(_) => f.write_str("decrypting the file header"),
+        }
+    }
+}
+
+impl std::error::Error for FileIvError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::ShortHeader => None,
+            Self::Header(e) => Some(e.as_ref()),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EncfsConfig {
@@ -1354,7 +1386,7 @@ impl EncfsConfig {
     /// Whether a symlink's stored target depends on the symlink's own path IV,
     /// so moving the link requires re-encrypting the target.
     pub fn symlink_target_depends_on_path(&self) -> bool {
-        !self.uses_legacy_symlink_targets() && (self.chained_name_iv || self.directory_iv)
+        !self.uses_legacy_symlink_targets() && self.path_iv_varies()
     }
 
     /// Whether an entry's path IV changes with its name: the chain value
@@ -1374,17 +1406,63 @@ impl EncfsConfig {
         }
     }
 
+    /// Whether a file without a header (`unique_iv` off) is encrypted under
+    /// its path IV. V7 binds such files to their path through external IV
+    /// chaining, which `encfsr` relies on. V4–V6 files use IV 0, as in C++
+    /// EncFS, which only ever applies external chaining to the header (and
+    /// never writes it without one).
+    fn headerless_iv_from_path(&self) -> bool {
+        self.config_type == ConfigType::V7 && self.external_iv_chaining
+    }
+
     /// The file IV of a file without a header (`unique_iv` off), whose path
-    /// IV is `path_iv`.
+    /// IV is `path_iv`: the path IV on V7 volumes with external IV
+    /// chaining, otherwise 0.
     pub fn headerless_file_iv(&self, path_iv: u64) -> crate::crypto::file_iv::FileIv {
-        crate::crypto::file_iv::FileIv::from_u64(self.external_iv(path_iv))
+        crate::crypto::file_iv::FileIv::from_u64(if self.headerless_iv_from_path() {
+            path_iv
+        } else {
+            0
+        })
+    }
+
+    /// The file IV of `file`, a file whose path IV is `path_iv`: decrypted
+    /// from its header, or [`EncfsConfig::headerless_file_iv`] without one.
+    pub fn read_file_iv(
+        &self,
+        cipher: &dyn Cipher,
+        file: &impl crate::crypto::file::ReadAt,
+        path_iv: u64,
+    ) -> std::result::Result<crate::crypto::file_iv::FileIv, FileIvError> {
+        let header_size = self.header_size() as usize;
+        if header_size == 0 {
+            return Ok(self.headerless_file_iv(path_iv));
+        }
+        let mut header = vec![0u8; header_size];
+        let mut filled = 0;
+        while filled < header_size {
+            match file.read_at(&mut header[filled..], filled as u64) {
+                Ok(0) => return Err(FileIvError::ShortHeader),
+                Ok(n) => filled += n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(FileIvError::Io(e)),
+            }
+        }
+        cipher
+            .decrypt_header(&mut header, self.external_iv(path_iv))
+            .map_err(FileIvError::Header)
     }
 
     /// Whether a regular file's stored bytes depend on its path, so moving
     /// it to another name means re-encrypting its header (with `unique_iv`)
     /// or every block (without).
     pub fn file_contents_depend_on_path(&self) -> bool {
-        self.external_iv_chaining && self.path_iv_varies()
+        let chained = if self.unique_iv {
+            self.external_iv_chaining
+        } else {
+            self.headerless_iv_from_path()
+        };
+        chained && self.path_iv_varies()
     }
 
     /// Whether the stored names of a directory's children depend on the
@@ -3510,5 +3588,55 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    /// Files without a header use their path IV only on V7 volumes with
+    /// external IV chaining. V4-V6 ones use IV 0, as C++ EncFS does, and so
+    /// don't depend on their path; headers there still do.
+    #[test]
+    fn headerless_file_iv_follows_the_format() {
+        use crate::crypto::file_iv::FileIv;
+        const PATH_IV: u64 = 0x1234_5678_9abc_def0;
+        let mut v7 = EncfsConfig::standard_v7();
+        v7.use_chained_name_iv();
+        v7.unique_iv = false;
+        v7.wide_file_iv = false;
+        assert!(v7.external_iv_chaining);
+        assert_eq!(v7.headerless_file_iv(PATH_IV), FileIv::from_u64(PATH_IV));
+        assert!(v7.file_contents_depend_on_path());
+        v7.external_iv_chaining = false;
+        assert_eq!(v7.headerless_file_iv(PATH_IV), FileIv::from_u64(0));
+        assert!(!v7.file_contents_depend_on_path());
+
+        let mut v6 = EncfsConfig::test_default();
+        v6.chained_name_iv = true;
+        v6.external_iv_chaining = true;
+        v6.unique_iv = false;
+        assert_eq!(v6.headerless_file_iv(PATH_IV), FileIv::from_u64(0));
+        assert!(!v6.file_contents_depend_on_path());
+        v6.unique_iv = true;
+        assert!(v6.file_contents_depend_on_path());
+    }
+
+    /// `{:#}` prints a file IV error's cause once, through its source.
+    #[test]
+    fn file_iv_errors_print_their_cause_once() {
+        let e = anyhow::Error::new(FileIvError::Io(std::io::Error::from_raw_os_error(
+            libc::EACCES,
+        )));
+        let printed = format!("{e:#}");
+        assert!(
+            printed.starts_with("reading the file header: "),
+            "{printed}"
+        );
+        assert_eq!(printed.matches("denied").count(), 1, "{printed}");
+
+        let e = anyhow::Error::new(FileIvError::Header(
+            anyhow::anyhow!("bad checksum").context("checking"),
+        ));
+        assert_eq!(
+            format!("{e:#}"),
+            "decrypting the file header: checking: bad checksum"
+        );
     }
 }

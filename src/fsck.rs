@@ -11,23 +11,20 @@
 //! takes the locks a mount would.
 
 use crate::config::{CONFIG_FILES, ConfigType, EncfsConfig};
-use crate::crypto::block::{BlockCodec, BlockMode};
-use crate::crypto::cipher::{Cipher, check_entry_name};
-use crate::crypto::file::for_each_block;
+pub use crate::conflict::{Candidate, Confidence};
+use crate::conflict::{Notes, Probe, default_candidate, sorted_entries};
+use crate::crypto::cipher::Cipher;
 use crate::crypto::file_iv::FileIv;
-use crate::crypto::ssl::NameEncoding;
 use crate::diriv;
-use crate::recrypt::{Hooks, Recrypt, sorted_entries, sync_dir};
-use crate::symlink_target;
+use crate::recrypt::{Hooks, Recrypt, remove_entry, sync_dir};
 use anyhow::{Context, Result, anyhow, bail};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{CString, OsStr, OsString};
-use std::fs::{self, File};
+use std::fs;
 use std::io;
-use std::ops::ControlFlow;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{FileExt, MetadataExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 use typed_fuse::passthrough;
@@ -40,70 +37,6 @@ pub const DEFAULT_OLDER_THAN: Duration = Duration::from_secs(24 * 60 * 60);
 /// renaming it into place. A leftover one is always stale, since fsck must
 /// not run twice at once.
 const TEMP_PREFIX: &str = ".encfs.fsck-";
-
-/// The longest name most filesystems take, in bytes.
-const NAME_MAX: usize = 255;
-
-/// How many collision-avoiding numbers to try for a recovered name.
-const MAX_NAME_ATTEMPTS: u32 = 1000;
-
-/// What an entry is, from `lstat`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EntryKind {
-    File,
-    Dir,
-    Symlink,
-    Other,
-}
-
-impl EntryKind {
-    fn of(meta: &fs::Metadata) -> Self {
-        let t = meta.file_type();
-        if t.is_file() {
-            Self::File
-        } else if t.is_dir() {
-            Self::Dir
-        } else if t.is_symlink() {
-            Self::Symlink
-        } else {
-            Self::Other
-        }
-    }
-}
-
-/// How sure fsck is that a conflict copy's base is right.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Confidence {
-    /// The entry's contents depend on the base's path IV, and they
-    /// authenticate under it: a file's first block that isn't a hole, every
-    /// child name of a directory, or a symlink's target.
-    Verified,
-    /// The base's name decrypts and is canonical, but nothing in the entry
-    /// confirms it: the config doesn't bind contents to names, or there is
-    /// nothing to check (an empty file or directory).
-    Probable,
-}
-
-/// A way to read a conflict copy's name `V` as `base ‖ suffix`.
-#[derive(Debug, Clone)]
-pub struct Candidate {
-    /// The plaintext name the base decrypts to.
-    pub plain: Vec<u8>,
-    /// What the sync tool appended to the base.
-    pub suffix: String,
-    /// Whether the split is at the first byte outside the name alphabet.
-    pub first_split: bool,
-    /// Whether `plain` names an existing entry in the same directory.
-    pub sibling_exists: bool,
-    pub confidence: Confidence,
-    /// The plaintext name recovery would give the entry, as of the scan.
-    pub proposed: Option<Vec<u8>>,
-    /// The sidecar copy the base decodes under, when it isn't the live
-    /// sidecar: the copy was made under that one.
-    pub sidecar: Option<OsString>,
-    /// The path IV the entry's contents were written under.
-    path_iv: u64,
-}
 
 /// How a copy of the volume config compares with the live one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,32 +227,6 @@ impl Finding {
     }
 }
 
-/// The candidate `--yes` recovers: the only verified one, or, when none is
-/// verified, the only one that splits at the first byte outside the name
-/// alphabet and names an existing sibling. Another prefix passing the name
-/// checksum by chance (2⁻¹⁶ each) almost never names a sibling too, so it
-/// doesn't cast doubt on that one.
-fn default_candidate(candidates: &[Candidate]) -> Option<usize> {
-    let only = |pred: &dyn Fn(&Candidate) -> bool| {
-        let mut matching = candidates
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| pred(c))
-            .map(|(i, _)| i);
-        match (matching.next(), matching.next()) {
-            (Some(i), None) => Some(i),
-            _ => None,
-        }
-    };
-    if candidates
-        .iter()
-        .any(|c| c.confidence == Confidence::Verified)
-    {
-        return only(&|c| c.confidence == Confidence::Verified);
-    }
-    only(&|c| c.first_split && c.sibling_exists)
-}
-
 /// What an applied action did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
@@ -376,67 +283,17 @@ pub struct Fsck<'a> {
     older_than: Duration,
     now: SystemTime,
     modify: bool,
-    /// Whether to work out each candidate's proposed name.
-    propose: bool,
+    /// Only tell undecodable names apart by name: no content checks,
+    /// candidate search or sidecar copy reads (see [`Fsck::names_only`]).
+    names_only: bool,
     stats: Stats,
     /// Problems found along the way that didn't stop the check, for the
     /// handler's [`Handler::warning`].
-    notes: RefCell<Vec<(PathBuf, anyhow::Error)>>,
-}
-
-/// How a file's first block that isn't a hole compares with a base.
-enum FileCheck {
-    Verified,
-    /// No block to check: empty, or only holes.
-    NothingChecked,
-    Mismatch,
-}
-
-/// A conflict copy's base, for [`crate::recrypt`] to keep a copy it moves
-/// recoverable.
-pub(crate) struct ConflictBase {
-    pub plain: Vec<u8>,
-    pub suffix: String,
-    /// The path IV the copy's contents were written under.
-    pub path_iv: u64,
-}
-
-/// The base `--fix --yes` would recover the conflict copy `name` in `dir`
-/// (names IV `names_iv`, whose decodable entries are `plain_names`) under.
-/// `None` when `name` has no candidate base; an error when it has more
-/// than one and none is the default.
-pub(crate) fn default_conflict_base(
-    config: &EncfsConfig,
-    cipher: &dyn Cipher,
-    dir: &Path,
-    names_iv: u64,
-    name: &str,
-    meta: &fs::Metadata,
-    plain_names: &HashSet<Vec<u8>>,
-) -> Result<Option<ConflictBase>> {
-    let mut fsck = Fsck::new(dir, config, cipher);
-    fsck.propose = false;
-    let candidates = fsck.candidates(dir, names_iv, &[(names_iv, None)], name, meta, plain_names);
-    if candidates.is_empty() {
-        return Ok(None);
-    }
-    let Some(i) = default_candidate(&candidates) else {
-        bail!(
-            "{} could be a conflict copy of {} different names",
-            dir.join(name).display(),
-            candidates.len()
-        );
-    };
-    let c = &candidates[i];
-    Ok(Some(ConflictBase {
-        plain: c.plain.clone(),
-        suffix: c.suffix.clone(),
-        path_iv: c.path_iv,
-    }))
+    notes: Notes,
 }
 
 /// Collects a copy's warnings as notes.
-struct NoteHooks<'n>(&'n RefCell<Vec<(PathBuf, anyhow::Error)>>);
+struct NoteHooks<'n>(&'n Notes);
 
 impl Hooks for NoteHooks<'_> {
     fn warning(&mut self, path: &Path, error: &anyhow::Error) {
@@ -458,7 +315,7 @@ impl<'a> Fsck<'a> {
             older_than: DEFAULT_OLDER_THAN,
             now: SystemTime::now(),
             modify: false,
-            propose: true,
+            names_only: false,
             stats: Stats::default(),
             notes: RefCell::new(Vec::new()),
         }
@@ -490,6 +347,16 @@ impl<'a> Fsck<'a> {
         self
     }
 
+    /// Tells undecodable names apart by their names alone, without reading
+    /// anything to find or check a conflict copy's base: what `showcruft`,
+    /// which only lists them, needs. Conflict copies are then
+    /// [`Class::Unknown`], and sidecar copies are never [`Class::ForeignName`]
+    /// hosts.
+    pub fn names_only(mut self) -> Self {
+        self.names_only = true;
+        self
+    }
+
     /// The minimum age of a temp file fsck offers to delete.
     pub fn older_than(mut self, age: Duration) -> Self {
         self.older_than = age;
@@ -518,11 +385,21 @@ impl<'a> Fsck<'a> {
         is(meta) || (meta.file_type().is_symlink() && fs::metadata(path).is_ok_and(|m| is(&m)))
     }
 
+    fn probe(&self) -> Probe<'_> {
+        Probe::new(self.config, self.cipher, &self.notes)
+    }
+
     /// Records a problem that didn't stop the check, once per path.
     fn note(&self, path: &Path, error: anyhow::Error) {
-        let mut notes = self.notes.borrow_mut();
-        if !notes.iter().any(|(p, _)| p == path) {
-            notes.push((path.to_path_buf(), error));
+        self.probe().note(path, error);
+    }
+
+    /// Notes an entry of a directory being scanned that couldn't be read,
+    /// so the rest of the directory is still checked. One that went away
+    /// since it was listed is passed over.
+    fn note_entry_error(&self, path: &Path, error: io::Error) {
+        if error.kind() != io::ErrorKind::NotFound {
+            self.note(path, anyhow::Error::new(error).context("reading the entry"));
         }
     }
 
@@ -578,7 +455,7 @@ impl<'a> Fsck<'a> {
             }
         }
 
-        let fixed_before = self.stats.fixed;
+        let mut recovered = false;
         for finding in &mut findings {
             if let Class::SidecarCopy {
                 dependents: count, ..
@@ -596,6 +473,7 @@ impl<'a> Fsck<'a> {
             let result = self.apply(finding, &action);
             if result.is_ok() {
                 self.stats.fixed += 1;
+                recovered |= matches!(action, Action::Recover { .. });
                 for sidecar in finding.sidecars_used() {
                     if let Some(count) = dependents.get_mut(sidecar) {
                         *count -= 1;
@@ -608,7 +486,7 @@ impl<'a> Fsck<'a> {
 
         // Descend into every directory with a decodable name, including the
         // ones just recovered, which only a fresh listing has.
-        if self.stats.fixed != fixed_before {
+        if recovered {
             match self.decodable_subdirs(dir, names_iv) {
                 Ok(listed) => subdirs = listed,
                 Err(e) => {
@@ -630,8 +508,13 @@ impl<'a> Fsck<'a> {
     fn decodable_subdirs(&self, dir: &Path, names_iv: u64) -> Result<Vec<Subdir>> {
         let mut out = Vec::new();
         for entry in sorted_entries(dir)? {
-            if !entry.file_type()?.is_dir() {
-                continue;
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => {}
+                Ok(_) => continue,
+                Err(e) => {
+                    self.note_entry_error(&entry.path(), e);
+                    continue;
+                }
             }
             let name = entry.file_name();
             let Some(s) = name.to_str() else { continue };
@@ -653,7 +536,6 @@ impl<'a> Fsck<'a> {
     ) -> Result<(Vec<Finding>, Vec<Subdir>)> {
         let entries = sorted_entries(dir)?;
         self.stats.entries += entries.len();
-        let is_root = dir == self.root;
 
         let mut plain_names = HashSet::new();
         let mut subdirs = Vec::new();
@@ -668,18 +550,24 @@ impl<'a> Fsck<'a> {
                 .and_then(|s| self.cipher.decrypt_entry_name(s, names_iv).ok());
             match decoded {
                 Some((plain, next_iv)) => {
-                    if entry.file_type()?.is_dir() {
-                        subdirs.push((name, plain.clone(), next_iv));
+                    match entry.file_type() {
+                        Ok(t) if t.is_dir() => subdirs.push((name, plain.clone(), next_iv)),
+                        Ok(_) => {}
+                        Err(e) => self.note_entry_error(&entry.path(), e),
                     }
                     plain_names.insert(plain);
                 }
                 // Only undecodable entries need the full `lstat`.
-                None => undecodable.push((name, entry.metadata()?)),
+                None => match entry.metadata() {
+                    Ok(meta) => undecodable.push((name, meta)),
+                    Err(e) => self.note_entry_error(&entry.path(), e),
+                },
             }
         }
 
         let mut sidecar_copies = Vec::new();
-        if self.config.directory_iv {
+        let mut unreadable = Vec::new();
+        if self.config.directory_iv && !self.names_only {
             // The live sidecar, read only once a copy turns up.
             let mut live = None;
             for (name, meta) in &undecodable {
@@ -692,7 +580,15 @@ impl<'a> Fsck<'a> {
                 if !meta.is_file() {
                     continue;
                 }
-                let bytes = fs::read(dir.join(name))?;
+                let bytes = match fs::read(dir.join(name)) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        // Not to be classified as anything else, or fixed.
+                        self.note_entry_error(&dir.join(name), e);
+                        unreadable.push(name.clone());
+                        continue;
+                    }
+                };
                 let live = live.get_or_insert_with(|| diriv::read_sidecar(dir).ok());
                 let identical = live.is_some_and(|live| live[..] == bytes[..]);
                 let alt_iv = if identical {
@@ -714,21 +610,16 @@ impl<'a> Fsck<'a> {
 
         let mut findings = Vec::new();
         for (name, meta) in &undecodable {
+            if unreadable.contains(name) {
+                continue;
+            }
             let class = match sidecar_copies.iter().find(|copy| copy.name == *name) {
                 Some(copy) => Some(Class::SidecarCopy {
                     suffix: copy.suffix.clone(),
                     identical: copy.identical,
                     dependents: 0,
                 }),
-                None => self.classify(
-                    dir,
-                    names_iv,
-                    name,
-                    meta,
-                    is_root,
-                    &plain_names,
-                    &sidecar_copies,
-                ),
+                None => self.classify(dir, names_iv, name, meta, &plain_names, &sidecar_copies),
             };
             if let Some(class) = class {
                 findings.push(Finding {
@@ -748,14 +639,12 @@ impl<'a> Fsck<'a> {
     /// the live metadata files (and the config in use, whatever its name),
     /// mkdir's staging directories, and other names starting with `.`, as
     /// `showcruft` does.
-    #[allow(clippy::too_many_arguments)]
     fn classify(
         &self,
         dir: &Path,
         names_iv: u64,
         name: &OsStr,
         meta: &fs::Metadata,
-        is_root: bool,
         plain_names: &HashSet<Vec<u8>>,
         sidecar_copies: &[CopiedSidecar],
     ) -> Option<Class> {
@@ -771,7 +660,7 @@ impl<'a> Fsck<'a> {
         {
             return None;
         }
-        if is_root {
+        if dir == self.root {
             for (live, config_type) in CONFIG_FILES {
                 if let Some(suffix) = metadata_copy_suffix(s, live) {
                     let status = if meta.is_file() {
@@ -797,14 +686,18 @@ impl<'a> Fsck<'a> {
         if s.starts_with('.') {
             return None;
         }
+        if self.names_only {
+            return Some(Class::Unknown);
+        }
 
+        let probe = self.probe();
         let mut ivs = vec![(names_iv, None)];
         for copy in sidecar_copies {
             let Some(alt_iv) = copy.names_iv else {
                 continue;
             };
             if let Ok((plain, next_iv)) = self.cipher.decrypt_entry_name(s, alt_iv) {
-                let proposed = self
+                let proposed = probe
                     .choose_name(dir, names_iv, &plain, &copy.suffix, true, None)
                     .ok()
                     .map(|(n, _, _)| n);
@@ -821,200 +714,11 @@ impl<'a> Fsck<'a> {
 
         // A conflict copy of an entry made under a sidecar copy has its base
         // encrypted under that copy's IV.
-        let candidates = self.candidates(dir, names_iv, &ivs, s, meta, plain_names);
+        let candidates = probe.candidates(dir, &ivs, s, meta, plain_names, Some(names_iv));
         if !candidates.is_empty() {
             return Some(Class::ConflictCopy { candidates });
         }
         Some(Class::Unknown)
-    }
-
-    /// The ways to read `name` as a base plus a suffix that the entry's
-    /// contents don't rule out, most likely first. A base may decode under
-    /// any of `ivs`: the directory's names IV (`names_iv`), then those of
-    /// its sidecar copies, each with the copy's name.
-    fn candidates(
-        &self,
-        dir: &Path,
-        names_iv: u64,
-        ivs: &[(u64, Option<&OsStr>)],
-        name: &str,
-        meta: &fs::Metadata,
-        plain_names: &HashSet<Vec<u8>>,
-    ) -> Vec<Candidate> {
-        let bytes = name.as_bytes();
-        let encoding = NameEncoding::from_iface(&self.config.name_iface);
-        let first = bytes.iter().position(|&b| !encoding.is_name_byte(b));
-        let mut lens = Vec::new();
-        if let Some(k) = first
-            && k > 0
-        {
-            lens.push(k);
-        }
-        lens.extend((1..first.unwrap_or(bytes.len())).rev());
-
-        let path = dir.join(name);
-        let mut out = Vec::new();
-        for &(iv, sidecar) in ivs {
-            for &len in &lens {
-                // Every byte before `first` is ASCII, so `len` is a boundary.
-                let base = &name[..len];
-                let Ok((plain, next_iv)) = self.cipher.decrypt_entry_name(base, iv) else {
-                    continue;
-                };
-                // Canonical: the name the volume would write for `plain`.
-                match self.cipher.encrypt_filename(&plain, iv) {
-                    Ok((canonical, _)) if canonical == base => {}
-                    _ => continue,
-                }
-                let path_iv = diriv::child_path_iv(self.config, next_iv);
-                let Some(confidence) = self.verify(&path, meta, path_iv) else {
-                    continue;
-                };
-                let suffix = name[len..].to_string();
-                let proposed = if self.propose {
-                    self.choose_name(dir, names_iv, &plain, &suffix, false, None)
-                        .ok()
-                        .map(|(n, _, _)| n)
-                } else {
-                    None
-                };
-                out.push(Candidate {
-                    sibling_exists: plain_names.contains(&plain),
-                    plain,
-                    suffix,
-                    first_split: Some(len) == first,
-                    confidence,
-                    proposed,
-                    sidecar: sidecar.map(OsStr::to_os_string),
-                    path_iv,
-                });
-            }
-        }
-        // Stable: longer bases, and the live IV, stay ahead within each
-        // group.
-        out.sort_by_key(|c| {
-            (
-                c.confidence != Confidence::Verified,
-                !c.sibling_exists,
-                !c.first_split,
-            )
-        });
-        out
-    }
-
-    /// Whether every block of a file is authenticated.
-    fn blocks_authenticated(&self) -> bool {
-        self.config.block_mode() == BlockMode::AesGcmSiv || self.config.block_mac_bytes > 0
-    }
-
-    /// Checks the entry at `path` against a base whose path IV is
-    /// `path_iv`. `None` when the contents rule the base out. Contents that
-    /// can't be read rule nothing out: the base stays probable, and the
-    /// problem is noted.
-    fn verify(&self, path: &Path, meta: &fs::Metadata, path_iv: u64) -> Option<Confidence> {
-        let unreadable = |e: anyhow::Error| {
-            self.note(path, e.context("couldn't read the entry to check its name"));
-            Some(Confidence::Probable)
-        };
-        match EntryKind::of(meta) {
-            EntryKind::File => {
-                if !(self.config.file_contents_depend_on_path() && self.blocks_authenticated()) {
-                    return Some(Confidence::Probable);
-                }
-                match self.verify_file(path, path_iv) {
-                    Ok(FileCheck::Verified) => Some(Confidence::Verified),
-                    Ok(FileCheck::NothingChecked) => Some(Confidence::Probable),
-                    Ok(FileCheck::Mismatch) => None,
-                    Err(e) => unreadable(e.into()),
-                }
-            }
-            EntryKind::Dir => {
-                if !self.config.children_depend_on_path() {
-                    return Some(Confidence::Probable);
-                }
-                let children = match sorted_entries(path) {
-                    Ok(children) => children,
-                    Err(e) => return unreadable(e),
-                };
-                let names: Vec<_> = children
-                    .iter()
-                    .map(fs::DirEntry::file_name)
-                    .filter(|n| !n.as_bytes().starts_with(b"."))
-                    .collect();
-                let decoded = names
-                    .iter()
-                    .filter(|n| {
-                        n.to_str()
-                            .is_some_and(|s| self.cipher.decrypt_entry_name(s, path_iv).is_ok())
-                    })
-                    .count();
-                if names.is_empty() || (decoded > 0 && decoded < names.len()) {
-                    Some(Confidence::Probable)
-                } else if decoded == names.len() {
-                    Some(Confidence::Verified)
-                } else {
-                    None
-                }
-            }
-            EntryKind::Symlink => {
-                if !self.config.symlink_target_depends_on_path() {
-                    return Some(Confidence::Probable);
-                }
-                let target = match fs::read_link(path) {
-                    Ok(target) => target,
-                    Err(e) => return unreadable(e.into()),
-                };
-                symlink_target::decrypt(
-                    self.cipher,
-                    self.config,
-                    target.as_os_str().as_bytes(),
-                    path_iv,
-                )
-                .ok()
-                .map(|_| Confidence::Verified)
-            }
-            EntryKind::Other => Some(Confidence::Probable),
-        }
-    }
-
-    /// Authenticates the first block of the file at `path` that isn't a
-    /// hole under the file IV a file with path IV `path_iv` has. A wrong
-    /// base fails there, so the rest of the file isn't read. All-zero
-    /// blocks, which a volume allowing holes reads as zeros, prove nothing
-    /// and are passed over. An error means the file couldn't be read.
-    fn verify_file(&self, path: &Path, path_iv: u64) -> io::Result<FileCheck> {
-        let file = File::open(path)?;
-        let len = file.metadata()?.len();
-        let params = self.config.file_codec_params();
-        if len <= params.header_size {
-            return Ok(FileCheck::NothingChecked);
-        }
-        let file_iv = if params.header_size == 0 {
-            self.config.headerless_file_iv(path_iv)
-        } else {
-            let mut header = vec![0u8; params.header_size as usize];
-            file.read_exact_at(&mut header, 0)?;
-            match self
-                .cipher
-                .decrypt_header(&mut header, self.config.external_iv(path_iv))
-            {
-                Ok(iv) => iv,
-                Err(_) => return Ok(FileCheck::Mismatch),
-            }
-        };
-        let codec = BlockCodec::new(self.cipher, params.layout()?, false, false);
-        let mut check = FileCheck::NothingChecked;
-        for_each_block(&params, &file, len, |block_num, block, hole| {
-            if hole {
-                return Ok(ControlFlow::Continue(()));
-            }
-            check = match codec.decrypt_block(block_num, file_iv, block) {
-                Ok(_) => FileCheck::Verified,
-                Err(_) => FileCheck::Mismatch,
-            };
-            Ok(ControlFlow::Break(()))
-        })?;
-        Ok(check)
     }
 
     /// Unlocks the config copy at `path`, a copy of a config file in the
@@ -1078,7 +782,7 @@ impl<'a> Fsck<'a> {
                     } => (plain, suffix, *path_iv, true),
                     _ => bail!("this entry can't be recovered"),
                 };
-                let (new_plain, encrypted, new_path_iv) = self.choose_name(
+                let (new_plain, encrypted, new_path_iv) = self.probe().choose_name(
                     &finding.dir,
                     finding.names_iv,
                     plain,
@@ -1104,70 +808,6 @@ impl<'a> Fsck<'a> {
         if let Err(e) = sync_dir(dir) {
             self.note(dir, e);
         }
-    }
-
-    /// A free plaintext name for a recovered entry in `dir`, with its
-    /// encrypted form and path IV. `requested` is the user's choice, used
-    /// as given. Otherwise `plain` itself when `prefer_plain`, then
-    /// `stem (suffix).ext`, numbered from 2 if that is taken, with the
-    /// suffix shortened to fit the name length limit.
-    fn choose_name(
-        &self,
-        dir: &Path,
-        names_iv: u64,
-        plain: &[u8],
-        suffix: &str,
-        prefer_plain: bool,
-        requested: Option<&[u8]>,
-    ) -> Result<(Vec<u8>, String, u64)> {
-        let encrypt = |name: &[u8]| -> Result<Option<(String, u64)>> {
-            check_entry_name(name)?;
-            let (encrypted, next_iv) = self.cipher.encrypt_filename(name, names_iv)?;
-            if encrypted.len() > NAME_MAX {
-                return Ok(None);
-            }
-            Ok(Some((
-                encrypted,
-                diriv::child_path_iv(self.config, next_iv),
-            )))
-        };
-        let free = |encrypted: &str| fs::symlink_metadata(dir.join(encrypted)).is_err();
-
-        if let Some(name) = requested {
-            let (encrypted, path_iv) =
-                encrypt(name)?.ok_or_else(|| anyhow!("the name is too long"))?;
-            if !free(&encrypted) {
-                bail!("the name is taken");
-            }
-            return Ok((name.to_vec(), encrypted, path_iv));
-        }
-        if prefer_plain
-            && let Some((encrypted, path_iv)) = encrypt(plain)?
-            && free(&encrypted)
-        {
-            return Ok((plain.to_vec(), encrypted, path_iv));
-        }
-
-        let mut label: Vec<char> = clean_suffix(suffix).chars().collect();
-        for number in 1..=MAX_NAME_ATTEMPTS {
-            loop {
-                let label_str: String = label.iter().collect();
-                let name = recovery_name(plain, &label_str, number);
-                match encrypt(&name)? {
-                    Some((encrypted, path_iv)) => {
-                        if free(&encrypted) {
-                            return Ok((name, encrypted, path_iv));
-                        }
-                        break;
-                    }
-                    None if label.len() > 1 => {
-                        label.pop();
-                    }
-                    None => bail!("no recovered name fits the name length limit"),
-                }
-            }
-        }
-        bail!("no free name for the recovered entry")
     }
 
     /// Renames the entry `name` in `dir`, written under path IV `src_iv`, to
@@ -1206,7 +846,6 @@ impl<'a> Fsck<'a> {
                 &meta,
                 &mut NoteHooks(&self.notes),
             )
-            .and_then(|()| sync_dir(dir))
             .and_then(|()| rename_noreplace(&temp, &dst))
             .and_then(|()| sync_dir(dir));
         if let Err(e) = built {
@@ -1218,7 +857,6 @@ impl<'a> Fsck<'a> {
         let removed = rename_noreplace(&src, &aside)
             .with_context(|| format!("moving the source aside to {}", aside.display()))
             .and_then(|()| {
-                self.sync_dir_noting(dir);
                 remove_entry(&aside)
                     .with_context(|| format!("removing the source, now {}", aside.display()))
             });
@@ -1253,16 +891,6 @@ fn rename_noreplace(src: &Path, dst: &Path) -> Result<()> {
     }
 }
 
-fn remove_entry(path: &Path) -> Result<()> {
-    let meta = fs::symlink_metadata(path)?;
-    if meta.is_dir() {
-        fs::remove_dir_all(path)?;
-    } else {
-        fs::remove_file(path)?;
-    }
-    Ok(())
-}
-
 /// A fresh temp path in `dir` (see [`TEMP_PREFIX`]).
 fn temp_path(dir: &Path) -> Result<PathBuf> {
     Ok(dir.join(diriv::random_name(TEMP_PREFIX)?))
@@ -1285,6 +913,18 @@ fn metadata_copy_suffix(name: &str, live: &str) -> Option<String> {
     let (stem, ext) = live.split_at(dot);
     let middle = name.strip_prefix(stem)?.strip_suffix(ext)?;
     (!middle.is_empty()).then(|| middle.to_string())
+}
+
+/// The format of a config file named `name`: what its name declares
+/// ([`ConfigType::from_file_name`]), or that of the config file it is a sync
+/// tool's conflict copy of. Only the name tells V4 from V5.
+pub fn config_type_for_name(name: &str) -> Option<ConfigType> {
+    ConfigType::from_file_name(name).or_else(|| {
+        CONFIG_FILES
+            .iter()
+            .find(|(live, _)| metadata_copy_suffix(name, live).is_some())
+            .map(|(_, config_type)| *config_type)
+    })
 }
 
 /// Sync tools' own files, which fsck leaves alone.
@@ -1325,41 +965,6 @@ fn temp_kind(name: &str) -> Option<bool> {
     (syncthing || nextcloud || rclone).then_some(false)
 }
 
-/// A sync tool's suffix as the label inside a recovered name: leading
-/// spaces, dots and underscores removed, and one pair of enclosing
-/// parentheses.
-fn clean_suffix(suffix: &str) -> String {
-    let s = suffix.trim_start_matches([' ', '.', '_']).trim_end();
-    let s = s
-        .strip_prefix('(')
-        .and_then(|s| s.strip_suffix(')'))
-        .unwrap_or(s)
-        .trim();
-    if s.is_empty() {
-        "conflict".to_string()
-    } else {
-        s.to_string()
-    }
-}
-
-/// `stem (label).ext`, or `stem (label) n.ext` from `number` 2 on. The
-/// extension is a final `.` and 1 to 10 ASCII letters or digits, not at the
-/// start of the name.
-fn recovery_name(plain: &[u8], label: &str, number: u32) -> Vec<u8> {
-    let ext_start = plain.iter().rposition(|&b| b == b'.').filter(|&i| {
-        let ext = &plain[i + 1..];
-        i > 0 && (1..=10).contains(&ext.len()) && ext.iter().all(u8::is_ascii_alphanumeric)
-    });
-    let (stem, ext) = plain.split_at(ext_start.unwrap_or(plain.len()));
-    let mut name = stem.to_vec();
-    name.extend_from_slice(format!(" ({label})").as_bytes());
-    if number > 1 {
-        name.extend_from_slice(format!(" {number}").as_bytes());
-    }
-    name.extend_from_slice(ext);
-    name
-}
-
 /// Whether two configs encrypt the same way, apart from how the key is
 /// stored. Every field but the key storage counts, so a new setting is
 /// compared without being listed here.
@@ -1385,19 +990,51 @@ fn same_settings(a: &EncfsConfig, b: &EncfsConfig) -> bool {
 /// produce for the same inputs.
 fn same_key(a: &dyn Cipher, b: &dyn Cipher) -> bool {
     let probe = b"encfs fsck volume key probe";
-    let name = |c: &dyn Cipher, iv| c.encrypt_filename(probe, iv).ok().map(|(n, _)| n);
-    let header = |c: &dyn Cipher| c.encrypt_header_with_iv(FileIv::from_u64(0x5a5a), 7).ok();
-    [0, 1, 0x0123_4567_89ab_cdef]
-        .into_iter()
-        .all(|iv| name(a, iv).is_some() && name(a, iv) == name(b, iv))
-        && header(a).is_some()
-        && header(a) == header(b)
+    let same = |f: &dyn Fn(&dyn Cipher) -> Option<Vec<u8>>| {
+        let ours = f(a);
+        ours.is_some() && ours == f(b)
+    };
+    [0, 1, 0x0123_4567_89ab_cdef].into_iter().all(|iv| {
+        same(&|c| {
+            c.encrypt_filename(probe, iv)
+                .ok()
+                .map(|(n, _)| n.into_bytes())
+        })
+    }) && same(&|c| c.encrypt_header_with_iv(FileIv::from_u64(0x5a5a), 7).ok())
         && a.mac_64_no_iv(probe).ok() == b.mac_64_no_iv(probe).ok()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A config given by a sync tool's copy name keeps its format, which
+    /// for V4 only the name tells.
+    #[test]
+    fn config_formats_are_known_by_copy_names() {
+        let cases = [
+            (".encfs4", Some(ConfigType::V4)),
+            (".encfs4 (conflicted copy 2023-07-09)", Some(ConfigType::V4)),
+            (
+                ".encfs4.sync-conflict-20230709-123456-ABCDEFG",
+                Some(ConfigType::V4),
+            ),
+            (".encfs5.conflict1", Some(ConfigType::V5)),
+            (
+                ".encfs6.sync-conflict-20230709-123456-ABCDEFG.xml",
+                Some(ConfigType::V6),
+            ),
+            (
+                ".sync-conflict-20230709-123456-ABCDEFG.encfs7",
+                Some(ConfigType::V7),
+            ),
+            ("backup.encfs7", Some(ConfigType::V7)),
+            ("config.xml", None),
+        ];
+        for (name, expected) in cases {
+            assert_eq!(config_type_for_name(name), expected, "{name}");
+        }
+    }
 
     #[test]
     fn metadata_copies_are_recognized_in_every_tool_form() {
@@ -1463,42 +1100,5 @@ mod tests {
         assert_eq!(temp_kind(".encfs.fsck-0011223344556677"), Some(true));
         assert_eq!(temp_kind(".ABCDEF.~xyz"), None);
         assert_eq!(temp_kind("ABCDEF"), None);
-    }
-
-    #[test]
-    fn recovery_names() {
-        let name = |plain: &str, suffix: &str, n| {
-            String::from_utf8(recovery_name(plain.as_bytes(), &clean_suffix(suffix), n)).unwrap()
-        };
-        assert_eq!(
-            name("report.docx", ".sync-conflict-20230709-123456-ABCDEFG", 1),
-            "report (sync-conflict-20230709-123456-ABCDEFG).docx"
-        );
-        assert_eq!(
-            name(
-                "report.docx",
-                " (conflicted copy alice 2023-07-09 123456)",
-                1
-            ),
-            "report (conflicted copy alice 2023-07-09 123456).docx"
-        );
-        assert_eq!(
-            name("report.docx", ".conflict1", 1),
-            "report (conflict1).docx"
-        );
-        assert_eq!(
-            name("report.docx", ".conflict1", 3),
-            "report (conflict1) 3.docx"
-        );
-        assert_eq!(name(".bashrc", "..path1", 1), ".bashrc (path1)");
-        assert_eq!(name("archive.tar.gz", "_", 1), "archive.tar (conflict).gz");
-        assert_eq!(
-            name("notes", " (Case Conflict)", 1),
-            "notes (Case Conflict)"
-        );
-        assert_eq!(
-            name("a.verylongextension", ".x", 1),
-            "a.verylongextension (x)"
-        );
     }
 }

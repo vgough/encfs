@@ -92,6 +92,23 @@ pub fn sync_file(file: &File, data_only: bool) -> io::Result<()> {
     }
 }
 
+/// Writes `file` back to the filesystem with a plain `fsync(2)`, so a
+/// filesystem that validates data on sync (a writable reverse view) reports
+/// its errors, and a later step can rely on the data having reached the
+/// filesystem. On Apple platforms, unlike [`sync_file`], it doesn't flush
+/// the drive's cache, which costs far more. Unsupported syncs are skipped,
+/// as there.
+pub fn write_back(file: &File) -> io::Result<()> {
+    #[cfg(target_vendor = "apple")]
+    let result = fsync(file);
+    #[cfg(not(target_vendor = "apple"))]
+    let result = file.sync_all();
+    match result {
+        Err(e) if sync_unsupported(&e) => Ok(()),
+        other => other,
+    }
+}
+
 /// A plain `fsync(2)`, which on Apple platforms, unlike `sync_all`, doesn't
 /// flush the drive's cache.
 #[cfg(target_vendor = "apple")]

@@ -8,6 +8,7 @@ use crate::recrypt::{self, Recrypt};
 use crate::rpc;
 use crate::symlink_target;
 use crate::xattr_name;
+use anyhow::Context as _;
 use libc;
 use log::{debug, error, warn};
 use std::borrow::Cow;
@@ -828,7 +829,7 @@ impl EncFs {
         let meta = fs::symlink_metadata(&real_source)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
-        let recrypt = Recrypt::new(&self.config, self.cipher.as_ref());
+        let recrypt = self.recrypt();
         if (meta.is_dir() || meta.is_file()) && recrypt.depends_on_path(&meta) {
             if real_source == real_dest {
                 return Ok(());
@@ -863,20 +864,11 @@ impl EncFs {
             if let Err(e) = copied {
                 error!("rename: copying {:?} failed: {:#}", real_source, e);
                 // Best-effort cleanup on failure
-                if meta.is_dir() {
-                    let _ = fs::remove_dir_all(&real_dest);
-                } else {
-                    let _ = fs::remove_file(&real_dest);
-                }
+                let _ = recrypt::remove_entry(&real_dest);
                 return Err(recrypt::errno(&e));
             }
 
-            let removed = if meta.is_dir() {
-                fs::remove_dir_all(real_source)
-            } else {
-                fs::remove_file(real_source)
-            };
-            removed.map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            recrypt::remove_entry(&real_source).map_err(io_errno)?;
             self.forget_removed_inodes(&hooks.copied);
             return Ok(());
         }
@@ -914,7 +906,8 @@ impl EncFs {
     ) -> OpResult {
         let target =
             fs::read_link(real_source).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let enc_target = Recrypt::new(&self.config, self.cipher.as_ref())
+        let enc_target = self
+            .recrypt()
             .symlink_target(target.as_os_str().as_bytes(), source_iv, dest.iv)
             .map_err(|e| {
                 error!("Failed to re-encrypt symlink target during rename: {:#}", e);
@@ -928,13 +921,10 @@ impl EncFs {
         }
 
         dest.symlink(OsStr::from_bytes(&enc_target))?;
-        if let Err(e) = self.copy_entry_xattrs(real_source, &dest.real_path) {
+        if let Err(e) = self.copy_entry_metadata(real_source, &dest.real_path, meta) {
             let _ = dest.unlink();
             return Err(e);
         }
-        let atime = meta.accessed().ok();
-        let mtime = meta.modified().ok();
-        let _ = passthrough::utimens_path(&dest.real_path, atime, mtime);
         Ok(())
     }
 
@@ -958,10 +948,11 @@ impl EncFs {
 
         let dest = self.new_entry(&newparent.join(newname))?;
 
-        if meta.is_file() && self.config.external_iv_chaining {
+        if meta.is_file() && self.config.file_contents_depend_on_path() {
             // A copy rather than rename + in-place header rewrite: the copy
             // leaves the source readable if we die partway.
-            if let Err(e) = self.copy_file_with_header_rewrite(real_source, &dest, source_iv) {
+            if let Err(e) = self.copy_file_with_header_rewrite(real_source, &dest, source_iv, meta)
+            {
                 let _ = dest.unlink();
                 return Err(e);
             }
@@ -1128,70 +1119,91 @@ impl EncFs {
         }
     }
 
-    /// Copies the file `real_src` (path IV `src_iv`) over `dest`, its
-    /// contents re-encrypted for the destination's path IV (see
-    /// [`Recrypt::copy_file_contents`]) and synced, with its attributes,
-    /// mode and timestamps. The source is left in place.
+    fn recrypt(&self) -> Recrypt<'_> {
+        Recrypt::new(&self.config, self.cipher.as_ref())
+    }
+
+    /// Copies the file `real_src` (path IV `src_iv`, described by `meta`)
+    /// over `dest`, its contents re-encrypted for the destination's path IV
+    /// (see [`Recrypt::copy_file_contents`]) and written back, with its
+    /// attributes, mode and timestamps. The source is left in place.
     fn copy_file_with_header_rewrite(
         &self,
         real_src: &Path,
         dest: &NewEntry,
         src_iv: u64,
+        meta: &fs::Metadata,
     ) -> OpResult {
-        self.copy_file_contents_locked(real_src, dest, src_iv)?;
-        // Carry the attributes while the destination is still writable,
-        // then copy permissions and timestamps.
-        self.copy_entry_xattrs(real_src, &dest.real_path)?;
-        if let Ok(meta) = fs::symlink_metadata(real_src) {
-            let _ = fs::set_permissions(&dest.real_path, meta.permissions());
-            let atime = meta.accessed().ok();
-            let mtime = meta.modified().ok();
-            let _ = passthrough::utimens_path(&dest.real_path, atime, mtime);
-        }
+        self.copy_file_contents_locked(real_src, dest, src_iv)
+            .map_err(|e| {
+                error!("rename: copying {:?} failed: {:#}", real_src, e);
+                recrypt::errno(&e)
+            })?;
+        self.copy_entry_metadata(real_src, &dest.real_path, meta)
+    }
+
+    /// Gives `real_dst`, a copy of `real_src` that a rename just made, the
+    /// source's attributes, mode and times ([`recrypt::copy_metadata`]),
+    /// and drops any xattr IV cached for its inode (see
+    /// [`EncFs::forget_xattr_iv_of`]).
+    fn copy_entry_metadata(
+        &self,
+        real_src: &Path,
+        real_dst: &Path,
+        meta: &fs::Metadata,
+    ) -> OpResult {
+        recrypt::copy_metadata(&self.config, real_src, real_dst, meta)
+            .map_err(|e| recrypt::errno(&e))?;
+        self.forget_xattr_iv_of(real_dst);
         Ok(())
     }
 
     /// Replaces the contents of `dest` with those of the file `real_src`
-    /// (path IV `src_iv`), re-encrypted for `dest`'s path IV, and syncs
-    /// them, so a failure here leaves the source the only good copy.
-    fn copy_file_contents_locked(&self, real_src: &Path, dest: &NewEntry, src_iv: u64) -> OpResult {
+    /// (path IV `src_iv`), re-encrypted for `dest`'s path IV, and writes
+    /// them back ([`diriv::write_back`]), so a failure here, including one
+    /// a writable reverse view reports when it validates the data, leaves
+    /// the source the only good copy.
+    fn copy_file_contents_locked(
+        &self,
+        real_src: &Path,
+        dest: &NewEntry,
+        src_iv: u64,
+    ) -> anyhow::Result<()> {
         // Open both ends. The destination is opened without O_TRUNC so
         // that, as in `open_impl`, it is reset under the lock rather than by
         // open(2) — otherwise the reset lands on top of an in-flight
         // read-modify-write by whoever already has it open.
-        let src_f = File::open(real_src).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        let dst_f = dest.open(libc::O_RDWR | libc::O_CREAT, 0o666)?;
+        let src_f = File::open(real_src)?;
+        let dst_f = dest
+            .open(libc::O_RDWR | libc::O_CREAT, 0o666)
+            .map_err(recrypt::from_errno)?;
 
         // Serialize against concurrent writes at both ends: a write landing
         // mid-copy on the source would produce a torn destination block, and
         // a write to the destination would be silently overwritten by the
         // body copy.
-        let src_state = self.file_states.get(&src_f)?;
-        let dst_state = self.file_states.get(&dst_f)?;
+        let src_state = self.file_states.get(&src_f).map_err(recrypt::from_errno)?;
+        let dst_state = self.file_states.get(&dst_f).map_err(recrypt::from_errno)?;
         let (_src_guard, mut dst_meta) = lock_source_and_dest(&src_state, &dst_state);
 
         // The file IV carries over in a header, so anyone holding the
         // destination open switches to the copied file's IV. Without one
         // the IV is the path's, which handles open on the destination
         // already use.
-        dst_f
-            .set_len(0)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+        dst_f.set_len(0)?;
         dst_meta.header_iv = None;
-        let header_iv = Recrypt::new(&self.config, self.cipher.as_ref())
-            .copy_file_contents(&src_f, src_iv, &dst_f, dest.iv)
-            .map_err(|e| {
-                error!("rename: copying {:?} failed: {:#}", real_src, e);
-                recrypt::errno(&e)
-            })?;
-        dst_meta.header_iv = header_iv;
+        dst_meta.header_iv = self
+            .recrypt()
+            .copy_file_contents(&src_f, src_iv, &dst_f, dest.iv)?;
+        diriv::write_back(&dst_f).context("writing back the copy")?;
         Ok(())
     }
 }
 
 /// What forward-mode rename adds around a [`Recrypt::copy_tree`]: file
-/// copies under the per-inode locks, the source inodes to forget once
-/// removed, and IVs cached for new inodes dropped.
+/// copies under the per-inode locks, syncs that write back without
+/// flushing the drive, the source inodes to forget once removed, and IVs
+/// cached for new inodes dropped.
 struct RenameHooks<'a> {
     fs: &'a EncFs,
     copied: Vec<RemovedInode>,
@@ -1206,18 +1218,17 @@ impl recrypt::Hooks for RenameHooks<'_> {
         dst: &Path,
         dst_iv: u64,
     ) -> anyhow::Result<()> {
-        let errno = |e: libc::c_int| anyhow::Error::from(io::Error::from_raw_os_error(e));
-        let dest = NewEntry::from_path(dst.to_path_buf(), dst_iv).map_err(errno)?;
-        self.fs
-            .copy_file_contents_locked(src, &dest, src_iv)
-            .map_err(errno)
+        let dest = NewEntry::from_path(dst.to_path_buf(), dst_iv).map_err(recrypt::from_errno)?;
+        self.fs.copy_file_contents_locked(src, &dest, src_iv)
     }
 
-    fn copied(&mut self, meta: &fs::Metadata) {
+    fn sync(&mut self, file: &File) -> anyhow::Result<()> {
+        diriv::write_back(file).context("writing back the copy")?;
+        Ok(())
+    }
+
+    fn finished(&mut self, meta: &fs::Metadata, dst: &Path) {
         self.copied.push(removed_inode(meta));
-    }
-
-    fn created(&mut self, dst: &Path) {
         self.fs.forget_xattr_iv_of(dst);
     }
 
@@ -1227,15 +1238,9 @@ impl recrypt::Hooks for RenameHooks<'_> {
 }
 
 /// Makes the stored `user.encfs.*` attributes of `real_dst`, and those under
-/// the volume's plaintext prefixes, match `real_src`'s, IV seed first. The
-/// bytes carry over unchanged, so they still decrypt under the copied seed.
-/// Names `real_dst` has that the source lacks are removed, and values it
-/// already holds aren't rewritten. Works on backing paths alone, without a
-/// mount (`encfsctl fsck` uses it); a mount must also drop any IV it cached
-/// for `real_dst`'s inode, as `EncFs::copy_entry_xattrs` does. Only
-/// meaningful when
-/// [`crate::config::EncfsConfig::encrypts_xattrs`] holds.
-pub fn copy_stored_xattrs(
+/// the volume's plaintext prefixes, match `real_src`'s, IV seed first: the
+/// [`copy_backing_xattrs`] case where the volume encrypts attributes.
+fn copy_stored_xattrs(
     config: &crate::config::EncfsConfig,
     real_src: &Path,
     real_dst: &Path,
@@ -1250,11 +1255,18 @@ pub fn copy_stored_xattrs(
 
 /// Makes the extended attributes of the backing entry `real_dst` that a
 /// mount shows match `real_src`'s, for a rename that copies: the stored
-/// attributes where the volume encrypts them ([`copy_stored_xattrs`]),
-/// otherwise every attribute, since they pass through as they are. System
-/// names (outside the `user.` namespace where the platform has one,
-/// `com.apple.*` on macOS) are copied when the backing filesystem allows
-/// it and passed over otherwise.
+/// encrypted ones, seed first, where the volume encrypts them, otherwise
+/// every attribute, since they pass through as they are. The bytes carry
+/// over unchanged, so they still decrypt under the copied seed. Names
+/// `real_dst` has that the source lacks are removed, and values it already
+/// holds, as after a copy that cloned attributes (`fs::copy` on macOS),
+/// aren't rewritten. Everything is read from the source before the
+/// destination changes, which must be writable by its owner if anything
+/// needs writing. System names (outside the `user.` namespace where the
+/// platform has one, `com.apple.*` on macOS) are copied when the backing
+/// filesystem allows it and passed over otherwise. Works on backing paths
+/// alone; a mount must also drop any IV it cached for `real_dst`'s inode
+/// (`EncFs::forget_xattr_iv_of`).
 pub fn copy_backing_xattrs(
     config: &crate::config::EncfsConfig,
     real_src: &Path,
@@ -1442,10 +1454,6 @@ fn is_same_file(path: &Path, file: &File) -> bool {
 fn fresh_entry(entry: PathEntry<FileState>) -> PathEntry<FileState> {
     entry.state.set_cached_xattr_iv(None);
     entry
-}
-
-fn headerless_file_iv(header_size: u64, external_iv: u64) -> FileIv {
-    FileIv::from_u64(if header_size == 0 { external_iv } else { 0 })
 }
 
 /// A directory mkdir built under a staging name (see [`EncFs::stage_dir`]),
@@ -1667,29 +1675,28 @@ impl EncFs {
         Ok(file_iv)
     }
 
-    /// Reads and decrypts the per-file header, returning `None` when the file
-    /// is too short to hold one (e.g. freshly created via `mknod`).
+    /// Reads and decrypts the per-file header of a file at path IV
+    /// `path_iv` ([`crate::config::EncfsConfig::read_file_iv`]), returning `None` when the
+    /// file is too short to hold one (e.g. freshly created via `mknod`).
     /// `backing_path` names the file in logs.
     fn read_file_header(
         &self,
         file: &File,
         backing_path: &Path,
-        external_iv: u64,
+        path_iv: u64,
     ) -> Result<Option<FileIv>, libc::c_int> {
-        let header_size = self.config.header_size() as usize;
-        let mut header = vec![0u8; header_size];
-        let bytes_read = file
-            .read_at(&mut header, 0)
-            .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-        if bytes_read != header_size {
-            return Ok(None);
-        }
-        match self.cipher.decrypt_header(&mut header, external_iv) {
+        match self
+            .config
+            .read_file_iv(self.cipher.as_ref(), file, path_iv)
+        {
             Ok(file_iv) => Ok(Some(file_iv)),
-            Err(e) => {
+            Err(crate::config::FileIvError::ShortHeader) => Ok(None),
+            Err(crate::config::FileIvError::Io(e)) => Err(e.raw_os_error().unwrap_or(libc::EIO)),
+            Err(e @ crate::config::FileIvError::Header(_)) => {
                 error!(
-                    "Decrypting file header failed: corrupted data in {:?}: {}",
-                    backing_path, e
+                    "Decrypting file header failed: corrupted data in {:?}: {:#}",
+                    backing_path,
+                    anyhow::Error::new(e)
                 );
                 Err(libc::EIO)
             }
@@ -1999,21 +2006,15 @@ impl EncFs {
             file_iv
         } else if header_size > 0 {
             let path_iv = opened_path_iv.ok_or(libc::ESTALE)?;
-            let external_iv = if self.config.external_iv_chaining {
-                path_iv
-            } else {
-                0
-            };
             // Cache it for handles opened later, as `open_impl` would have.
             let file_iv = self
-                .read_file_header(file_ref, opened_at, external_iv)?
+                .read_file_header(file_ref, opened_at, path_iv)?
                 .ok_or(libc::EIO)?;
             guard.header_iv = Some(file_iv);
             file_iv
-        } else if self.config.external_iv_chaining {
-            FileIv::from_u64(opened_path_iv.ok_or(libc::ESTALE)?)
         } else {
-            FileIv::from_u64(0)
+            self.config
+                .headerless_file_iv(opened_path_iv.ok_or(libc::ESTALE)?)
         };
 
         let result = if size > current_logical_size {
@@ -2318,12 +2319,8 @@ impl EncFs {
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
         let header_size = self.config.header_size();
-        let external_iv = if self.config.external_iv_chaining {
-            path_iv
-        } else {
-            0
-        };
-        let headerless_iv = headerless_file_iv(header_size, external_iv);
+        let external_iv = self.config.external_iv(path_iv);
+        let headerless_iv = self.config.headerless_file_iv(path_iv);
 
         let state = self.file_states.get(&file)?;
         // Exclusive for the whole open: this path may reset the file and install
@@ -2350,15 +2347,22 @@ impl EncFs {
                 // header so subsequent writes use the correct physical offset
                 // and file format.
                 if !want_write {
-                    // Opening for read but the file is too small to hold a header.
-                    return Err(libc::EIO);
+                    if physical_size > 0 {
+                        // Cut off inside its header.
+                        return Err(libc::EIO);
+                    }
+                    // An empty file, never written to: C++ EncFS writes the
+                    // header with the first data, so `touch` leaves none.
+                    // It reads as empty; a writable open adds the header.
+                    None
+                } else {
+                    Some(self.write_file_header(&file, external_iv)?)
                 }
-                Some(self.write_file_header(&file, external_iv)?)
             } else {
                 // A short read here leaves the IV at zero, matching the
                 // pre-header-cache behaviour for partially written files.
                 Some(
-                    self.read_file_header(&file, &real_path, external_iv)?
+                    self.read_file_header(&file, &real_path, path_iv)?
                         .unwrap_or(FileIv::from_u64(0)),
                 )
             };
@@ -2470,12 +2474,8 @@ impl EncFs {
         let file = entry.open(open_flags, mode)?;
 
         let header_size = self.config.header_size();
-        let external_iv = if self.config.external_iv_chaining {
-            path_iv
-        } else {
-            0
-        };
-        let headerless_iv = headerless_file_iv(header_size, external_iv);
+        let external_iv = self.config.external_iv(path_iv);
+        let headerless_iv = self.config.headerless_file_iv(path_iv);
 
         let state = self.file_states.get(&file)?;
         // Possibly a new inode under the number of a deleted one.
@@ -2747,11 +2747,7 @@ impl EncFs {
         } else {
             use std::io::Write;
             let header_size = self.config.header_size();
-            let external_iv = if self.config.external_iv_chaining {
-                entry.iv
-            } else {
-                0
-            };
+            let external_iv = self.config.external_iv(entry.iv);
             let mut f = entry.open(libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL, mode & 0o7777)?;
             if header_size > 0 {
                 let (header, _iv) = self.cipher.encrypt_header(external_iv).map_err(|e| {
@@ -3086,22 +3082,6 @@ impl EncFs {
             error!("Failed to derive xattr IV: {}", e);
             libc::EIO
         })
-    }
-
-    /// Makes the extended attributes of `real_dst`, a copy of `real_src`
-    /// that a rename just made, match the source's (see
-    /// [`copy_backing_xattrs`]): the stored encrypted ones, seed included,
-    /// where the volume encrypts them, otherwise all of them. The stored
-    /// bytes carry over unchanged and still decrypt under the copied seed.
-    /// Names the destination has that the source lacks (keyed by its old
-    /// seed) are removed, and values it already holds, as after a copy
-    /// that cloned attributes (`fs::copy` on macOS), aren't rewritten.
-    /// Everything is read from the source before the destination changes.
-    /// `real_dst` must be writable by its owner if anything needs writing.
-    fn copy_entry_xattrs(&self, real_src: &Path, real_dst: &Path) -> OpResult {
-        copy_backing_xattrs(&self.config, real_src, real_dst)?;
-        self.forget_xattr_iv_of(real_dst);
-        Ok(())
     }
 
     /// Drops the xattr IV cached for the inode at `real_path`. It may be an
@@ -3529,7 +3509,7 @@ impl PathFilesystem for EncFs {
 mod tests {
     use super::{
         EncFs, FILE_STATE_SWEEP_FLOOR, FileHandle, FileState, FileStates, XATTR_READ_GUESS,
-        headerless_file_iv, is_apple_xattr, lock_source_and_dest, read_iv_seed, read_stored_xattr,
+        is_apple_xattr, lock_source_and_dest, read_iv_seed, read_stored_xattr,
     };
     use crate::config::{EncfsConfig, Interface};
     use crate::crypto::file_iv::FileIv;
@@ -3630,22 +3610,6 @@ mod tests {
             rx.recv_timeout(std::time::Duration::from_secs(60))
                 .expect("pair locking deadlocked");
         }
-    }
-
-    #[test]
-    fn headerless_files_use_external_iv() {
-        assert_eq!(
-            headerless_file_iv(0, 0x1234_5678_9abc_def0),
-            FileIv::from_u64(0x1234_5678_9abc_def0)
-        );
-    }
-
-    #[test]
-    fn headered_files_ignore_external_iv() {
-        assert_eq!(
-            headerless_file_iv(8, 0x1234_5678_9abc_def0),
-            FileIv::from_u64(0)
-        );
     }
 
     #[test]
@@ -4978,7 +4942,7 @@ mod tests {
         set_raw_xattr(&dst, c"user.encfs.CCCC", b"only on dst");
         set_raw_xattr(&dst, c"user.unrelated", b"left alone");
 
-        vol.fs.copy_entry_xattrs(&src, &dst).unwrap();
+        super::copy_backing_xattrs(&vol.fs.config, &src, &dst).unwrap();
         assert_eq!(raw_xattrs(&dst), raw_xattrs(&src));
         let c_dst = c_path(&dst);
         assert_eq!(
@@ -4989,7 +4953,7 @@ mod tests {
         // Already identical: nothing is written.
         let before = std::fs::metadata(&dst).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(20));
-        vol.fs.copy_entry_xattrs(&src, &dst).unwrap();
+        super::copy_backing_xattrs(&vol.fs.config, &src, &dst).unwrap();
         let after = std::fs::metadata(&dst).unwrap();
         assert_eq!(
             (after.ctime(), after.ctime_nsec()),

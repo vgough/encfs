@@ -15,16 +15,20 @@ Done:
 - Step 3: the copy is synced, and the error propagated, before the source
   is removed; failed child copies abort before `remove_dir_all`.
 - Step 5: `encfsctl cat` and `export` use `EncfsConfig::headerless_file_iv`.
-- Step 1 in part: `EncfsConfig::external_iv` and `headerless_file_iv`
-  exist and serve rename, fsck, `cat` and `export`. `create_impl`,
-  `open_impl`, the truncate path and `ReverseFs::file_iv_for_path` still
-  have their own copies of the rule.
+- Step 1: `EncfsConfig::headerless_file_iv` and `read_file_iv` serve
+  rename, fsck, `cat`, `export` and the forward mount (`create_impl`,
+  `open_impl`, the truncate path). `ReverseFs` keeps `external_iv`, which
+  is the same rule on the V7-only configs it accepts.
+- Step 4: V4–V6 headerless files use IV 0 whatever `externalIVChaining`
+  says, as in C++; `validate` doesn't reject the combination. A V6 → V7
+  `passwd --upgrade` of a headerless volume clears external chaining so
+  its files keep IV 0.
 - Tests: `tests/rename_path_iv_test.rs` (rename in place, into another
-  directory, inside a renamed directory, partial block and hole).
+  directory, inside a renamed directory, partial block and hole; legacy
+  IV 0 against blocks encrypted directly).
 
-Left: step 4 (the legacy IV rule and its validation decision), the
-open-handle tests, the in-process stacked restore test and the live test
-extension.
+Left: the open-handle tests, the in-process stacked restore test and the
+live test extension.
 
 ## Problem
 

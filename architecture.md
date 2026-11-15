@@ -66,6 +66,7 @@ encfs/
 │   ├── diriv.rs              # Directory IV mode (V7): `.encfs.diriv` sidecars, IV derivation walk helpers, validated cache
 │   ├── diriv/platform.rs     # Platform-specific sidecar sync
 │   ├── recrypt.rs            # Re-encrypting copies of backing entries under a new path IV (rename, fsck)
+│   ├── conflict.rs           # Sync conflict copy probing (bases, confidence, recovery names), shared by fsck and recrypt
 │   ├── symlink_target.rs     # Symlink target encoding (C++-compatible path form for V4-V6, single name for V7)
 │   ├── idle_lock.rs          # Inactivity lock gating data ops in on-demand mode (`encfs --touchid`)
 │   ├── rpc.rs                # Control requests over xattrs on the mount root (`encfsctl rpc`, ADR 0004)

@@ -97,8 +97,9 @@ pub fn for_each_block(
     Ok(())
 }
 
-/// Writes the blocks of `src` (`len` bytes, header excluded) to `out`,
-/// each decrypted under file IV `from` and encrypted under `to`: what a
+/// Writes the blocks of `src`, a file of `len` bytes in all (header
+/// included, though only the blocks after it are read or written), to
+/// `out`, each decrypted under file IV `from` and encrypted under `to`: what a
 /// headerless file whose file IV is its path IV needs when it moves. Holes
 /// stay holes, since a volume allowing them reads them as zeros under any
 /// IV.

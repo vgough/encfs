@@ -4,8 +4,8 @@ extern crate rust_i18n;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use encfs::{
-    config, constants, crypto::cipher::Cipher, crypto::file::is_corrupted_data,
-    crypto::file_iv::FileIv, crypto::ssl::SslCipher, diriv,
+    config, config::FileIvError, constants, crypto::cipher::Cipher,
+    crypto::file::is_corrupted_data, crypto::file_iv::FileIv, crypto::ssl::SslCipher, diriv,
 };
 use getrandom::fill as fill_random;
 use rpassword::prompt_password;
@@ -1142,6 +1142,12 @@ fn cmd_passwd(rootdir: &Path, upgrade: bool) -> Result<()> {
             config.xattr_format = config::XattrFormat::Plaintext;
             config.symlink_format = config::SymlinkFormat::LegacyPath;
             config.minimum_reader_version = constants::V7_STORAGE_FORMATS_CONFIG_VERSION;
+            // Files without a header use IV 0 on V4-V6 but their path IV
+            // on V7 with external IV chaining. The flag does nothing else
+            // without a header, so drop it to keep them readable.
+            if !config.unique_iv {
+                config.external_iv_chaining = false;
+            }
         }
     } else {
         // Keep existing KDF or upgrade to PBKDF2 if legacy
@@ -1403,30 +1409,24 @@ fn cmd_cat(args: &[String], extpass: Option<String>, ignore_mac: bool) -> Result
         ))
     };
     let file = std::fs::File::open(&file_path).map_err(|e| named(read_file_error(e)))?;
+    // An empty file has no header to read: C++ EncFS writes it with the
+    // first data, so a file that never had any is empty, not damaged.
+    if file
+        .metadata()
+        .map_err(|e| named(read_file_error(e)))?
+        .len()
+        == 0
+    {
+        return Ok(());
+    }
 
-    // Read header to get file IV
-    use std::os::unix::fs::FileExt;
-
-    let header_size = config.header_size();
-    let file_iv = if header_size > 0 {
-        let mut header = vec![0u8; header_size as usize];
-        let n = file
-            .read_at(&mut header, 0)
-            .map_err(|e| named(read_file_error(e)))?;
-        if n < header.len() {
-            return Err(named(anyhow::anyhow!(
-                "{}",
-                t!("ctl.error_incomplete_header")
-            )));
-        }
-
-        // Use path IV for external IV chaining (paranoia mode)
-        cipher
-            .decrypt_header(&mut header, config.external_iv(path_iv))
-            .map_err(|e| named(header_error(e)))?
-    } else {
-        config.headerless_file_iv(path_iv)
-    };
+    let file_iv = config
+        .read_file_iv(cipher.as_ref(), &file, path_iv)
+        .map_err(|e| match e {
+            FileIvError::ShortHeader => anyhow::anyhow!("{}", t!("ctl.error_incomplete_header")),
+            e => file_iv_error(e),
+        })
+        .map_err(named)?;
 
     // Use FileDecoder to decrypt content
     use encfs::crypto::file::FileDecoder;
@@ -1471,6 +1471,16 @@ fn read_file_error(e: io::Error) -> anyhow::Error {
 /// An error decrypting a backing file's header. Callers add the file's path.
 fn header_error(e: anyhow::Error) -> anyhow::Error {
     e.context(t!("ctl.error_undecryptable_file_header"))
+}
+
+/// An error getting a backing file's IV, as [`read_file_error`] and
+/// [`header_error`] report it. Callers add the file's path.
+fn file_iv_error(e: FileIvError) -> anyhow::Error {
+    match e {
+        FileIvError::Io(e) => read_file_error(e),
+        FileIvError::Header(e) => header_error(e),
+        e @ FileIvError::ShortHeader => anyhow::Error::new(e),
+    }
 }
 
 fn cmd_ls(rootdir: &Path, path: &str, extpass: Option<String>) -> Result<()> {
@@ -2332,7 +2342,7 @@ fn export_directory(
     fail_on_error: bool,
 ) -> Result<()> {
     use encfs::crypto::file::FileDecoder;
-    use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     let dir_iv = match diriv::names_iv(config, cipher, current_encrypted_dir, path_iv) {
         Ok(iv) => iv,
@@ -2439,27 +2449,22 @@ fn export_directory(
                 // Decrypt and copy file content
                 let src_file = std::fs::File::open(&entry_path).map_err(read_file_error)?;
 
-                let header_size = config.header_size();
-                let file_iv = if header_size > 0 {
-                    // Read and decrypt file header
-                    let mut header = vec![0u8; header_size as usize];
-                    let bytes_read = src_file.read_at(&mut header, 0).map_err(read_file_error)?;
-
-                    if bytes_read < header.len() {
+                let path_iv = diriv::child_path_iv(config, new_iv);
+                let file_iv = match config.read_file_iv(cipher, &src_file, path_iv) {
+                    Ok(iv) => iv,
+                    // An empty file, never written to, has no header yet;
+                    // there's nothing to decrypt.
+                    Err(FileIvError::ShortHeader) if metadata.len() == 0 => {
+                        encfs::crypto::file_iv::FileIv::from_u64(0)
+                    }
+                    Err(FileIvError::ShortHeader) => {
                         eprintln!(
                             "{}",
                             t!("ctl.warning_incomplete_header", name = entry_path.display())
                         );
                         return Ok(None);
                     }
-
-                    // Calculate path IV for external IV chaining
-                    let path_iv = diriv::child_path_iv(config, new_iv);
-                    cipher
-                        .decrypt_header(&mut header, config.external_iv(path_iv))
-                        .map_err(header_error)?
-                } else {
-                    config.headerless_file_iv(diriv::child_path_iv(config, new_iv))
+                    Err(e) => return Err(file_iv_error(e)),
                 };
 
                 // Decrypt content using FileDecoder
@@ -2474,7 +2479,7 @@ fn export_directory(
                 let file_size = metadata.len();
                 let logical_size = FileDecoder::<std::fs::File>::calculate_logical_size_with_mode(
                     file_size,
-                    header_size,
+                    config.header_size(),
                     config.block_size as u64,
                     config.block_mac_bytes as u64,
                     config.block_mode(),
@@ -3065,7 +3070,7 @@ fn find_undecodable_files(
         shown_dir: None,
         issues: 0,
     };
-    let mut scan = encfs::fsck::Fsck::new(rootdir, config, cipher);
+    let mut scan = encfs::fsck::Fsck::new(rootdir, config, cipher).names_only();
     scan.run(&mut handler)?;
     let stats = scan.stats();
     if stats.errors > 0 {

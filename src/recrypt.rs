@@ -6,17 +6,20 @@
 //! and `encfsctl fsck` (ADR 0007) both build their copies here, on backing
 //! paths alone; [`Hooks`] carries what differs between them.
 //!
-//! A copy never removes its source. Every file it writes is synced, and
-//! every directory it builds is synced once its entries are in place, so
-//! the caller can remove the source as soon as the copy is in place.
+//! A copy never removes its source. Every file it writes, and every
+//! directory it builds once its entries are in place, is synced through
+//! [`Hooks::sync`], so the caller can remove the source as soon as the copy
+//! is in place.
 
 use crate::config::EncfsConfig;
+use crate::conflict::{Candidate, Probe, sorted_entries};
 use crate::crypto::cipher::Cipher;
 use crate::crypto::file::reencrypt_blocks;
 use crate::crypto::file_iv::FileIv;
 use crate::diriv;
 use crate::symlink_target;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
@@ -29,8 +32,8 @@ use typed_fuse::passthrough;
 /// What the caller of [`Recrypt::copy_tree`] adds around the copy.
 pub trait Hooks {
     /// Writes the new regular file `dst` with the contents of `src`
-    /// re-encrypted from path IV `src_iv` to `dst_iv`. Metadata is the
-    /// tree copy's job.
+    /// re-encrypted from path IV `src_iv` to `dst_iv`, and syncs it.
+    /// Metadata is the tree copy's job.
     fn copy_file(
         &mut self,
         r: &Recrypt<'_>,
@@ -42,16 +45,20 @@ pub trait Hooks {
         let input = File::open(src)?;
         let output = create_file(dst)?;
         r.copy_file_contents(&input, src_iv, &output, dst_iv)?;
+        self.sync(&output)
+    }
+
+    /// Syncs a file or directory of the copy: in full by default, so it
+    /// survives a crash once the source is gone.
+    fn sync(&mut self, file: &File) -> Result<()> {
+        diriv::sync_file(file, false).context("syncing the copy")?;
         Ok(())
     }
 
-    /// The source inode behind `meta` was copied rather than linked, so it
-    /// goes away with the source.
-    fn copied(&mut self, _meta: &fs::Metadata) {}
-
-    /// `dst` is a new inode that was just given its source's stored
-    /// attributes.
-    fn created(&mut self, _dst: &Path) {}
+    /// The new inode `dst` was made from the source inode behind `meta`
+    /// and given its attributes, mode and times. The source inode goes
+    /// away with the source; a linked one is never reported.
+    fn finished(&mut self, _meta: &fs::Metadata, _dst: &Path) {}
 
     /// A problem that didn't stop the copy.
     fn warning(&mut self, path: &Path, error: &anyhow::Error);
@@ -59,8 +66,8 @@ pub trait Hooks {
 
 /// Re-encrypting copies for one volume.
 pub struct Recrypt<'a> {
-    pub config: &'a EncfsConfig,
-    pub cipher: &'a dyn Cipher,
+    config: &'a EncfsConfig,
+    cipher: &'a dyn Cipher,
 }
 
 impl<'a> Recrypt<'a> {
@@ -83,21 +90,8 @@ impl<'a> Recrypt<'a> {
         }
     }
 
-    /// The file IV of `file`, a file whose path IV is `path_iv`: from its
-    /// header, or [`EncfsConfig::headerless_file_iv`] without one.
-    pub fn file_iv(&self, file: &File, path_iv: u64) -> Result<FileIv> {
-        let header_size = self.config.header_size() as usize;
-        if header_size == 0 {
-            return Ok(self.config.headerless_file_iv(path_iv));
-        }
-        let mut header = vec![0u8; header_size];
-        std::os::unix::fs::FileExt::read_exact_at(file, &mut header, 0)?;
-        self.cipher
-            .decrypt_header(&mut header, self.config.external_iv(path_iv))
-    }
-
     /// Writes the contents of `src`, a file at path IV `src_iv`, into the
-    /// empty file `dst` for path IV `dst_iv`, then syncs `dst`. With a
+    /// empty file `dst` for path IV `dst_iv`. The caller syncs it. With a
     /// header, only the header is re-encrypted: the blocks depend on the
     /// file IV, which carries over. Without one every block is
     /// re-encrypted. Returns the file IV `dst`'s header holds.
@@ -114,10 +108,7 @@ impl<'a> Recrypt<'a> {
         let header_iv = if len == 0 {
             None
         } else if header_size > 0 {
-            if len < header_size {
-                bail!("the file is shorter than its header");
-            }
-            let file_iv = self.file_iv(src, src_iv)?;
+            let file_iv = self.config.read_file_iv(self.cipher, src, src_iv)?;
             let header = self
                 .cipher
                 .encrypt_header_with_iv(file_iv, self.config.external_iv(dst_iv))?;
@@ -139,8 +130,6 @@ impl<'a> Recrypt<'a> {
             None
         };
         out.flush()?;
-        drop(out);
-        diriv::sync_file(dst, false).context("syncing the copy")?;
         Ok(header_iv)
     }
 
@@ -180,105 +169,99 @@ impl<'a> Recrypt<'a> {
             self.finish(src, dst, meta, hooks)
         } else if t.is_dir() && self.config.children_depend_on_path() {
             create_dir(dst)?;
-            let mut children = Vec::new();
-            let mut plain_names = HashSet::new();
-            for entry in sorted_entries(src)? {
+            let children = sorted_entries(src)?;
+            // The decodable names, wanted only once a name doesn't decode.
+            let mut plain_names = None;
+            for entry in &children {
                 let name = entry.file_name();
-                let decoded = name
-                    .to_str()
-                    .filter(|s| !s.starts_with('.'))
-                    .and_then(|s| self.cipher.decrypt_entry_name(s, src_iv).ok());
-                if let Some((plain, _)) = &decoded {
-                    plain_names.insert(plain.clone());
-                }
-                children.push((name, entry.metadata()?, decoded));
-            }
-            for (name, child_meta, decoded) in children {
                 let child = src.join(&name);
-                match decoded {
-                    Some((plain, next_src)) => {
-                        let (encrypted, next_dst) = self.cipher.encrypt_filename(&plain, dst_iv)?;
-                        self.copy_tree(
-                            &child,
-                            diriv::child_path_iv(self.config, next_src),
-                            &dst.join(encrypted),
-                            diriv::child_path_iv(self.config, next_dst),
-                            &child_meta,
-                            hooks,
-                        )?;
+                let child_meta = entry.metadata()?;
+                let Some(s) = name.to_str().filter(|s| !s.starts_with('.')) else {
+                    self.copy_raw(&child, &dst.join(&name), &child_meta, hooks)?;
+                    continue;
+                };
+                // A conflict copy's base, and the IV its contents were
+                // written under, stand in for a name that doesn't decode.
+                let (plain, suffix, next_src) = match self.cipher.decrypt_entry_name(s, src_iv) {
+                    Ok((plain, next_iv)) => (plain, "", diriv::child_path_iv(self.config, next_iv)),
+                    Err(_) => {
+                        let names = plain_names
+                            .get_or_insert_with(|| self.decodable_names(&children, src_iv));
+                        match self.conflict_base(src, src_iv, s, &child_meta, names, hooks) {
+                            Some(c) => (c.plain, &s[s.len() - c.suffix.len()..], c.path_iv),
+                            None => {
+                                self.copy_raw(&child, &dst.join(&name), &child_meta, hooks)?;
+                                continue;
+                            }
+                        }
                     }
-                    None => self.copy_undecodable(
-                        src,
-                        src_iv,
-                        &name,
-                        &child_meta,
-                        dst,
-                        dst_iv,
-                        &plain_names,
-                        hooks,
-                    )?,
-                }
+                };
+                let (encrypted, next_dst) = self.cipher.encrypt_filename(&plain, dst_iv)?;
+                self.copy_tree(
+                    &child,
+                    next_src,
+                    &dst.join(format!("{encrypted}{suffix}")),
+                    diriv::child_path_iv(self.config, next_dst),
+                    &child_meta,
+                    hooks,
+                )?;
             }
             self.finish(src, dst, meta, hooks)?;
-            sync_dir(dst)
+            self.sync_dir(dst, hooks)
         } else {
             self.copy_raw(src, dst, meta, hooks)
         }
     }
 
-    /// Copies a child of a directory being re-encrypted whose name doesn't
-    /// decode. A sync tool's conflict copy whose base fsck would recover
-    /// by default is renamed along with it (its base re-encrypted, its
-    /// suffix kept) so it stays recoverable under the new path; anything
-    /// else keeps its bytes and name.
-    #[allow(clippy::too_many_arguments)]
-    fn copy_undecodable(
+    /// The plaintext names of `entries`, children of a directory whose
+    /// names IV is `names_iv`, that decode.
+    fn decodable_names(&self, entries: &[fs::DirEntry], names_iv: u64) -> HashSet<Vec<u8>> {
+        entries
+            .iter()
+            .filter_map(|e| {
+                let name = e.file_name();
+                let s = name.to_str()?;
+                Some(self.cipher.decrypt_entry_name(s, names_iv).ok()?.0)
+            })
+            .collect()
+    }
+
+    /// The base a child of a directory being re-encrypted whose name
+    /// doesn't decode would be recovered with, if it is a sync tool's
+    /// conflict copy that `encfsctl fsck --fix --yes` would recover. It is
+    /// then renamed along with the directory (its base re-encrypted, its
+    /// suffix kept) so it stays recoverable under the new path. A conflict
+    /// copy whose base is uncertain keeps its old name, with a warning.
+    fn conflict_base(
         &self,
-        src_dir: &Path,
-        src_iv: u64,
-        name: &OsStr,
+        dir: &Path,
+        names_iv: u64,
+        name: &str,
         meta: &fs::Metadata,
-        dst_dir: &Path,
-        dst_iv: u64,
         plain_names: &HashSet<Vec<u8>>,
         hooks: &mut dyn Hooks,
-    ) -> Result<()> {
-        let src = src_dir.join(name);
-        let base = name.to_str().filter(|s| !s.starts_with('.')).map(|s| {
-            crate::fsck::default_conflict_base(
-                self.config,
-                self.cipher,
-                src_dir,
-                src_iv,
-                s,
-                meta,
-                plain_names,
-            )
-        });
-        match base {
-            Some(Ok(Some(base))) => {
-                let (encrypted, next_dst) = self.cipher.encrypt_filename(&base.plain, dst_iv)?;
-                let new_name = format!("{encrypted}{}", base.suffix);
-                return self.copy_tree(
-                    &src,
-                    base.path_iv,
-                    &dst_dir.join(new_name),
-                    diriv::child_path_iv(self.config, next_dst),
-                    meta,
-                    hooks,
-                );
-            }
-            Some(Ok(None)) => {}
-            Some(Err(e)) => hooks.warning(
-                &src,
+    ) -> Option<Candidate> {
+        let notes = RefCell::new(Vec::new());
+        let base = Probe::new(self.config, self.cipher, &notes).default_conflict_base(
+            dir,
+            names_iv,
+            name,
+            meta,
+            plain_names,
+        );
+        for (path, error) in notes.take() {
+            hooks.warning(&path, &error);
+        }
+        base.unwrap_or_else(|e| {
+            hooks.warning(
+                &dir.join(name),
                 &e.context(
                     "a conflict copy whose base isn't certain keeps its name, \
                      encrypted for the old path",
                 ),
-            ),
-            None => {}
-        }
-        self.copy_raw(&src, &dst_dir.join(name), meta, hooks)
+            );
+            None
+        })
     }
 
     /// Copies `src` to `dst` as it is, names and bytes: a hard link for
@@ -308,7 +291,7 @@ impl<'a> Recrypt<'a> {
                 )?;
             }
             self.finish(src, dst, meta, hooks)?;
-            return sync_dir(dst);
+            return self.sync_dir(dst, hooks);
         }
         match fs::hard_link(src, dst) {
             // The same inode, with its attributes, mode and times.
@@ -324,7 +307,7 @@ impl<'a> Recrypt<'a> {
         let mut input = File::open(src)?;
         let output = create_file(dst)?;
         io::copy(&mut input, &mut &output)?;
-        diriv::sync_file(&output, false)?;
+        hooks.sync(&output)?;
         self.finish(src, dst, meta, hooks)
     }
 
@@ -338,9 +321,17 @@ impl<'a> Recrypt<'a> {
         hooks: &mut dyn Hooks,
     ) -> Result<()> {
         copy_metadata(self.config, src, dst, meta)?;
-        hooks.copied(meta);
-        hooks.created(dst);
+        hooks.finished(meta, dst);
         Ok(())
+    }
+
+    /// Syncs the directory `dir` of the copy, so its entries are durable.
+    fn sync_dir(&self, dir: &Path, hooks: &mut dyn Hooks) -> Result<()> {
+        let d =
+            diriv::open_dir_to_sync(dir).with_context(|| format!("opening {}", dir.display()))?;
+        hooks
+            .sync(&d)
+            .with_context(|| format!("syncing {}", dir.display()))
     }
 }
 
@@ -354,13 +345,18 @@ pub fn copy_metadata(
     meta: &fs::Metadata,
 ) -> Result<()> {
     crate::fs::copy_backing_xattrs(config, src, dst)
-        .map_err(|e| anyhow!(io::Error::from_raw_os_error(e)))
+        .map_err(from_errno)
         .with_context(|| format!("copying extended attributes to {}", dst.display()))?;
     if !meta.file_type().is_symlink() {
         fs::set_permissions(dst, fs::Permissions::from_mode(meta.mode() & 0o7777))?;
     }
     let _ = passthrough::utimens_path(dst, meta.accessed().ok(), meta.modified().ok());
     Ok(())
+}
+
+/// An error for the errno `e`.
+pub fn from_errno(e: libc::c_int) -> anyhow::Error {
+    io::Error::from_raw_os_error(e).into()
 }
 
 /// The errno behind `error`, for callers that report one: the first OS
@@ -398,7 +394,7 @@ fn create_dir(dst: &Path) -> Result<()> {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
             if !fs::symlink_metadata(dst)?.is_dir() || fs::read_dir(dst)?.next().is_some() {
-                return Err(anyhow!(io::Error::from_raw_os_error(libc::ENOTEMPTY)))
+                return Err(from_errno(libc::ENOTEMPTY))
                     .with_context(|| format!("{} is in the way", dst.display()));
             }
         }
@@ -408,18 +404,18 @@ fn create_dir(dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Directory entries, sorted by name so runs are repeatable.
-pub fn sorted_entries(dir: &Path) -> Result<Vec<fs::DirEntry>> {
-    let mut out = fs::read_dir(dir)
-        .with_context(|| format!("reading {}", dir.display()))?
-        .collect::<io::Result<Vec<_>>>()?;
-    out.sort_by_cached_key(fs::DirEntry::file_name);
-    Ok(out)
-}
-
 /// `fsync` of a directory, so the entries just made in it are durable.
 pub fn sync_dir(dir: &Path) -> Result<()> {
     let d = diriv::open_dir_to_sync(dir).with_context(|| format!("opening {}", dir.display()))?;
     diriv::sync_file(&d, false).with_context(|| format!("syncing {}", dir.display()))?;
     Ok(())
+}
+
+/// Removes the entry at `path`, a whole tree for a directory.
+pub fn remove_entry(path: &Path) -> io::Result<()> {
+    if fs::symlink_metadata(path)?.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    }
 }

@@ -8,7 +8,7 @@ This document provides comprehensive information for AI agents working in the En
 
 - **Language**: Rust (Edition 2024)
 - **Primary Goal**: Read/write compatibility with legacy EncFS filesystems
-- **Status**: Beta (v2.0.0-beta.10) - functional for read/write but still maturing
+- **Status**: Beta (v2.0.0-beta.11) - functional for read/write but still maturing
 
 ### Key Characteristics
 - Encrypts individual files (not block devices)
@@ -163,6 +163,7 @@ FUSE op moves through these layers.
 1. **Unit tests**: `#[cfg(test)] mod tests` at bottom of source files
 2. **Integration tests**: Separate files in `tests/` directory
 3. **Live mount tests**: `tests/live_mount.rs` with `#[ignore]` attribute
+4. **C++ compatibility**: `tests/cpp_compat_test.rs` (`#[ignore]`) reads volumes written by C++ EncFS; procedure and expected results in `docs/testing/cpp-compatibility.md` (`task test-cpp-compat`)
 
 ### Common Test Patterns
 
@@ -238,7 +239,8 @@ then its *entry IV*, not the IV for its children; use `names_iv` /
 on the same inode as `user.encfs.~iv` (`xattr_name::IV_SEED_NAME`), never by
 a path or entry IV, so a `rename(2)` leaves them valid. Any rename path that
 creates a new inode must carry the raw `user.encfs.*` attributes across with
-`EncFs::copy_entry_xattrs` while the destination is still writable (it
+`EncFs::copy_entry_metadata` (or `recrypt::copy_metadata` plus
+`EncFs::forget_xattr_iv_of`) while the destination is still writable (it
 carries every attribute where they pass through unencrypted).
 The derived IV is cached in the node's `FileState`; code that creates an
 inode must hand back its state through `EncFs::entry_for_new_inode` (or clear
@@ -246,7 +248,7 @@ the cache itself, as `create_impl` does), since an inode number can be reused
 while a deleted inode's state is alive.
 Names under a configured plaintext prefix (`plaintext_xattr_prefixes`, stored
 as V7 config properties; `EncfsConfig::is_plaintext_xattr`) bypass all of this
-and are stored as given, in forward and reverse mode; `copy_entry_xattrs`
+and are stored as given, in forward and reverse mode; `copy_backing_xattrs`
 carries them too. Changing the prefixes changes the config hash, so the volume
 key must be re-wrapped (`v7_volume_key` before the change, `set_v7_key` after).
 On configs naming the earlier path-IV format (wire 0) extended attributes
@@ -554,5 +556,5 @@ task test-live           # Live mount tests
 ---
 
 **Last Updated**: October 7, 2026
-**EncFS Version**: 2.0.0-beta.10
+**EncFS Version**: 2.0.0-beta.11
 **Rust Edition**: 2024

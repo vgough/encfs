@@ -16,7 +16,7 @@
 
 mod platform;
 
-pub use platform::{open_dir_to_sync, sync_file, sync_sidecar};
+pub use platform::{open_dir_to_sync, sync_file, sync_sidecar, write_back};
 
 use crate::config::EncfsConfig;
 use crate::crypto::cipher::Cipher;
@@ -302,11 +302,7 @@ pub fn names_iv(
 /// IVs depend on the entry's name (`chained_name_iv` or directory IV mode),
 /// else 0.
 pub fn child_path_iv(config: &EncfsConfig, next_iv: u64) -> u64 {
-    if config.chained_name_iv || config.directory_iv {
-        next_iv
-    } else {
-        0
-    }
+    if config.path_iv_varies() { next_iv } else { 0 }
 }
 
 /// Makes sure the volume root has a sidecar before mounting.
