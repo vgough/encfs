@@ -55,6 +55,9 @@ v2.0.0 / 2026-10-04
 	  header with the first data, so a file made with `touch` has none; the
 	  mount failed to open it read-only with an I/O error, `cat` failed and
 	  `export` skipped it.
+	  Extending such a file with `truncate` through the mount now creates
+	  its header even without a writable open handle, instead of returning
+	  an I/O error. Incomplete headers are still rejected.
 	* Add a backward compatibility check against volumes written by C++
 	  EncFS (docs/testing/cpp-compatibility.md, `task test-cpp-compat`).
 	* Refuse directory entry names that decrypt to more than one path
