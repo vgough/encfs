@@ -6,6 +6,8 @@
 //! by hand instead: `PathNodeRef::new(None, node.state())`.
 #![allow(dead_code)]
 
+pub mod volume;
+
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use typed_fuse::{Caller, PathFilesystem, PathNodeRef};

@@ -16,7 +16,7 @@
 
 mod platform;
 
-pub use platform::{open_dir_to_sync, sync_file, sync_sidecar};
+pub use platform::{open_dir_to_sync, sync_file, sync_sidecar, write_back};
 
 use crate::config::EncfsConfig;
 use crate::crypto::cipher::Cipher;
@@ -215,11 +215,17 @@ pub const STAGING_PREFIX: &str = ".encfs.";
 /// it renamed to its encrypted name, so a crash can't leave a directory under
 /// that name without a complete sidecar.
 pub fn staging_name() -> io::Result<OsString> {
+    random_name(STAGING_PREFIX)
+}
+
+/// `prefix` followed by [`STAGING_RANDOM_LEN`] random bytes as lowercase
+/// hex, for a name nothing else in the directory has.
+pub fn random_name(prefix: &str) -> io::Result<OsString> {
     let mut bytes = [0u8; STAGING_RANDOM_LEN];
     getrandom::fill(&mut bytes).map_err(io::Error::other)?;
     use std::fmt::Write;
-    let mut name = String::with_capacity(STAGING_PREFIX.len() + 2 * STAGING_RANDOM_LEN);
-    name.push_str(STAGING_PREFIX);
+    let mut name = String::with_capacity(prefix.len() + 2 * STAGING_RANDOM_LEN);
+    name.push_str(prefix);
     for b in bytes {
         let _ = write!(name, "{:02x}", b);
     }
@@ -296,11 +302,7 @@ pub fn names_iv(
 /// IVs depend on the entry's name (`chained_name_iv` or directory IV mode),
 /// else 0.
 pub fn child_path_iv(config: &EncfsConfig, next_iv: u64) -> u64 {
-    if config.chained_name_iv || config.directory_iv {
-        next_iv
-    } else {
-        0
-    }
+    if config.path_iv_varies() { next_iv } else { 0 }
 }
 
 /// Makes sure the volume root has a sidecar before mounting.

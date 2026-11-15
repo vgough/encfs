@@ -284,14 +284,13 @@ fn main() -> Result<()> {
                 )?;
             }
 
-            // The mount table lists `encfs@<root>` as the mount source (type
-            // `fuse.encfs`), so tools can find the directory behind a mount,
-            // as cryfs allows with `cryfs@<dir>`.
+            // The mount table lists this as the mount source (type
+            // `fuse.encfs`).
             let fs_name = encfs::mount_source_name(
                 &args
                     .fsname
                     .clone()
-                    .unwrap_or_else(|| format!("encfs@{}", root.to_string_lossy())),
+                    .unwrap_or_else(|| encfs::default_fsname(&root)),
             );
 
             let fs = EncFs::new(root, cipher, config)

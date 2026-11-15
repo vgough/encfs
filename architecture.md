@@ -53,6 +53,8 @@ encfs/
 ├── src/
 │   ├── main.rs               # encfs binary: forward FUSE mount
 │   ├── encfsctl.rs           # Control utility binary (info/passwd/decode/encode/cat/ls/new/...)
+│   ├── encfsctl/fsck.rs      # `encfsctl fsck` command line: prompts, report, mount check
+│   ├── fsck.rs               # Offline tree check: classifies undecodable names, recovers sync conflict copies (ADR 0007)
 │   ├── encfsr.rs             # Reverse-mode FUSE binary
 │   ├── lib.rs                # Library entry point, i18n init, integration tests
 │   ├── security.rs           # Process hardening (core dumps, ptrace, mlockall)
@@ -63,6 +65,8 @@ encfs/
 │   ├── fs.rs                 # Forward-mode FUSE filesystem implementation
 │   ├── diriv.rs              # Directory IV mode (V7): `.encfs.diriv` sidecars, IV derivation walk helpers, validated cache
 │   ├── diriv/platform.rs     # Platform-specific sidecar sync
+│   ├── recrypt.rs            # Re-encrypting copies of backing entries under a new path IV (rename, fsck)
+│   ├── conflict.rs           # Sync conflict copy probing (bases, confidence, recovery names), shared by fsck and recrypt
 │   ├── symlink_target.rs     # Symlink target encoding (C++-compatible path form for V4-V6, single name for V7)
 │   ├── idle_lock.rs          # Inactivity lock gating data ops in on-demand mode (`encfs --touchid`)
 │   ├── rpc.rs                # Control requests over xattrs on the mount root (`encfsctl rpc`, ADR 0004)

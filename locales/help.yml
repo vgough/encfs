@@ -313,3 +313,39 @@ help.encfsctl.new_template:
   en: "Copy every setting of an existing Version 7 filesystem, given as its encrypted directory or its config file. Other flags apply on top of the template"
   fr: "Copier tous les réglages d'un système de fichiers version 7 existant, indiqué par son répertoire chiffré ou son fichier de configuration. Les autres options s'appliquent par-dessus le modèle"
   de: "Alle Einstellungen eines vorhandenen Dateisystems der Version 7 übernehmen, angegeben als sein verschlüsseltes Verzeichnis oder seine Konfigurationsdatei. Andere Optionen gelten zusätzlich zur Vorlage"
+help.encfsctl.fsck:
+  en: "Find and repair sync-tool conflict copies and other names that don't decrypt"
+  fr: "Trouver et réparer les copies de conflit des outils de synchronisation et les autres noms indéchiffrables"
+  de: "Konfliktkopien von Synchronisierungswerkzeugen und andere nicht entschlüsselbare Namen finden und reparieren"
+help.encfsctl.fsck_rootdir:
+  en: "Root directory of the encrypted filesystem (not a mount point)"
+  fr: "Répertoire racine du système de fichiers chiffré (pas un point de montage)"
+  de: "Stammverzeichnis des verschlüsselten Dateisystems (kein Einhängepunkt)"
+help.encfsctl.fsck_config:
+  en: "Config file to use when the root directory has none, such as a mirror of a reverse view"
+  fr: "Fichier de configuration à utiliser si le répertoire racine n'en contient pas, comme un miroir d'une vue inverse"
+  de: "Zu verwendende Konfigurationsdatei, wenn das Stammverzeichnis keine enthält, etwa ein Spiegel einer Reverse-Ansicht"
+help.encfsctl.fsck_fix:
+  en: "Repair: ask whether to recover, delete or skip each finding"
+  fr: "Réparer : demander pour chaque élément s'il faut le récupérer, le supprimer ou l'ignorer"
+  de: "Reparieren: bei jedem Fund fragen, ob er wiederhergestellt, gelöscht oder übersprungen werden soll"
+help.encfsctl.fsck_yes:
+  en: "With --fix, apply each finding's default action without asking"
+  fr: "Avec --fix, appliquer l'action par défaut de chaque élément sans demander"
+  de: "Mit --fix die Standardaktion jedes Funds ohne Rückfrage ausführen"
+help.encfsctl.fsck_older_than:
+  en: "Only offer to delete sync-tool temp files at least this many hours old"
+  fr: "Ne proposer de supprimer que les fichiers temporaires des outils de synchronisation vieux d'au moins ce nombre d'heures"
+  de: "Temporäre Dateien von Synchronisierungswerkzeugen erst ab diesem Alter in Stunden zum Löschen anbieten"
+help.encfsctl.fsck_extpass:
+  en: "External program that supplies the password"
+  fr: "Programme externe qui fournit le mot de passe"
+  de: "Externes Programm, das das Passwort liefert"
+help.encfsctl.fsck_force:
+  en: "Repair even though the filesystem appears to be mounted"
+  fr: "Réparer même si le système de fichiers semble monté"
+  de: "Reparieren, auch wenn das Dateisystem eingehängt zu sein scheint"
+help.encfsctl.fsck_verbose:
+  en: "Also list sync-tool state files, which fsck leaves alone"
+  fr: "Lister aussi les fichiers d'état des outils de synchronisation, que fsck ne modifie pas"
+  de: "Auch Zustandsdateien von Synchronisierungswerkzeugen auflisten, die fsck nicht verändert"

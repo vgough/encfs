@@ -228,11 +228,7 @@ impl ReverseFs {
 
     fn file_iv_for_path(&self, path: &Path) -> Result<u64, libc::c_int> {
         let (_, path_iv) = self.resolve_source_path(path)?;
-        Ok(if self.config.external_iv_chaining {
-            path_iv
-        } else {
-            0
-        })
+        Ok(self.config.external_iv(path_iv))
     }
 
     fn read_exact_at(file: &File, mut data: &mut [u8], mut offset: u64) -> io::Result<()> {
@@ -904,11 +900,7 @@ impl PathFilesystem for ReverseFs {
             return Ok(Opened::new(ReverseHandle::Config));
         }
         let (source_path, dir_iv) = self.resolve_source_path(path)?;
-        let file_iv = if self.config.external_iv_chaining {
-            dir_iv
-        } else {
-            0
-        };
+        let file_iv = self.config.external_iv(dir_iv);
         let mut options = OpenOptions::new();
         options.read(true);
         if flags & write_flags != 0 {
@@ -1023,16 +1015,7 @@ impl PathFilesystem for ReverseFs {
                     return Err(Errno::EROFS);
                 }
                 let (source, iv) = self.resolve_source_path(path)?;
-                (
-                    None,
-                    Some(if self.config.external_iv_chaining {
-                        iv
-                    } else {
-                        0
-                    }),
-                    None,
-                    Some(source),
-                )
+                (None, Some(self.config.external_iv(iv)), None, Some(source))
             }
         };
 
@@ -1224,11 +1207,7 @@ impl PathFilesystem for ReverseFs {
             return Err(Errno::EROFS);
         }
         let (source_path, dir_iv) = self.resolve_source_path(&path)?;
-        let file_iv = if self.config.external_iv_chaining {
-            dir_iv
-        } else {
-            0
-        };
+        let file_iv = self.config.external_iv(dir_iv);
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true).mode(mode);
         if flags & libc::O_EXCL != 0 {

@@ -57,6 +57,73 @@ pub struct FileCodecParams {
     pub allow_holes: bool,
 }
 
+impl FileCodecParams {
+    pub fn layout(&self) -> io::Result<BlockLayout> {
+        BlockLayout::new(self.block_mode, self.block_size, self.block_mac_bytes)
+            .map_err(io::Error::other)
+    }
+}
+
+/// Calls `f` with each physical block of `file` (`len` bytes long) after its
+/// header, in order, until it breaks: the block number, the block's bytes,
+/// and whether it is a hole, an all-zero block a volume allowing holes
+/// reads as zeros.
+pub fn for_each_block(
+    params: &FileCodecParams,
+    file: &impl ReadAt,
+    len: u64,
+    mut f: impl FnMut(u64, &mut [u8], bool) -> io::Result<std::ops::ControlFlow<()>>,
+) -> io::Result<()> {
+    let block_size = params.layout()?.block_size();
+    let mut buf = vec![0u8; block_size as usize];
+    let mut offset = params.header_size;
+    let mut block_num = 0;
+    while offset < len {
+        let block = &mut buf[..(len - offset).min(block_size) as usize];
+        let mut filled = 0;
+        while filled < block.len() {
+            match file.read_at(&mut block[filled..], offset + filled as u64)? {
+                0 => return Err(io::ErrorKind::UnexpectedEof.into()),
+                n => filled += n,
+            }
+        }
+        let hole = params.allow_holes && block.iter().all(|&b| b == 0);
+        if f(block_num, block, hole)?.is_break() {
+            break;
+        }
+        offset += block.len() as u64;
+        block_num += 1;
+    }
+    Ok(())
+}
+
+/// Writes the blocks of `src`, a file of `len` bytes in all (header
+/// included, though only the blocks after it are read or written), to
+/// `out`, each decrypted under file IV `from` and encrypted under `to`: what a
+/// headerless file whose file IV is its path IV needs when it moves. Holes
+/// stay holes, since a volume allowing them reads them as zeros under any
+/// IV.
+pub fn reencrypt_blocks(
+    cipher: &dyn Cipher,
+    params: &FileCodecParams,
+    src: &impl ReadAt,
+    len: u64,
+    out: &mut impl io::Write,
+    from: FileIv,
+    to: FileIv,
+) -> io::Result<()> {
+    let codec = BlockCodec::new(cipher, params.layout()?, false, false);
+    for_each_block(params, src, len, |block_num, block, hole| {
+        if hole {
+            out.write_all(block)?;
+        } else {
+            let plain = codec.decrypt_block(block_num, from, block)?;
+            out.write_all(&codec.encrypt_block(block_num, to, &plain)?)?;
+        }
+        Ok(std::ops::ControlFlow::Continue(()))
+    })
+}
+
 /// Decodes encrypted files.
 ///
 /// Handles block-by-block decryption and verification for both legacy EncFS

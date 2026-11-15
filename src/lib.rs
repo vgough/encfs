@@ -2,11 +2,14 @@ pub mod build_info;
 pub mod config;
 pub mod config_binary;
 pub mod config_proto;
+mod conflict;
 pub mod constants;
 pub mod crypto;
 pub mod diriv;
 pub mod fs;
+pub mod fsck;
 pub mod idle_lock;
+pub mod recrypt;
 pub mod reverse_fs;
 pub mod rpc;
 pub mod security;
@@ -40,6 +43,13 @@ pub fn init_locale() {
 
         rust_i18n::set_locale(&locale);
     }
+}
+
+/// The name a forward mount of `root` gives itself unless `--fsname`
+/// overrides it, before [`mount_source_name`]: `encfs@<root>`, so tools can
+/// find the directory behind a mount, as cryfs allows with `cryfs@<dir>`.
+pub fn default_fsname(root: &std::path::Path) -> String {
+    format!("encfs@{}", root.to_string_lossy())
 }
 
 /// The mount source to report for `name` (normally the root directory), as

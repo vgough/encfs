@@ -20,6 +20,24 @@ pub enum ConfigType {
     V7,          // .encfs7 / .encfs7.pb - protobuf format with AEAD key wrap
 }
 
+impl ConfigType {
+    /// The format a config file's name declares: the names in
+    /// [`CONFIG_FILES`], `.encfs3`, and any name ending in `.encfs7` or
+    /// `.encfs7.pb`. `None` for any other name.
+    pub fn from_file_name(name: &str) -> Option<Self> {
+        if name == ".encfs3" {
+            return Some(Self::V3);
+        }
+        if name.ends_with(".encfs7") || name.ends_with(".encfs7.pb") {
+            return Some(Self::V7);
+        }
+        CONFIG_FILES
+            .iter()
+            .find(|(file, _)| *file == name)
+            .map(|(_, config_type)| *config_type)
+    }
+}
+
 /// Key derivation function algorithm
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KdfAlgorithm {
@@ -34,6 +52,15 @@ pub const PLAINTEXT_XATTR_PREFIX_PROPERTY: &str = "plaintext-xattr-prefix";
 
 /// V7 protobuf file magic header ("ENCFS7\\0").
 const V7_MAGIC: &[u8; 7] = b"ENCFS7\0";
+
+/// The supported config files in a volume's root, with the format each
+/// holds, newest first.
+pub const CONFIG_FILES: &[(&str, ConfigType)] = &[
+    (".encfs7", ConfigType::V7),
+    (".encfs6.xml", ConfigType::V6),
+    (".encfs5", ConfigType::V5),
+    (".encfs4", ConfigType::V4),
+];
 
 #[derive(Debug, Deserialize)]
 pub struct BoostSerialization {
@@ -68,6 +95,38 @@ pub enum SymlinkFormat {
     EncryptedName,
     /// The C++ EncFS path form, independent of the link's location.
     LegacyPath,
+}
+
+/// Why [`EncfsConfig::read_file_iv`] couldn't give a file's IV.
+#[derive(Debug)]
+pub enum FileIvError {
+    /// Reading the header failed.
+    Io(std::io::Error),
+    /// The file ends inside its header.
+    ShortHeader,
+    /// The header doesn't decrypt under the path IV given.
+    Header(anyhow::Error),
+}
+
+impl std::fmt::Display for FileIvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // The cause is the error's `source`, which `{:#}` prints.
+            Self::Io(_) => f.write_str("reading the file header"),
+            Self::ShortHeader => f.write_str("the file is shorter than its header"),
+            Self::Header(_) => f.write_str("decrypting the file header"),
+        }
+    }
+}
+
+impl std::error::Error for FileIvError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::ShortHeader => None,
+            Self::Header(e) => Some(e.as_ref()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -311,39 +370,47 @@ impl EncfsConfig {
         self.minimum_reader_version = self.required_v7_reader_version();
     }
 
+    /// Loads the config at `path`, in the format its file name declares
+    /// ([`ConfigType::from_file_name`]).
     pub fn load(path: &Path) -> Result<Self> {
+        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        Self::load_with_type(path, ConfigType::from_file_name(filename))
+    }
+
+    /// Loads the config at `path` as [`Self::from_bytes`] does, whatever its
+    /// name: for a copy saved under another one, such as a sync tool's
+    /// conflict copy of `.encfs4`.
+    pub fn load_with_type(path: &Path, hint: Option<ConfigType>) -> Result<Self> {
         let mut file = File::open(path).context("Failed to open config file")?;
         let mut content_bytes = Vec::new();
         file.read_to_end(&mut content_bytes)
             .context("Failed to read config file")?;
+        Self::from_bytes(&content_bytes, hint)
+    }
 
-        // Check for V7 magic header regardless of filename
+    /// Parses a config file's contents. The contents decide where they can:
+    /// V7 has a magic header and V6 is XML. `hint`, the format the file is
+    /// meant to hold, settles the rest: V3 is refused, V7 is parsed as such
+    /// without its header, and V4, which nothing in its bytes tells from
+    /// V5, is parsed as V4. Anything else not V6 is parsed as V5.
+    pub fn from_bytes(content_bytes: &[u8], hint: Option<ConfigType>) -> Result<Self> {
         if content_bytes.starts_with(V7_MAGIC) {
-            return Self::load_v7(&content_bytes);
+            return Self::load_v7(content_bytes);
         }
-
-        // Determine config type from filename
-        let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-
-        // Check for V3 (not supported)
-        if filename == ".encfs3" {
-            return Err(anyhow::anyhow!(
-                "{}",
-                t!("lib.error_version3_not_supported")
-            ));
-        }
-
-        // Check for V7 protobuf format (.encfs7, *.encfs7, or *.encfs7.pb)
-        if filename == ".encfs7"
-            || filename.ends_with(".encfs7.pb")
-            || filename.ends_with(".encfs7")
-        {
-            return Self::load_v7(&content_bytes);
+        match hint {
+            Some(ConfigType::V3) => {
+                return Err(anyhow::anyhow!(
+                    "{}",
+                    t!("lib.error_version3_not_supported")
+                ));
+            }
+            Some(ConfigType::V7) => return Self::load_v7(content_bytes),
+            _ => {}
         }
 
         // Try load as XML first (current format - V6)
         // Requires valid UTF-8.
-        if let Ok(content_str) = std::str::from_utf8(&content_bytes) {
+        if let Ok(content_str) = std::str::from_utf8(content_bytes) {
             match quick_xml::de::from_str::<BoostSerialization>(content_str) {
                 Ok(wrapper) => {
                     let mut cfg = wrapper.cfg;
@@ -358,13 +425,10 @@ impl EncfsConfig {
             }
         }
 
-        // Check for V4 format (.encfs4)
-        if filename == ".encfs4" {
-            return Self::load_v4(&content_bytes);
+        if hint == Some(ConfigType::V4) {
+            return Self::load_v4(content_bytes);
         }
-
-        // Fallback to V5 binary config
-        Self::load_v5(&content_bytes)
+        Self::load_v5(content_bytes)
     }
 
     pub(crate) fn validate(&self) -> Result<()> {
@@ -994,7 +1058,7 @@ impl EncfsConfig {
         use zeroize::Zeroize;
 
         self.validate()?;
-        let mut cipher = SslCipher::new(&self.cipher_iface, self.key_size)?;
+        let cipher = SslCipher::new(&self.cipher_iface, self.key_size)?;
 
         let key_len = usize::try_from(self.key_size / 8)
             .map_err(|_| anyhow::anyhow!("Unsupported key size {}", self.key_size))?;
@@ -1016,23 +1080,45 @@ impl EncfsConfig {
             }
         };
 
-        if volume_key_blob.len() < key_len + iv_len {
-            volume_key_blob.zeroize();
+        let result = self.keyed_cipher(cipher, &volume_key_blob);
+        volume_key_blob.zeroize();
+        result
+    }
+
+    /// The volume's cipher, given its volume key directly: the key followed
+    /// by its IV, as `get_cipher` unwraps it. For tests, which build volumes
+    /// under a fixed key without a password.
+    pub fn cipher_with_volume_key(&self, volume_key: &[u8]) -> Result<Box<dyn Cipher>> {
+        use crate::crypto::ssl::SslCipher;
+        self.keyed_cipher(
+            SslCipher::new(&self.cipher_iface, self.key_size)?,
+            volume_key,
+        )
+    }
+
+    /// Installs `volume_key` (key, then IV) in `cipher` and applies this
+    /// config's name and file IV settings.
+    fn keyed_cipher(
+        &self,
+        mut cipher: crate::crypto::ssl::SslCipher,
+        volume_key: &[u8],
+    ) -> Result<Box<dyn Cipher>> {
+        let key_len = usize::try_from(self.key_size / 8)
+            .map_err(|_| anyhow::anyhow!("Unsupported key size {}", self.key_size))?;
+        let iv_len = cipher.iv_len();
+        if volume_key.len() < key_len + iv_len {
             return Err(anyhow::anyhow!("Decrypted key blob too short"));
         }
-
         cipher.set_key(
-            &volume_key_blob[..key_len],
-            &volume_key_blob[key_len..key_len + iv_len],
+            &volume_key[..key_len],
+            &volume_key[key_len..key_len + iv_len],
         );
-        volume_key_blob.zeroize();
         cipher.set_name_encoding(&self.name_iface);
         cipher.set_wide_file_iv(self.wide_file_iv);
         // C++ EncFS drops the IV from the filename MAC when names are not
         // chained. V7 is Rust-only and has always mixed in a zero IV, so keep
         // that to stay readable for existing `--no-chained-iv` V7 volumes.
         cipher.set_name_mac_includes_iv(self.chained_name_iv || self.config_type == ConfigType::V7);
-
         Ok(Box::new(cipher))
     }
 
@@ -1300,7 +1386,90 @@ impl EncfsConfig {
     /// Whether a symlink's stored target depends on the symlink's own path IV,
     /// so moving the link requires re-encrypting the target.
     pub fn symlink_target_depends_on_path(&self) -> bool {
-        !self.uses_legacy_symlink_targets() && (self.chained_name_iv || self.directory_iv)
+        !self.uses_legacy_symlink_targets() && self.path_iv_varies()
+    }
+
+    /// Whether an entry's path IV changes with its name: the chain value
+    /// with `chained_name_iv`, the entry IV in directory IV mode. Otherwise
+    /// every path IV is 0.
+    pub fn path_iv_varies(&self) -> bool {
+        self.chained_name_iv || self.directory_iv
+    }
+
+    /// The IV a file's contents are bound to through external IV chaining:
+    /// its path IV, or 0 without chaining.
+    pub fn external_iv(&self, path_iv: u64) -> u64 {
+        if self.external_iv_chaining {
+            path_iv
+        } else {
+            0
+        }
+    }
+
+    /// Whether a file without a header (`unique_iv` off) is encrypted under
+    /// its path IV. V7 binds such files to their path through external IV
+    /// chaining, which `encfsr` relies on. V4–V6 files use IV 0, as in C++
+    /// EncFS, which only ever applies external chaining to the header (and
+    /// never writes it without one).
+    fn headerless_iv_from_path(&self) -> bool {
+        self.config_type == ConfigType::V7 && self.external_iv_chaining
+    }
+
+    /// The file IV of a file without a header (`unique_iv` off), whose path
+    /// IV is `path_iv`: the path IV on V7 volumes with external IV
+    /// chaining, otherwise 0.
+    pub fn headerless_file_iv(&self, path_iv: u64) -> crate::crypto::file_iv::FileIv {
+        crate::crypto::file_iv::FileIv::from_u64(if self.headerless_iv_from_path() {
+            path_iv
+        } else {
+            0
+        })
+    }
+
+    /// The file IV of `file`, a file whose path IV is `path_iv`: decrypted
+    /// from its header, or [`EncfsConfig::headerless_file_iv`] without one.
+    pub fn read_file_iv(
+        &self,
+        cipher: &dyn Cipher,
+        file: &impl crate::crypto::file::ReadAt,
+        path_iv: u64,
+    ) -> std::result::Result<crate::crypto::file_iv::FileIv, FileIvError> {
+        let header_size = self.header_size() as usize;
+        if header_size == 0 {
+            return Ok(self.headerless_file_iv(path_iv));
+        }
+        let mut header = vec![0u8; header_size];
+        let mut filled = 0;
+        while filled < header_size {
+            match file.read_at(&mut header[filled..], filled as u64) {
+                Ok(0) => return Err(FileIvError::ShortHeader),
+                Ok(n) => filled += n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(FileIvError::Io(e)),
+            }
+        }
+        cipher
+            .decrypt_header(&mut header, self.external_iv(path_iv))
+            .map_err(FileIvError::Header)
+    }
+
+    /// Whether a regular file's stored bytes depend on its path, so moving
+    /// it to another name means re-encrypting its header (with `unique_iv`)
+    /// or every block (without).
+    pub fn file_contents_depend_on_path(&self) -> bool {
+        let chained = if self.unique_iv {
+            self.external_iv_chaining
+        } else {
+            self.headerless_iv_from_path()
+        };
+        chained && self.path_iv_varies()
+    }
+
+    /// Whether the stored names of a directory's children depend on the
+    /// directory's own path, so moving it means renaming everything below.
+    /// Directory IV mode keeps the names IV in the directory's sidecar.
+    pub fn children_depend_on_path(&self) -> bool {
+        self.chained_name_iv && !self.directory_iv
     }
 
     pub fn header_size(&self) -> u64 {
@@ -1858,6 +2027,46 @@ impl crate::crypto::ssl::SslCipher {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn config_file_names_declare_their_formats() {
+        for (name, config_type) in CONFIG_FILES {
+            assert_eq!(ConfigType::from_file_name(name), Some(*config_type));
+        }
+        assert_eq!(ConfigType::from_file_name(".encfs3"), Some(ConfigType::V3));
+        assert_eq!(ConfigType::from_file_name("a.encfs7"), Some(ConfigType::V7));
+        assert_eq!(
+            ConfigType::from_file_name("a.encfs7.pb"),
+            Some(ConfigType::V7)
+        );
+        assert_eq!(ConfigType::from_file_name(".encfs4 (copy)"), None);
+    }
+
+    /// The contents decide where they can, whatever the hint says; a copy
+    /// under any name loads with its original's type.
+    #[test]
+    fn hints_settle_only_what_the_contents_cannot() {
+        let v6 = fs::read("tests/fixtures/encfs6-std.xml").unwrap();
+        let v5 = fs::read("tests/fixtures/encfs142/.encfs5").unwrap();
+        for hint in [None, Some(ConfigType::V5), Some(ConfigType::V6)] {
+            let config = EncfsConfig::from_bytes(&v6, hint).unwrap();
+            assert_eq!(config.config_type, ConfigType::V6, "{hint:?}");
+            let config = EncfsConfig::from_bytes(&v5, hint).unwrap();
+            assert_eq!(config.config_type, ConfigType::V5, "{hint:?}");
+        }
+        assert!(EncfsConfig::from_bytes(&v6, Some(ConfigType::V3)).is_err());
+
+        let dir = tempfile::tempdir().unwrap();
+        let copy = dir
+            .path()
+            .join(".encfs5.sync-conflict-20230709-123456-ABCDEFG");
+        fs::write(&copy, &v5).unwrap();
+        let config = EncfsConfig::load_with_type(&copy, Some(ConfigType::V5)).unwrap();
+        assert_eq!(
+            config,
+            EncfsConfig::load(Path::new("tests/fixtures/encfs142/.encfs5")).unwrap()
+        );
+    }
 
     #[test]
     fn test_config_roundway() -> Result<()> {
@@ -3379,5 +3588,55 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    /// Files without a header use their path IV only on V7 volumes with
+    /// external IV chaining. V4-V6 ones use IV 0, as C++ EncFS does, and so
+    /// don't depend on their path; headers there still do.
+    #[test]
+    fn headerless_file_iv_follows_the_format() {
+        use crate::crypto::file_iv::FileIv;
+        const PATH_IV: u64 = 0x1234_5678_9abc_def0;
+        let mut v7 = EncfsConfig::standard_v7();
+        v7.use_chained_name_iv();
+        v7.unique_iv = false;
+        v7.wide_file_iv = false;
+        assert!(v7.external_iv_chaining);
+        assert_eq!(v7.headerless_file_iv(PATH_IV), FileIv::from_u64(PATH_IV));
+        assert!(v7.file_contents_depend_on_path());
+        v7.external_iv_chaining = false;
+        assert_eq!(v7.headerless_file_iv(PATH_IV), FileIv::from_u64(0));
+        assert!(!v7.file_contents_depend_on_path());
+
+        let mut v6 = EncfsConfig::test_default();
+        v6.chained_name_iv = true;
+        v6.external_iv_chaining = true;
+        v6.unique_iv = false;
+        assert_eq!(v6.headerless_file_iv(PATH_IV), FileIv::from_u64(0));
+        assert!(!v6.file_contents_depend_on_path());
+        v6.unique_iv = true;
+        assert!(v6.file_contents_depend_on_path());
+    }
+
+    /// `{:#}` prints a file IV error's cause once, through its source.
+    #[test]
+    fn file_iv_errors_print_their_cause_once() {
+        let e = anyhow::Error::new(FileIvError::Io(std::io::Error::from_raw_os_error(
+            libc::EACCES,
+        )));
+        let printed = format!("{e:#}");
+        assert!(
+            printed.starts_with("reading the file header: "),
+            "{printed}"
+        );
+        assert_eq!(printed.matches("denied").count(), 1, "{printed}");
+
+        let e = anyhow::Error::new(FileIvError::Header(
+            anyhow::anyhow!("bad checksum").context("checking"),
+        ));
+        assert_eq!(
+            format!("{e:#}"),
+            "decrypting the file header: checking: bad checksum"
+        );
     }
 }

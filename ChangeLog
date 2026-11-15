@@ -1,5 +1,62 @@
 v2.0.0 / 2026-10-04
 ==================
+	* Add `encfsctl fsck`, which finds the names in an encrypted directory
+	  that don't decrypt and says what each one is: a sync tool's conflict
+	  copy (Syncthing, Nextcloud, Dropbox, rclone bisync), a copy of
+	  `.encfs.diriv` or of the config, a sync tool's temp or state file, or
+	  unknown. With `--fix` it recovers conflict copies under ordinary names
+	  such as `report (sync-conflict-…).docx`, renames entries created under
+	  a conflicting `.encfs.diriv`, and deletes stale temps and duplicate
+	  metadata, asking first unless `--yes` is given. Where the config ties
+	  file contents to names (external IV chaining), recovery is verified
+	  against the contents (docs/adr/0007-encfsctl-fsck-sync-conflicts.md).
+	  `--config` also takes a sync tool's copy of the config, whose name
+	  still says which format it holds. `encfsctl showcruft` now uses the
+	  same scan. Its output is unchanged, apart from listing each
+	  directory's names in sorted order. A directory or entry it can't read
+	  is reported as a warning while the scan goes on, and the command
+	  fails at the end.
+	* Fix forward-mode renames that copy an entry (where its stored bytes
+	  depend on its path), which could lose data:
+	  - A file without a header (`unique_iv = false`, as `encfsctl new
+	    --no-unique-iv` and reverse volumes use) on a volume with external
+	    IV chaining was copied without re-encrypting its blocks for the new
+	    path, and the original was removed. Since v2.0.0-beta.8 every such
+	    rename on a V7 volume, and in chained-name mode every directory
+	    rename above such a file, left it unreadable. The blocks are now
+	    re-encrypted. A file damaged this way still decrypts
+	    under its old path's IV, so it can be recovered only by someone who
+	    knows its old path.
+	  - On V4–V6 volumes, and V7 volumes with plaintext attributes, the
+	    copy lost the entry's extended attributes. They are now copied.
+	  - Renaming a directory under chained names dropped the entries in it
+	    whose names don't decrypt, such as a sync tool's files or conflict
+	    copies, and then deleted them with the source. They now move with
+	    the directory, and a conflict copy's name is re-encrypted with it,
+	    so `encfsctl fsck` can still recover it.
+	  - Renaming a directory onto an existing non-empty directory under
+	    chained names failed with `ENOTEMPTY`, but first deleted the
+	    existing directory and everything in it. It now fails before
+	    touching either.
+	  - The copy is now synced before the source is removed, and files
+	    whose contents don't depend on their path are hard-linked into a
+	    renamed directory instead of copied.
+	  `encfsctl cat` and `export` now read headerless files on V7 volumes
+	  with external IV chaining, which they decrypted with the wrong IV.
+	* On V4–V6 volumes, files without a header use IV 0 again, as in C++
+	  EncFS, even where the config sets external IV chaining. C++ never
+	  writes that combination (it applies chaining only to headers), but
+	  reads such a volume that way. v2.0.0-beta.8 to beta.10 used the path
+	  IV instead, so files they wrote to such a hand-edited config read
+	  back as garbage now. `encfsctl passwd --upgrade` of such a volume to
+	  V7 turns external chaining off so its files keep IV 0.
+	* Empty files on volumes with per-file headers open and read as empty
+	  through the mount, `encfsctl cat` and `export`. C++ EncFS writes the
+	  header with the first data, so a file made with `touch` has none; the
+	  mount failed to open it read-only with an I/O error, `cat` failed and
+	  `export` skipped it.
+	* Add a backward compatibility check against volumes written by C++
+	  EncFS (docs/testing/cpp-compatibility.md, `task test-cpp-compat`).
 	* Refuse directory entry names that decrypt to more than one path
 	  component (`..`, `.`, or anything containing `/` or NUL). Reverse mode
 	  (`encfsr --write`) joined such a name onto the source path, so a name

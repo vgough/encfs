@@ -375,3 +375,51 @@ fn cat_accepts_the_printed_backing_path() {
 
     fs::remove_dir_all(&root).unwrap();
 }
+
+/// A file that was never written to has no header yet: C++ EncFS writes it
+/// with the first data. `cat` prints nothing for it and export copies it as
+/// an empty file, rather than treating it as damaged.
+#[test]
+fn empty_files_are_empty_not_damaged() {
+    let root = temp_dir("empty_file");
+    let backing = corrupted_volume(&root);
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&backing)
+        .unwrap()
+        .set_len(0)
+        .unwrap();
+
+    let out = encfsctl(&[
+        "cat".as_ref(),
+        "--extpass".as_ref(),
+        PASSWORD_CMD.as_ref(),
+        backing.as_os_str(),
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.is_empty());
+
+    let dest = temp_dir("empty_file_dest");
+    let out = encfsctl(&[
+        "export".as_ref(),
+        "--extpass".as_ref(),
+        PASSWORD_CMD.as_ref(),
+        "--fail-on-error".as_ref(),
+        root.as_os_str(),
+        dest.as_os_str(),
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let exported = dest.join(PLAINTEXT_DIR).join(PLAINTEXT_NAME);
+    assert_eq!(fs::read(&exported).unwrap(), b"");
+
+    fs::remove_dir_all(&dest).unwrap();
+    fs::remove_dir_all(&root).unwrap();
+}
