@@ -1996,10 +1996,10 @@ impl EncFs {
             return Ok(());
         }
 
-        // Truncation keeps the existing header, so the IV does not change here;
-        // it only has to be *known*. With a handle it is already in the shared
-        // state. The remaining branches only run without one, where the file
-        // was opened by path above.
+        // Truncation keeps an existing header. An empty backing file (as C++
+        // EncFS leaves after touch) needs one before its first extension.
+        // With a writable handle it is already in the shared state. The
+        // remaining branches only run after opening the file by path above.
         let file_iv = if let Some(h) = handle {
             h.file_iv(&guard)
         } else if let Some(file_iv) = guard.header_iv {
@@ -2007,9 +2007,12 @@ impl EncFs {
         } else if header_size > 0 {
             let path_iv = opened_path_iv.ok_or(libc::ESTALE)?;
             // Cache it for handles opened later, as `open_impl` would have.
-            let file_iv = self
-                .read_file_header(file_ref, opened_at, path_iv)?
-                .ok_or(libc::EIO)?;
+            let file_iv = if metadata.len() == 0 {
+                self.write_file_header(file_ref, self.config.external_iv(path_iv))?
+            } else {
+                self.read_file_header(file_ref, opened_at, path_iv)?
+                    .ok_or(libc::EIO)?
+            };
             guard.header_iv = Some(file_iv);
             file_iv
         } else {
