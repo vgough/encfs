@@ -1,11 +1,11 @@
 use crate::crypto::cipher::Cipher;
 use anyhow::{Context, Result};
-use log::debug;
 use rust_i18n::t;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+use tracing::debug;
 
 /// Config format version
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

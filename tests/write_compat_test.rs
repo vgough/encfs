@@ -20,7 +20,7 @@ fn setup_test_fs(
     chained_name_iv: bool,
     external_iv_chaining: bool,
 ) -> (EncFs, PathBuf, SslCipher, Vec<u8>, Vec<u8>, u64) {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join(test_name);
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();

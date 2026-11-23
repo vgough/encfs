@@ -30,9 +30,9 @@
 //! and similar background services) never count as activity and never
 //! trigger a prompt: while locked they are simply refused.
 
-use log::{info, warn};
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
+use tracing::{info, warn};
 use typed_fuse::PathOp;
 
 /// How long to refuse locked requests without prompting after a failed or

@@ -76,7 +76,7 @@ impl PathPlusDirSink<FileState> for PlusSink {
 
 #[test]
 fn test_mknod_fifo_getattr_returns_named_pipe() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_mknod_fifo_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -132,7 +132,7 @@ fn test_mknod_fifo_getattr_returns_named_pipe() {
 
 #[test]
 fn test_mknod_fifo_readdir_reports_named_pipe() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_mknod_readdir_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -178,7 +178,7 @@ fn test_mknod_fifo_readdir_reports_named_pipe() {
 
 #[test]
 fn test_readdirplus_returns_entries_with_attrs() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_readdirplus_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();

@@ -20,6 +20,33 @@ pub mod xattr_name;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
+/// Install the CLI tracing subscriber with output on stderr.
+/// Verbose mode sets the global level to DEBUG and retains target-specific directives.
+pub fn init_logging(verbose: bool) {
+    use std::io::IsTerminal;
+    use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+
+    let mut filter = match std::env::var(EnvFilter::DEFAULT_ENV) {
+        Ok(directives) => EnvFilter::new(directives),
+        Err(_) => EnvFilter::default().add_directive(LevelFilter::INFO.into()),
+    };
+    if verbose {
+        filter = filter.add_directive(LevelFilter::DEBUG.into());
+    }
+
+    let stderr = std::io::stderr;
+    let ansi = match std::env::var("RUST_LOG_STYLE").as_deref() {
+        Ok("always") => true,
+        Ok("never") => false,
+        _ => stderr().is_terminal(),
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(stderr)
+        .with_ansi(ansi)
+        .init();
+}
+
 /// Initialize the locale from environment variables according to POSIX precedence.
 ///
 /// Inspects `LC_ALL`, then `LC_MESSAGES`, then `LANG` (e.g., "en_US.UTF-8") and sets the

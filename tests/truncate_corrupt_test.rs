@@ -13,7 +13,7 @@ use common::Node;
 
 #[test]
 fn test_truncate_corrupts_partial_block() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_truncate_corrupt_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -166,7 +166,7 @@ fn test_truncate_corrupts_partial_block() {
 
 #[test]
 fn test_truncate_extend_then_append_preserves_block0_tag() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_truncate_extend_append_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();

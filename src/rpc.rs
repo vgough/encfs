@@ -23,7 +23,6 @@
 
 use crate::config::{ConfigType, EncfsConfig};
 use crate::idle_lock::IdleLock;
-use log::{debug, warn};
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -31,6 +30,7 @@ use std::ffi::OsStr;
 use std::fmt::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
+use tracing::{debug, warn};
 use typed_fuse::Admission;
 
 /// Attribute name prefix of a request.

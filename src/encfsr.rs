@@ -88,12 +88,7 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    // Initialize logging
-    let mut builder = env_logger::Builder::from_default_env();
-    if std::env::var("RUST_LOG").is_err() {
-        builder.filter_level(log::LevelFilter::Info);
-    }
-    builder.init();
+    encfs::init_logging(false);
 
     // --- Source directory validation (QUAL-01) ---
 

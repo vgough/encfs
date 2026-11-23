@@ -13,7 +13,7 @@ use common::Node;
 
 #[test]
 fn test_open_trunc_header_regeneration() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_open_trunc_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();

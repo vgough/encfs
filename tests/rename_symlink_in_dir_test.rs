@@ -70,7 +70,7 @@ fn test_rename_directory_containing_symlink_v7_paranoia() {
 }
 
 fn rename_directory_containing_symlink(volume: Volume, dir: &str) {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join(dir);
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -197,7 +197,7 @@ fn test_rename_nested_directory_with_symlinks_v7_paranoia() {
 }
 
 fn rename_nested_directory_with_symlinks(volume: Volume, dir: &str) {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join(dir);
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();

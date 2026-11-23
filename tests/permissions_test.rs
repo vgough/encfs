@@ -43,7 +43,7 @@ fn req() -> Caller {
 
 #[test]
 fn test_mkdir_uses_mode_parameter() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_mkdir_mode_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -94,7 +94,7 @@ fn test_mkdir_uses_mode_parameter() {
 
 #[test]
 fn test_mkdir_various_modes() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_mkdir_various_modes_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -159,7 +159,7 @@ fn test_mkdir_various_modes() {
 
 #[test]
 fn test_create_file_uses_mode_parameter() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_create_file_mode_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -217,7 +217,7 @@ fn test_create_file_uses_mode_parameter() {
 
 #[test]
 fn test_create_file_various_modes() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_create_file_various_modes_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -286,7 +286,7 @@ fn test_create_file_various_modes() {
 
 #[test]
 fn test_symlink_permissions_are_standard() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_symlink_permissions_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -338,7 +338,7 @@ fn test_symlink_permissions_are_standard() {
 
 #[test]
 fn test_permissions_mixed_types_in_directory() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_mixed_permissions_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();

@@ -39,7 +39,7 @@ fn req() -> Caller {
 
 #[test]
 fn test_rename_directory_preserves_timestamps() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_rename_timestamp_dir_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -142,7 +142,7 @@ fn test_rename_directory_preserves_timestamps() {
 
 #[test]
 fn test_rename_file_external_iv_chaining_preserves_timestamps() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_rename_timestamp_extiv_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();

@@ -22,7 +22,7 @@ For command reference, testing patterns, and coding conventions, see `AGENTS.md`
 | `prost` + `prost-build`/`protoc-bin-vendored` | 0.14.4 | Protobuf codec for V7 configs; `build.rs` compiles `proto/encfs_config.proto` into `config_proto.rs` (vendored `protoc`, no system install needed) |
 | `base64` | 0.22.1 | Base64 (URL-safe, no padding) encoding for filenames |
 | `rust-i18n` | 4 | Internationalization |
-| `log` & `env_logger` | 0.4.32 / 0.11.10 | Logging |
+| `tracing` & `tracing-subscriber` | 0.1 / 0.3 | Diagnostic events and log output |
 | `rpassword` | 7.5.4 | Password prompts |
 | `daemonix` | 0.1 | Background daemon support |
 | `objc2-local-authentication` + `objc2`/`objc2-foundation`/`block2` | 0.3 / 0.6 | macOS only: Touch ID prompts for on-demand mounts (`touchid.rs`) |
@@ -148,7 +148,7 @@ Full rationale and byte-level detail: `docs/DESIGN.md`.
 | Variable | Purpose | Secret |
 |----------|---------|--------|
 | `ENCFS_LIVE_TESTS` | If set to 1, enables live FUSE mount tests during `cargo test`. | No |
-| `RUST_LOG` | Controls env_logger output levels (e.g., `debug`). | No |
+| `RUST_LOG` | Controls tracing output levels (e.g., `debug`). | No |
 | `LANG` | System locale, used to initialize translations via `rust-i18n`. | No |
 | `NO_COLOR` | Disables ANSI color in `encfsctl` output when set (any value). | No |
 

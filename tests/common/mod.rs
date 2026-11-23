@@ -10,7 +10,16 @@ pub mod volume;
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
+use tracing_subscriber::EnvFilter;
 use typed_fuse::{Caller, PathFilesystem, PathNodeRef};
+
+pub fn init_logging() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_test_writer()
+        .with_ansi(false)
+        .try_init();
+}
 
 /// A path together with the node state the runtime would pair with it.
 pub struct Node<S> {

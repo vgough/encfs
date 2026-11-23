@@ -10,7 +10,6 @@ use crate::symlink_target;
 use crate::xattr_name;
 use anyhow::Context as _;
 use libc;
-use log::{debug, error, warn};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString, OsStr, OsString};
@@ -22,6 +21,7 @@ use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use std::time::SystemTime;
+use tracing::{debug, error, warn};
 use typed_fuse::passthrough::{
     self, access_check, c_path, file_attr_from_metadata, is_apple_xattr, set_ownership_fd,
     statfs_path, utimens_permission_check,

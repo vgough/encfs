@@ -4,7 +4,6 @@ use crate::crypto::cipher::Cipher;
 use crate::crypto::file_iv::FileIv;
 use crate::xattr_name;
 use libc;
-use log::{debug, warn};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
@@ -16,6 +15,7 @@ use std::os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::SystemTime;
+use tracing::{debug, warn};
 use typed_fuse::passthrough::{
     self, c_path, file_attr_from_metadata, statfs_path, synthetic_file_attr, system_time_from_secs,
 };

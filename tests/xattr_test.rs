@@ -308,7 +308,7 @@ fn test_legacy_volume_ignores_encrypted_copies() {
 
 #[test]
 fn test_xattr_set_get() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_xattr_set_get_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -365,7 +365,7 @@ fn test_xattr_set_get() {
 
 #[test]
 fn test_xattr_list() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_xattr_list_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -446,7 +446,7 @@ fn test_xattr_list() {
 
 #[test]
 fn test_xattr_remove() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_xattr_remove_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -490,7 +490,7 @@ fn test_xattr_remove() {
 
 #[test]
 fn test_xattr_on_disk_storage() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_xattr_disk_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();
@@ -549,7 +549,7 @@ fn test_xattr_on_disk_storage() {
 
 #[test]
 fn test_xattr_round_trip() {
-    let _ = env_logger::builder().is_test(true).try_init();
+    common::init_logging();
     let tmp = std::env::temp_dir().join("encfs_xattr_round_trip_test");
     if tmp.exists() {
         fs::remove_dir_all(&tmp).unwrap();

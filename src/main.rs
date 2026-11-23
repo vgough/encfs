@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use daemonix::Daemonize;
-use log::{error, info};
 use rust_i18n::t;
 use std::path::PathBuf;
+use tracing::{error, info};
 
 use encfs::{config, fs::EncFs};
 use typed_fuse::mount;
@@ -155,13 +155,7 @@ fn main() -> Result<()> {
     let verbose = args.verbose || args.debug;
     let foreground = args.foreground || args.debug;
 
-    let mut builder = env_logger::Builder::from_default_env();
-    if verbose {
-        builder.filter_level(log::LevelFilter::Debug);
-    } else if std::env::var("RUST_LOG").is_err() {
-        builder.filter_level(log::LevelFilter::Info);
-    }
-    builder.init();
+    encfs::init_logging(verbose);
 
     info!(
         "{}",

@@ -5,7 +5,7 @@
 //! - Marks the process as non-dumpable (prevents ptrace, /proc/pid/mem reads)
 //! - Locks all memory pages to prevent swapping key material to disk
 
-use log::warn;
+use tracing::warn;
 
 /// Apply basic memory protections for the current platform.
 ///

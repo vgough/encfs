@@ -359,7 +359,7 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
 - configurable properties (plaintext xattr prefixes) need V7, `XattrFormat::Encrypted`, and `minimum_reader_version >= 6`; a prefix can't be empty or inside `user.encfs.`
 
 ### 11. Logging
-- Uses `env_logger` crate
+- Uses `tracing` and `tracing-subscriber`
 - Controlled by `RUST_LOG` environment variable
 - `-v` flag sets debug level
 - `-d` flag sets debug + foreground mode
