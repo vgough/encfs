@@ -35,6 +35,8 @@ use std::time::Duration;
 use tracing::{info, warn};
 use typed_fuse::PathOp;
 
+pub(crate) const TRANSITION_EVENT: &str = "encfs.idle_lock.transition";
+
 /// How long to refuse locked requests without prompting after a failed or
 /// cancelled authentication, so a retrying application cannot stack prompts.
 pub const FAILURE_COOLDOWN: Duration = Duration::from_secs(10);
@@ -191,7 +193,11 @@ impl IdleLock {
             let now = (self.clock)();
             if state.unlocked && self.expired(&state, now) {
                 state.unlocked = false;
-                info!("Locked after {} s without activity", self.timeout.as_secs());
+                info!(
+                    name: TRANSITION_EVENT,
+                    "EncFS filesystem locked after {} s without activity",
+                    self.timeout.as_secs()
+                );
             }
 
             if state.unlocked {
@@ -234,10 +240,10 @@ impl IdleLock {
             let now = (self.clock)();
             match result {
                 Ok(()) => {
-                    info!("Unlocked");
                     state.unlocked = true;
                     state.last_activity = now;
                     state.cooldown_until = None;
+                    info!(name: TRANSITION_EVENT, "EncFS filesystem unlocked");
                 }
                 Err(reason) => {
                     warn!("Unlock failed: {}", reason);
@@ -263,7 +269,7 @@ impl IdleLock {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.unlocked {
             state.unlocked = false;
-            info!("Locked on request");
+            info!(name: TRANSITION_EVENT, "EncFS filesystem locked on request");
         }
     }
 

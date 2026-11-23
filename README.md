@@ -164,6 +164,10 @@ fusermount -u ~/mount   # Linux
 # or: umount ~/mount    # macOS / FreeBSD
 ```
 
+On macOS, `encfs` and `encfsr` send tracing warnings and errors to the
+unified log. In Console, filter by subsystem `vgough.encfs` and
+category `diagnostics`. `RUST_LOG` controls the separate stderr output.
+
 ### On-demand mode with Touch ID (macOS)
 
 ```bash
@@ -175,6 +179,10 @@ After `--idle-timeout` minutes (default 10) without file activity it locks:
 opening, reading, listing, or changing anything in the mount then brings up a
 fresh Touch ID prompt, and the request waits for it. Cancelling the prompt
 returns "Permission denied" (with no further prompts for 10 seconds).
+
+In macOS Console, filter by subsystem `vgough.encfs` and category
+`idle_lock` to see explicit locks, idle locks observed on filesystem access,
+and successful unlocks.
 
 What does and does not count:
 

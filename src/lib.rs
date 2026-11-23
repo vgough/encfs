@@ -3,6 +3,8 @@ pub mod config;
 pub mod config_binary;
 pub mod config_proto;
 mod conflict;
+#[cfg(target_os = "macos")]
+mod console_log;
 pub mod constants;
 pub mod crypto;
 pub mod diriv;
@@ -20,11 +22,13 @@ pub mod xattr_name;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
-/// Install the CLI tracing subscriber with output on stderr.
-/// Verbose mode sets the global level to DEBUG and retains target-specific directives.
+/// Install the CLI tracing subscriber with output on stderr and, on macOS,
+/// send warnings, errors, and idle-lock transitions to the unified log.
+/// Verbose mode sets the stderr level to DEBUG and retains target-specific directives.
 pub fn init_logging(verbose: bool) {
     use std::io::IsTerminal;
     use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+    use tracing_subscriber::prelude::*;
 
     let mut filter = match std::env::var(EnvFilter::DEFAULT_ENV) {
         Ok(directives) => EnvFilter::new(directives),
@@ -40,11 +44,14 @@ pub fn init_logging(verbose: bool) {
         Ok("never") => false,
         _ => stderr().is_terminal(),
     };
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
+    let stderr = tracing_subscriber::fmt::layer()
         .with_writer(stderr)
         .with_ansi(ansi)
-        .init();
+        .with_filter(filter);
+    let subscriber = tracing_subscriber::registry().with(stderr);
+    #[cfg(target_os = "macos")]
+    let subscriber = subscriber.with(console_log::layer());
+    subscriber.init();
 }
 
 /// Initialize the locale from environment variables according to POSIX precedence.

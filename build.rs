@@ -68,6 +68,12 @@ fn build_info() {
 
 fn main() -> Result<()> {
     build_info();
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        // Apple's os_log macro requires Clang's format encoding.
+        cc::Build::new()
+            .file("src/console_log.c")
+            .compile("encfs_console_log");
+    }
     // protoc-bin-vendored only ships binaries for Linux, macOS and Windows,
     // so on other platforms (FreeBSD) there is nothing to point PROTOC at.
     // Leaving PROTOC unset makes prost-build search PATH for protoc instead.

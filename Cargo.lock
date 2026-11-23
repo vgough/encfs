@@ -588,6 +588,7 @@ dependencies = [
  "block2",
  "blowfish",
  "cbc",
+ "cc",
  "cfb-mode",
  "chrono",
  "clap",

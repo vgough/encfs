@@ -148,7 +148,7 @@ Full rationale and byte-level detail: `docs/DESIGN.md`.
 | Variable | Purpose | Secret |
 |----------|---------|--------|
 | `ENCFS_LIVE_TESTS` | If set to 1, enables live FUSE mount tests during `cargo test`. | No |
-| `RUST_LOG` | Controls tracing output levels (e.g., `debug`). | No |
+| `RUST_LOG` | Controls tracing output levels on stderr (e.g., `debug`). | No |
 | `LANG` | System locale, used to initialize translations via `rust-i18n`. | No |
 | `NO_COLOR` | Disables ANSI color in `encfsctl` output when set (any value). | No |
 
