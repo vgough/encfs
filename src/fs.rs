@@ -21,7 +21,8 @@ use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
 use std::time::SystemTime;
-use tracing::{debug, error, warn};
+use tracing::field::Empty;
+use tracing::{Span, debug, error, instrument, warn};
 use typed_fuse::passthrough::{
     self, access_check, c_path, file_attr_from_metadata, is_apple_xattr, set_ownership_fd,
     statfs_path, utimens_permission_check,
@@ -789,15 +790,12 @@ impl EncFs {
         newparent: &Path,
         newname: &OsStr,
     ) -> OpResult {
-        debug!(
-            "rename: {:?}/{:?} -> {:?}/{:?}",
-            parent, name, newparent, newname
-        );
         self.ensure_writable()?;
         let source = parent.join(name);
         let dest = newparent.join(newname);
 
         let (real_source, source_iv) = self.encrypt_path(&source)?;
+        self.record_backing("path", &real_source);
 
         if self.config.directory_iv {
             let meta = fs::symlink_metadata(&real_source)
@@ -825,6 +823,7 @@ impl EncFs {
         }
 
         let (real_dest, dest_iv) = self.encrypt_path(&dest)?;
+        self.record_backing("new_path", &real_dest);
 
         let meta = fs::symlink_metadata(&real_source)
             .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
@@ -947,6 +946,7 @@ impl EncFs {
         }
 
         let dest = self.new_entry(&newparent.join(newname))?;
+        self.record_backing("new_path", &dest.real_path);
 
         if meta.is_file() && self.config.file_contents_depend_on_path() {
             // A copy rather than rename + in-place header rewrite: the copy
@@ -1000,6 +1000,7 @@ impl EncFs {
         // was checked is moved.
         check_unchanged(real_source, source_meta)?;
         let real_dest = &self.encrypt_name_in(real_dest_parent, newname)?;
+        self.record_backing("new_path", real_dest);
         let removed = match fs::symlink_metadata(real_dest) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(io_errno(e)),
@@ -1869,8 +1870,7 @@ impl EncFs {
 
 /// Errno-based operation bodies shared by the `PathFilesystem` impl below.
 impl EncFs {
-    fn statfs_impl(&self, path: &Path) -> Result<ReplyStatFs, libc::c_int> {
-        debug!("statfs: {:?}", path);
+    fn statfs_impl(&self) -> Result<ReplyStatFs, libc::c_int> {
         // Check underlying filesystem of the root
         let mut stat = statfs_path(&self.root).map_err(|e| e.raw())?;
         stat.namelen = self.cipher.max_plaintext_name_len(stat.namelen);
@@ -1878,7 +1878,6 @@ impl EncFs {
     }
 
     fn do_chmod(&self, path: Option<&Path>, handle: Option<&FileHandle>, mode: u32) -> OpResult {
-        debug!("chmod: {:?} mode={:o}", path, mode);
         self.ensure_writable()?;
 
         if let Some(path) = path {
@@ -1898,7 +1897,6 @@ impl EncFs {
         uid: Option<u32>,
         gid: Option<u32>,
     ) -> OpResult {
-        debug!("chown: {:?} uid={:?} gid={:?}", path, uid, gid);
         self.ensure_writable()?;
 
         let path = match path {
@@ -1918,12 +1916,8 @@ impl EncFs {
     ///
     /// Only the primary gid is considered (no supplementary groups).
     fn access_impl(&self, req: Request, path: &Path, mask: u32) -> OpResult {
-        debug!(
-            "access: {:?} mask={:#o} uid={} gid={}",
-            path, mask, req.uid, req.gid
-        );
-
         let (real_path, _) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
         let metadata =
             fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
@@ -1932,7 +1926,6 @@ impl EncFs {
     }
 
     fn do_truncate(&self, path: Option<&Path>, handle: Option<&FileHandle>, size: u64) -> OpResult {
-        debug!("truncate: {:?} size={}", path, size);
         self.ensure_writable()?;
 
         // A read-only handle can't truncate. One can arrive when the runtime
@@ -2054,7 +2047,6 @@ impl EncFs {
         atime: Option<std::time::SystemTime>,
         mtime: Option<std::time::SystemTime>,
     ) -> OpResult {
-        debug!("utimens: {:?} atime={:?} mtime={:?}", path, atime, mtime);
         self.ensure_writable()?;
 
         // Get file metadata for permission check (owner/group/mode).
@@ -2088,8 +2080,8 @@ impl EncFs {
     }
 
     fn readlink_impl(&self, path: &Path) -> Result<Vec<u8>, libc::c_int> {
-        debug!("readlink: {:?}", path);
         let (real_path, path_iv) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
 
         let target = fs::read_link(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
 
@@ -2113,7 +2105,6 @@ impl EncFs {
         newparent: &Path,
         newname: &OsStr,
     ) -> Result<FileAttr, libc::c_int> {
-        debug!("link: {:?} -> {:?}/{:?}", path, newparent, newname);
         self.ensure_writable()?;
 
         if self.config.external_iv_chaining {
@@ -2122,7 +2113,10 @@ impl EncFs {
 
         let new_path = newparent.join(newname);
         let (real_path, _) = self.encrypt_path(path)?;
-        self.new_entry(&new_path)?.link_from(&real_path)?;
+        self.record_backing("path", &real_path);
+        let new_entry = self.new_entry(&new_path)?;
+        self.record_backing("new_path", &new_entry.real_path);
+        new_entry.link_from(&real_path)?;
 
         self.attr_for_path(Some(&new_path), None)
     }
@@ -2133,11 +2127,11 @@ impl EncFs {
         name: &std::ffi::OsStr,
         target: &std::path::Path,
     ) -> Result<PathEntry<FileState>, libc::c_int> {
-        debug!("symlink: {:?}/{:?} -> {:?}", parent, name, target);
         self.ensure_writable()?;
 
         let path = parent.join(name);
         let entry = self.new_entry(&path)?;
+        self.record_backing("path", &entry.real_path);
 
         let enc_target = symlink_target::encrypt(
             self.cipher.as_ref(),
@@ -2161,19 +2155,19 @@ impl EncFs {
         path: Option<&Path>,
         handle: Option<&FileHandle>,
     ) -> Result<FileAttr, libc::c_int> {
-        Ok(self.attr_and_key_for_path(path, handle)?.0)
+        Ok(self.attr_and_key_for_path(path, handle, false)?.0)
     }
 
     /// As [`EncFs::attr_for_path`], but also reports the backing file's
     /// identity, which the discovery operations need in order to attach the
-    /// matching [`FileState`] to the entry they return.
+    /// matching [`FileState`] to the entry they return. With `record`, the
+    /// backing path is recorded as the current operation's `path`.
     fn attr_and_key_for_path(
         &self,
         path: Option<&Path>,
         handle: Option<&FileHandle>,
+        record: bool,
     ) -> Result<(FileAttr, FileKey), libc::c_int> {
-        debug!("getattr: {:?} handle={}", path, handle.is_some());
-
         let metadata = if let Some(handle) = handle {
             handle.file.metadata().ok()
         } else {
@@ -2181,11 +2175,16 @@ impl EncFs {
         };
 
         let metadata = if let Some(m) = metadata {
+            if let (true, Some(handle)) = (record, handle) {
+                self.record_backing("path", &handle.backing_path);
+            }
             m
         } else {
             let path = path.ok_or(libc::ESTALE)?;
             let (real_path, _) = self.encrypt_path(path)?;
-            debug!("real_path: {:?}", real_path);
+            if record {
+                self.record_backing("path", &real_path);
+            }
             fs::symlink_metadata(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
         };
 
@@ -2198,7 +2197,7 @@ impl EncFs {
     /// Attributes plus node state for a path, as returned by the operations
     /// that hand a node back to the runtime.
     fn entry_for_path(&self, path: &Path) -> Result<PathEntry<FileState>, libc::c_int> {
-        let (attr, key) = self.attr_and_key_for_path(Some(path), None)?;
+        let (attr, key) = self.attr_and_key_for_path(Some(path), None, false)?;
         Ok(PathEntry::new(attr, self.file_states.get_by_key(key)))
     }
 
@@ -2236,6 +2235,7 @@ impl EncFs {
 
     fn directory_snapshot(&self, path: &Path) -> Result<DirBuffer<FileState>, libc::c_int> {
         let (real_path, path_iv) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
         let dir_iv = self.names_iv(&real_path, path_iv)?;
 
         let entries =
@@ -2290,14 +2290,15 @@ impl EncFs {
     /// where reading it would. The listing itself is taken by `list_dir`.
     fn check_listable(&self, path: &Path) -> Result<(), libc::c_int> {
         let (real_path, path_iv) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
         self.names_iv(&real_path, path_iv)?;
         fs::read_dir(&real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
         Ok(())
     }
 
     fn open_impl(&self, path: &Path, flags: u32) -> Result<FileHandle, libc::c_int> {
-        debug!("open: {:?}", path);
         let (real_path, path_iv) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
 
         // Respect requested open flags. In particular, writes must open the backing file with
         // write permissions; otherwise later `write`/`truncate` operations will fail with EBADF.
@@ -2390,7 +2391,6 @@ impl EncFs {
         offset: u64,
         size: u32,
     ) -> Result<Vec<u8>, libc::c_int> {
-        debug!("read: offset={} size={}", offset, size);
         // Shared: concurrent reads are fine, but a read must not observe a
         // block halfway through someone else's read-modify-write.
         let meta = handle.state.read();
@@ -2428,7 +2428,6 @@ impl EncFs {
         offset: u64,
         data: &[u8],
     ) -> Result<u32, libc::c_int> {
-        debug!("write: offset={} size={}", offset, data.len());
         self.ensure_writable()?;
         // Exclusive across the whole read-decrypt-modify-encrypt-write cycle.
         let meta = handle.state.write();
@@ -2458,13 +2457,10 @@ impl EncFs {
         mode: u32,
         flags: u32,
     ) -> Result<(PathEntry<FileState>, FileHandle), libc::c_int> {
-        debug!(
-            "create: {:?}/{:?} flags={} mode={}",
-            parent, name, flags, mode
-        );
         self.ensure_writable()?;
         let path = parent.join(name);
         let entry = self.new_entry(&path)?;
+        self.record_backing("path", &entry.real_path);
         let path_iv = entry.iv;
 
         // O_EXCL: fail if file already exists (POSIX open(2)).
@@ -2517,9 +2513,9 @@ impl EncFs {
 
     fn unlink_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
         let path = parent.join(name);
-        debug!("unlink: {:?}", path);
         self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
+        self.record_backing("path", &real_path);
         fs::remove_file(real_path).map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
     }
 
@@ -2531,17 +2527,14 @@ impl EncFs {
         mode: u32,
     ) -> Result<PathEntry<FileState>, libc::c_int> {
         let path = parent.join(name);
-        debug!("mkdir: {:?} mode={:o}", path, mode);
         self.ensure_writable()?;
 
         if self.config.directory_iv {
-            // EEXIST and ENOENT (a parent replaced midway) are expected.
-            return self
-                .mkdir_with_sidecar(&req, &path, mode)
-                .inspect_err(|e| debug!("mkdir {:?} failed: errno {}", path, e));
+            return self.mkdir_with_sidecar(&req, &path, mode);
         }
         use std::os::unix::fs::DirBuilderExt;
         let (real_path, iv) = self.encrypt_path(&path)?;
+        self.record_backing("path", &real_path);
         std::fs::DirBuilder::new()
             .mode(mode)
             .create(&real_path)
@@ -2571,6 +2564,7 @@ impl EncFs {
             libc::EIO
         })?;
         let entry = self.new_entry(path)?;
+        self.record_backing("path", &entry.real_path);
         let staged = self.stage_dir(req, &entry, mode, &bytes)?;
         if let Err(e) = self.place_staged(&staged, &entry) {
             staged.discard();
@@ -2739,9 +2733,9 @@ impl EncFs {
         rdev: u32,
     ) -> Result<PathEntry<FileState>, libc::c_int> {
         let path = parent.join(name);
-        debug!("mknod: {:?} mode={:o} rdev={}", path, mode, rdev);
         self.ensure_writable()?;
         let entry = self.new_entry(&path)?;
+        self.record_backing("path", &entry.real_path);
 
         let mode_t = mode as libc::mode_t;
         let mode_bits = mode_t & libc::S_IFMT;
@@ -2769,9 +2763,9 @@ impl EncFs {
 
     fn rmdir_impl(&self, parent: &Path, name: &OsStr) -> OpResult {
         let path = parent.join(name);
-        debug!("rmdir: {:?}", path);
         self.ensure_writable()?;
         let (real_path, _) = self.encrypt_path(&path)?;
+        self.record_backing("path", &real_path);
         if self.config.directory_iv {
             return self.rmdir_with_sidecar(&real_path);
         }
@@ -2807,22 +2801,15 @@ impl EncFs {
         name: &OsStr,
         value: &[u8],
         flags: u32,
-        position: u32,
+        _position: u32,
     ) -> OpResult {
-        debug!(
-            "setxattr: {:?} name={:?} value_len={} flags={} position={}",
-            path,
-            name,
-            value.len(),
-            flags,
-            position
-        );
         self.ensure_writable()?;
         if !self.config.xattrs_available() {
             return Err(libc::ENOTSUP);
         }
 
         let (real_path, _) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
@@ -2870,12 +2857,12 @@ impl EncFs {
         path: &Path,
         name: &OsStr,
     ) -> Result<Vec<u8>, libc::c_int> {
-        debug!("getxattr: {:?} name={:?}", path, name);
         if !self.config.xattrs_available() {
             return Err(libc::ENOTSUP);
         }
 
         let (real_path, _) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
@@ -2910,13 +2897,13 @@ impl EncFs {
     }
 
     fn listxattr_impl(&self, state: &FileState, path: &Path) -> Result<Vec<u8>, libc::c_int> {
-        debug!("listxattr: {:?}", path);
         if !self.config.xattrs_available() {
             // As on a filesystem without extended attributes.
             return Ok(Vec::new());
         }
 
         let (real_path, _) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
 
         // The caller's size limit is applied by the trait wrapper against the
@@ -2999,13 +2986,13 @@ impl EncFs {
     }
 
     fn removexattr_impl(&self, state: &FileState, path: &Path, name: &OsStr) -> OpResult {
-        debug!("removexattr: {:?} name={:?}", path, name);
         self.ensure_writable()?;
         if !self.config.xattrs_available() {
             return Err(libc::ENOTSUP);
         }
 
         let (real_path, _) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
         let c_path = c_path(&real_path).map_err(|e| e.raw())?;
         let name_bytes = name.as_bytes();
 
@@ -3100,6 +3087,34 @@ impl EncFs {
     }
 }
 
+/// Records a file mode, in octal, in a filesystem operation's tracing span.
+fn trace_mode(mode: u32) -> tracing::field::DisplayValue<String> {
+    tracing::field::display(format!("{mode:o}"))
+}
+
+/// Tracing of filesystem operations. Spans name entries only by backing
+/// path, never by plaintext name: each operation declares its `path` (and
+/// `new_path`, for rename and link) empty, and records it once, where it
+/// resolves the entry to its backing path.
+impl EncFs {
+    /// How the backing path `real_path` appears in a span: relative to the
+    /// volume root, so only encrypted names show.
+    fn trace_backing(&self, real_path: &Path) -> tracing::field::DisplayValue<String> {
+        tracing::field::display(match real_path.strip_prefix(&self.root) {
+            Ok(relative) => format!("/{}", relative.display()),
+            Err(_) => real_path.display().to_string(),
+        })
+    }
+
+    /// Records `real_path` as the current operation's `field`.
+    fn record_backing(&self, field: &'static str, real_path: &Path) {
+        let span = Span::current();
+        if !span.is_disabled() {
+            span.record(field, self.trace_backing(real_path));
+        }
+    }
+}
+
 impl rpc::Mount for EncFs {
     fn info(&self) -> rpc::Info {
         rpc::Info::new(
@@ -3170,29 +3185,54 @@ impl PathFilesystem for EncFs {
         debug!("destroy");
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn lookup(
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<Option<PathEntry<FileState>>, Errno> {
         let path = parent.path().ok_or(Errno::ENOENT)?.join(name);
-        match self.entry_for_path(&path) {
-            Ok(entry) => Ok(Some(entry)),
+        match self.attr_and_key_for_path(Some(&path), None, true) {
+            Ok((attr, key)) => Ok(Some(PathEntry::new(attr, self.file_states.get_by_key(key)))),
             Err(libc::ENOENT) => Ok(None),
             Err(error) => Err(error.into()),
         }
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, fh = handle.is_some(), pid = caller.pid),
+        err(level = "debug")
+    )]
     fn getattr(
         &self,
         node: PathNodeRef<'_, FileState>,
         handle: Option<&FileHandle>,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<FileAttr, Errno> {
-        Ok(self.attr_for_path(node.path(), handle)?)
+        Ok(self.attr_and_key_for_path(node.path(), handle, true)?.0)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(
+            path = Empty,
+            size = set_attr.size,
+            mode = set_attr.mode.map(trace_mode),
+            uid = set_attr.uid,
+            gid = set_attr.gid,
+            pid = caller.pid,
+        ),
+        err(level = "debug")
+    )]
     fn setattr(
         &self,
         node: PathNodeRef<'_, FileState>,
@@ -3225,9 +3265,15 @@ impl PathFilesystem for EncFs {
                 resolve_time(set_attr.mtime),
             )?;
         }
-        Ok(self.attr_for_path(path, handle)?)
+        Ok(self.attr_and_key_for_path(path, handle, true)?.0)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, mask = mask, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn access(
         &self,
         node: PathNodeRef<'_, FileState>,
@@ -3238,43 +3284,73 @@ impl PathFilesystem for EncFs {
         Ok(self.access_impl(*caller, path, mask as u32)?)
     }
 
-    fn statfs(&self, path: &Path, _caller: &Request) -> Result<ReplyStatFs, Errno> {
-        Ok(self.statfs_impl(path)?)
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(pid = caller.pid),
+        err(level = "debug")
+    )]
+    fn statfs(&self, _path: &Path, caller: &Request) -> Result<ReplyStatFs, Errno> {
+        Ok(self.statfs_impl()?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn readlink(
         &self,
         node: PathNodeRef<'_, FileState>,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<PathBuf, Errno> {
         use std::os::unix::ffi::OsStringExt;
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(PathBuf::from(OsString::from_vec(self.readlink_impl(path)?)))
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn symlink(
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         target: &Path,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<PathEntry<FileState>, Errno> {
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.symlink_impl(parent, name, target)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, new_path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn link(
         &self,
         node: PathNodeRef<'_, FileState>,
         new_parent: PathNodeRef<'_, FileState>,
         new_name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<FileAttr, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         let new_parent = new_parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.link_impl(path, new_parent, new_name)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, mode = trace_mode(mode), rdev = rdev, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn mknod(
         &self,
         parent: PathNodeRef<'_, FileState>,
@@ -3288,6 +3364,12 @@ impl PathFilesystem for EncFs {
         Ok(self.mknod_impl(*caller, parent, name, mode, rdev)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, mode = trace_mode(mode), pid = caller.pid),
+        err(level = "debug")
+    )]
     fn mkdir(
         &self,
         parent: PathNodeRef<'_, FileState>,
@@ -3300,77 +3382,124 @@ impl PathFilesystem for EncFs {
         Ok(self.mkdir_impl(*caller, parent, name, mode)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn unlink(
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.unlink_impl(parent, name)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn rmdir(
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.rmdir_impl(parent, name)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, new_path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn rename(
         &self,
         parent: PathNodeRef<'_, FileState>,
         name: &OsStr,
         new_parent: PathNodeRef<'_, FileState>,
         new_name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
         let parent = parent.path().ok_or(Errno::ENOENT)?;
         let new_parent = new_parent.path().ok_or(Errno::ENOENT)?;
         Ok(self.rename_internal(parent, name, new_parent, new_name)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn opendir(
         &self,
         node: PathNodeRef<'_, FileState>,
         _flags: i32,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<Opened<()>, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         self.check_listable(path)?;
         Ok(Opened::new(()))
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn list_dir(
         &self,
         node: PathNodeRef<'_, FileState>,
         _handle: &(),
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<DirBuffer<FileState>, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(self.directory_snapshot(path)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, flags = flags, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn open(
         &self,
         node: PathNodeRef<'_, FileState>,
         flags: i32,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<Opened<FileHandle>, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         Ok(Opened::new(self.open_impl(path, flags as u32)?))
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(
+            path = self.trace_backing(&handle.backing_path),
+            offset = offset,
+            size = size,
+            pid = caller.pid,
+        ),
+        err(level = "debug")
+    )]
     fn read<'a>(
         &'a self,
         node: PathNodeRef<'_, FileState>,
         handle: &'a FileHandle,
         offset: u64,
         size: usize,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<Cow<'a, [u8]>, Errno> {
         let size = u32::try_from(size).unwrap_or(u32::MAX);
         Ok(Cow::Owned(self.read_impl(
@@ -3381,23 +3510,78 @@ impl PathFilesystem for EncFs {
         )?))
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(
+            path = self.trace_backing(&handle.backing_path),
+            offset = offset,
+            len = data.len(),
+            pid = caller.pid,
+        ),
+        err(level = "debug")
+    )]
     fn write(
         &self,
         node: PathNodeRef<'_, FileState>,
         handle: &FileHandle,
         data: &[u8],
         offset: u64,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<usize, Errno> {
         Ok(self.write_impl(node.path(), handle, offset, data)? as usize)
     }
 
+    /// The same no-op as the default, given a span so traces pair every
+    /// open with its close.
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = self.trace_backing(&handle.backing_path), pid = caller.pid),
+        err(level = "debug")
+    )]
+    fn flush(
+        &self,
+        _node: PathNodeRef<'_, FileState>,
+        handle: &FileHandle,
+        caller: &Request,
+    ) -> Result<(), Errno> {
+        Ok(())
+    }
+
+    /// Drops the handle, as the default does, inside a span.
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = self.trace_backing(&handle.backing_path), pid = caller.pid),
+        err(level = "debug")
+    )]
+    fn release(
+        &self,
+        _node: PathNodeRef<'_, FileState>,
+        handle: FileHandle,
+        caller: &Request,
+    ) -> Result<(), Errno> {
+        drop(handle);
+        Ok(())
+    }
+
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(
+            path = self.trace_backing(&handle.backing_path),
+            datasync = datasync,
+            pid = caller.pid,
+        ),
+        err(level = "debug")
+    )]
     fn fsync(
         &self,
         _node: PathNodeRef<'_, FileState>,
         handle: &FileHandle,
         datasync: bool,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
         let sync_result = if datasync {
             handle.file.sync_data()
@@ -3409,15 +3593,22 @@ impl PathFilesystem for EncFs {
 
     /// Syncs the backing directory, opened here rather than held open by
     /// every directory handle for the sake of this rare call.
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, datasync = datasync, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn fsyncdir(
         &self,
         node: PathNodeRef<'_, FileState>,
         _handle: &(),
         datasync: bool,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         let (real_path, _) = self.encrypt_path(path)?;
+        self.record_backing("path", &real_path);
         // Without read access the open fails and the caller is told, rather
         // than led to believe the directory was synced when it wasn't.
         diriv::open_dir_to_sync(&real_path)
@@ -3428,12 +3619,22 @@ impl PathFilesystem for EncFs {
             })
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(
+            path = self.trace_backing(&handle.backing_path),
+            operation = operation,
+            pid = caller.pid,
+        ),
+        err(level = "debug")
+    )]
     fn flock(
         &self,
         _node: PathNodeRef<'_, FileState>,
         handle: &FileHandle,
         operation: i32,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
         let result = unsafe { libc::flock(handle.file.as_raw_fd(), operation) };
         if result == 0 {
@@ -3443,6 +3644,12 @@ impl PathFilesystem for EncFs {
         }
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, mode = trace_mode(mode), flags = flags, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn create(
         &self,
         parent: PathNodeRef<'_, FileState>,
@@ -3457,19 +3664,31 @@ impl PathFilesystem for EncFs {
         Ok((entry, Opened::new(handle)))
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, len = value.len(), flags = flags, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn setxattr(
         &self,
         node: PathNodeRef<'_, FileState>,
         name: &OsStr,
         value: &[u8],
         flags: i32,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         rpc::refuse_write(path, name)?;
         Ok(self.setxattr_impl(node.state(), path, name, value, flags as u32, 0)?)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, size = size, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn getxattr(
         &self,
         node: PathNodeRef<'_, FileState>,
@@ -3485,22 +3704,34 @@ impl PathFilesystem for EncFs {
         ReplyXAttr::sized(self.getxattr_impl(node.state(), path, name)?, size)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, size = size, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn listxattr(
         &self,
         node: PathNodeRef<'_, FileState>,
         size: usize,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<ReplyXAttr, Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         let list = self.listxattr_impl(node.state(), path)?;
         ReplyXAttr::sized(rpc::without_requests(path, list), size)
     }
 
+    #[instrument(
+        level = "debug",
+        skip_all,
+        fields(path = Empty, pid = caller.pid),
+        err(level = "debug")
+    )]
     fn removexattr(
         &self,
         node: PathNodeRef<'_, FileState>,
         name: &OsStr,
-        _caller: &Request,
+        caller: &Request,
     ) -> Result<(), Errno> {
         let path = node.path().ok_or(Errno::ENOENT)?;
         rpc::refuse_write(path, name)?;
@@ -4600,6 +4831,185 @@ mod tests {
             fs.place_staged_locked(staged, entry)
         }),
     ];
+
+    /// Each operation runs in a DEBUG span that names what it acts on by
+    /// backing path alone, recorded once it is resolved: no plaintext name,
+    /// symlink target, or file data reaches a span or event. An error is
+    /// recorded at DEBUG rather than as an ERROR, so the default (INFO)
+    /// output and the macOS unified log are unchanged.
+    #[test]
+    fn operations_are_traced_by_backing_path_in_debug_spans() {
+        use std::collections::HashMap;
+        use std::fmt::Write as _;
+        use std::sync::Mutex;
+        use tracing::field::{Field, Visit};
+        use tracing::span::{Attributes, Id, Record};
+        use tracing::{Event, Subscriber};
+        use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+        use tracing_subscriber::registry::LookupSpan;
+
+        /// Each span as one line, with the fields recorded after it opened,
+        /// written when it closes; each event as a line of its own.
+        #[derive(Clone, Default)]
+        struct Seen {
+            open: Arc<Mutex<HashMap<Id, String>>>,
+            lines: Arc<Mutex<Vec<String>>>,
+        }
+        struct Line<'a>(&'a mut String);
+        impl Visit for Line<'_> {
+            fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+                let _ = write!(self.0, " {}={:?}", field.name(), value);
+            }
+        }
+        impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Seen {
+            fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, _: Context<'_, S>) {
+                let meta = attrs.metadata();
+                let mut line = format!("span {} {}", meta.level(), meta.name());
+                attrs.record(&mut Line(&mut line));
+                self.open.lock().unwrap().insert(id.clone(), line);
+            }
+            fn on_record(&self, id: &Id, values: &Record<'_>, _: Context<'_, S>) {
+                if let Some(line) = self.open.lock().unwrap().get_mut(id) {
+                    values.record(&mut Line(line));
+                }
+            }
+            fn on_close(&self, id: Id, _: Context<'_, S>) {
+                if let Some(line) = self.open.lock().unwrap().remove(&id) {
+                    self.lines.lock().unwrap().push(line);
+                }
+            }
+            fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
+                let span = ctx.event_span(event).map(|s| s.name()).unwrap_or("-");
+                let mut line = format!("event {} {}", event.metadata().level(), span);
+                event.record(&mut Line(&mut line));
+                self.lines.lock().unwrap().push(line);
+            }
+        }
+
+        // No name encoding produces a space, so this appears in a line only
+        // if plaintext leaked into it.
+        const MARKER: &str = "plain text";
+        let dir = Path::new("/plain text dir");
+        let file = Path::new("/plain text dir/plain text file");
+        let data = b"plain text data";
+
+        let mut vol = DirIvVolume::new("traced");
+        let root = vol.fs.root_state();
+        let at_root = || PathNodeRef::new(Some(Path::new("/")), &root);
+        let seen = Seen::default();
+        let subscriber = tracing_subscriber::registry().with(seen.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            let fs = &vol.fs;
+            let dir_entry = fs
+                .mkdir(at_root(), OsStr::new("plain text dir"), 0o755, 0, &caller())
+                .unwrap();
+            let again = fs.mkdir(at_root(), OsStr::new("plain text dir"), 0o755, 0, &caller());
+            assert_eq!(again.err(), Some(Errno::EEXIST));
+            fs.access(at_root(), libc::R_OK, &caller()).unwrap();
+
+            let at_dir = || PathNodeRef::new(Some(dir), &dir_entry.state);
+            let flags = libc::O_CREAT | libc::O_RDWR;
+            let (file_entry, opened) = fs
+                .create(
+                    at_dir(),
+                    OsStr::new("plain text file"),
+                    0o644,
+                    0,
+                    flags,
+                    &caller(),
+                )
+                .unwrap();
+            let at_file = || PathNodeRef::new(Some(file), &file_entry.state);
+            fs.write(at_file(), &opened.handle, data, 0, &caller())
+                .unwrap();
+            let read = fs
+                .read(at_file(), &opened.handle, 0, 4096, &caller())
+                .unwrap();
+            assert_eq!(&*read, data);
+            drop(read);
+            fs.release(at_file(), opened.handle, &caller()).unwrap();
+
+            let target = Path::new("plain text target");
+            let link = fs
+                .symlink(at_dir(), OsStr::new("plain text link"), target, &caller())
+                .unwrap();
+            let at_link = PathNodeRef::new(
+                Some(Path::new("/plain text dir/plain text link")),
+                &link.state,
+            );
+            assert_eq!(fs.readlink(at_link, &caller()).unwrap(), target);
+
+            fs.lookup(at_dir(), OsStr::new("plain text file"), &caller())
+                .unwrap()
+                .unwrap();
+            let listing = fs.opendir(at_dir(), 0, &caller()).unwrap();
+            fs.list_dir(at_dir(), &listing.handle, &caller()).unwrap();
+            fs.rename(
+                at_dir(),
+                OsStr::new("plain text file"),
+                at_dir(),
+                OsStr::new("plain text moved"),
+                &caller(),
+            )
+            .unwrap();
+            fs.unlink(at_dir(), OsStr::new("plain text moved"), &caller())
+                .unwrap();
+        });
+
+        let backing = |path: &str| {
+            let (real_path, _) = vol.fs.encrypt_path(Path::new(path)).unwrap();
+            format!("/{}", real_path.strip_prefix(&vol.root).unwrap().display())
+        };
+        let lines = seen.lines.lock().unwrap();
+        let has = |expected: &str| lines.iter().any(|line| line == expected);
+
+        assert!(
+            !lines.iter().any(|line| line.contains(MARKER)),
+            "plaintext in {lines:#?}"
+        );
+        let real_dir = backing("/plain text dir");
+        let mkdir = format!("span DEBUG mkdir mode=755 pid=1 path={real_dir}");
+        assert_eq!(
+            lines.iter().filter(|line| **line == mkdir).count(),
+            2,
+            "{lines:#?}"
+        );
+        // A field named without a value would be recorded empty, not taken
+        // from the argument of that name.
+        assert!(
+            has(&format!(
+                "span DEBUG access mask={} pid=1 path=/",
+                libc::R_OK
+            )),
+            "{lines:#?}"
+        );
+        let real_file = backing("/plain text dir/plain text file");
+        assert!(
+            has(&format!(
+                "span DEBUG write path={real_file} offset=0 len={} pid=1",
+                data.len()
+            )),
+            "{lines:#?}"
+        );
+        assert!(
+            has(&format!(
+                "span DEBUG rename pid=1 path={real_file} new_path={}",
+                backing("/plain text dir/plain text moved")
+            )),
+            "{lines:#?}"
+        );
+        let error = format!("error={}", Errno::EEXIST);
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("event DEBUG mkdir") && line.contains(&error)),
+            "{lines:#?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.starts_with("event ERROR")),
+            "{lines:#?}"
+        );
+    }
 
     /// rename(2) would replace an empty directory, or a file, but mkdir must
     /// not.

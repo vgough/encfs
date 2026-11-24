@@ -15,7 +15,6 @@ use std::os::unix::fs::{DirBuilderExt, FileExt, MetadataExt, OpenOptionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::SystemTime;
-use tracing::{debug, warn};
 use typed_fuse::passthrough::{
     self, c_path, file_attr_from_metadata, statfs_path, synthetic_file_attr, system_time_from_secs,
 };
@@ -686,40 +685,33 @@ impl ReverseFs {
                 continue;
             }
 
-            match self.cipher.encrypt_filename(name_bytes, dir_iv) {
-                Ok((encrypted_name, _)) => {
-                    let metadata = entry
-                        .metadata()
-                        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
-                    let state = self
-                        .file_states
-                        .get_by_key((metadata.dev(), metadata.ino()));
-                    let mut size = metadata.len();
-                    if metadata.is_file() {
-                        let entry_iv = if self.config.external_iv_chaining {
-                            let (_, entry_iv) =
-                                self.resolve_source_path(&path.join(&encrypted_name))?;
-                            entry_iv
-                        } else {
-                            0
-                        };
-                        size = self
-                            .staged_size(&state, entry_iv)
-                            .unwrap_or(self.ciphertext_size_for_plaintext(size)?);
-                    }
-                    result.push_plus(
-                        encrypted_name,
-                        file_attr_from_metadata(&metadata, size),
-                        state,
-                    );
-                }
-                Err(e) => {
-                    warn!(
-                        "ReverseFs::readdir: failed to encrypt {:?}: {}",
-                        file_name, e
-                    );
-                }
+            // A name that can't be encrypted is left out of the view.
+            let Ok((encrypted_name, _)) = self.cipher.encrypt_filename(name_bytes, dir_iv) else {
+                continue;
+            };
+            let metadata = entry
+                .metadata()
+                .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+            let state = self
+                .file_states
+                .get_by_key((metadata.dev(), metadata.ino()));
+            let mut size = metadata.len();
+            if metadata.is_file() {
+                let entry_iv = if self.config.external_iv_chaining {
+                    let (_, entry_iv) = self.resolve_source_path(&path.join(&encrypted_name))?;
+                    entry_iv
+                } else {
+                    0
+                };
+                size = self
+                    .staged_size(&state, entry_iv)
+                    .unwrap_or(self.ciphertext_size_for_plaintext(size)?);
             }
+            result.push_plus(
+                encrypted_name,
+                file_attr_from_metadata(&metadata, size),
+                state,
+            );
         }
 
         if path == Path::new("/") {
@@ -815,14 +807,6 @@ impl PathFilesystem for ReverseFs {
         self.file_states.get_by_key(key)
     }
 
-    fn init(&self, _conn: &mut typed_fuse::ConnInfo) {
-        debug!("ReverseFs::init");
-    }
-
-    fn destroy(&self) {
-        debug!("ReverseFs::destroy");
-    }
-
     fn lookup(
         &self,
         parent: PathNodeRef<'_, Mutex<ReverseFileState>>,
@@ -857,8 +841,7 @@ impl PathFilesystem for ReverseFs {
         }
     }
 
-    fn statfs(&self, path: &Path, _caller: &Request) -> Result<ReplyStatFs, Errno> {
-        debug!("ReverseFs::statfs {:?}", path);
+    fn statfs(&self, _path: &Path, _caller: &Request) -> Result<ReplyStatFs, Errno> {
         statfs_path(&self.source)
     }
 
