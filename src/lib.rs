@@ -24,10 +24,12 @@ rust_i18n::i18n!("locales", fallback = "en");
 
 /// Install the CLI tracing subscriber with output on stderr and, on macOS,
 /// send warnings, errors, and idle-lock transitions to the unified log.
-/// Verbose mode sets the stderr level to DEBUG and retains target-specific directives.
+/// Verbose mode sets the stderr level to DEBUG and retains target-specific directives,
+/// and logs each filesystem operation's span as it closes, with its timing.
 pub fn init_logging(verbose: bool) {
     use std::io::IsTerminal;
     use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+    use tracing_subscriber::fmt::format::FmtSpan;
     use tracing_subscriber::prelude::*;
 
     let mut filter = match std::env::var(EnvFilter::DEFAULT_ENV) {
@@ -44,9 +46,17 @@ pub fn init_logging(verbose: bool) {
         Ok("never") => false,
         _ => stderr().is_terminal(),
     };
+    // A closing span reports `time.busy` and `time.idle`. The macOS unified
+    // log layer sees only events, never these, so it is unaffected.
+    let span_events = if verbose {
+        FmtSpan::CLOSE
+    } else {
+        FmtSpan::NONE
+    };
     let stderr = tracing_subscriber::fmt::layer()
         .with_writer(stderr)
         .with_ansi(ansi)
+        .with_span_events(span_events)
         .with_filter(filter);
     let subscriber = tracing_subscriber::registry().with(stderr);
     #[cfg(target_os = "macos")]

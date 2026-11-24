@@ -361,8 +361,26 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
 ### 11. Logging
 - Uses `tracing` and `tracing-subscriber`
 - Controlled by `RUST_LOG` environment variable
-- `-v` flag sets debug level
+- `-v` flag sets debug level and logs each filesystem operation's span as it
+  closes, with its timing (`time.busy`, `time.idle`)
 - `-d` flag sets debug + foreground mode
+- Logs and spans name entries by backing (encrypted) path only. Never log a
+  plaintext name, path, symlink target, xattr name or value, or file data;
+  `encfsctl decode` recovers names when needed.
+- Every `PathFilesystem` operation in `EncFs` runs in a
+  `#[instrument(level = "debug", skip_all, fields(...), err(level = "debug"))]`
+  span. Path-based operations declare `path = Empty` (and `new_path` for
+  rename and link) and record it exactly once, where they resolve the entry
+  (`EncFs::record_backing`, relative to the volume root; the fmt layer appends
+  a repeated record rather than replacing it). Handle-based ones take it from
+  `handle.backing_path` via `EncFs::trace_backing`. Other fields carry sizes,
+  offsets, flags and modes (`trace_mode`), never contents. Give every field a
+  value (`offset = offset`): a bare name in `fields(...)` declares an empty
+  field instead of recording the argument. Keep spans and errors at DEBUG so
+  default output and the macOS unified log (WARN and above) don't gain routine
+  `ENOENT`/`ENOATTR` noise. `operations_are_traced_by_backing_path_in_debug_spans`
+  checks no plaintext leaks.
+- `ReverseFs` has no tracing.
 
 ### 12. Daemonization
 - Uses `daemonix` crate
