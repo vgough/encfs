@@ -16,6 +16,8 @@ pub mod reverse_fs;
 pub mod rpc;
 pub mod security;
 pub mod symlink_target;
+#[cfg(feature = "telemetry")]
+pub mod telemetry;
 #[cfg(target_os = "macos")]
 pub mod touchid;
 pub mod xattr_name;
@@ -27,6 +29,28 @@ rust_i18n::i18n!("locales", fallback = "en");
 /// Verbose mode sets the stderr level to DEBUG and retains target-specific directives,
 /// and logs each filesystem operation's span as it closes, with its timing.
 pub fn init_logging(verbose: bool) {
+    use tracing_subscriber::util::SubscriberInitExt;
+    logging_subscriber(verbose, tracing_subscriber::layer::Identity::new()).init();
+}
+
+/// [`init_logging`], with a place for exporting operation spans to the
+/// OpenTelemetry collector at `endpoint` (see [`telemetry`]). Nothing is
+/// exported until [`telemetry::Pending::start`], which must come after any
+/// fork.
+#[cfg(feature = "telemetry")]
+pub fn init_logging_with_telemetry(verbose: bool, endpoint: String) -> telemetry::Pending {
+    use tracing_subscriber::util::SubscriberInitExt;
+    let (exporter, pending) = telemetry::deferred_layer(endpoint);
+    logging_subscriber(verbose, exporter).init();
+    pending
+}
+
+/// The CLI subscriber, with `first` directly on the registry, ahead of the
+/// stderr layer and (on macOS) the unified log layer.
+fn logging_subscriber<L>(verbose: bool, first: L) -> impl tracing::Subscriber + Send + Sync
+where
+    L: tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync + 'static,
+{
     use std::io::IsTerminal;
     use tracing_subscriber::filter::{EnvFilter, LevelFilter};
     use tracing_subscriber::fmt::format::FmtSpan;
@@ -58,10 +82,10 @@ pub fn init_logging(verbose: bool) {
         .with_ansi(ansi)
         .with_span_events(span_events)
         .with_filter(filter);
-    let subscriber = tracing_subscriber::registry().with(stderr);
+    let subscriber = tracing_subscriber::registry().with(first).with(stderr);
     #[cfg(target_os = "macos")]
     let subscriber = subscriber.with(console_log::layer());
-    subscriber.init();
+    subscriber
 }
 
 /// Initialize the locale from environment variables according to POSIX precedence.

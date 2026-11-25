@@ -9,6 +9,11 @@ EncFS v2 (from 2026) is implemented in Rust. To build:
 
     cargo build --release
 
+To include OpenTelemetry trace export (`encfs --otel-endpoint <URL>`), which is
+off by default because it adds an HTTP client and TLS stack:
+
+    cargo build --release --features telemetry
+
 To run tests (`task test`), or:
 
     cargo nextest run --release

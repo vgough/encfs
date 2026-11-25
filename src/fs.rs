@@ -3092,6 +3092,39 @@ fn trace_mode(mode: u32) -> tracing::field::DisplayValue<String> {
     tracing::field::display(format!("{mode:o}"))
 }
 
+/// OTLP integer attributes are signed 64-bit. Keep larger unsigned values
+/// as decimal text and leave absent values unrecorded.
+enum TraceUnsigned<T: std::fmt::Display> {
+    Signed(i64),
+    Decimal(tracing::field::DisplayValue<T>),
+    Absent,
+}
+
+impl<T: Copy + TryInto<i64> + std::fmt::Display> TraceUnsigned<T> {
+    fn new(value: T) -> Self {
+        match value.try_into() {
+            Ok(value) => Self::Signed(value),
+            Err(_) => Self::Decimal(tracing::field::display(value)),
+        }
+    }
+
+    fn optional(value: Option<T>) -> Self {
+        value.map_or(Self::Absent, Self::new)
+    }
+
+    fn as_value(&self) -> &dyn tracing::Value {
+        match self {
+            Self::Signed(value) => value,
+            Self::Decimal(value) => value,
+            Self::Absent => &Empty,
+        }
+    }
+}
+
+fn trace_request_id(caller: &Request) -> TraceUnsigned<u64> {
+    TraceUnsigned::optional(caller.correlation_id.map(|id| id.get()))
+}
+
 /// Tracing of filesystem operations. Spans name entries only by backing
 /// path, never by plaintext name: each operation declares its `path` (and
 /// `new_path`, for rename and link) empty, and records it once, where it
@@ -3188,7 +3221,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn lookup(
@@ -3208,7 +3245,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, fh = handle.is_some(), pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            fh = handle.is_some(),
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn getattr(
@@ -3224,13 +3266,13 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = Empty,
-            size = set_attr.size,
+            size = TraceUnsigned::optional(set_attr.size).as_value(),
             mode = set_attr.mode.map(trace_mode),
-            uid = set_attr.uid,
-            gid = set_attr.gid,
-            pid = caller.pid,
+            uid = set_attr.uid.map(i64::from),
+            gid = set_attr.gid.map(i64::from),
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3272,7 +3314,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, mask = mask, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            mask = mask,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn access(
@@ -3288,7 +3335,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, pid = caller.pid),
+        fields(req = trace_request_id(caller).as_value(), pid = i64::from(caller.pid)),
         err(level = "debug")
     )]
     fn statfs(&self, _path: &Path, caller: &Request) -> Result<ReplyStatFs, Errno> {
@@ -3298,7 +3345,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn readlink(
@@ -3314,7 +3365,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn symlink(
@@ -3331,7 +3386,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, new_path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            new_path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn link(
@@ -3350,11 +3410,11 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = Empty,
             mode = trace_mode(mode),
-            rdev = rdev,
-            pid = caller.pid,
+            rdev = i64::from(rdev),
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3375,10 +3435,10 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = Empty,
             mode = trace_mode(mode),
-            pid = caller.pid,
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3397,7 +3457,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn unlink(
@@ -3413,7 +3477,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn rmdir(
@@ -3429,7 +3497,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, new_path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            new_path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn rename(
@@ -3448,7 +3521,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn opendir(
@@ -3465,7 +3542,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn list_dir(
@@ -3481,7 +3562,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, flags = flags, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            flags = flags,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn open(
@@ -3498,11 +3584,11 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = self.trace_backing(&handle.backing_path),
-            offset = offset,
-            size = size,
-            pid = caller.pid,
+            offset = TraceUnsigned::new(offset).as_value(),
+            size = TraceUnsigned::new(size).as_value(),
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3527,11 +3613,11 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = self.trace_backing(&handle.backing_path),
-            offset = offset,
-            len = data.len(),
-            pid = caller.pid,
+            offset = TraceUnsigned::new(offset).as_value(),
+            len = TraceUnsigned::new(data.len()).as_value(),
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3552,9 +3638,9 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = self.trace_backing(&handle.backing_path),
-            pid = caller.pid,
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3572,9 +3658,9 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = self.trace_backing(&handle.backing_path),
-            pid = caller.pid,
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3592,10 +3678,10 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = self.trace_backing(&handle.backing_path),
             datasync = datasync,
-            pid = caller.pid,
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3619,7 +3705,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, datasync = datasync, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            datasync = datasync,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn fsyncdir(
@@ -3646,10 +3737,10 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = self.trace_backing(&handle.backing_path),
             operation = operation,
-            pid = caller.pid,
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3672,11 +3763,11 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = Empty,
             mode = trace_mode(mode),
             flags = flags,
-            pid = caller.pid,
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3698,11 +3789,11 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
-            req = caller.correlation_id,
+            req = trace_request_id(caller).as_value(),
             path = Empty,
-            len = value.len(),
+            len = TraceUnsigned::new(value.len()).as_value(),
             flags = flags,
-            pid = caller.pid,
+            pid = i64::from(caller.pid),
         ),
         err(level = "debug")
     )]
@@ -3722,7 +3813,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, size = size, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            size = TraceUnsigned::new(size).as_value(),
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn getxattr(
@@ -3743,7 +3839,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, size = size, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            size = TraceUnsigned::new(size).as_value(),
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn listxattr(
@@ -3760,7 +3861,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
+        fields(
+            req = trace_request_id(caller).as_value(),
+            path = Empty,
+            pid = i64::from(caller.pid),
+        ),
         err(level = "debug")
     )]
     fn removexattr(
@@ -5046,6 +5151,170 @@ mod tests {
         assert!(
             !lines.iter().any(|line| line.starts_with("event ERROR")),
             "{lines:#?}"
+        );
+    }
+
+    /// With `--otel-endpoint`, logging is installed with an empty slot for
+    /// the exporting layer, which is filled only once export starts (after
+    /// `encfs` daemonizes). From then on the operation spans are exported
+    /// even though stderr logs at INFO, by backing path alone.
+    #[cfg(feature = "telemetry")]
+    #[test]
+    fn operation_spans_are_exported_once_telemetry_starts() {
+        use opentelemetry::Value;
+        use opentelemetry_sdk::error::OTelSdkResult;
+        use opentelemetry_sdk::trace::{SdkTracerProvider, SpanData, SpanExporter};
+        use std::sync::Mutex;
+
+        #[derive(Clone, Debug, Default)]
+        struct Collect(Arc<Mutex<Vec<SpanData>>>);
+        impl SpanExporter for Collect {
+            async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+                self.0.lock().unwrap().extend(batch);
+                Ok(())
+            }
+        }
+
+        const MARKER: &str = "plain text";
+        let dir = Path::new("/plain text dir");
+        let file = Path::new("/plain text dir/plain text file");
+        let data = b"plain text data";
+
+        let mut vol = DirIvVolume::new("exported");
+        let root = vol.fs.root_state();
+        let at_root = || PathNodeRef::new(Some(Path::new("/")), &root);
+        let exported = Collect::default();
+        let (layer, pending) = crate::telemetry::deferred_layer("http://unused".to_string());
+        tracing::subscriber::with_default(crate::logging_subscriber(false, layer), || {
+            let fs = &vol.fs;
+            fs.mkdir(
+                at_root(),
+                OsStr::new("plain text early"),
+                0o755,
+                0,
+                &caller(),
+            )
+            .unwrap();
+
+            let provider = SdkTracerProvider::builder()
+                .with_simple_exporter(exported.clone())
+                .build();
+            let telemetry = pending.install(provider).unwrap();
+            let dir_entry = fs
+                .mkdir(at_root(), OsStr::new("plain text dir"), 0o755, 0, &caller())
+                .unwrap();
+            let at_dir = || PathNodeRef::new(Some(dir), &dir_entry.state);
+            let flags = libc::O_CREAT | libc::O_RDWR;
+            let (file_entry, opened) = fs
+                .create(
+                    at_dir(),
+                    OsStr::new("plain text file"),
+                    0o644,
+                    0,
+                    flags,
+                    &caller(),
+                )
+                .unwrap();
+            let at_file = || PathNodeRef::new(Some(file), &file_entry.state);
+            fs.write(at_file(), &opened.handle, data, 0, &caller())
+                .unwrap();
+            let read = fs
+                .read(at_file(), &opened.handle, 0, 4096, &caller())
+                .unwrap();
+            assert_eq!(&*read, data);
+            drop(read);
+            fs.release(at_file(), opened.handle, &caller()).unwrap();
+            fs.rename(
+                at_dir(),
+                OsStr::new("plain text file"),
+                at_dir(),
+                OsStr::new("plain text moved"),
+                &caller(),
+            )
+            .unwrap();
+            for correlation_id in [std::num::NonZeroU64::new(u64::MAX), None] {
+                fs.statfs(
+                    Path::new("/"),
+                    &Caller {
+                        correlation_id,
+                        ..caller()
+                    },
+                )
+                .unwrap();
+            }
+            // Stops exporting and sends what is left.
+            drop(telemetry);
+            fs.unlink(at_dir(), OsStr::new("plain text moved"), &caller())
+                .unwrap();
+        });
+
+        let backing = |path: &str| {
+            let (real_path, _) = vol.fs.encrypt_path(Path::new(path)).unwrap();
+            format!("/{}", real_path.strip_prefix(&vol.root).unwrap().display())
+        };
+        let spans = exported.0.lock().unwrap();
+        fn attribute<'a>(span: &'a SpanData, key: &str) -> Option<&'a Value> {
+            span.attributes
+                .iter()
+                .find(|kv| kv.key.as_str() == key)
+                .map(|kv| &kv.value)
+        }
+        let summary: Vec<_> = spans
+            .iter()
+            .map(|span| {
+                let path = attribute(span, "path").map(|value| value.as_str().into_owned());
+                (span.name.clone(), path)
+            })
+            .collect();
+
+        let values = spans.iter().flat_map(|span| {
+            let events = span.events.iter().flat_map(|event| {
+                std::iter::once(Value::from(event.name.clone()))
+                    .chain(event.attributes.iter().map(|kv| kv.value.clone()))
+            });
+            std::iter::once(Value::from(span.name.clone()))
+                .chain(span.attributes.iter().map(|kv| kv.value.clone()))
+                .chain(events)
+                .collect::<Vec<_>>()
+        });
+        for value in values {
+            assert!(!value.as_str().contains(MARKER), "plaintext in {value:?}");
+        }
+
+        let real_dir = backing("/plain text dir");
+        let real_file = backing("/plain text dir/plain text file");
+        for (name, path) in [
+            ("mkdir", &real_dir),
+            ("create", &real_file),
+            ("write", &real_file),
+            ("read", &real_file),
+            ("rename", &real_file),
+        ] {
+            let path = Value::from(path.clone());
+            let span = spans
+                .iter()
+                .find(|span| span.name == name && attribute(span, "path") == Some(&path))
+                .unwrap_or_else(|| panic!("no {name} span for {path:?} in {summary:#?}"));
+            assert_eq!(attribute(span, "req"), Some(&Value::I64(7)), "{name}");
+            assert_eq!(attribute(span, "pid"), Some(&Value::I64(1)), "{name}");
+            if name == "read" {
+                assert_eq!(attribute(span, "size"), Some(&Value::I64(4096)));
+                assert_eq!(attribute(span, "offset"), Some(&Value::I64(0)));
+            }
+        }
+        let mut statfs = spans.iter().filter(|span| span.name == "statfs");
+        assert_eq!(
+            attribute(statfs.next().unwrap(), "req"),
+            Some(&Value::from(u64::MAX.to_string()))
+        );
+        assert_eq!(attribute(statfs.next().unwrap(), "req"), None);
+        // Before export started, and after it stopped.
+        assert!(
+            !summary.iter().any(|(_, path)| {
+                path.as_ref() == Some(&backing("/plain text early"))
+                    || path.as_ref() == Some(&backing("/plain text dir/plain text moved"))
+            }),
+            "{summary:#?}"
         );
     }
 

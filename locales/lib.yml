@@ -44,3 +44,27 @@ lib.property_unsupported:
   en: "config property %{property} does not apply to this filesystem"
   fr: "la propriété de configuration %{property} ne s'applique pas à ce système de fichiers"
   de: "die Konfigurationseigenschaft %{property} gilt nicht für dieses Dateisystem"
+telemetry.invalid_endpoint:
+  en: "invalid OpenTelemetry endpoint: %{error}"
+  fr: "point de terminaison OpenTelemetry invalide : %{error}"
+  de: "ungültiger OpenTelemetry-Endpunkt: %{error}"
+telemetry.endpoint_scheme:
+  en: "the URL must start with http:// or https://"
+  fr: "l'URL doit commencer par http:// ou https://"
+  de: "die URL muss mit http:// oder https:// beginnen"
+telemetry.endpoint_host:
+  en: "the URL has no host"
+  fr: "l'URL n'a pas d'hôte"
+  de: "die URL hat keinen Host"
+telemetry.endpoint_query:
+  en: "the URL must not have a query string"
+  fr: "l'URL ne doit pas contenir de chaîne de requête"
+  de: "die URL darf keinen Query-String enthalten"
+telemetry.exporter_failed:
+  en: "Failed to start OpenTelemetry trace export"
+  fr: "Impossible de démarrer l'export des traces OpenTelemetry"
+  de: "Export der OpenTelemetry-Ablaufverfolgungen konnte nicht gestartet werden"
+telemetry.shutdown_failed:
+  en: "Failed to send the last OpenTelemetry traces: %{error}"
+  fr: "Impossible d'envoyer les dernières traces OpenTelemetry : %{error}"
+  de: "Die letzten OpenTelemetry-Ablaufverfolgungen konnten nicht gesendet werden: %{error}"

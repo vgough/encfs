@@ -1850,3 +1850,169 @@ fn live_internal_copy_same_mount_wide_v7() -> Result<()> {
     let mount = MountGuard::mount_existing_backing_root(cfg, false, backing_root)?;
     run_internal_copy_same_mount(&mount, 12, expected)
 }
+
+/// Each HTTP request's line and body.
+#[cfg(feature = "telemetry")]
+type Requests = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
+
+/// A stand-in OTLP/HTTP collector: accepts every request with `200 OK` and
+/// keeps each one's request line and body.
+#[cfg(feature = "telemetry")]
+struct Collector {
+    addr: std::net::SocketAddr,
+    requests: Requests,
+}
+
+#[cfg(feature = "telemetry")]
+impl Collector {
+    fn start() -> Result<Self> {
+        use std::io::BufRead;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        let addr = listener.local_addr()?;
+        let requests = Requests::default();
+        let seen = requests.clone();
+        thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let seen = seen.clone();
+                thread::spawn(move || -> std::io::Result<()> {
+                    let mut reader = std::io::BufReader::new(stream.try_clone()?);
+                    let mut stream = stream;
+                    // One connection can carry several requests.
+                    loop {
+                        let mut request_line = String::new();
+                        if reader.read_line(&mut request_line)? == 0 {
+                            return Ok(());
+                        }
+                        let mut content_length = 0;
+                        loop {
+                            let mut header = String::new();
+                            reader.read_line(&mut header)?;
+                            let header = header.trim_end();
+                            if header.is_empty() {
+                                break;
+                            }
+                            if let Some((name, value)) = header.split_once(':')
+                                && name.eq_ignore_ascii_case("content-length")
+                            {
+                                content_length = value.trim().parse().unwrap_or(0);
+                            }
+                        }
+                        let mut body = vec![0; content_length];
+                        reader.read_exact(&mut body)?;
+                        seen.lock()
+                            .unwrap()
+                            .push((request_line.trim_end().to_string(), body));
+                        stream.write_all(
+                            b"HTTP/1.1 200 OK\r\ncontent-type: application/x-protobuf\r\n\
+                              content-length: 0\r\n\r\n",
+                        )?;
+                    }
+                });
+            }
+        });
+        Ok(Self { addr, requests })
+    }
+}
+
+/// `--otel-endpoint` on a daemonized mount: export starts in the daemon,
+/// after the fork that would end the exporter's threads, and the spans left
+/// at unmount are sent before the daemon exits. They name entries by backing
+/// path only.
+#[cfg(feature = "telemetry")]
+#[test]
+#[ignore]
+fn live_daemon_exports_traces_to_otel_endpoint() -> Result<()> {
+    require_live();
+    if !live_enabled() {
+        return Ok(());
+    }
+    live::ensure_live_ready()?;
+    let _lock = live::live_lock();
+
+    let collector = Collector::start()?;
+    let cfg = load_live_config(live::LiveConfigKind::Standard)?;
+    let backing_root = live::init_backing_root(&cfg)?;
+    let mount_point = unique_temp_dir("encfs_live_otel")?;
+    let log = backing_root.with_extension("stderr");
+
+    let mut encfs = Command::new(env!("CARGO_BIN_EXE_encfs"))
+        .arg("-S")
+        .arg("--otel-endpoint")
+        .arg(format!("http://{}", collector.addr))
+        .arg(&backing_root)
+        .arg(&mount_point)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(fs::File::create(&log)?)
+        .spawn()
+        .context("failed to spawn encfs")?;
+    encfs
+        .stdin
+        .take()
+        .context("no stdin")?
+        .write_all(format!("{}\n", cfg.password).as_bytes())?;
+    // The parent exits once the daemon has started exporting.
+    let status = encfs.wait()?;
+    anyhow::ensure!(
+        status.success(),
+        "encfs failed ({status}): {}",
+        fs::read_to_string(&log).unwrap_or_default()
+    );
+
+    let result = (|| -> Result<()> {
+        let start = std::time::Instant::now();
+        while !live::mountinfo_has_mount(&mount_point)? {
+            anyhow::ensure!(
+                start.elapsed() < Duration::from_secs(30),
+                "mount did not become ready"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+        fs::write(mount_point.join("traced plaintext.txt"), b"traced")?;
+        assert_eq!(
+            read_all(&mount_point.join("traced plaintext.txt"))?,
+            b"traced"
+        );
+        live::unmount(&mount_point)?;
+
+        let start = std::time::Instant::now();
+        loop {
+            {
+                let requests = collector.requests.lock().unwrap();
+                let traces: Vec<_> = requests
+                    .iter()
+                    .filter(|(line, _)| line.starts_with("POST /v1/traces "))
+                    .collect();
+                let has = |needle: &[u8]| {
+                    traces
+                        .iter()
+                        .any(|(_, body)| body.windows(needle.len()).any(|w| w == needle))
+                };
+                if has(b"create") && has(b"write") {
+                    assert!(!has(b"traced plaintext"), "plaintext name exported");
+                    return Ok(());
+                }
+            }
+            anyhow::ensure!(
+                start.elapsed() < Duration::from_secs(15),
+                "no create and write spans reached the collector; requests: {:?}",
+                collector
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .map(|(line, body)| (line.clone(), body.len()))
+                    .collect::<Vec<_>>()
+            );
+            thread::sleep(Duration::from_millis(100));
+        }
+    })();
+    if live::mountinfo_has_mount(&mount_point).unwrap_or(false) {
+        let _ = live::unmount(&mount_point);
+    }
+    let _ = fs::remove_dir_all(&mount_point);
+    let _ = fs::remove_dir_all(&backing_root);
+    let _ = fs::remove_file(&log);
+    result
+}

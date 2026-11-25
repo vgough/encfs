@@ -508,15 +508,8 @@ impl MountGuard {
 impl Drop for MountGuard {
     fn drop(&mut self) {
         if self.mounted {
-            let mp = self.mount_point.clone();
             // Best-effort unmount.
-            let _ = if path_has_tool("fusermount3") {
-                run_quiet(Command::new("fusermount3").arg("-u").arg(&mp))
-            } else if path_has_tool("fusermount") {
-                run_quiet(Command::new("fusermount").arg("-u").arg(&mp))
-            } else {
-                run_quiet(Command::new("umount").arg(&mp))
-            };
+            let _ = unmount(&self.mount_point);
 
             // Wait for child to exit; if it doesn't, kill it.
             let start = Instant::now();
@@ -539,7 +532,18 @@ impl Drop for MountGuard {
     }
 }
 
-fn ensure_live_ready() -> Result<()> {
+/// Unmounts `mount_point` with whichever tool the platform has.
+pub fn unmount(mount_point: &Path) -> io::Result<std::process::ExitStatus> {
+    if path_has_tool("fusermount3") {
+        run_quiet(Command::new("fusermount3").arg("-u").arg(mount_point))
+    } else if path_has_tool("fusermount") {
+        run_quiet(Command::new("fusermount").arg("-u").arg(mount_point))
+    } else {
+        run_quiet(Command::new("umount").arg(mount_point))
+    }
+}
+
+pub fn ensure_live_ready() -> Result<()> {
     if !live_enabled() {
         return Err(anyhow!(
             "{} not enabled; set {}=1 to run live mount tests",

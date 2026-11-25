@@ -44,3 +44,11 @@ jobs:
       run: ENCFS_LIVE_TESTS=1 cargo test --release --test live_mount -- --ignored --test-threads=1
       env:
          RUST_BACKTRACE: 1
+
+    - name: Run telemetry tests
+      run: |
+        cargo test --release --features telemetry --lib telemetry
+        cargo test --release --features telemetry --lib operation_spans_are_exported
+        ENCFS_LIVE_TESTS=1 cargo test --release --features telemetry --test live_mount -- --ignored --test-threads=1 otel
+      env:
+         RUST_BACKTRACE: 1

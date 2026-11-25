@@ -43,6 +43,10 @@ help.encfs.fsname:
   en: "Name shown as the mount source in the mount table (default: encfs@ followed by the encrypted root directory)"
   fr: "Nom affiché comme source du montage dans la table des montages (par défaut : encfs@ suivi du répertoire racine chiffré)"
   de: "Name, der in der Mount-Tabelle als Quelle des Mounts angezeigt wird (Standard: encfs@ gefolgt vom verschlüsselten Stammverzeichnis)"
+help.encfs.otel_endpoint:
+  en: "Export filesystem operation traces over OTLP/HTTP to this OpenTelemetry collector (e.g. http://localhost:4318; /v1/traces is appended). Traces carry encrypted names, sizes and timings, never plaintext names or file data"
+  fr: "Exporter les traces des opérations du système de fichiers via OTLP/HTTP vers ce collecteur OpenTelemetry (par ex. http://localhost:4318 ; /v1/traces est ajouté). Les traces contiennent les noms chiffrés, les tailles et les durées, jamais les noms en clair ni le contenu des fichiers"
+  de: "Ablaufverfolgungen der Dateisystemoperationen per OTLP/HTTP an diesen OpenTelemetry-Collector exportieren (z. B. http://localhost:4318; /v1/traces wird angehängt). Sie enthalten verschlüsselte Namen, Größen und Zeiten, niemals Klartextnamen oder Dateiinhalte"
 help.encfs.root:
   en: "Root directory of encrypted volume"
   fr: "Répertoire racine du volume chiffré"
