@@ -23,6 +23,7 @@ fn req() -> Caller {
         gid: unsafe { libc::getgid() },
         uid: unsafe { libc::getuid() },
         umask: 0,
+        correlation_id: None,
     }
 }
 

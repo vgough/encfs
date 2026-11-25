@@ -59,6 +59,7 @@ fn test_symlink_type() {
         gid: 0,
         uid: 0,
         umask: 0,
+        correlation_id: None,
     };
 
     let parent = PathBuf::from("");

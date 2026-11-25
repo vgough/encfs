@@ -3188,7 +3188,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn lookup(
@@ -3208,7 +3208,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, fh = handle.is_some(), pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, fh = handle.is_some(), pid = caller.pid),
         err(level = "debug")
     )]
     fn getattr(
@@ -3224,6 +3224,7 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
+            req = caller.correlation_id,
             path = Empty,
             size = set_attr.size,
             mode = set_attr.mode.map(trace_mode),
@@ -3271,7 +3272,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, mask = mask, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, mask = mask, pid = caller.pid),
         err(level = "debug")
     )]
     fn access(
@@ -3287,7 +3288,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(pid = caller.pid),
+        fields(req = caller.correlation_id, pid = caller.pid),
         err(level = "debug")
     )]
     fn statfs(&self, _path: &Path, caller: &Request) -> Result<ReplyStatFs, Errno> {
@@ -3297,7 +3298,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn readlink(
@@ -3313,7 +3314,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn symlink(
@@ -3330,7 +3331,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, new_path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, new_path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn link(
@@ -3348,7 +3349,13 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, mode = trace_mode(mode), rdev = rdev, pid = caller.pid),
+        fields(
+            req = caller.correlation_id,
+            path = Empty,
+            mode = trace_mode(mode),
+            rdev = rdev,
+            pid = caller.pid,
+        ),
         err(level = "debug")
     )]
     fn mknod(
@@ -3367,7 +3374,12 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, mode = trace_mode(mode), pid = caller.pid),
+        fields(
+            req = caller.correlation_id,
+            path = Empty,
+            mode = trace_mode(mode),
+            pid = caller.pid,
+        ),
         err(level = "debug")
     )]
     fn mkdir(
@@ -3385,7 +3397,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn unlink(
@@ -3401,7 +3413,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn rmdir(
@@ -3417,7 +3429,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, new_path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, new_path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn rename(
@@ -3436,7 +3448,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn opendir(
@@ -3453,7 +3465,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn list_dir(
@@ -3469,7 +3481,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, flags = flags, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, flags = flags, pid = caller.pid),
         err(level = "debug")
     )]
     fn open(
@@ -3486,6 +3498,7 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
+            req = caller.correlation_id,
             path = self.trace_backing(&handle.backing_path),
             offset = offset,
             size = size,
@@ -3514,6 +3527,7 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
+            req = caller.correlation_id,
             path = self.trace_backing(&handle.backing_path),
             offset = offset,
             len = data.len(),
@@ -3537,7 +3551,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = self.trace_backing(&handle.backing_path), pid = caller.pid),
+        fields(
+            req = caller.correlation_id,
+            path = self.trace_backing(&handle.backing_path),
+            pid = caller.pid,
+        ),
         err(level = "debug")
     )]
     fn flush(
@@ -3553,7 +3571,11 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = self.trace_backing(&handle.backing_path), pid = caller.pid),
+        fields(
+            req = caller.correlation_id,
+            path = self.trace_backing(&handle.backing_path),
+            pid = caller.pid,
+        ),
         err(level = "debug")
     )]
     fn release(
@@ -3570,6 +3592,7 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
+            req = caller.correlation_id,
             path = self.trace_backing(&handle.backing_path),
             datasync = datasync,
             pid = caller.pid,
@@ -3596,7 +3619,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, datasync = datasync, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, datasync = datasync, pid = caller.pid),
         err(level = "debug")
     )]
     fn fsyncdir(
@@ -3623,6 +3646,7 @@ impl PathFilesystem for EncFs {
         level = "debug",
         skip_all,
         fields(
+            req = caller.correlation_id,
             path = self.trace_backing(&handle.backing_path),
             operation = operation,
             pid = caller.pid,
@@ -3647,7 +3671,13 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, mode = trace_mode(mode), flags = flags, pid = caller.pid),
+        fields(
+            req = caller.correlation_id,
+            path = Empty,
+            mode = trace_mode(mode),
+            flags = flags,
+            pid = caller.pid,
+        ),
         err(level = "debug")
     )]
     fn create(
@@ -3667,7 +3697,13 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, len = value.len(), flags = flags, pid = caller.pid),
+        fields(
+            req = caller.correlation_id,
+            path = Empty,
+            len = value.len(),
+            flags = flags,
+            pid = caller.pid,
+        ),
         err(level = "debug")
     )]
     fn setxattr(
@@ -3686,7 +3722,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, size = size, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, size = size, pid = caller.pid),
         err(level = "debug")
     )]
     fn getxattr(
@@ -3707,7 +3743,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, size = size, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, size = size, pid = caller.pid),
         err(level = "debug")
     )]
     fn listxattr(
@@ -3724,7 +3760,7 @@ impl PathFilesystem for EncFs {
     #[instrument(
         level = "debug",
         skip_all,
-        fields(path = Empty, pid = caller.pid),
+        fields(req = caller.correlation_id, path = Empty, pid = caller.pid),
         err(level = "debug")
     )]
     fn removexattr(
@@ -3875,6 +3911,7 @@ mod tests {
             gid: 0,
             uid: 0,
             umask: 0,
+            correlation_id: None,
         }
     }
 
@@ -4194,6 +4231,7 @@ mod tests {
             gid: unsafe { libc::getgid() },
             uid: unsafe { libc::getuid() },
             umask: 0,
+            correlation_id: std::num::NonZeroU64::new(7),
         }
     }
 
@@ -4968,7 +5006,7 @@ mod tests {
             "plaintext in {lines:#?}"
         );
         let real_dir = backing("/plain text dir");
-        let mkdir = format!("span DEBUG mkdir mode=755 pid=1 path={real_dir}");
+        let mkdir = format!("span DEBUG mkdir req=7 mode=755 pid=1 path={real_dir}");
         assert_eq!(
             lines.iter().filter(|line| **line == mkdir).count(),
             2,
@@ -4978,7 +5016,7 @@ mod tests {
         // from the argument of that name.
         assert!(
             has(&format!(
-                "span DEBUG access mask={} pid=1 path=/",
+                "span DEBUG access req=7 mask={} pid=1 path=/",
                 libc::R_OK
             )),
             "{lines:#?}"
@@ -4986,14 +5024,14 @@ mod tests {
         let real_file = backing("/plain text dir/plain text file");
         assert!(
             has(&format!(
-                "span DEBUG write path={real_file} offset=0 len={} pid=1",
+                "span DEBUG write req=7 path={real_file} offset=0 len={} pid=1",
                 data.len()
             )),
             "{lines:#?}"
         );
         assert!(
             has(&format!(
-                "span DEBUG rename pid=1 path={real_file} new_path={}",
+                "span DEBUG rename req=7 pid=1 path={real_file} new_path={}",
                 backing("/plain text dir/plain text moved")
             )),
             "{lines:#?}"

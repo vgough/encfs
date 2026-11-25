@@ -1838,9 +1838,9 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse"
-version = "0.9.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68493f8cffde060266a0e4e3870ee7977f98128c42c22b2b1cb818c4697e1cde"
+checksum = "015268065295a8e8051aa81573330658b694a3b165f19ac87f10290be2eb9db9"
 dependencies = [
  "libc",
  "log",
@@ -1851,9 +1851,9 @@ dependencies = [
 
 [[package]]
 name = "typed-fuse-core"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27a867bb226ccd8eb2b4ec6313b6e5b47ccca5388e30a65b98d0e29907bd569d"
+checksum = "946459ff8b16a087c8463c70297c0c05ac9f124216dfba994d273e427ca31836"
 dependencies = [
  "libc",
 ]
