@@ -37,6 +37,7 @@ For command reference, testing patterns, and coding conventions, see `AGENTS.md`
 | `getrandom` | 0.4 | CSPRNG for salts/nonces |
 | `sysinfo` | 0.39.6 | Runtime info (e.g. `encfsctl speed` sizing) |
 | `tempfile` | 3 | Staged writes in reverse mode |
+| `opentelemetry` / `opentelemetry_sdk` / `opentelemetry-otlp` + `tracing-opentelemetry` | 0.33 / 0.34 | Optional (`telemetry` feature, off by default): OTLP/HTTP export of operation spans for `encfs --otel-endpoint` (reqwest blocking client, rustls) |
 
 ### Infrastructure
 
@@ -58,6 +59,7 @@ encfs/
 │   ├── encfsr.rs             # Reverse-mode FUSE binary
 │   ├── lib.rs                # Library entry point, i18n init, integration tests
 │   ├── security.rs           # Process hardening (core dumps, ptrace, mlockall)
+│   ├── telemetry.rs          # `telemetry` feature only: OTLP trace export for `encfs --otel-endpoint`
 │   ├── config.rs             # Config parsing/validation (V4/V5/V6/V7), key derivation & unwrap
 │   ├── config_binary.rs      # Binary config format parser (V4/V5)
 │   ├── config_proto.rs       # `prost`-generated V7 protobuf bindings (build-time, see build.rs)
@@ -148,7 +150,12 @@ Full rationale and byte-level detail: `docs/DESIGN.md`.
 | Variable | Purpose | Secret |
 |----------|---------|--------|
 | `ENCFS_LIVE_TESTS` | If set to 1, enables live FUSE mount tests during `cargo test`. | No |
-| `RUST_LOG` | Controls tracing output levels on stderr (e.g., `debug`). | No |
+| `RUST_LOG` | Controls tracing output levels on stderr (e.g., `debug`). Does not affect what `--otel-endpoint` exports. | No |
+| `OTEL_EXPORTER_OTLP_TRACES_HEADERS` / `OTEL_EXPORTER_OTLP_HEADERS` | With `--otel-endpoint`: extra HTTP headers (`key=value,...`) sent to the collector, e.g. authorization. Keeps tokens off the command line. | Yes |
+| `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` / `OTEL_EXPORTER_OTLP_TIMEOUT` | With `--otel-endpoint`: export request timeout in milliseconds (default 10000). | No |
+| `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` | With `--otel-endpoint`: sampling (e.g. `traceidratio` and `0.1`); all operations are exported by default. | No |
+| `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES` | With `--otel-endpoint`: resource attributes; the service name defaults to `encfs`. | No |
+| `OTEL_BSP_*` | With `--otel-endpoint`: batch span processor queue size, batch size and delay. | No |
 | `LANG` | System locale, used to initialize translations via `rust-i18n`. | No |
 | `NO_COLOR` | Disables ANSI color in `encfsctl` output when set (any value). | No |
 
@@ -199,5 +206,12 @@ Full rationale and byte-level detail: `docs/DESIGN.md`.
 - **Macro:** `t!("key.subkey", param = value)`
 - **Initialization:** Reads `LANG` environment variable.
 - **Note:** Help text functions return `String` for late evaluation after locale initialization.
+
+### Telemetry (`telemetry` feature)
+
+- **Build:** `cargo build --features telemetry`; off by default, since it adds an HTTP client and TLS stack.
+- **Use:** `encfs --otel-endpoint http://collector:4318 <root> <mount>`. The URL is the collector's base URL; `/v1/traces` is appended unless already present. `http` and `https` (rustls with the platform's trust store) are accepted.
+- **What is exported:** the DEBUG span each `EncFs` operation runs in (name, backing `path`/`new_path`, `req`, sizes, offsets, flags, modes, pid, timing) and the events inside it. Plaintext names, symlink targets, xattr names and file data never appear in spans, but backing names, sizes and access timing do leave the host.
+- **Lifecycle:** export starts after daemonizing (threads don't survive `fork`) and the final batch is sent when the mount ends.
 
 <!-- Other modules from the template have been omitted as they are not relevant to this project. -->

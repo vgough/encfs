@@ -63,6 +63,11 @@ fn help_main_mount_point() -> String {
     t!("help.encfs.mount_point").to_string()
 }
 
+#[cfg(feature = "telemetry")]
+fn help_main_otel_endpoint() -> String {
+    t!("help.encfs.otel_endpoint").to_string()
+}
+
 #[cfg(target_os = "macos")]
 fn help_main_no_apple_xattr() -> String {
     t!("help.encfs.no_apple_xattr").to_string()
@@ -116,6 +121,15 @@ struct Args {
     #[arg(long, value_name = "NAME", help = help_main_fsname())]
     fsname: Option<String>,
 
+    #[cfg(feature = "telemetry")]
+    #[arg(
+        long,
+        value_name = "URL",
+        value_parser = encfs::telemetry::parse_endpoint,
+        help = help_main_otel_endpoint()
+    )]
+    otel_endpoint: Option<String>,
+
     #[cfg(target_os = "macos")]
     #[arg(long, help = help_main_no_apple_xattr())]
     no_apple_xattr: bool,
@@ -155,6 +169,15 @@ fn main() -> Result<()> {
     let verbose = args.verbose || args.debug;
     let foreground = args.foreground || args.debug;
 
+    #[cfg(feature = "telemetry")]
+    let telemetry = match args.otel_endpoint.clone() {
+        Some(endpoint) => Some(encfs::init_logging_with_telemetry(verbose, endpoint)),
+        None => {
+            encfs::init_logging(verbose);
+            None
+        }
+    };
+    #[cfg(not(feature = "telemetry"))]
     encfs::init_logging(verbose);
 
     info!(
@@ -262,20 +285,37 @@ fn main() -> Result<()> {
             #[cfg(not(target_os = "macos"))]
             let unlock: Option<fn() -> Result<()>> = None;
 
-            // Daemonize unless foreground mode is requested. This must happen
-            // before the FUSE session is created (forking after libfuse has
-            // initialized process state is unsafe). The initial unlock runs in
-            // the daemon so LocalAuthentication is never used across a fork.
-            if foreground {
+            // What has to run after any fork: trace export, whose threads
+            // wouldn't survive one, then the initial unlock, so
+            // LocalAuthentication is never used across a fork. Export stops
+            // (and sends what it holds) when `exporting` drops, after the
+            // mount ends.
+            #[cfg(feature = "telemetry")]
+            let exporting = std::cell::OnceCell::new();
+            let startup = || -> Result<()> {
+                #[cfg(feature = "telemetry")]
+                if let Some(telemetry) = &telemetry {
+                    let _ = exporting.set(telemetry.start()?);
+                }
                 if let Some(unlock) = &unlock {
                     unlock()?;
                 }
+                Ok(())
+            };
+            #[cfg(feature = "telemetry")]
+            let startup_needed = unlock.is_some() || telemetry.is_some();
+            #[cfg(not(feature = "telemetry"))]
+            let startup_needed = unlock.is_some();
+
+            // Daemonize unless foreground mode is requested. This must happen
+            // before the FUSE session is created (forking after libfuse has
+            // initialized process state is unsafe). The daemon runs the
+            // startup step before the parent exits, so its errors still reach
+            // the terminal.
+            if foreground {
+                startup()?;
             } else {
-                daemonize(
-                    unlock
-                        .as_ref()
-                        .map(|unlock| unlock as &dyn Fn() -> Result<()>),
-                )?;
+                daemonize(startup_needed.then_some(&startup as &dyn Fn() -> Result<()>))?;
             }
 
             // The mount table lists this as the mount source (type

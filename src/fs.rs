@@ -5049,6 +5049,145 @@ mod tests {
         );
     }
 
+    /// With `--otel-endpoint`, logging is installed with an empty slot for
+    /// the exporting layer, which is filled only once export starts (after
+    /// `encfs` daemonizes). From then on the operation spans are exported
+    /// even though stderr logs at INFO, by backing path alone.
+    #[cfg(feature = "telemetry")]
+    #[test]
+    fn operation_spans_are_exported_once_telemetry_starts() {
+        use opentelemetry::Value;
+        use opentelemetry_sdk::error::OTelSdkResult;
+        use opentelemetry_sdk::trace::{SdkTracerProvider, SpanData, SpanExporter};
+        use std::sync::Mutex;
+
+        #[derive(Clone, Debug, Default)]
+        struct Collect(Arc<Mutex<Vec<SpanData>>>);
+        impl SpanExporter for Collect {
+            async fn export(&self, batch: Vec<SpanData>) -> OTelSdkResult {
+                self.0.lock().unwrap().extend(batch);
+                Ok(())
+            }
+        }
+
+        const MARKER: &str = "plain text";
+        let dir = Path::new("/plain text dir");
+        let file = Path::new("/plain text dir/plain text file");
+        let data = b"plain text data";
+
+        let mut vol = DirIvVolume::new("exported");
+        let root = vol.fs.root_state();
+        let at_root = || PathNodeRef::new(Some(Path::new("/")), &root);
+        let exported = Collect::default();
+        let (layer, pending) = crate::telemetry::deferred_layer("http://unused".to_string());
+        tracing::subscriber::with_default(crate::logging_subscriber(false, layer), || {
+            let fs = &vol.fs;
+            fs.mkdir(
+                at_root(),
+                OsStr::new("plain text early"),
+                0o755,
+                0,
+                &caller(),
+            )
+            .unwrap();
+
+            let provider = SdkTracerProvider::builder()
+                .with_simple_exporter(exported.clone())
+                .build();
+            let telemetry = pending.install(provider).unwrap();
+            let dir_entry = fs
+                .mkdir(at_root(), OsStr::new("plain text dir"), 0o755, 0, &caller())
+                .unwrap();
+            let at_dir = || PathNodeRef::new(Some(dir), &dir_entry.state);
+            let flags = libc::O_CREAT | libc::O_RDWR;
+            let (file_entry, opened) = fs
+                .create(
+                    at_dir(),
+                    OsStr::new("plain text file"),
+                    0o644,
+                    0,
+                    flags,
+                    &caller(),
+                )
+                .unwrap();
+            let at_file = || PathNodeRef::new(Some(file), &file_entry.state);
+            fs.write(at_file(), &opened.handle, data, 0, &caller())
+                .unwrap();
+            let read = fs
+                .read(at_file(), &opened.handle, 0, 4096, &caller())
+                .unwrap();
+            assert_eq!(&*read, data);
+            drop(read);
+            fs.release(at_file(), opened.handle, &caller()).unwrap();
+            fs.rename(
+                at_dir(),
+                OsStr::new("plain text file"),
+                at_dir(),
+                OsStr::new("plain text moved"),
+                &caller(),
+            )
+            .unwrap();
+            // Stops exporting and sends what is left.
+            drop(telemetry);
+            fs.unlink(at_dir(), OsStr::new("plain text moved"), &caller())
+                .unwrap();
+        });
+
+        let backing = |path: &str| {
+            let (real_path, _) = vol.fs.encrypt_path(Path::new(path)).unwrap();
+            format!("/{}", real_path.strip_prefix(&vol.root).unwrap().display())
+        };
+        let spans = exported.0.lock().unwrap();
+        let attribute = |span: &SpanData, key: &str| {
+            span.attributes
+                .iter()
+                .find(|kv| kv.key.as_str() == key)
+                .map(|kv| kv.value.as_str().into_owned())
+        };
+        let summary: Vec<_> = spans
+            .iter()
+            .map(|span| (span.name.clone(), attribute(span, "path")))
+            .collect();
+
+        let values = spans.iter().flat_map(|span| {
+            let events = span.events.iter().flat_map(|event| {
+                std::iter::once(Value::from(event.name.clone()))
+                    .chain(event.attributes.iter().map(|kv| kv.value.clone()))
+            });
+            std::iter::once(Value::from(span.name.clone()))
+                .chain(span.attributes.iter().map(|kv| kv.value.clone()))
+                .chain(events)
+                .collect::<Vec<_>>()
+        });
+        for value in values {
+            assert!(!value.as_str().contains(MARKER), "plaintext in {value:?}");
+        }
+
+        let real_dir = backing("/plain text dir");
+        let real_file = backing("/plain text dir/plain text file");
+        for (name, path) in [
+            ("mkdir", &real_dir),
+            ("create", &real_file),
+            ("write", &real_file),
+            ("read", &real_file),
+            ("rename", &real_file),
+        ] {
+            let span = spans
+                .iter()
+                .find(|span| span.name == name && attribute(span, "path").as_ref() == Some(path))
+                .unwrap_or_else(|| panic!("no {name} span for {path} in {summary:#?}"));
+            assert_eq!(attribute(span, "req").as_deref(), Some("7"), "{name}");
+        }
+        // Before export started, and after it stopped.
+        assert!(
+            !summary.iter().any(|(_, path)| {
+                path.as_ref() == Some(&backing("/plain text early"))
+                    || path.as_ref() == Some(&backing("/plain text dir/plain text moved"))
+            }),
+            "{summary:#?}"
+        );
+    }
+
     /// rename(2) would replace an empty directory, or a file, but mkdir must
     /// not.
     #[test]

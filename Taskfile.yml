@@ -38,6 +38,11 @@ tasks:
     cmds:
       - "{{.CARGO}} build --release"
 
+  build-full:
+    desc: Build release binaries with all optional features enabled (e.g. telemetry)
+    cmds:
+      - "{{.CARGO}} build --release --all-features"
+
   build-osx:
     desc: Build release binaries for macOS (requires Rust target aarch64-apple-darwin or x86_64-apple-darwin)
     cmds:

@@ -383,6 +383,18 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
   `ENOENT`/`ENOATTR` noise. `operations_are_traced_by_backing_path_in_debug_spans`
   checks no plaintext leaks.
 - `ReverseFs` has no tracing.
+- `encfs --otel-endpoint <URL>` (only in builds with the `telemetry` Cargo
+  feature, off by default; `src/telemetry.rs`) exports these operation spans
+  to an OpenTelemetry collector over OTLP/HTTP, with the events inside them
+  as span events; events outside spans are not exported. The spans leave the
+  host there, so the backing-path-only rule above is what keeps plaintext
+  local. The exporting layer has its own fixed filter (`encfs` targets at
+  DEBUG), independent of `-v` and `RUST_LOG`. Its batch processor and HTTP
+  client run threads, which don't survive `fork`: `init_logging_with_telemetry`
+  installs an empty `reload` slot, and `Pending::start` fills it in `main`'s
+  post-fork startup step (in the daemon, through `daemonize`'s ready pipe).
+  Never start it before daemonizing. Dropping the `Telemetry` guard after the
+  mount ends sends the last batch.
 
 ### 12. Daemonization
 - Uses `daemonix` crate
