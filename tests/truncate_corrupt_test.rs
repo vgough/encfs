@@ -59,6 +59,7 @@ fn test_truncate_corrupts_partial_block() {
         gid: 0,
         uid: 0,
         umask: 0,
+        correlation_id: None,
     };
 
     let parent = PathBuf::from("");
@@ -201,6 +202,7 @@ fn test_truncate_extend_then_append_preserves_block0_tag() {
         gid: 0,
         uid: 0,
         umask: 0,
+        correlation_id: None,
     };
 
     let parent = PathBuf::from("");

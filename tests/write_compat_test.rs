@@ -84,6 +84,7 @@ fn test_write_legacy_v2() {
         gid: 0,
         uid: 0,
         umask: 0,
+        correlation_id: None,
     };
     let parent = PathBuf::from("");
     let name = OsStr::new("test.txt");
@@ -149,6 +150,7 @@ fn test_write_paranoia() {
         gid: 0,
         uid: 0,
         umask: 0,
+        correlation_id: None,
     };
     let parent = PathBuf::from("");
     let name = OsStr::new("test_paranoia.txt");
@@ -210,6 +212,7 @@ fn test_fstat_support() {
         gid: 0,
         uid: 0,
         umask: 0,
+        correlation_id: None,
     };
     let parent = PathBuf::from("");
     let name = OsStr::new("fstat_test.txt");
@@ -280,6 +283,7 @@ fn test_statfs_support() {
         gid: 0,
         uid: 0,
         umask: 0,
+        correlation_id: None,
     };
 
     // Check statfs on root

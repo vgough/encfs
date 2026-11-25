@@ -373,8 +373,10 @@ The `EncfsConfig::validate()` method (`src/config.rs`) enforces:
   rename and link) and record it exactly once, where they resolve the entry
   (`EncFs::record_backing`, relative to the volume root; the fmt layer appends
   a repeated record rather than replacing it). Handle-based ones take it from
-  `handle.backing_path` via `EncFs::trace_backing`. Other fields carry sizes,
-  offsets, flags and modes (`trace_mode`), never contents. Give every field a
+  `handle.backing_path` via `EncFs::trace_backing`. Every span starts with
+  `req = caller.correlation_id`, the per-request ID typed-fuse assigns, so
+  every line logged while handling one request carries it. Other fields
+  carry sizes, offsets, flags and modes (`trace_mode`), never contents. Give every field a
   value (`offset = offset`): a bare name in `fields(...)` declares an empty
   field instead of recording the argument. Keep spans and errors at DEBUG so
   default output and the macOS unified log (WARN and above) don't gain routine

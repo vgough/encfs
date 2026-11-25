@@ -4489,6 +4489,7 @@ mod tests {
             uid: unsafe { libc::getuid() },
             gid: unsafe { libc::getgid() },
             umask: 0,
+            correlation_id: None,
         };
         let at = |path: &'static str| PathNodeRef::new(Some(Path::new(path)), &root);
         efs.mkdir(at("/"), "docs".as_ref(), 0o755, 0, &caller)

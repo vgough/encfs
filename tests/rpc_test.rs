@@ -43,6 +43,7 @@ fn req() -> Caller {
         gid: 0,
         uid: 0,
         umask: 0,
+        correlation_id: None,
     }
 }
 
